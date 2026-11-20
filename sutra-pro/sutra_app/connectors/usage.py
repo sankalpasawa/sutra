@@ -210,6 +210,9 @@ def build_usage_row(*, ctx: RouteContext, attempts: Sequence[Attempt], request_i
         "usd_basis": last.usd_basis if last else "none", "billing": last.billing if last else "unknown",
         "cli_version": last.cli_version if last else None, "envelope_id": ctx.allowance.envelope_id, "note": note,
     }
+    if tag.node_id:                    # a call of a node of a multi-agent project says whose it is (D283): two keys beside the others; a call with no node has the row it always had
+        detail["agent_node"] = tag.node_id
+        detail["agent_role"] = tag.node_role
     return UsageIn(
         provider=last.provider if last else provider, model=(last.model if last else None) or "",
         purpose=purpose or tag.purpose, session_id=ctx.session_id, node_id=ctx.node_id, task_id=tag.task_id,

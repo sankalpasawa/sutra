@@ -58,10 +58,14 @@ def request_id_of(message_id: int) -> str:
     return IdFactory.request_id(message_id)
 
 
-def call_context(message_id: int) -> dict[str, str]:
-    """The context of every model call of one request: its purpose, the org chat, the root node and the request's overhead key."""
-    return {"purpose": "chat_plan", "session_id": ORG_SESSION_ID, "node_id": ROOT_NODE_ID,
-            "atom_id": overhead_atom_id(request_id_of(message_id))}
+def call_context(message_id: int, node_id: str = "") -> dict[str, str]:
+    """The context of every model call of one request: its purpose, the org chat, the root node and the request's overhead key. With `node_id` (the planner's node of a
+    multi-agent project, D291) the calls also name that node and the role `planner`, so their usage and egress rows are the planner's."""
+    context = {"purpose": "chat_plan", "session_id": ORG_SESSION_ID, "node_id": ROOT_NODE_ID, "atom_id": overhead_atom_id(request_id_of(message_id))}
+    if node_id:
+        context["agent_node_id"] = node_id
+        context["agent_role"] = "planner"
+    return context
 
 
 class StageFailed(Exception):
@@ -94,6 +98,8 @@ class PlanRequest:
     message_id: int
     history: Sequence[tuple[str, str]] = ()
     pending: Sequence[str] = ()
+    node_id: str = ""            # the planner's node id (`nd_...`) when the request is planned inside a multi-agent project (D291); "" today
+    cancel: Any = None           # an optional stop token for the planner's calls (`connectors.cancel.CancelToken`); None today
 
     @property
     def request_id(self) -> str:
@@ -292,7 +298,8 @@ class ChatAgent:
     async def _stage(self, stage: str, family: str, kind: str | None, prompt: str, schema: dict, request: PlanRequest,
                      budget: _Budget, build: Build) -> Any:
         """One stage: ask, read, gate, check; on rejection ask again with the reasons. Returns what `build` made."""
-        context = call_context(request.message_id)
+        context = call_context(request.message_id, request.node_id)
+        stop = {} if request.cancel is None else {"cancel": request.cancel}          # only a request that has a token hands one on: every connector double of today takes no such argument
         violations: list[Violation] = []
         replies: list[dict] = []
         for attempt in range(1, self.attempts + 1):
@@ -305,7 +312,7 @@ class ChatAgent:
             try:
                 obj, _usd, _how = await asyncio.wait_for(
                     self.connector.call_json(self._redact(text), schema=schema, timeout=self.timeout, function="chat_agent", step=stage,
-                                             context=context), timeout=self.timeout + _CALL_GRACE_S)
+                                             context=context, **stop), timeout=self.timeout + _CALL_GRACE_S)
             except Exception as exc:                     # noqa: BLE001  (CancelledError is not an Exception)
                 failed = failure_kind(exc)
                 if failed is None:

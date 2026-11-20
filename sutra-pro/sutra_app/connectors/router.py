@@ -711,7 +711,7 @@ class Router:
             plan = self._plan(resolved, req)
             state.default_provider = plan.order[0]
             if self.egress is not None:                      # J2's prompts are not ours to edit: observe only, byte-identical
-                self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False)
+                self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False, **_node_of(req.ctx.tag))
             turn = self._consume(self._drive(state, plan, make, retries=req.run_tools is None))
             ok = True
             if state.note and on_progress is not None:
@@ -787,6 +787,7 @@ class Router:
 
         resolved = self.policy.resolve(req)
         state = _Request(self, req.ctx, resolved, kind="json")
+        state.cancel = req.cancel                              # a planner call's stop token (D291); None for any other JSON request
         ok, failure, result = False, None, None
         try:
             self._reject_closed()
@@ -795,8 +796,8 @@ class Router:
             state.default_provider = plan.order[0]
             if self.egress is not None:
                 req = req.model_copy(update={
-                    "user": self.egress.check(req.user, session=req.ctx.session_id, provider=plan.order[0], replace=True),
-                    "system": self.egress.check(req.system, session=req.ctx.session_id, provider=plan.order[0], replace=True) if req.system else ""})
+                    "user": self.egress.check(req.user, session=req.ctx.session_id, provider=plan.order[0], replace=True, **_node_of(req.ctx.tag)),
+                    "system": self.egress.check(req.system, session=req.ctx.session_id, provider=plan.order[0], replace=True, **_node_of(req.ctx.tag)) if req.system else ""})
             result = self._consume(self._drive(state, plan, make))
             ok = True
             if state.note and on_progress is not None:
@@ -1171,6 +1172,13 @@ class Router:
             except Exception:
                 log.warning("stop_all failed for %s", connector.name, exc_info=True)
         self.drain(2.0)
+
+
+def _node_of(tag: Any) -> dict[str, str]:
+    """The node a call is for, as the keyword arguments of `Egress.check`: empty for every call that is not a node's (so an `Egress` stand-in that does not know them is never given
+    any), `node_id` and `node_role` for the call of a node of a multi-agent project (D282, D283)."""
+    node_id = getattr(tag, "node_id", "")
+    return {"node_id": node_id, "node_role": getattr(tag, "node_role", "")} if node_id else {}
 
 
 def _short(reason: str) -> str:

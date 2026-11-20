@@ -36,7 +36,7 @@ from sutra_app.orchestrator.models import RunSpec
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
 
 __all__ = [
-    "STOP_GRACE_S", "TERM_GRACE_S", "SILENT_AFTER_S", "STDERR_TAIL_BYTES", "EXTRA_PASS_NAMES", "child_environment", "RunLauncher",
+    "STOP_GRACE_S", "TERM_GRACE_S", "SILENT_AFTER_S", "STDERR_TAIL_BYTES", "EXTRA_PASS_NAMES", "NODE_ID_ENV", "child_environment", "RunLauncher",
     "ProcessLauncher", "RunWatcher", "ReconcileReport", "reconcile", "run_has_ended", "stderr_tail", "inbox_line_count", "append_inbox",
     "LIVE_FILE", "LIVE_SCHEMA", "live_partials", "is_engine_command",
 ]
@@ -55,6 +55,9 @@ LIVE_MAX_AGENTS = 64
 
 
 # ---- the child environment ---------------------------------------------------------------------------------------------
+
+NODE_ID_ENV = "SUTRA_NODE_ID"          # set for the run of a node of a multi-agent project (D283); absent in every other run
+
 
 def child_environment(settings: Mapping[str, str] | None = None, environ: Mapping[str, str] | None = None,
                       extra: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -228,7 +231,11 @@ class ProcessLauncher:
 
     def environment(self, spec: RunSpec) -> dict[str, str]:
         settings = {k: v for k, v in spec.settings.model_dump().items() if isinstance(v, str)}
-        return child_environment(settings, self._environ, self._extra_env)
+        env = child_environment(settings, self._environ, self._extra_env)
+        env.pop(NODE_ID_ENV, None)                      # whatever the server's own environment holds, a run is a node only when its task.json says so
+        if spec.node is not None:
+            env[NODE_ID_ENV] = spec.node.id             # a plain id, not a secret: a child program of the node can say whose it is (D283)
+        return env
 
     async def start(self, spec: RunSpec, run_dir: Path) -> int:
         run_dir = Path(run_dir)

@@ -24,11 +24,12 @@ from sutra_app.engine.port import (
 
 def test_call_tag_has_exactly_these_fields_and_defaults():
     assert list(CallTag.model_fields) == ["run_id", "dept_id", "task_id", "function", "role", "stage", "step", "cycle",
-                                          "call_no", "atom", "purpose", "workspace", "team_workspace"]
+                                          "call_no", "atom", "purpose", "workspace", "team_workspace", "node_id", "node_role"]
     tag = CallTag()
     assert (tag.run_id, tag.dept_id, tag.task_id, tag.function, tag.role, tag.stage) == ("", "", None, "", None, None)
     assert (tag.step, tag.cycle, tag.call_no, tag.atom, tag.purpose) == (0, 0, 0, None, "agent_turn")
     assert (tag.workspace, tag.team_workspace) == ("none", "none")
+    assert (tag.node_id, tag.node_role) == ("", "")                       # empty unless the run is a node of a project (D283)
 
 
 def test_call_tag_is_frozen_and_closed():

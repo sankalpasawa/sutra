@@ -1,0 +1,16 @@
+{
+  "schema": "run-spec/1",
+  "run_id": "j2-20261104-100005-7f3b",
+  "task_id": "tsk_a1b2c3d4e5f7",
+  "dept_id": "web",
+  "dept_label": "Web",
+  "scope_id": null,
+  "scope_label": null,
+  "user_text": "Build a landing page",
+  "framing": "",
+  "parent_run_id": null,
+  "seed_from": null,
+  "upstream": [],
+  "settings": {},
+  "connector": "auto"
+}

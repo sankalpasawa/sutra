@@ -27,10 +27,12 @@ from typing import Any
 from sutra_app.connectors.egress import scrubbed
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
+from sutra_app.orchestrator.grants import Grant, GrantError
 from sutra_app.orchestrator.ids import IdFactory, iso_z
+from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "NodeBlockError", "node_block_of", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
 AUDIT_ACTORS = ("conductor", "gatekeeper", "node", "owner", "system")
@@ -46,6 +48,28 @@ _ROLE = re.compile(r"^(planner|worker|reviewer|conductor|gatekeeper|)$")
 _PROJECT_ID = re.compile(r"^prj_[0-9a-f]{12}$")
 _NODE_ID = re.compile(r"^nd_[0-9a-f]{12}$")
 DECIDERS = re.compile(r"^(owner|system|rule:[a-z][a-z0-9_]{0,40})$")      # who answered: the owner, the clock (expiry), or a named rule of the Gatekeeper's table (D294)
+
+
+class NodeBlockError(ValueError):
+    """A task has a node row that cannot be turned into the `node` block of its `task.json` (no usable grant, a role that has no process). Ids only, never text a node wrote."""
+
+
+def node_block_of(conn: sqlite3.Connection, task_id: str) -> NodeBlock | None:
+    """The `node` block of `task.json` for the task `task_id`, from its `agent_nodes` row and the grant frozen on it (D283); None when the task is not a node. Raises NodeBlockError
+    when it is a node that has no usable grant: a node never runs without one (the task gate of MAN-5 refuses to start it)."""
+    row = conn.execute("SELECT id, project_id, role, runtime, attempt, grants_json FROM agent_nodes WHERE task_id = ?", (task_id,)).fetchone()
+    if row is None:
+        return None
+    try:
+        grant = Grant.from_json(json.loads(row["grants_json"] or "{}"))
+        if grant.role != row["role"] or not grant.id:
+            raise NodeBlockError("the grant does not belong to the node's role, or has no id")
+        return NodeBlock(id=row["id"], project_id=row["project_id"], role=row["role"], runtime=row["runtime"], attempt=int(row["attempt"]), grants_id=grant.id,
+                         caps=grant.caps, scope=list(grant.scope))
+    except (GrantError, ValueError, TypeError) as exc:
+        if isinstance(exc, NodeBlockError):
+            raise
+        raise NodeBlockError("the node has no usable grant") from None
 
 
 @dataclass(frozen=True)

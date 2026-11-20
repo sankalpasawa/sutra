@@ -614,81 +614,9 @@ class NodeDetail(Value):
     archived_chats: Annotated[list[ChatSessionOut], Field(max_length=200)] = []
 
 
-# ---- the run document: task.json -----------------------------------------------------------------------------------
-
-_INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
-
-
-class TaskSettings(Value):
-    """The ten task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182), all text as J2
-    reads its environment. `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` are not engine settings: they name the run template this one request starts from and
-    the workflows of it, and only the engine host reads them. A key left unset is left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
-    a Chrome path or a forced audit failure."""
-
-    J2_OUTPUT: Annotated[str, StringConstraints(pattern=rf"^(auto|{OUTPUT_NAME_RE})$")] | None = None      # `auto` or a type name by shape (D166)
-    J2_BUDGET: Annotated[str, StringConstraints(max_length=6)] | None = None
-    J2_BUDGET_CAP: Annotated[str, StringConstraints(max_length=6)] | None = None
-    J2_FIXES: Literal["0", "1"] | None = None
-    J2_MEMORY: Literal["0", "1"] | None = None
-    J2_SLIM: Literal["0", "1"] | None = None
-    J2_RATES: Literal["0", "1"] | None = None
-    J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
-    J2_RUN_TEMPLATE: Annotated[str, StringConstraints(pattern=rf"^{RUN_TEMPLATE_ID_RE}$")] | None = None      # a run template's id (D182)
-    J2_RUN_TEMPLATE_WORKFLOWS: Annotated[str, StringConstraints(max_length=RUN_TEMPLATE_WORKFLOWS_MAX)] | None = None      # `all` or a comma list of workflow keys
-
-    @field_validator("J2_RUN_TEMPLATE_WORKFLOWS")
-    @classmethod
-    def _workflow_keys(cls, value: str | None) -> str | None:
-        if value is not None and run_template_keys(value) is None:
-            raise ValueError("must be all, or a comma list of at most 40 workflow keys of at most 20 letters, digits, - _ or .")
-        return value
-
-    @field_validator("J2_BUDGET", "J2_BUDGET_CAP")
-    @classmethod
-    def _whole_number_in_range(cls, value: str | None) -> str | None:
-        if value is not None and (not _INT_SETTING.fullmatch(value) or int(value) > 100_000):
-            raise ValueError("must be a whole number from 1 to 100000")
-        return value
-
-    @model_serializer(mode="wrap")
-    def _only_what_is_set(self, handler: Any) -> dict[str, Any]:
-        return {key: value for key, value in handler(self).items() if value is not None}
-
-
-if tuple(TaskSettings.model_fields) != TASK_SETTING_KEYS:            # the engine's TaskSpec reads these keys: they must agree
-    raise ImportError("TaskSettings and the engine's TASK_SETTING_KEYS differ")
-
-
-class UpstreamRef(Value):
-    dept_id: DeptId
-    run_id: RunId
-    title: Name
-    files: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=400)]], Field(max_length=200)] = []
-
-
-class RunSpec(Value):
-    """`task.json` ("run-spec/1"): the strict writer of a document the engine's `TaskSpec` reads. `user_text` is the owner's
-    words verbatim (Identity starts from them); `framing` is the chat agent's paragraph, context only."""
-
-    schema_: Literal["run-spec/1"] = Field(TASK_SCHEMA, alias="schema")
-    run_id: RunId
-    task_id: TaskId
-    dept_id: DeptId
-    dept_label: Name
-    scope_id: NodeId | None = None
-    scope_label: Name | None = None
-    user_text: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
-    framing: Annotated[str, StringConstraints(max_length=20_000)] = ""
-    parent_run_id: RunId | None = None
-    seed_from: RunId | None = None
-    upstream: Annotated[list[UpstreamRef], Field(max_length=10)] = []
-    settings: TaskSettings = TaskSettings()
-    connector: Literal["auto", "claude", "codex", "stub"] = "auto"
-
-
 # ---- multi-agent nodes: projects and nodes (design docs/design/multi-agent-nodes, D253, D283, D290) --------------------------------------
 # A "node" here is a runtime node: a running agent, one `tasks` row plus one `agent_nodes` row (not a graph node, which is a box in the graph). These shapes are inert until
-# SUTRA_NODES_V1 is on: nothing builds one while the flag is off, and `RunSpec` does not carry a `NodeBlock` yet (the identity plumbing, MAN-3, adds the field).
+# SUTRA_NODES_V1 is on: nothing builds one while the flag is off, and `RunSpec.node` (MAN-3) is left out of `task.json` unless it is set.
 
 ProjectId = Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")]
 AgentNodeId = Annotated[str, StringConstraints(pattern=r"^nd_[0-9a-f]{12}$")]
@@ -768,6 +696,87 @@ class NodeOut(Value):
     failure_reason: Annotated[str, StringConstraints(max_length=200)] = ""
     created_at: Iso
     ended_at: Iso | None = None
+
+
+# ---- the run document: task.json -----------------------------------------------------------------------------------
+
+_INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
+
+
+class TaskSettings(Value):
+    """The ten task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182), all text as J2
+    reads its environment. `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` are not engine settings: they name the run template this one request starts from and
+    the workflows of it, and only the engine host reads them. A key left unset is left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
+    a Chrome path or a forced audit failure."""
+
+    J2_OUTPUT: Annotated[str, StringConstraints(pattern=rf"^(auto|{OUTPUT_NAME_RE})$")] | None = None      # `auto` or a type name by shape (D166)
+    J2_BUDGET: Annotated[str, StringConstraints(max_length=6)] | None = None
+    J2_BUDGET_CAP: Annotated[str, StringConstraints(max_length=6)] | None = None
+    J2_FIXES: Literal["0", "1"] | None = None
+    J2_MEMORY: Literal["0", "1"] | None = None
+    J2_SLIM: Literal["0", "1"] | None = None
+    J2_RATES: Literal["0", "1"] | None = None
+    J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
+    J2_RUN_TEMPLATE: Annotated[str, StringConstraints(pattern=rf"^{RUN_TEMPLATE_ID_RE}$")] | None = None      # a run template's id (D182)
+    J2_RUN_TEMPLATE_WORKFLOWS: Annotated[str, StringConstraints(max_length=RUN_TEMPLATE_WORKFLOWS_MAX)] | None = None      # `all` or a comma list of workflow keys
+
+    @field_validator("J2_RUN_TEMPLATE_WORKFLOWS")
+    @classmethod
+    def _workflow_keys(cls, value: str | None) -> str | None:
+        if value is not None and run_template_keys(value) is None:
+            raise ValueError("must be all, or a comma list of at most 40 workflow keys of at most 20 letters, digits, - _ or .")
+        return value
+
+    @field_validator("J2_BUDGET", "J2_BUDGET_CAP")
+    @classmethod
+    def _whole_number_in_range(cls, value: str | None) -> str | None:
+        if value is not None and (not _INT_SETTING.fullmatch(value) or int(value) > 100_000):
+            raise ValueError("must be a whole number from 1 to 100000")
+        return value
+
+    @model_serializer(mode="wrap")
+    def _only_what_is_set(self, handler: Any) -> dict[str, Any]:
+        return {key: value for key, value in handler(self).items() if value is not None}
+
+
+if tuple(TaskSettings.model_fields) != TASK_SETTING_KEYS:            # the engine's TaskSpec reads these keys: they must agree
+    raise ImportError("TaskSettings and the engine's TASK_SETTING_KEYS differ")
+
+
+class UpstreamRef(Value):
+    dept_id: DeptId
+    run_id: RunId
+    title: Name
+    files: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=400)]], Field(max_length=200)] = []
+
+
+class RunSpec(Value):
+    """`task.json` ("run-spec/1"): the strict writer of a document the engine's `TaskSpec` reads. `user_text` is the owner's
+    words verbatim (Identity starts from them); `framing` is the chat agent's paragraph, context only. `node` is the optional identity block of a project's node (D283)."""
+
+    schema_: Literal["run-spec/1"] = Field(TASK_SCHEMA, alias="schema")
+    run_id: RunId
+    task_id: TaskId
+    dept_id: DeptId
+    dept_label: Name
+    scope_id: NodeId | None = None
+    scope_label: Name | None = None
+    user_text: Annotated[str, StringConstraints(min_length=1, max_length=100_000)]
+    framing: Annotated[str, StringConstraints(max_length=20_000)] = ""
+    parent_run_id: RunId | None = None
+    seed_from: RunId | None = None
+    upstream: Annotated[list[UpstreamRef], Field(max_length=10)] = []
+    settings: TaskSettings = TaskSettings()
+    connector: Literal["auto", "claude", "codex", "stub"] = "auto"
+    node: NodeBlock | None = None            # who this run is inside a multi-agent project (D283): only for a node, and only while SUTRA_NODES_V1 is on
+
+    @model_serializer(mode="wrap")
+    def _no_node_unless_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """`task.json` is byte-identical to what it was before nodes existed whenever the run is not a node: the key is left out, not written as null."""
+        data = handler(self)
+        if data.get("node") is None:
+            data.pop("node", None)
+        return data
 
 
 # ---- the run events (events.jsonl) -----------------------------------------------------------------------------

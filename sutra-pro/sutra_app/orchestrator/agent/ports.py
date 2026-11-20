@@ -41,11 +41,12 @@ class ConnectorFailure(Exception):
 
 @runtime_checkable
 class ConnectorPort(Protocol):
-    """CON's `AsyncConnector`. `context` keys: purpose, session_id, node_id, task_id, atom_id (the request's overhead key)."""
+    """CON's `AsyncConnector`. `context` keys: purpose, session_id, node_id, task_id, atom_id (the request's overhead key), and for a multi-agent project's planner agent_node_id and
+    agent_role. `cancel` is an optional stop token (a `connectors.cancel.CancelToken`); a caller that has none leaves it out."""
 
     async def call_json(self, prompt: str, *, schema: dict | None = None, tools: Sequence[str] = (), timeout: float = 120.0,
                         function: str = "chat_agent", step: str = "plan",
-                        context: Mapping[str, str] | None = None) -> tuple[dict, float | None, str]: ...
+                        context: Mapping[str, str] | None = None, cancel: Any = None) -> tuple[dict, float | None, str]: ...
 
     def status(self) -> Mapping[str, Mapping[str, Any]]: ...
 

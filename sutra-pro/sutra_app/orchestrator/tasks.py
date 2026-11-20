@@ -57,6 +57,7 @@ from sutra_app.orchestrator.models import (
     LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
+from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
@@ -691,12 +692,18 @@ class TaskService:
                                   (row.dept_id,)).fetchone()
             if chosen is not None and chosen["pinned"] in ("claude", "codex"):
                 connector = chosen["pinned"]
+        node = None
+        if self.settings.nodes_v1:                                   # the identity block is written only while SUTRA_NODES_V1 is on: off, nothing of it is read or written (D254)
+            try:
+                node = node_block_of(conn, row.id)
+            except NodeBlockError as exc:
+                log.warning("task %s is a node without a usable grant (%s): it starts as an ordinary task", row.id, exc)
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,
             framing=framing_for(conn, row.dept_id, row.framing),                  # the team's standing rules in front, read now (GAP2 rules-notes)
             parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
-            settings=TaskSettings.model_validate(row.settings), connector=connector)
+            settings=TaskSettings.model_validate(row.settings), connector=connector, node=node)
 
     def _files_of(self, conn: sqlite3.Connection, dep: TaskRow) -> list[str]:
         """The files an upstream run left at the top of its folder (the engine's own plumbing is left out), up to 200."""

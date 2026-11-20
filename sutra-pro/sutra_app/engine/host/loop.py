@@ -372,8 +372,15 @@ class Host:
             raise
         except ModelError as exc:
             raise StartFailed(f"{type(exc).__name__}: {exc}", EXIT_START_FAILED, chat=True) from None
-        llm.configure(self.port, mock=self.mock, base_tag=CallTag(run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id))
+        llm.configure(self.port, mock=self.mock, base_tag=self._base_tag())
         llm.bind_atom(overhead)                  # a call made before the first turn carries the run overhead key
+
+    def _base_tag(self) -> CallTag:
+        """The tag every call of this process starts from. A run that is a node of a multi-agent project (the optional `node` block of `task.json`, D283) also says which node and
+        what role, so every usage row, egress row and allowance of its calls can name it; any other run gets exactly the tag it always got."""
+        task = self.task
+        who = {"node_id": task.node.id, "node_role": task.node.role} if task.node is not None else {}
+        return CallTag(run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id, **who)
 
     def _connector_port(self):
         try:

@@ -146,6 +146,9 @@ with warnings.catch_warnings():
     class JsonRequest(AskRequest):
         kind: Literal["json"] = "json"
         schema: Optional[type[BaseModel] | dict] = None
+        # a stop token of the caller (a planner call of a multi-agent project, D291): checked before every attempt, fallback and back-off of the router. It does not reach into a
+        # connector's running process (a chat turn's token does, D215): a request asked to stop ends at the next of those points. None for every request there was before.
+        cancel: Any = Field(None, exclude=True)                # a `cancel.CancelToken` (typed Any: that module is imported by the connectors, not by this one)
 
 
 class TurnResult(M):

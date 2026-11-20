@@ -49,6 +49,10 @@ class CallTag(BaseModel):
     # files, so each agent's folder text says what the TEAM may do and not only what its own tools do (D135): Identity's tools only read, and
     # it must not take that for a limit of the run. "none": nothing is said about the team. The router caps it by the owner's access choice.
     team_workspace: Literal["none", "read", "edit"] = "none"
+    # Who the call is for when the run is a node of a multi-agent project (D283): the node's id (`nd_<12 hex>`) and role. Empty for every other call, which is every call
+    # while SUTRA_NODES_V1 is off. They ride the tag so the usage row, the egress audit row and the router's allowance can name the node; they decide nothing here.
+    node_id: str = Field("", pattern=r"^(nd_[0-9a-f]{12})?$")
+    node_role: str = Field("", pattern=r"^(planner|worker|reviewer)?$")
 
 
 class Allowance(BaseModel):

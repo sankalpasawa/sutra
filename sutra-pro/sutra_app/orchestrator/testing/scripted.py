@@ -31,6 +31,7 @@ class Call(NamedTuple):
     context: dict[str, str]
     tools: tuple[str, ...] = ()
     timeout: float = 120.0
+    cancel: Any = None                 # the stop token the caller passed, if any
 
 
 class ScriptExhausted(AssertionError):
@@ -53,9 +54,13 @@ class ScriptedConnector:
 
     async def call_json(self, prompt: str, *, schema: dict | None = None, tools: Sequence[str] = (), timeout: float = 120.0,
                         function: str = "chat_agent", step: str = "plan",
-                        context: Mapping[str, str] | None = None) -> tuple[dict, float | None, str]:
-        call = Call(prompt, schema, function, step, dict(context or {}), tuple(tools), timeout)
+                        context: Mapping[str, str] | None = None, cancel: Any = None) -> tuple[dict, float | None, str]:
+        call = Call(prompt, schema, function, step, dict(context or {}), tuple(tools), timeout, cancel)
         self.calls.append(call)
+        if cancel is not None and cancel.requested:             # as the router does before an attempt: a stop that was asked for ends the call, and no script item is used up
+            from sutra_app.connectors.errors import CallCancelledError
+            self._usage(call, ok=False)
+            raise CallCancelledError("the turn was stopped")
         if not self._script:
             self._usage(call, ok=False)
             raise ScriptExhausted(f"the script has no reply for call {len(self.calls)} (function {function}, step {step})")

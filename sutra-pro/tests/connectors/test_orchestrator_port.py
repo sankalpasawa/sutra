@@ -72,9 +72,9 @@ def test_call_json_signature_matches_the_orchestrators_port():
     sig = inspect.signature(AsyncConnector.call_json)
     assert inspect.iscoroutinefunction(AsyncConnector.call_json)
     params = sig.parameters
-    assert list(params) == ["self", "prompt", "schema", "tools", "timeout", "function", "step", "context"]
+    assert list(params) == ["self", "prompt", "schema", "tools", "timeout", "function", "step", "context", "cancel"]
     assert all(params[n].kind is inspect.Parameter.KEYWORD_ONLY for n in list(params)[2:])
-    assert [params[n].default for n in list(params)[2:]] == [None, (), 120.0, "chat_agent", "plan", None]
+    assert [params[n].default for n in list(params)[2:]] == [None, (), 120.0, "chat_agent", "plan", None, None]       # `cancel`: the optional stop token (D291), None for every caller of before
 
 
 def test_call_json_returns_the_object_the_usd_and_how(rig):

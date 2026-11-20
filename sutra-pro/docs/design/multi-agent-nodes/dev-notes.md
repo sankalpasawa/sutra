@@ -96,3 +96,42 @@ output spec as a word (`read`/`edit`) or any object with a `workspace` attribute
 - `IdFactory` (and so `FakeIds`) gained `project_id`, `node_id`, `grant_id`, `approval_id` (`prj_`, `nd_`, `gr_`, `ap_` and 12 hex).
 - `NodeStore` has only what MAN-2 needs (audit, approvals). `put_node`, `lease`, `release` and `post` of the architecture's component table arrive with the packages that use them.
 - `approvals.decided_by` is `owner`, `system` or `rule:<name>` (the Decide for me rule table, D294). An answer that arrives after `expires_at` is stored as `expired` (denied).
+
+## MAN-3. Identity plumbing
+
+Built as designed: `CallTag.node_id` and `node_role`, `TaskSpec.node` (read) and `RunSpec.node` (written, left out of the file when it is None), the host's base tag, `SUTRA_NODE_ID`, the
+two optional egress fields, the node id in the usage row's `detail`, and the planner's identity. The golden files in `tests/fixtures/run_spec/` were written by the code of `origin/main` before
+this package, so "byte-identical" is checked against the old code's own output.
+
+### N15. `tasks.py` is touched in MAN-3 (the writer of the block)
+
+The build plan's file list for MAN-3 has no `tasks.py`, but "the block is written only with SUTRA_NODES_V1" has to live somewhere, and `_run_spec` is the only place that builds a `RunSpec`.
+It now asks `nodes_store.node_block_of(conn, task_id)` for the block, only when `settings.nodes_v1` is on (with it off the table is not read: a test fails if it is). MAN-5 adds the rows.
+A node that has no usable grant starts as an ordinary task and the log says so with ids only. The alternative, refusing to start it, would let one bad row stop the FIFO queue (the start
+loop raises). Decision for the architect in MAN-5: the task gate must refuse to start a node whose grant is missing, so this fallback is never reached.
+
+### N16. The egress row gets `node` and `role`, not `project_id`
+
+Architecture section 5 says the egress row records `node_id` and `project_id`; the build plan and D283 say two fields from the tag, and the tag has `node_id` and `node_role` only. The row has
+`node` and `role`. The project is one join away (`agent_nodes.project_id`). Adding `project_id` to the tag would change the tag contract again for little.
+
+### N17. `usage_ledger.node_id` is the graph node, so the agent node goes in `detail`
+
+`UsageIn.node_id` and `RouteContext.node_id` already mean the graph node (a function, a step, the root). The runtime node's id is therefore written as `detail.agent_node` and
+`detail.agent_role`, only for a node's calls (the build plan says "node id into `detail`"). The orchestrator context key for the planner is `agent_node_id` / `agent_role` for the same reason.
+
+### N18. The planner's stop token is cooperative
+
+`call_json` had no `CancelToken`. One is now an optional argument all the way to the router (`JsonRequest.cancel`), honoured before every attempt, fallback and back-off, like a chat
+turn's. It does not kill a connector's running process: for a chat the token is also bound to the spawned process, and doing that for a one-shot JSON call means a `cancel` argument through
+`call_json_result` of the base connector, Claude, Codex and the stub. Nothing uses the token yet (the planner gets an identity and a token in MAN-5), so this was not widened. Open for the
+architect: is a planner Stop that waits for the current call (at most the call's timeout, 120 s) acceptable, or should MAN-5 pay for the connector change?
+
+### N19. Pinned tests that changed
+
+`test_engine_port_contract.py` (the exact field list of `CallTag`), `test_engine_spec.py` (the run-spec field list now has `node`) and `test_orchestrator_port.py` (the signature of
+`AsyncConnector.call_json` now ends in `cancel`). Each is a list of names the package was meant to extend.
+
+### N20. `SUTRA_NODE_ID` is documented in ENVIRONMENT.md
+
+`scripts/check_docs.py` fails on a `SUTRA_*` name in the source with no row. It is a name Sutra sets for a node's run; the server's own value of it is never passed on.
