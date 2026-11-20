@@ -71,7 +71,7 @@ test("what Sutra decided for the owner is exactly the rows the rule answered, wi
   ];
   const list = ProjectStore.decidedList(rows);
   assert.deepEqual(list.map(r => [r.seq, r.decision]), [[1, "yes"], [3, "no"]]);
-  assert.equal(list[0].why, "tiers_0_3: reads the team folder");
+  assert.equal(list[0].why, "reads the team folder");                                                // the rule's own name is not shown
   assert.deepEqual(ProjectStore.decidedList(null), []);
 });
 

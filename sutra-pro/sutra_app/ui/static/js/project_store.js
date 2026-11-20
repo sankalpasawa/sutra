@@ -23,7 +23,7 @@
   // The rows Sutra answered for the owner (Decide for me): which question, the answer and the rule's own words. Oldest first, as the audit is.
   function decidedList(rows) {
     return arr(rows).filter(r => isObj(r) && r.action === "gate.decided" && typeof r.reason === "string" && r.reason.startsWith(DECIDED_BY))
-      .map(r => ({seq: r.seq, at: r.at, node_id: r.node_id || "", decision: r.decision === "deny" ? "no" : "yes", why: r.reason.slice(DECIDED_BY.length).replace(/^[:\s]+/, "")}));
+      .map(r => ({seq: r.seq, at: r.at, node_id: r.node_id || "", decision: r.decision === "deny" ? "no" : "yes", why: r.reason.slice(DECIDED_BY.length).replace(/^[:\s]+/, "").replace(/^[a-z0-9_]+:\s*/, "")}));        // the rule's own name is not for the owner: only what it said
   }
 
   // The depth of each node: 0 when nothing comes before it, else one more than its deepest earlier node. Edges of both kinds count (a delay is still "after"). A cycle cannot be drawn:

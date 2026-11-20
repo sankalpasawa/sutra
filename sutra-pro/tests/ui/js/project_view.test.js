@@ -97,10 +97,11 @@ test("the reason a project stopped is shown only when it did not finish", () => 
   assert.equal(View.whyHtml(snap()), "");
 });
 
-test("the audit reads as plain words, newest first, and an action it does not know shows as itself", () => {
-  const html = View.auditHtml([{seq: 1, at: "2026-11-20T10:00:00Z", action: "project.created", reason: "3 steps"}, {seq: 2, action: "grant.issued", reason: "reads and writes the team folder"}, {seq: 3, action: "odd.thing", reason: ""}]);
-  assert.ok(html.indexOf("odd.thing") < html.indexOf("A step was given its permissions") && html.indexOf("A step was given its permissions") < html.indexOf("Project started"));
+test("the audit reads as plain words, newest first, and an action it does not know says only that something happened", () => {
+  const html = View.auditHtml([{seq: 1, at: "2026-11-20T10:00:00Z", action: "project.created", reason: "3 steps"}, {seq: 2, action: "grant.issued", reason: "tiers 0,1"}, {seq: 3, action: "odd.thing", reason: ""}]);
+  assert.ok(html.indexOf("Something happened") < html.indexOf("A step was given what it may do") && html.indexOf("A step was given what it may do") < html.indexOf("Project started"));
   assert.match(html, /3 steps/);
+  assert.equal(html.includes("odd.thing") || html.includes("tiers 0,1"), false);
   assert.match(View.auditHtml([]), /Nothing yet\./);
 });
 
@@ -133,4 +134,35 @@ test("the page shows Loading, or the error, until there is a snapshot", () => {
   assert.match(View.page({snapshot: null, error: ""}, null), /Loading/);
   assert.match(View.page({snapshot: null, error: "That project is not here any more."}, null), /class="cerr">That project is not here any more\./);
   assert.match(View.page({snapshot: snap(), error: "Sutra could not be reached."}, null), /role="alert">Sutra could not be reached\./);
+});
+
+test("every audit action the server writes has words, so the page never prints a machine name", () => {
+  const fs = require("node:fs");
+  const dir = path.resolve(__dirname, "../../../sutra_app/orchestrator");
+  const found = new Set(["node.done", "node.failed", "node.cancelled", "node.retry", "node.restarted", "trigger.project_wall", "trigger.project_usd", "project.stopped", "gate.refused", "approval.denied"]);
+  for (const name of fs.readdirSync(dir).filter(f => f.endsWith(".py"))) {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    for (const m of text.matchAll(/action="([a-z_]+\.[a-z_]+)"/g)) found.add(m[1]);
+  }
+  const missing = [...found].filter(a => !Object.prototype.hasOwnProperty.call(View.ACTION_WORDS, a));
+  assert.deepEqual(missing, []);
+  const html = View.auditHtml([...found].map((action, i) => ({seq: i + 1, at: "2026-11-20T10:00:00Z", action, reason: "x"})).concat([{seq: 999, action: "never.heard.of", reason: ""}]));
+  const text = html.replace(/<[^>]*>/g, " ");
+  assert.equal(/\b[a-z_]+\.[a-z_]+\b/.test(text), false, text);                                         // no dotted machine name on the page
+  assert.match(text, /Something happened/);
+});
+
+test("reasons that are not plain words are put into words or left out", () => {
+  const r = (action, reason) => View.reasonWords({action, reason});
+  assert.equal(r("node.leased", "lease 90 s"), "");
+  assert.equal(r("node.heartbeat_lost", "silent for 120 s (lease 90 s)"), "");
+  assert.equal(r("grant.issued", "tiers 0,1,2,3; folder edit; scope 1 path(s); tools none; commands git_reads; run_tools engine; calls 60; wall 1800s"), "");
+  assert.equal(r("gate.decided", "decided_by rule:decide_for_me: tier_4_github: reads GitHub for this project only"), "Sutra answered for you: reads GitHub for this project only");
+  assert.equal(r("gate.decided", "decided_by owner: allow_once"), "you answered");
+  assert.equal(r("handoff.accepted", "3 file(s), message 4"), "3 files");
+  assert.equal(r("handoff.accepted", "1 file(s), message 2"), "1 file");
+  assert.equal(r("project.ended", "done_with_open_items"), "Done, but some steps did not finish");
+  assert.equal(r("verdict.received", "changes"), "asks for changes");
+  assert.equal(r("tool.used", "read a.txt, 2 times"), "read a.txt, 2 times");
+  assert.equal(r("scope.unchecked", "git could not say which files this step changed"), "git could not say which files this step changed");
 });

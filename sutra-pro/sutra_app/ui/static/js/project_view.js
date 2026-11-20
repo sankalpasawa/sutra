@@ -31,15 +31,32 @@
   const POLICY_WORDS = freeze({stop_branch: "A step that fails stops only the steps after it", stop_all: "A step that fails stops the whole project"});
   const ACTION_WORDS = freeze({
     "project.created": "Project started", "project.stopped": "Project stopped", "project.paused": "Project paused", "project.resumed": "Project continued", "project.ended": "Project finished",
-    "project.decide_for_me": "Decide for me turned on", "plan.accepted": "Plan accepted", "plan.refused": "Plan refused", "plan.defaults": "Plan used its usual settings",
-    "grant.issued": "A step was given its permissions", "grant.denied": "A step was refused a permission", "gate.asked": "Asked you", "gate.decided": "Answered", "gate.refused": "A question ran out",
-    "approval.denied": "You said no", "system.asked": "Asked about your computer", "system.cleared": "Your computer allowed it", "system.skipped": "Skipped a permission",
-    "system.late_denied": "Your computer did not allow it", "system.still_needed": "Your computer still does not allow it", "system.elevated": "Run as administrator",
-    "node.spawned": "A step started", "node.leased": "A step started", "node.restarted": "A step started again", "node.expired": "A step went quiet and was stopped", "node.error": "A step had an error",
-    "node.cancelled": "A step was cancelled", "node.rework": "A step was sent back", "node.heartbeat_lost": "A step went quiet", "node.lease_extended": "A step was given more time",
-    "handoff.accepted": "A step handed in its work", "handoff.refused": "A step's work was not accepted", "scope.violation": "A step wrote outside its files", "scope.quarantined": "A step's work was set aside",
-    "review.started": "The reviewer started", "review.loop_cap": "The reviewer stopped sending work back", "verdict.received": "The reviewer gave its opinion", "verdict.refused": "The reviewer's opinion was not accepted",
-    "trigger.cap_reached": "A limit was reached", "trigger.lease_lost": "A step stopped answering", "trigger.egress_scrub": "Private words were taken out before sending"});
+    "project.decide_for_me": "Decide for me turned on", "project.slept": "Your computer was asleep or closed", "plan.accepted": "Plan accepted", "plan.refused": "Plan refused",
+    "plan.defaults": "Plan used its usual settings", "grant.issued": "A step was given what it may do", "grant.denied": "A step was refused something", "gate.asked": "Asked you",
+    "gate.decided": "A question was answered", "gate.refused": "A question was not answered in time", "approval.denied": "You said no", "system.asked": "Asked about your computer",
+    "system.cleared": "Your computer allowed it", "system.skipped": "Skipped something your computer must allow", "system.late_denied": "Your computer did not allow it",
+    "system.still_needed": "Your computer still does not allow it", "system.elevated": "Sutra was opened as administrator",
+    "node.spawned": "A step started", "node.leased": "A step is about to start", "node.restarted": "A step started again", "node.retry": "A step was tried again", "node.expired": "A step went quiet and was stopped",
+    "node.error": "A step had a problem", "node.cancelled": "A step was cancelled", "node.rework": "A step was sent back", "node.heartbeat_lost": "A step went quiet",
+    "node.lease_extended": "A step was given more time", "node.done": "A step finished", "node.failed": "A step did not finish",
+    "handoff.accepted": "A step handed in its work", "handoff.refused": "A step's work was not accepted",
+    "scope.violation": "A step changed files that were not its own", "scope.quarantined": "A step's work was set aside", "scope.unchecked": "Sutra could not check which files this step changed",
+    "review.started": "The reviewer started", "review.loop_cap": "The reviewer was not asked again", "verdict.received": "The reviewer gave its opinion", "verdict.refused": "The reviewer's opinion could not be used",
+    "tool.used": "A step used a tool", "trigger.cap_reached": "A step reached a limit", "trigger.lease_lost": "A step stopped answering",
+    "trigger.egress_scrub": "Private words were taken out of a step's messages again and again", "trigger.project_wall": "The project ran too long", "trigger.project_usd": "The project spent more than you set"});
+  // Reasons that are not plain words are not shown, or are put into words here. Everything else the server wrote in plain words is shown as it is.
+  const NO_REASON = freeze(["grant.issued", "node.spawned", "node.leased", "node.heartbeat_lost", "node.lease_extended", "plan.accepted", "node.done"]);
+  const OPINION_WORDS = freeze({approve: "approves of the work", changes: "asks for changes", reject: "does not approve of the work"});
+  function reasonWords(row) {
+    const action = clean(row.action);
+    const reason = clean(row.reason);
+    if (!reason || NO_REASON.indexOf(action) >= 0) return "";
+    if (action === "project.ended") return word(STATUS_WORDS, reason, "");
+    if (action === "verdict.received") return word(OPINION_WORDS, reason, "");
+    if (action === "gate.decided") return reason.startsWith("decided_by owner") ? "you answered" : reason.replace(/^decided_by rule:decide_for_me:?\s*/, "Sutra answered for you: ").replace(/^(Sutra answered for you: )[a-z0-9_]+:\s*/, "$1");
+    if (action === "handoff.accepted") { const m = /^(\d+) file\(s\)/.exec(reason); return m ? (m[1] === "1" ? "1 file" : m[1] + " files") : ""; }
+    return reason;
+  }
 
   const word = (table, key, fallback) => (Object.prototype.hasOwnProperty.call(table, key) ? table[key] : fallback);
   const credits = n => (Number.isFinite(n) ? group(n) + (n === 1 ? " credit" : " credits") : "");
@@ -179,8 +196,8 @@
     const list = arr(rows).filter(isObj);
     if (list.length === 0) return '<h2>What happened</h2><p class="cempty">Nothing yet.</p>';
     return '<h2>What happened</h2><ol class="plist paudit">' + list.slice().reverse().map(r =>
-      '<li data-seq="' + esc(r.seq) + '"><span class="cnote">' + esc(clock(r.at)) + "</span> <b>" + esc(word(ACTION_WORDS, r.action, clean(r.action))) + "</b>" +
-      (clean(r.reason) ? " <span>" + esc(clean(r.reason)) + "</span>" : "") + "</li>").join("") + "</ol>";
+      '<li data-seq="' + esc(r.seq) + '"><span class="cnote">' + esc(clock(r.at)) + "</span> <b>" + esc(word(ACTION_WORDS, r.action, "Something happened")) + "</b>" +
+      (reasonWords(r) ? " <span>" + esc(reasonWords(r)) + "</span>" : "") + "</li>").join("") + "</ol>";
   }
 
   function textOf(body) {
@@ -211,7 +228,7 @@
       decidedHtml(St.decidedList(S.audit)) + auditHtml(S.audit) + messagesHtml(S.messages, S.snapshot);
   }
 
-  const ProjectView = {STATUS_WORDS, STATE_WORDS, ANSWERS, ACTION_WORDS, POLICY_WORDS, esc, header, whyHtml, noteHtml, cardsHtml, graphHtml, stepsHtml, spendHtml, decidedHtml, auditHtml, messagesHtml, page, clock};
+  const ProjectView = {reasonWords, STATUS_WORDS, STATE_WORDS, ANSWERS, ACTION_WORDS, POLICY_WORDS, esc, header, whyHtml, noteHtml, cardsHtml, graphHtml, stepsHtml, spendHtml, decidedHtml, auditHtml, messagesHtml, page, clock};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ProjectView;
   else root.ProjectView = ProjectView;
 })(globalThis);
