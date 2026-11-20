@@ -2272,3 +2272,10 @@ Why: (a) the first version counted its own work as sleep and could refuse an ope
 - Why: the design and the code should say the same thing, and each point was a place where building showed a simpler or truer shape. Package: MAN-5 to MAN-7 (done), C0 before MAN-8.
 - Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
 - Diagram: label "Conductor in conductor.py; node states as built", key only.
+
+## D313 — Turning the flag off never lets a project's steps run as ordinary tasks
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Turning the flag off never lets a project's steps run as ordinary tasks. When the app starts with `SUTRA_NODES_V1` off and the database holds a step of a project that has not started (blocked or queued), that step stays on hold with a plain note ("On hold: this step is part of a project, and projects are switched off. Switch them on again, or stop this step") and the owner can stop it like any task. The hold is installed only when such a step exists, so an app that never used projects is exactly as before. A step that already runs is not touched. This amends D254 (what "off" means for a step that waits) and D302. Package: MAN-5 (built as a fix in the phase 2 round).
+- Why: an ordinary task has the reach of a whole team run, wider than a node's grant, so letting a waiting step start that way after the flag goes off would give it more than anyone granted; the owner turning the switch off means "stop", not "run it the old way".
+- Rejected: starting them as ordinary tasks (the old text of ENVIRONMENT.md); cancelling them at start (the owner may switch the flag on again and want them).
+- Diagram: label "flag off: waiting project steps stay on hold", key only.

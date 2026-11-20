@@ -33,7 +33,7 @@ from sutra_app.orchestrator.ids import IdFactory, iso_z
 from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "PostedMessage", "MESSAGE_KINDS", "MESSAGE_BODY_MAX", "ApprovalExpired", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "PostedMessage", "MESSAGE_KINDS", "MESSAGE_BODY_MAX", "ApprovalExpired", "NodeBlockError", "node_block_of", "HELD_WHILE_OFF", "held_while_off", "has_waiting_node_tasks", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
 # D296 (a closed laptop is a refusal), designed now and built in MAN-7 and MAN-8: the words a node is cancelled with, and the audit actions, so that every package uses the same ones.
@@ -83,6 +83,20 @@ def node_block_of(conn: sqlite3.Connection, task_id: str) -> NodeBlock | None:
         if isinstance(exc, NodeBlockError):
             raise
         raise NodeBlockError("the node has no usable grant") from None
+
+
+HELD_WHILE_OFF = "On hold: this step is part of a project, and projects are switched off. Switch them on again, or stop this step"
+
+
+def held_while_off(conn: sqlite3.Connection, now: int, row: Any) -> str:
+    """`TaskService.task_gate` for an app that starts with SUTRA_NODES_V1 off while the database still holds the node tasks of an earlier run with it on (D313): a task that is a node never starts
+    as an ordinary task (it would have the reach of a whole team run, wider than its grant); it waits with a plain note, and the owner can stop it. Any other task: "" (never held)."""
+    return HELD_WHILE_OFF if conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None else ""
+
+
+def has_waiting_node_tasks(conn: sqlite3.Connection) -> bool:
+    """True when some node's task has not started yet (blocked or queued): the one case where the flag-off app needs the gate above. False for an app that never used projects."""
+    return conn.execute("SELECT 1 FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE t.status IN ('blocked','queued') LIMIT 1").fetchone() is not None
 
 
 MESSAGE_KINDS = ("handoff", "verdict", "gate_request", "gate_decision", "control", "status")

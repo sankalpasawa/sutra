@@ -251,3 +251,9 @@ Why: the design and the code should say the same thing, and each point was a pla
 | | | | D310 | retry and failure rules |
 | | | | D311 | sleep check and receipt |
 | | | | D312 | the design as built |
+
+## Phase 2 rulings, second part (owner, after the phase 2 review)
+
+**D313. Turning the flag off never lets a project's steps run as ordinary tasks. When the app starts with `SUTRA_NODES_V1` off and the database holds a step of a project that has not started (blocked or queued), that step stays on hold with a plain note ("On hold: this step is part of a project, and projects are switched off. Switch them on again, or stop this step") and the owner can stop it like any task. The hold is installed only when such a step exists, so an app that never used projects is exactly as before. A step that already runs is not touched. This amends D254 (what "off" means for a step that waits) and D302.**
+Why: an ordinary task has the reach of a whole team run, wider than a node's grant, so letting a waiting step start that way after the flag goes off would give it more than anyone granted; the owner turning the switch off means "stop", not "run it the old way". Rejected: starting them as ordinary tasks (the old text of ENVIRONMENT.md); cancelling them at start (the owner may switch the flag on again and want them). Package: MAN-5 (built as a fix in the phase 2 round).
+

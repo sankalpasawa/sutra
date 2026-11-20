@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 312,
+  "decisions": 313,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 312,
+ "max_decision": 313,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -501,7 +501,8 @@
     "D309",
     "D310",
     "D311",
-    "D312"
+    "D312",
+    "D313"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5208,6 +5209,16 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"Conductor in conductor.py; node states as built\", key only."
+  },
+  {
+   "id": "D313",
+   "title": "Turning the flag off never lets a project's steps run as ordinary tasks",
+   "packages": [
+    "GAP-DEMO"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"flag off: waiting project steps stay on hold\", key only."
   }
  ],
  "packages": [

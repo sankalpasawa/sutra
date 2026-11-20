@@ -50,7 +50,7 @@ from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.killswitch import KillSwitch, NodeControl
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
-from sutra_app.orchestrator.nodes_store import NodeStore
+from sutra_app.orchestrator.nodes_store import NodeStore, has_waiting_node_tasks, held_while_off
 from sutra_app.orchestrator.projects import ProjectService, default_output_name, default_output_of
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.notes import prompt_notes
@@ -248,6 +248,8 @@ async def start_services(services: AppServices) -> AppServices:
         return services
     from sutra_app.ops.doctor import sync_seed_once         # the ops package is not imported by `import sutra_app` (D144)
     await run_blocking(services.db.migrate)
+    if not services.settings.nodes_v1 and await run_blocking(lambda: has_waiting_node_tasks(services.db.conn())):
+        services.tasks.task_gate = held_while_off           # the flag was turned off while a project's steps were waiting: they stay held, never run as ordinary tasks (D313)
     await run_blocking(sync_seed_once, services.settings.data_dir)          # an existing template library gains what a newer seed has, once per seed; never raises
     await run_blocking(services.chart.bootstrap)
     services.tasks.bind_loop(asyncio.get_running_loop())

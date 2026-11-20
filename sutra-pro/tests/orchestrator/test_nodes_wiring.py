@@ -81,3 +81,40 @@ def test_the_project_tick_runs_with_the_app_and_a_gate_left_open_by_a_closed_app
         row = again.state.services.db.conn().execute("SELECT status, stop_reason FROM projects WHERE id = 'prj_" + "1" * 12 + "'").fetchone()
         assert row["status"] == "stopped" and row["stop_reason"] == "Sutra was closed before you answered"
         assert again.state.services.db.conn().execute("SELECT status FROM approvals").fetchone()["status"] == "denied"
+
+
+# ---- the flag turned off while a project's steps wait (D313, Minor 7) -------------------------------------------------------------------
+
+def test_with_the_flag_turned_off_the_waiting_steps_of_a_project_stay_held_and_the_owner_can_stop_them(tmp_path, monkeypatch):
+    from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
+    from orchestrator.test_projects_adopt import make_app, rows, talk
+    from sutra_app.config import NODE_DEFAULT_CAPS
+    from sutra_app.orchestrator.nodes_store import HELD_WHILE_OFF, held_while_off
+    monkeypatch.setattr("sutra_app.orchestrator.projects.NODE_DEFAULT_CAPS", {**NODE_DEFAULT_CAPS, "confirm_credits": 300})        # five steps wait for the owner: nothing starts
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
+        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
+        waiting = [r["id"] for r in rows(services, "SELECT id FROM tasks ORDER BY created_at, rowid")]
+        assert len(waiting) == 5 and {r["status"] for r in rows(services, "SELECT status FROM tasks")} == {"queued"}
+    app2 = create_app(Settings.load({}, data_dir=tmp_path / "data", token=TOKEN, env_file=tmp_path / "none.env", engine="fake", watch_ms=20, max_runs=4, max_live=8), connector=ScriptedConnector(), launcher=FakeLauncher())
+    assert app2.state.services.node_control is None and app2.state.services.tasks.task_gate is None            # nothing is installed until the start has looked at the database
+    with TestClient(app2, base_url=BASE) as client:
+        services = app2.state.services
+        assert services.tasks.task_gate is held_while_off                                                         # only because steps of a project were waiting
+        ordinary = client.post("/api/tasks", json={"dept_id": "web", "text": "an ordinary task"}, headers=HEADERS)
+        assert ordinary.status_code in (200, 201), ordinary.text
+        time.sleep(0.5)
+        statuses = {r["id"]: r["status"] for r in rows(services, "SELECT id, status FROM tasks")}
+        assert all(statuses[t] == "queued" for t in waiting) and statuses[ordinary.json()["id"]] in ("starting", "running", "done")
+        detail = rows(services, "SELECT detail FROM graph_nodes WHERE task_id = ? AND step_ref = 'task'", waiting[0])[0]["detail"]
+        assert detail == HELD_WHILE_OFF
+        stopped = client.post(f"/api/tasks/{waiting[0]}/stop", headers=HEADERS)
+        assert stopped.status_code == 200 and stopped.json()["status"] == "cancelled"
+
+
+def test_an_app_that_never_made_a_project_installs_no_gate_even_with_the_flag_off(tmp_path):
+    app = app_with(tmp_path)
+    with TestClient(app, base_url=BASE):
+        assert app.state.services.tasks.task_gate is None
