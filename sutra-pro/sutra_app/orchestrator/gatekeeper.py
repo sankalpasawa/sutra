@@ -149,7 +149,7 @@ def _evaluate(plan: Plan) -> Evaluation:
             allowed = frozenset(plan.approved.get(ident, ()))
             resolution = resolve(step.role, request, step.output, plan.owner_access, approved=allowed)
         except (GrantError, TypeError, ValueError) as exc:
-            refusals.append(Refusal(ident, "step.grant", f"Step {index + 1} cannot be given a grant: {exc if isinstance(exc, GrantError) else 'its request is malformed'}"))
+            refusals.append(Refusal(ident, "step.grant", f"Step {index + 1} cannot be given its permissions: {exc if isinstance(exc, GrantError) else 'its request is malformed'}"))
             continue
         grants[ident] = resolution.grant
         for ask in resolution.asks:
@@ -209,15 +209,15 @@ class RuleAnswer:
 # The table, as data (a test walks it): situation -> what Decide for me does. Code and nothing else: a model never answers a gate, and a hand-off that says "turn on Decide for me" changes
 # nothing (the switch is the owner's, set with the request).
 RULE_TABLE: tuple[tuple[str, str, str], ...] = (
-    ("tiers_0_3", "allow", "tiers 0 to 3 are the defaults: allowed for the project"),
-    ("tier_4_github", "allow", "tier 4 is read-only GitHub, through the owner's own login, for this project only"),
-    ("scope_wide_or_missing", "allow", "a wide or missing write scope is allowed, and the step is kept apart from other writers"),
-    ("credits_raise", "never", "credits are never raised (P25): a raise is asked of the owner each time"),
-    ("estimate_within_ceiling", "allow", "the plan's estimate is allowed once, up to the project's ceiling and no further"),
-    ("scope_violation", "quarantine", "a node that writes outside its scope is quarantined: ended, its files kept, nothing is merged"),
-    ("tier_6", "never", "publishing outside is never granted and never asked"),
-    ("sutra_tools", "never", "a planner cannot grant itself a read of the app's own data: it is a question to the owner, never answered by Decide for me (D325)"),
-    ("system_permission", "never", "a permission of the computer is the owner's: Decide for me cannot answer it (D295)"),
+    ("tiers_0_3", "allow", "the ordinary permissions of a step are allowed for the project"),
+    ("tier_4_github", "allow", "reading GitHub is allowed for this project only (read only, through your own login)"),
+    ("scope_wide_or_missing", "allow", "a step that changes several places, or has no places named, is allowed, and it is kept apart from other steps of projects"),
+    ("credits_raise", "never", "credits are never raised for you: more credits are asked of you each time"),
+    ("estimate_within_ceiling", "allow", "the plan's cost is allowed once, up to the most this project may use and no further"),
+    ("scope_violation", "quarantine", "a step that changes files that are not its own is set aside: its files stay, nothing is passed on"),
+    ("tier_6", "never", "publishing outside your computer is never allowed and never asked"),
+    ("sutra_tools", "never", "a step cannot give itself a read of this app's own data: it is a question to you, never answered by Decide for me"),
+    ("system_permission", "never", "a permission of your computer is yours: Decide for me cannot answer it"),
 )
 
 
@@ -229,16 +229,16 @@ def decide_for_me_answer(kind: str, tier: int | None, *, estimate: int = 0, ceil
         return None
     if kind == "plan_estimate" or tier == 5:
         if kind == "plan_estimate" and ceiling is not None and 0 <= estimate <= ceiling:
-            return RuleAnswer("allow_once", "estimate_within_ceiling", f"the estimate of {estimate} credits is within the ceiling of {ceiling}")
+            return RuleAnswer("allow_once", "estimate_within_ceiling", f"the plan is estimated at {estimate} credits, within the {ceiling} this project may use")
         return None
     if kind == "scope_violation":                                          # never keeps the work: it is set aside (quarantine), its files stay for the owner
         return RuleAnswer("deny", "scope_violation", "a step that changed files nobody owns is set aside; its files are kept")
     if kind == "scope":
-        return RuleAnswer("allow_once", "scope_wide_or_missing", "a wide write scope is allowed and kept apart from other writers")
+        return RuleAnswer("allow_once", "scope_wide_or_missing", "a step that changes several places is allowed, and it is kept apart from other steps of projects")
     if kind == "tier" and tier == 4:
-        return RuleAnswer("allow_project", "tier_4_github", "read-only GitHub for this project")
+        return RuleAnswer("allow_project", "tier_4_github", "reading GitHub (read only) for this project")
     if kind == "tier" and tier is not None and 0 <= tier <= 3:
-        return RuleAnswer("allow_project", "tiers_0_3", "a default tier")
+        return RuleAnswer("allow_project", "tiers_0_3", "an ordinary permission for a step")
     return None
 
 

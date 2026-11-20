@@ -235,7 +235,7 @@ class ProjectService:
         if not evaluation.ok:
             self.store.audit(tx, actor="gatekeeper", action="plan.refused", project_id=project_id, decision="deny", reason=why)
             if any(refusal.code == "system.elevated" for refusal in evaluation.refusals):
-                self.store.audit(tx, actor="gatekeeper", action="system.elevated", project_id=project_id, decision="deny", reason="a process run as administrator makes no node")
+                self.store.audit(tx, actor="gatekeeper", action="system.elevated", project_id=project_id, decision="deny", reason="a process run as administrator makes no step")
             tx.emit("project.created", {"project_id": project_id, "status": "failed"})
             return Reservation(project_id, False, why or "the plan was refused")
         node_ids = {step.ref: self.ids.node_id() for step in steps}
@@ -578,7 +578,7 @@ class ProjectService:
         "review": "The reviewer says the work needs changes: {summary} Send the steps it names back for another try? If you say no, the project ends as it is.{independent}",
         "scope_violation": "A step changed files that no step was given ({count}, for example {paths}). Keep its work? If you say no, its work is set aside, its files are kept for you to look at, and the steps that need it are cancelled.",
         "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
-        "scope": "A step changes files in several places of your folder. It is kept apart from other steps that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "scope": "A step changes files in several places of your folder. It is kept apart from other steps of projects that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
         "system": "Your computer must allow something first. Follow the steps below, then press Check again. If you skip it, the steps that need it are cancelled.",
     }

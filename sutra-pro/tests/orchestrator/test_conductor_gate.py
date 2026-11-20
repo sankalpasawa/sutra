@@ -220,7 +220,7 @@ def test_a_node_whose_run_ended_well_but_left_no_hand_off_is_failed_with_the_rea
     rig.go(tasks["a1"])
     rig.finish(tasks["a1"], handoff=False)
     node = rig.node_of(tasks["a1"])
-    assert node["state"] == "failed" and node["failure_reason"] == "its results were not accepted: the node left no hand-off" and node["torn_down_at"] is not None
+    assert node["state"] == "failed" and node["failure_reason"] == "its results were not accepted: the step left no report" and node["torn_down_at"] is not None
     assert rig.node_of(tasks["a2"])["state"] == "cancelled" and rig.project(reservation.project_id)["status"] == "failed"
     refused = rig.audit("handoff.refused")
     assert len(refused) == 1 and refused[0]["decision"] == "deny" and refused[0]["actor"] == "conductor" and rig.sql("SELECT count(*) FROM node_messages").fetchone()[0] == 0

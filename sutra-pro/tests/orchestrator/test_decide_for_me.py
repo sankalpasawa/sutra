@@ -30,7 +30,7 @@ def test_every_row_of_the_rule_table_answers_as_it_says():
     for tier in (1, 2, 3):
         assert decide_for_me_answer("tier", tier).decision == "allow_project"
     assert decide_for_me_answer("tier", 4).decision == "allow_project"                                       # read-only GitHub, for this project only
-    assert decide_for_me_answer("scope", 2).decision == "allow_once" and "apart from other writers" in decide_for_me_answer("scope", 2).why
+    assert decide_for_me_answer("scope", 2).decision == "allow_once" and "apart from other steps of projects" in decide_for_me_answer("scope", 2).why
     assert decide_for_me_answer("plan_estimate", 5, estimate=800, ceiling=1000).decision == "allow_once"
     assert decide_for_me_answer("plan_estimate", 5, estimate=1000, ceiling=1000).decision == "allow_once"
     assert decide_for_me_answer("plan_estimate", 5, estimate=1001, ceiling=1000) is None                    # over the ceiling: the owner decides

@@ -37,7 +37,7 @@ LIVE_NODE_STATES = ("leased", "running", "handing_off")
 TASK_TO_NODE = {"blocked": "planned", "queued": "queued", "starting": "leased", "running": "running", "waiting_user": "running", "done": "done", "done_with_open_items": "done",
                 "crashed": "failed", "stopped": "cancelled", "cancelled": "cancelled"}
 HELD_STATES = ("awaiting_approval", "awaiting_system")
-LOST_LEASE = "lost its lease: no sign of life"
+LOST_LEASE = "went quiet: no sign of life"
 APP_CLOSED = "the app was closed"
 APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
@@ -55,6 +55,11 @@ def _covers_path(scope: tuple[str, ...], path: str) -> bool:
 
 
 FOLDER_TTL_S = 2.0
+
+
+def plain_refusal(text: Any) -> str:
+    """A refused hand-off as the owner reads it (R10, m13): the machine words are the app's, not the owner's. "The node left no hand-off" is "the step left no report"."""
+    return str(text).replace("hand-offs", "reports").replace("hand-off", "report").replace("node", "step")
 
 
 def caps_of(project: Any) -> dict[str, Any]:
@@ -446,13 +451,13 @@ class Conductor:
             posted = self.store.post(tx, project_id=node["project_id"], kind="handoff", src_ref=f"handoff:{node['id']}:{node['attempt']}", body=accepted.document,
                                      from_node=node["id"], to_node="project", file=ACCEPTED_FILE)
         except HandoffRefused as refused:
-            self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=str(refused),
+            self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=plain_refusal(refused),
                              ref=task_id)
-            self._fail(tx, node, f"its results were not accepted: {refused}")
+            self._fail(tx, node, f"its results were not accepted: {plain_refusal(refused)}")
             return
         except OSError:
             self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
-                             reason="the hand-off could not be stored", ref=task_id)
+                             reason="the report could not be stored", ref=task_id)
             self._fail(tx, node, "its results were not accepted: they could not be stored")
             return
         self.store.audit(tx, actor="conductor", action="handoff.accepted", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="allow",
@@ -634,7 +639,7 @@ class Conductor:
         self._teardown(tx, node, "failed", why)
         if why.startswith(LOST_LEASE) and node["attempt"] >= 2:                 # D303 e: a node that loses its lease twice stops the project and says so
             self.store.audit(tx, actor="conductor", action="trigger.lease_lost", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
-                             reason="lost its lease twice", ref=node["task_id"] or "")
+                             reason="went quiet twice", ref=node["task_id"] or "")
             self._pending.append((node["project_id"], "a step lost contact with Sutra twice"))
         elif project["failure_policy"] == "stop_all":
             self._pending.append((node["project_id"], "a step failed and this project stops at the first failure"))
@@ -821,7 +826,7 @@ class Conductor:
                 if tx.conn.execute("SELECT 1 FROM node_audit WHERE node_id = ? AND action = 'trigger.egress_scrub'", (row["id"],)).fetchone() is not None:
                     continue                                                         # the row and the note are written once
                 self.store.audit(tx, actor="conductor", action="trigger.egress_scrub", project_id=project_id, node_id=row["id"], role=row["role"], decision="deny",
-                                 reason=f"its prompts were scrubbed {counts[row['id']]} times", ref=row["task_id"])
+                                 reason=f"private words were taken out of its messages {counts[row['id']]} times", ref=row["task_id"])
                 self._note(tx, project_id, "A step was stopped because its prompts held secrets again and again.", f"project:{project_id}#scrub:{row['id']}")
 
     # ---- the reviewer (MAN-11) ------------------------------------------------------------------------------------------------------

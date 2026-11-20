@@ -64,8 +64,8 @@ def test_the_estimate_and_scope_questions_say_what_a_no_does_and_none_of_the_wor
     assert set(questions) == {"scope", "plan_estimate"} and questions["scope"]["options"] == ["allow_once", "deny"]
     assert "about 600 credits, which is over 400" in questions["plan_estimate"]["question"]
     assert "only that step is cancelled" in questions["scope"]["question"] and "whole project stops" in questions["plan_estimate"]["question"]       # what a no does (D315)
-    assert "kept apart from other steps" in questions["scope"]["question"]                                     # true from MAN-10: the leases are enforced (D323)
-    assert "apart from other writers" in gatekeeper.decide_for_me_answer("scope", 2).why
+    assert "kept apart from other steps of projects" in questions["scope"]["question"]                                     # true from MAN-10: the leases are enforced (D323)
+    assert "apart from other steps of projects" in gatekeeper.decide_for_me_answer("scope", 2).why
 
 
 def test_a_project_without_a_chat_or_with_the_flag_off_writes_no_such_row(db, settings, clock, events):
