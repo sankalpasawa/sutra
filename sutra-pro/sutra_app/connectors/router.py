@@ -1066,6 +1066,8 @@ class Router:
                 left = state.money_left()                         # DV-1: what this turn may still spend (None: no limit, nothing is passed, as it always was)
                 if left is not None:
                     token_kw = {**token_kw, "max_usd": left}
+                if mode_now == "ask" and not folder:              # an Ask with no folder at all is still read only (Codex's policy sandbox may allow writing in its private work dir)
+                    token_kw = {**token_kw, "read_only": True}
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
                                               timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder, **token_kw):
                     if event.kind == "turn_done":

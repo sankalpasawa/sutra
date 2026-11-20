@@ -238,3 +238,23 @@ def test_codex_cannot_cap_a_process_and_says_nothing_of_a_budget(rig, fake):
     RouterChatPort(router).send(SID, ChatTurnIn(text="asked", allowance=Allowance(max_calls=2, max_usd=0.25)))
     argv = fake.model_calls("codex")[0]["argv"]
     assert not any("budget" in str(a) for a in argv)
+
+
+def test_codex_an_ask_turn_with_no_folder_is_read_only_whatever_the_policy_sandbox_says(fake, tmp_path):
+    """Review m3: with no working folder the cap on the folder never applied, and the policy's own sandbox (it may be workspace-write) decided."""
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    cfg = ConnectorConfig(**fake.config_kwargs(tmp_path))
+    router = Router({"codex": CodexConnector(cfg, sandbox="workspace-write")}, policy("workspace-write"), transcripts=History(), sleep=lambda s: None)
+    router.folders = WorkFolder(cfg.data_dir, cfg.resolved_work_root())                # none chosen
+    router.chat_pin(SID, "codex")
+    try:
+        turn(router)
+        turn(router, ASK)
+        turn(router, ASK)
+        turn(router)
+    finally:
+        router.close()
+    plain, ask1, ask2, plain2 = (c["argv"] for c in fake.model_calls("codex"))
+    assert value(plain, "-s") == "workspace-write"                                         # the chat as it was
+    assert value(ask1, "-s") == "read-only" and 'sandbox_mode="read-only"' in ask2          # an Ask, first turn of its thread and resumed
+    assert value(plain2, "-s") == "workspace-write"

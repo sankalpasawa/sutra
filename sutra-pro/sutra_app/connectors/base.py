@@ -98,6 +98,7 @@ class TurnPlan:
     run_tools: Any = None                        # J2's builder tools (`engine.port.ToolGrant`, D245): the child runs in its cwd with its tools only
     oneshot: bool = True
     max_budget_usd: Optional[float] = None       # only with Allowance.max_usd
+    read_only: bool = False                      # a turn that must not write even with no folder (the Ask mode, DV-1): Codex then runs in its read-only sandbox whatever the policy says
     cum_usd: float = 0.0                         # the session's counters BEFORE this turn (delta rules, CD5)
     cum_usage: Usage = field(default_factory=Usage)
     inline_system: bool = False                  # Claude: the system text goes on argv even when it is long
@@ -676,15 +677,17 @@ class ModelConnector(ABC):
         return box["turn"]
 
     def stream(self, s: SessionState, m: Message, *, timeout_s: Optional[float] = None, partials: bool = True,
-               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None) -> Iterator[ConnectorEvent]:
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None,
+               read_only: bool = False) -> Iterator[ConnectorEvent]:
         """The events of one turn; the last one is `turn_done` with `data["result"]` (the TurnResult as JSON). `folder` is the owner's
         working folder for this turn (GAP3-workdir): the child runs in it with read-only file tools; the session's own files stay in its work dir.
         `max_usd` (DV-1) is what this one process may still spend: a connector whose CLI has a budget flag passes it on (Claude: `--max-budget-usd`, which ends the turn
-        with `envelope_exceeded`); the others cannot cap a process and ignore it, and the router's gate before each spawn is all they have."""
-        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {}, folder, cancel, max_usd)
+        with `envelope_exceeded`); the others cannot cap a process and ignore it, and the router's gate before each spawn is all they have.
+        `read_only` (DV-1) is for a turn with no folder that still must not write: Codex runs in its read-only sandbox."""
+        return self._turn(s, m, timeout_s, partials, hooks or self.hooks, {}, folder, cancel, max_usd, read_only)
 
     def _turn(self, s: SessionState, m: Message, timeout_s: Optional[float], partials: bool, hooks: Hooks,
-              box: dict, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None) -> Iterator[ConnectorEvent]:
+              box: dict, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None, read_only: bool = False) -> Iterator[ConnectorEvent]:
         if m.role != "user":
             raise InvalidRequestError("a chat turn is sent as a user message", provider=self.name)
         if s.provider != self.name:
@@ -712,7 +715,7 @@ class ModelConnector(ABC):
                 tools=tool_names(() if s.tool_profile == "none" else (s.tool_profile,)), session=s, resume=resume,
                 provider_session_id=s.provider_session_id if resume else self.new_provider_session_id(),
                 workdir=str(directory), folder=folder, oneshot=False, cum_usd=s.cum_usd, cum_usage=s.cum_usage, cancel=cancel,
-                max_budget_usd=max_usd)
+                max_budget_usd=max_usd, read_only=read_only)
             holder: dict[str, Any] = {}
             for event in self._events(plan, hooks, holder):
                 yield event
