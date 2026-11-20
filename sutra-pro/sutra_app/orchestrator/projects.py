@@ -295,6 +295,8 @@ class ProjectService:
         if node_id is None:
             raise AppError("busy", "That step has no place in its project, so its task was not made")                 # fail closed (G8, B2): the task is never made without its node
         linked = tx.conn.execute("UPDATE agent_nodes SET task_id = ? WHERE id = ? AND task_id IS NULL", (task_id, node_id)).rowcount
+        if linked and self.settings.lanes_on:                                    # SUTRA_NODES_LANES: this step's task is in its own lane, so two steps of one team may run together (MAN-10)
+            tx.conn.execute("UPDATE tasks SET lane = ? WHERE id = ?", ("n" + node_id[3:], task_id))
         if not linked:
             raise AppError("busy", "That step of the project already has its task, so no second one was made")
         self.sync_task(tx, task_id)

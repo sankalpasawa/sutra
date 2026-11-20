@@ -227,7 +227,7 @@ class TaskStore:
 
     def live_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
         found = conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()
+            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()      # lane '': the team's own task, not a step in a lane (MAN-10)
         return _row_of(found) if found is not None else None
 
     def latest_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
@@ -634,12 +634,14 @@ class TaskService:
         with self.db.tx() as tx:
             self.store.settle_blocked(tx, lambda row: self._moved(tx, row))
             working, live = self.store.counts_in(tx.conn)
-            busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))})", LIVE_STATUSES)}
+            busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))}) AND lane = ''", LIVE_STATUSES)}
+            laned = tx.conn.execute(f"SELECT dept_id, lane, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))}) AND lane <> ''", LIVE_STATUSES).fetchall()    # steps of a project in a lane (MAN-10)
+            lanes_of = {r[0]: r[1] for r in tx.conn.execute("SELECT id, lane FROM tasks WHERE status = 'queued' AND lane <> ''").fetchall()} if laned or self.settings.lanes_on else {}
             queued = [_row_of(r) for r in tx.conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE status = 'queued' ORDER BY created_at, rowid")]
             for row in queued:
                 if only is not None and row.id != only:
                     continue
-                waiting = why_waiting(busy_status=busy.get(row.dept_id), working=working, live=live,              # names the owner when it is the owner
+                waiting = why_waiting(busy_status=self._busy_of(busy, laned, lanes_of, row), working=working, live=live,              # names the owner when it is the owner
                                       max_runs=self.settings.max_runs, max_live=self.settings.max_live)
                 if not waiting and self.start_gate is not None:                                                  # the spending limit, the plan window
                     waiting = self.start_gate(tx.conn, tx.now(), row.dept_id)
@@ -651,6 +653,16 @@ class TaskService:
                 spec, run_dir = self._begin(tx, row)
                 return row.id, spec, run_dir
             return None
+
+    @staticmethod
+    def _busy_of(busy: dict[str, str], laned: list[Any], lanes_of: dict[str, str], row: TaskRow) -> str | None:
+        """The status of the live task that keeps `row` waiting. An ordinary task (lane '') waits for ANY live task of its team, a step in a lane too (P11 holds for ordinary tasks); a step in a lane
+        waits only for a live task of the same lane or an ordinary one, so two steps of one team may run together (MAN-10). With no lanes in use this is `busy.get(dept)` as it always was."""
+        lane = lanes_of.get(row.id, "")
+        found = [r["status"] for r in laned if r["dept_id"] == row.dept_id and (lane == "" or r["lane"] == lane)]
+        own = busy.get(row.dept_id)
+        statuses = ([own] if own is not None else []) + found
+        return "waiting_user" if "waiting_user" in statuses else (statuses[0] if statuses else None)
 
     def _begin(self, tx: Tx, row: TaskRow) -> tuple[RunSpec, Path]:
         """Allocate the run id, make the folder and its three files, and mark the task `starting`."""
@@ -991,7 +1003,7 @@ class TaskService:
         nothing, when a task is starting or running. May block for the stop ladder (12 s)."""
         conn = self.db.conn()
         rows = [_row_of(r) for r in conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued','starting','running','waiting_user')", (dept_id,))]
+            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ('blocked','queued','starting','running','waiting_user')", (dept_id,))]
         if any(r.status in ("starting", "running") for r in rows):
             return False
         for row in rows:
