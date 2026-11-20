@@ -255,8 +255,7 @@ def _send_setting(tasks: Any, projects: Any) -> Callable[[str, dict], Any]:
         if setting.get("decide_for_me") is True:
             try:
                 if projects.owner_turned_on(dept_id):
-                    import asyncio
-                    asyncio.get_running_loop().create_task(tasks.start_ready())
+                    tasks.kick()                              # thread-safe: the route runs this in a worker thread, which has no loop of its own (PA-1)
             except Exception:                               # noqa: BLE001  (a setting must still be kept when the projects cannot be reached)
                 log.exception("could not apply Decide for me to the open questions")
         return sent

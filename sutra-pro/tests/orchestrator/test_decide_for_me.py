@@ -138,3 +138,34 @@ def test_turning_it_on_does_not_answer_what_the_table_may_not_and_turning_it_off
 def test_a_project_of_another_team_is_not_touched(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)})
     assert rig.projects.owner_turned_on("ops") == 0 and rig.project(reservation.project_id)["status"] == "awaiting_approval"
+
+
+def test_turning_decide_for_me_on_from_a_worker_thread_releases_the_steps_at_once(caplog):                         # PA-1: the route runs it in a thread with no event loop
+    import threading
+
+    from sutra_app.orchestrator import wiring
+
+    class Tasks:
+        kicked = 0
+        sent = []
+
+        def send_setting(self, dept_id, setting):
+            self.sent.append((dept_id, setting))
+            return "sent"
+
+        def kick(self):
+            Tasks.kicked += 1
+
+    class Projects:
+        def owner_turned_on(self, dept_id):
+            return 1
+    send = wiring._send_setting(Tasks(), Projects())
+    answers = []
+    caplog.clear()
+    thread = threading.Thread(target=lambda: answers.append(send("web", {"decide_for_me": True})))
+    thread.start()
+    thread.join()
+    assert answers == ["sent"] and Tasks.kicked == 1 and Tasks.sent == [("web", {"decide_for_me": True})]
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]                                                  # no "no running event loop" swallowed
+    send("web", {"decide_for_me": False})
+    assert Tasks.kicked == 1                                                                                          # turning it off releases nothing
