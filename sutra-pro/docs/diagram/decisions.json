@@ -1703,5 +1703,25 @@
   "id": "D341",
   "label": "beta conditions; flag 0 in every release",
   "anchor": null
+ },
+ {
+  "id": "D342",
+  "label": "Codex limit kept and told",
+  "anchor": null
+ },
+ {
+  "id": "D343",
+  "label": "credits not reported; one call = one credit",
+  "anchor": null
+ },
+ {
+  "id": "D344",
+  "label": "tool inputs removed at the end of a step",
+  "anchor": null
+ },
+ {
+  "id": "D345",
+  "label": "phase 4 review fixes as built",
+  "anchor": null
  }
 ]

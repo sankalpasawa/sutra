@@ -427,3 +427,15 @@ The grant gate after a `needs.json` (D270, D315 d) was not built and was not lis
 
 ### N66. Beta conditions and what is not verified
 Conditions are in D341 and in the OPERATIONS note. Not verified, and so not to be called working: a real folder watch on a real project, Claude's `Edit(path/**)` rules with a real program, a real Codex step outside its scope, a real reviewer on two providers, the page in a real browser (phone width, dark and light), Windows `msvcrt` slots, Windows long and short names in the scope comparison, real model latency under the load test, the real first-start dialogs on a Mac and Windows (P5), real call counts and minutes (P4).
+
+
+## Phase 4 review round (PB-1 to PB-20, G23 to G26, R1 to R12; D342 to D345)
+
+### N67. What was fixed and where the limits are
+The list and its tests are in D345. Limits that remain, said plainly: (1) the scope check still depends on git (no git, more than 5000 entries, ignored files, a node whose output delivers no files): it now says `scope.unchecked`, it does not hold; (2) a Codex step has no narrowing while it works (D342); (3) a step is checked against its own scope only when no other writer was alive in its window, and the window is whole seconds of the tasks' own `started_at` and `ended_at`; an ordinary task of another team is not a writer here (D337); (4) the project's wall time leaves out a sleeping computer the tick saw, not a closed app; (5) with slots on, a chat turn may wait behind step calls (no reserved slot); a wait that gave up is not a call (the router's own count already left it out; the node meter now gives it back); (6) the tool log is the step's host's record and a step with a shell could change it; (7) symlinks are followed at one moment, by the lease check and the violation check, not as links change; (8) the Windows notice about the claude and codex programs is a notice, not a test.
+
+### N68. PB-19: the two shared scripts
+`home.js` and `chat_view.js` differ in bytes with the flag off. Both additions are inert without their input: `projectLink` runs only for a `node_approval` card (no flag-off row can carry one), `projectAddress` only changes a note whose text holds `/p/prj_` and 12 hex digits. `tests/ui/js/chat_view_node_approval.test.js` shows a note without the address, and a flag-off `Merged into Web` note, come out as before. No pinned test or golden holds these two files' bytes; none was changed for this.
+
+### N69. Deviations of this round
+PB-6 chose "outside the step's own folder" and not a pipe or a hash (the simplest; documented). PB-14 (b): the design does not ask for a reserved interactive slot, so none was built. PB-16: the tool rows of a node that was not read ahead arrive with the next tick (a few seconds later), not in the transaction that ended the node. R10: the Windows probe cannot test the programs; a notice does the job a card cannot. A test that pinned "done_with_open_items" for a refused reviewer was changed on purpose (PB-13); `test_review_loops` and `test_light_host` got the new `make_port(spec, usage_sink=...)` shape on purpose (PB-2).

@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 341,
+  "decisions": 345,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 341,
+ "max_decision": 345,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -530,7 +530,11 @@
     "D338",
     "D339",
     "D340",
-    "D341"
+    "D341",
+    "D342",
+    "D343",
+    "D344",
+    "D345"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5494,8 +5498,10 @@
   {
    "id": "D340",
    "title": "The flag-off promise holds, with two precisions",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"flag-off holds: lane filter, crash prefix\", key only."
   },
@@ -5506,6 +5512,40 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"beta conditions; flag 0 in every release\", key only."
+  },
+  {
+   "id": "D342",
+   "title": "The Codex limit is kept and told",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Codex limit kept and told\", key only."
+  },
+  {
+   "id": "D343",
+   "title": "Credits are not reported by J2 and no reporting is built",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"credits not reported; one call = one credit\", key only."
+  },
+  {
+   "id": "D344",
+   "title": "Tool inputs are removed from a step's record when its run ends",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool inputs removed at the end of a step\", key only."
+  },
+  {
+   "id": "D345",
+   "title": "The fixes of the phase 4 review, as built",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"phase 4 review fixes as built\", key only."
   }
  ],
  "packages": [
