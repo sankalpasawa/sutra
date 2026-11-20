@@ -198,3 +198,25 @@ def test_a_step_of_a_project_that_still_runs_keeps_its_row(db, clock):
     _step_of(world, task, "running")
     [item] = HeadsUp(db, nodes=True).items(NOW)
     assert item.task_id == task and item.retry is True
+
+
+def test_no_step_of_an_ended_project_is_listed_with_try_again_whatever_the_project_ended_as(db, clock):
+    """D390: a project that could not finish, was stopped or is done: its steps are never a problem to try again (run 2 showed one for a project that had ended 'Could not finish')."""
+    world = World(db, clock)
+    for index, project_status in enumerate(("failed", "stopped", "done", "done_with_open_items")):
+        task = put(world, 30 + index, "web", "stopped", ended=NOW - HOUR, outcome="Stopped: stopped on request", stopped_by="app")
+        _step_of(world, task, project_status)
+        assert HeadsUp(db, nodes=True).items(NOW) == [], project_status
+        assert [i.task_id for i in HeadsUp(db).items(NOW)] == [task], "flag off: the lane is what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_that_finished_with_open_items_in_an_ended_project_has_no_try_again(db, clock):
+    world = World(db, clock)
+    task = put(world, 40, "web", "done_with_open_items", ended=NOW - HOUR, outcome="Done, some left open")
+    _step_of(world, task, "done_with_open_items")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.kind == "finished" and item.retry is False
+    assert HeadsUp(db).items(NOW)[0].retry is True
