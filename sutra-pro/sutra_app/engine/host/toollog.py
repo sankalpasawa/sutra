@@ -9,7 +9,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 __all__ = ["ToolLog", "read_log", "summarize", "TOOLS_FILE", "MAX_LINES", "MAX_READ_BYTES", "MAX_KINDS"]
 
