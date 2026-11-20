@@ -451,6 +451,8 @@ class TaskService:
         self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
         # asked just before and just after a process is started: an outcome sentence ends the start (a kill that came in between); "" lets it go on (MAN-4, M1)
         self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
+        # called in the transaction of any change of a task's state that is made here (starting, cancelled): the project service moves the node of a task with it (MAN-5); None while off
+        self.node_sync: Callable[[Tx, str], None] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -629,7 +631,7 @@ class TaskService:
         """In one transaction: settle blocked tasks, pick the first queued task that may start, make its run folder and mark it
         `starting`. None when nothing may start (the others get their waiting detail)."""
         with self.db.tx() as tx:
-            self.store.settle_blocked(tx, lambda row: self.taskgraph.sync(tx, row))
+            self.store.settle_blocked(tx, lambda row: self._moved(tx, row))
             working, live = self.store.counts_in(tx.conn)
             busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))})", LIVE_STATUSES)}
             queued = [_row_of(r) for r in tx.conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE status = 'queued' ORDER BY created_at, rowid")]
@@ -677,6 +679,8 @@ class TaskService:
             now = tx.now()
             started = self.store.update(tx, row.id, status="starting", run_id=run_id, started_at=now, last_event_at=now)
             self.taskgraph.sync(tx, started)
+            if self.node_sync is not None:
+                self.node_sync(tx, row.id)                                      # a node takes its lease in the transaction that starts it: two starts cannot both take the last slot
             self.graph.aggregate(tx)
         except BaseException:
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -995,8 +999,15 @@ class TaskService:
     def _cancel(self, tx: Tx, task_id: str, outcome: str) -> TaskRow:
         row = self.store.update(tx, task_id, status="cancelled", ended_at=tx.now(), outcome=outcome)
         self.taskgraph.sync(tx, row)
-        self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
+        self._moved(tx, row)
+        self.store.settle_blocked(tx, lambda moved: self._moved(tx, moved))
         return row
+
+    def _moved(self, tx: Tx, row: TaskRow) -> None:
+        """A task changed state here: its step node, and (with nodes on) its agent node."""
+        self.taskgraph.sync(tx, row)
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
 
     def _mark_stop(self, task_id: str, by: str) -> None:
         """Remember who asked a live task to stop, "owner" or "app", in the reserved settings key `_stopped_by` (the first one to ask

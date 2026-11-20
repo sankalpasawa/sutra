@@ -17,6 +17,7 @@ Events: `chat.turn` `{session_id, turn, message_id, phase, detail}` with phases 
 handing_off, done, or error. The org chat's `phase` (reading, planning, building) is kept in `ChatStore.set_turn_phase`.
 """
 import asyncio
+import dataclasses
 import inspect
 import json
 import logging
@@ -28,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sutra_app.connectors.egress import scrubbed
+from sutra_app.connectors.errors import CallCancelledError
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import AddOp, MergeOp, MoveOp, OrgChart, RenameOp, SplitOp
 from sutra_app.library.practice import load_packs, pack_by_id
@@ -98,12 +100,13 @@ class _Applied:
 class TurnRunner:
     def __init__(self, *, db: Database, chart: ChartStore, chats: ChatStore, tasks: TaskService, agent: ChatAgent, connector: ConnectorPort,
                  publish: Callable[[str, dict], Any] | None = None, redact: Callable[[str], str] | None = None,
-                 hooks: TurnHooks | None = None, pending_turns: int = PENDING_TURNS) -> None:
+                 hooks: TurnHooks | None = None, pending_turns: int = PENDING_TURNS, projects: Any = None) -> None:
         self.db, self.chart, self.chats, self.tasks, self.agent, self.connector = db, chart, chats, tasks, agent, connector
         self._publish = publish or (lambda _type, _data: None)
         self._redact = redact or (lambda text: text)
         self.hooks = hooks or TurnHooks()
         self.pending_turns = pending_turns
+        self.projects = projects                    # the `ProjectService` while SUTRA_NODES_V1 is on (MAN-5), else None: with None this runner is what it was
         self._waiting: deque[_Item] = deque()
         self._active: _Item | None = None
         self._wake: asyncio.Event | None = None
@@ -326,25 +329,44 @@ class TurnRunner:
             await self._decide_flow(pending[0].id, answer, mid, raise_already=False)
             return
         request = await run_blocking(self._request_of, mid, msg.text)
-        stale = 0
-        while True:
-            try:
-                plan = await self.agent.plan(request, phase=lambda name: self._phase(mid, name))
-                done = await self._carry_out(mid, request, plan)
-            except ConnectorFailure as exc:
-                await self._connector_down(mid, exc)
-                return
-            except ChartBusy as exc:
-                await self._reply(mid, [line("busy", reason=exc.violations[0].message)])
-                return
-            except StaleChart:
-                done = False
-            if done:
-                return
-            stale += 1
-            if stale >= 2:
-                await self._finish_error(mid, line("stale"))
-                return
+        request = self._as_planner(request)
+        try:
+            stale = 0
+            while True:
+                try:
+                    plan = await self.agent.plan(request, phase=lambda name: self._phase(mid, name))
+                    done = await self._carry_out(mid, request, plan)
+                except CallCancelledError:                                  # the owner's Stop (node stop, project stop, kill all) ended the planner's running call: no plan is adopted (D301)
+                    self._release_planner(request)
+                    await self._finish_error(mid, line("failed"))
+                    return
+                except ConnectorFailure as exc:
+                    await self._connector_down(mid, exc)
+                    return
+                except ChartBusy as exc:
+                    await self._reply(mid, [line("busy", reason=exc.violations[0].message)])
+                    return
+                except StaleChart:
+                    done = False
+                if done:
+                    return
+                stale += 1
+                if stale >= 2:
+                    await self._finish_error(mid, line("stale"))
+                    return
+        finally:
+            self._release_planner(request)                              # the planner's token lives only while the request is planned (D301)
+
+    def _as_planner(self, request: PlanRequest) -> PlanRequest:
+        """With nodes on, the planner's calls carry its node identity and a stop token that the project service keeps while the request is planned (D291, D301). Without: the request as it is."""
+        if self.projects is None:
+            return request
+        node_id, token = self.projects.planner_for(request.request_id)
+        return dataclasses.replace(request, node_id=node_id, cancel=token)
+
+    def _release_planner(self, request: PlanRequest) -> None:
+        if self.projects is not None:
+            self.projects.release_planner(request.request_id)
 
     async def _picked(self, pick: _Pick, mid: int) -> None:
         if pick.kind == "approval":
@@ -433,8 +455,13 @@ class TurnRunner:
         if drafts:
             self._phase(mid, "handing_off")
             change_id = applied.result.id if applied is not None else None
+            reservation = None
             try:
-                task_ids = await run_blocking(self._create_tasks, request, drafts, change_id)
+                if self.projects is not None and len(drafts) >= 2:      # nodes on and two or more steps: a project (D255); one step keeps today's path
+                    reservation = await run_blocking(self._reserve_project, request, drafts)
+                    if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
+                        raise AppError("validation", reservation.why or "the plan was refused")
+                task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
             except AppError as exc:
                 failure = exc.message
             if task_ids:
@@ -533,7 +560,14 @@ class TurnRunner:
         return {"v": 1, "message_id": request.message_id, "text": request.text, "keywords": plan.keywords,
                 "decision": json.loads(plan.decision.model_dump_json()) if plan.decision is not None else None}
 
-    def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None) -> list[str]:
+    def _reserve_project(self, request: PlanRequest, drafts: Sequence[AssignmentDraft]) -> Any:
+        """The project of a request with two or more steps, made before its tasks (MAN-5): the plan goes through the Gatekeeper's rules, each step gets a node and a frozen grant."""
+        from sutra_app.orchestrator.projects import ProjectStep
+        steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref)) for d in drafts]
+        title = drafts[0].title if drafts else one_line_title(request.text, 80)
+        return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id))
+
+    def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None, reservation: Any = None) -> list[str]:
         """One transaction per assignment, dependencies first. The owner's words become the first line of the team's chat (the
         engine never echoes them)."""
         made: dict[str, str] = {}
@@ -548,6 +582,8 @@ class TurnRunner:
                             tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=draft.brief,
                             depends_on=[made[ref] for ref in draft.depends_on if ref in made], follows=follows,
                             request=request.request_id, change_id=change_id, settings=settings)
+                        if reservation is not None and reservation.ok:           # the node and its task become one thing in the transaction that makes the task (MAN-5)
+                            self.projects.link_task(tx, reservation, draft.ref, task.id)
                         sid = tx.conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (draft.dept,)).fetchone()["chat_session_id"]
                         self._post(tx, session_id=sid, kind="text", text=request.text, role="user", who="user",
                                    src_ref=f"req:{request.message_id}:{task.id}", task_id=task.id)

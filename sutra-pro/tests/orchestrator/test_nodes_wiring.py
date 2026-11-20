@@ -31,7 +31,8 @@ def test_with_the_flag_off_nothing_is_built_and_the_routes_are_404(tmp_path):
 def test_with_the_flag_on_the_controls_are_built_the_gate_is_installed_and_the_routes_answer(tmp_path):
     app = app_with(tmp_path, nodes_v1=True)
     services = app.state.services
-    assert services.node_control is not None and services.tasks.task_gate == services.node_control.gate
+    assert services.node_control is not None and services.projects is not None and services.tasks.task_gate == services.projects.gate
+    assert services.node_control.projects is services.projects and services.runner.projects is services.projects and services.tasks.node_sync == services.projects.sync_task == services.projector.node_sync
     with TestClient(app, base_url=BASE) as client:
         assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None}
         assert client.post("/api/nodes/pause-all", json={"reason": "x"}, headers=HEADERS).json() == {"affected": 0}

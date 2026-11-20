@@ -22,6 +22,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import ValidationError
@@ -99,6 +100,7 @@ class Projector:
         self.taskgraph = taskgraph
         self.sessions = taskgraph.sessions                   # which chat session an agent's line goes to in this run (D130)
         self.clock = clock or SystemClock()
+        self.node_sync: Callable[[Tx, str], None] | None = None      # the project service's `sync_task`, set only while SUTRA_NODES_V1 is on: a node follows its task (MAN-5)
 
     # =================================================================================================================
     # reading the file and applying a batch
@@ -259,6 +261,8 @@ class Projector:
         if row.status == "starting":
             row = self.store.update(batch.tx, row.id, status="running", pid=ev.pid)
             self.taskgraph.sync(batch.tx, row)
+            if self.node_sync is not None:
+                self.node_sync(batch.tx, row.id)
         elif row.pid != ev.pid:
             self.store.update(batch.tx, row.id, pid=ev.pid)
 
@@ -468,7 +472,9 @@ class Projector:
         self._abandon_open_atoms(batch, status)
         self._settle_nodes(batch, status)
         self.taskgraph.sync(tx, row)
-        self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
+        self.store.settle_blocked(tx, lambda moved: (self.taskgraph.sync(tx, moved), self.node_sync(tx, moved.id) if self.node_sync is not None else None))
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
         left = self._deliverable(row)
         report = DoneReport(dept_id=row.dept_id, run_id=row.run_id or "", label=left.label) if left is not None and left.has_report and row.run_id else None

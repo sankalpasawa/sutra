@@ -51,6 +51,7 @@ from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.killswitch import KillSwitch, NodeControl
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
 from sutra_app.orchestrator.nodes_store import NodeStore
+from sutra_app.orchestrator.projects import ProjectService, default_output_of
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
@@ -79,6 +80,7 @@ class AppServices(Services):
     chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
+    projects: Any = None               # the `ProjectService` (MAN-5); built only while SUTRA_NODES_V1 is on
     node_control: Any = None           # `killswitch.NodeControl`: the kill switch, pause and node stop; built only while SUTRA_NODES_V1 is on (MAN-4)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
     agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
@@ -187,21 +189,31 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
-    node_control = None
+    node_control = projects = None
     if settings.nodes_v1:                                  # multi-agent nodes, D254: with the flag off nothing of it is built, watched or gated
         node_control = NodeControl(KillSwitch(settings.nodes_dir, clock=clock), tasks=tasks, db=db, store=NodeStore(db, ids=ids, redact=redactor), clock=clock,
                                    kick=tasks.start_ready)
-        tasks.task_gate = node_control.gate
         tasks.spawn_guard = node_control.spawn_guard
+
+        def owner_access() -> str:                         # what the owner allowed in the working folder: none (no folder), read, or edit
+            folders = getattr(router, "folders", None)
+            grant = folders.grant() if folders is not None else None
+            return "none" if grant is None else ("edit" if getattr(grant, "edit", False) else "read")
+
+        projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access, output_of=default_output_of(settings.data_dir),
+                                  node_control=node_control, tasks=tasks)
+        node_control.projects = projects
+        tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
+        tasks.node_sync = projector.node_sync = projects.sync_task
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
-                        publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
+                        publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor, projects=projects)
     return AppServices(
         settings=settings, version=sutra_app.__version__, db=db, redact=redactor, clock=clock, ids=ids,
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting, node_control=node_control)
+        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting, node_control=node_control, projects=projects)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------

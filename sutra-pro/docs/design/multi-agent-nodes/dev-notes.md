@@ -199,3 +199,44 @@ Both fit the existing audit table and its 200 character limit.
 
 - Architect ruling: approved, D304. The constants stay in `nodes_store.py`; guardrails 8 lists the two audit actions.
 - Architect ruling (found in review, no N item): code fix F5 (D305b), `gatekeeper.Plan.max_nodes` counts workers only (the design says 12 workers and reviewers on top), and F7, the new decisions D297 to D305 are registered in `docs/DECISIONS.md`, `docs/diagram/decisions.json` and `docs/design/traceability.json`. The full list of fixes before phase 2 is F1 to F7 in `build-plan.md`.
+
+## Phase 2 (MAN-5 to MAN-7), built after the architect's rulings
+
+### N26. The planner's `scope` and `needs` fields are NOT added (MAN-5, stopped on purpose)
+
+build-plan MAN-5 says the planner's schema gets an optional `scope` and `needs` per step only while the flag is on. The step model is the library's `AssignmentStep` / the chat agent's
+`AssignmentDraft`, whose JSON schema is derived from the model and pinned by the schema goldens and the transport-schema registry. Giving the flag-on planner a different schema means a
+second model family (or a flag-aware schema generator) in `library/` and `agent/replies.py`, and the byte-identical promise for the flag-off prompt would then rest on a registry switch. That
+is a design change, not a fix, so it is left out: the plan the Gatekeeper evaluates has no tiers, scope or needs (`ProjectStep` has none), grants are the role-table defaults, and a writer holds
+"the whole folder" (it runs alone). Architect: decide whether the fields go into the library (and which goldens move), or whether the planner proposes scopes in a separate second call.
+
+### N27. A request's output spec is the team's `output` setting; `auto` counts as `read` (MAN-5)
+
+`ProjectService` needs each team's output spec BEFORE a run, but `J2_OUTPUT=auto` (the default) is decided by the engine per run. `projects.default_output_of` reads the team's and the global
+`engine.json` `output`; a named type gives its `workspace`, `auto` and anything unreadable give `read`. The grant is a description (D299) and nothing enforces it yet, so this is the
+cautious reading; MAN-10 (scopes, lanes) is where it must be exact.
+
+### N28. A project's plan that needs the owner waits until MAN-8 (MAN-5)
+
+A plan over the confirm threshold (more than five default-sized steps) makes the project `awaiting_approval`, its questions are stored as `approvals` rows with an audit row `gate.asked`,
+and the task gate holds every node ("Waiting for your answer before this project starts"). There is no card and no route to answer yet (MAN-8), so such a project runs nothing until MAN-7's
+expiry (24 h) or a restart refuses the gate (D296). Flag-on only.
+
+### N29. Smaller points of MAN-5
+
+- A plan the Gatekeeper refuses makes a `failed` project with no node; the runner then tells the owner "I could not start that work: <why>" and makes no task.
+- The planner's node row is made at adoption (`role planner`, `runtime inline`, `state done`); a request that ends with no project leaves only the id in the usage and egress rows.
+- A cancelled planner call ends the turn with the existing "Something went wrong on my side" line: a new template line would change the pinned `LINES` set.
+- Resuming a request after an approval of a chart change plans through `agent.resume`, which has no identity or token yet (not wired).
+- `TaskService._launch` no longer calls `_stop` from inside the start loop: `_stop` drains through the watcher, whose `after_drain` is `start_ready`, and the start loop holds that lock (the first
+  version of M1 deadlocked on it). `_stop_from_launch` does the same steps without it.
+- The node's state is the projector's from MAN-5: `sync_task` maps the task's status to the node's, so a node is `cancelled` only when its task ended stopped or was cancelled (D303).
+- `test_projects_parallel` of the plan is covered by `test_conductor_gate.py` (three at a time, FIFO, a dependant waits, `max_runs` bounds everything), which runs the real scheduler.
+
+### Notes on the review items
+
+- m10 (for MAN-7): `reconcile_projects` must settle `agent_nodes` whose task `reconcile` ended while the app was down, including a node the launch guard abandoned (`mark_ended` stopped) and
+  one left `leased` with no pid; it runs after `reconcile` and never starts a task.
+- F3 vs the build plan's wording: with a read-only owner a worker has a folder to read, so its tier-4 grant is `{0, 1, 4}`; `{0, 4}` is the no-folder owner. The test says so.
+- m1: a database `INSERT OR REPLACE` on `node_messages` really does remove the old row without firing the append-only trigger (SQLite fires delete triggers on REPLACE only with
+  `recursive_triggers` on). The code never writes that spelling and a test fails the day it does; turning the pragma on for the whole app was not done (it would change every other trigger).

@@ -198,6 +198,7 @@ class NodeControl:
         self._clock = clock or SystemClock()
         self._kick = kick
         self._enforced: tuple[int, int] | None = None          # the KILL file the watcher has dealt with already
+        self.projects: Any = None                              # the `ProjectService` (MAN-5): a kill ends its projects and stops its planners; None while there are none
         self._watcher: asyncio.Task[None] | None = None
 
     # ---- the nodes the switch reaches --------------------------------------------------------------------------------------------
@@ -241,6 +242,8 @@ class NodeControl:
         """Stop one node: its task through the stop ladder (a queued or blocked one is cancelled). False when there is no such node, or its task is over already.
         The owner's own stop: the words are the ones a stopped task has, and the audit says `node.stopped`."""
         found = await run_blocking(self._node_of, node_id)
+        if found is None and self.projects is not None:            # a planner node has no task: its running call is what the owner's stop ends (D301)
+            return await self.projects.stop_planner_node(node_id)
         if found is None or found["status"] not in OPEN_TASK_STATUSES:
             return False
         stopped = await self.tasks.stop_node(found["task_id"], "stopped by you")
@@ -276,7 +279,7 @@ class NodeControl:
             log.error("the KILL file could not be written (%s): the agents are stopped anyway", type(exc).__name__)
         if written:
             self._enforced = await run_blocking(self._marker)
-        stopped = await self._stop_live(KILL_OUTCOME)
+        stopped = await self._sweep(KILL_OUTCOME)
         note = (reason or "kill all") + ("" if written else "; the KILL file could not be written")
         await run_blocking(lambda: self._audit("kill", reason=note, count=stopped, actor="owner" if by == "owner" else "system"))
         return KillResult(stopped, written)
@@ -292,6 +295,21 @@ class NodeControl:
                 if asyncio.iscoroutine(found):
                     await found
         return bool(removed)
+
+    async def _sweep(self, outcome: str) -> int:
+        """What a kill does, in this order (D303): the projects with open nodes become `stopped` first, the planner calls and every live node are stopped together, then the nodes that had not
+        started are cancelled. Without projects it is `_stop_live` alone."""
+        if self.projects is None:
+            return await self._stop_live(outcome)
+        ids = await run_blocking(self.projects.begin_kill, outcome)
+        planners = asyncio.ensure_future(run_blocking(self.projects.stop_planners, None))
+        try:
+            stopped = await self._stop_live(outcome)
+        finally:
+            await planners
+        if ids:
+            await self.projects.finish_kill(ids, outcome)
+        return stopped
 
     async def _stop_live(self, outcome: str) -> int:
         """The ladder for every node whose task is starting, running or waiting for the owner, all together (as app shutdown does, D303): the whole kill takes about one ladder's time
@@ -327,7 +345,7 @@ class NodeControl:
         marker = await run_blocking(self._marker)
         first = marker != self._enforced
         self._enforced = marker
-        stopped = await self._stop_live(KILL_OUTCOME)
+        stopped = await self._sweep(KILL_OUTCOME)
         if first:
             await run_blocking(lambda: self._audit("kill", reason="the KILL file was found", count=stopped, actor="system"))
         return stopped
