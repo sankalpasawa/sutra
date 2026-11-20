@@ -186,3 +186,38 @@ def test_a_paused_project_does_not_retry_into_a_running_state_but_keeps_the_retr
     rig.t.run(rig.projects.pause(reservation.project_id))
     rig.finish(tasks["a1"], "crashed", "x")
     assert rig.node_of(rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0])["state"] == "queued" and rig.start() == []
+
+
+# ---- a node with no valid grant (G3, D310) -------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("broken", ["{}", "not json", '{"role": "reviewer"}'])
+def test_a_node_with_no_valid_grant_is_failed_by_the_tick_and_the_project_does_not_hang(rig, broken):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"]), ("a3", "ops", [])])
+    rig.sql("UPDATE agent_nodes SET grants_json = ? WHERE task_id = ?", broken, tasks["a1"])
+    assert rig.start() == [tasks["a3"]]                                                             # the gate holds the broken one, the rest starts
+    done = tick(rig, 10)
+    assert done["expired"] == [] and rig.node_states(tasks) == {"a1": "failed", "a2": "cancelled", "a3": "leased"}
+    assert rig.t.status(tasks["a1"]) == "cancelled" and rig.t.status(tasks["a2"]) == "cancelled"        # nothing of it starts, its dependant is cancelled
+    denied = rig.audit("grant.denied")
+    assert [(r["actor"], r["decision"], r["reason"]) for r in denied if r["node_id"] == rig.node_of(tasks["a1"])["id"]] == [("conductor", "deny", "this step has no valid grant")]
+    assert rig.sql("SELECT count(*) FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 1 and rig.node_of(tasks["a1"])["attempt"] == 1       # no retry: the grant would be the same
+    rig.go(tasks["a3"])
+    rig.finish(tasks["a3"])
+    assert rig.project(reservation.project_id)["status"] == "done_with_open_items"                  # the other node finished
+
+
+def test_a_project_whose_only_node_has_no_valid_grant_ends_failed(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE agent_nodes SET grants_json = '{}'")
+    tick(rig, 10)
+    assert rig.project(reservation.project_id)["status"] == "failed" and rig.start() == []
+
+
+def test_a_broken_grant_under_stop_all_stops_the_project(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE projects SET failure_policy = 'stop_all'")
+    rig.sql("UPDATE agent_nodes SET grants_json = '{}' WHERE task_id = ?", tasks["a1"])
+    rig.start()
+    rig.go(tasks["a2"])
+    done = tick(rig, 10)
+    assert done["stopped"] == [reservation.project_id] and rig.project(reservation.project_id)["status"] == "stopped"

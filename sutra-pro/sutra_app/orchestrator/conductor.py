@@ -20,7 +20,7 @@ from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE
 from sutra_app.orchestrator.handoff_intake import HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
-from sutra_app.orchestrator.nodes_store import GATE_REFUSED_ACTION, GATE_REFUSED_CLOSED, GATE_REFUSED_SLEEP, PROJECT_STOPPED_ACTION
+from sutra_app.orchestrator.nodes_store import GATE_REFUSED_ACTION, GATE_REFUSED_CLOSED, GATE_REFUSED_SLEEP, PROJECT_STOPPED_ACTION, NodeBlockError, node_block_of
 
 log = logging.getLogger(__name__)
 NODE_FINAL = ("done", "failed", "cancelled")
@@ -229,13 +229,14 @@ class Conductor:
 
     # ---- failure: retry once, then the policy (D278, D305c, MAN-7) ------------------------------------------------------------------
 
-    def _fail(self, tx: Tx, node: sqlite3.Row, why: str) -> None:
+    def _fail(self, tx: Tx, node: sqlite3.Row, why: str, *, retry: bool = True) -> None:
         """A node failed (its task crashed, it lost its lease, its hand-off was refused). It is retried once, as a new attempt of the same node, if the project still runs; else it is `failed`
-        and the project's failure policy applies. A node the owner or the kill switch stopped never comes here (it is `cancelled`)."""
+        and the project's failure policy applies. A node the owner or the kill switch stopped never comes here (it is `cancelled`). `retry=False`: a failure a second attempt would repeat
+        (a grant that is not valid, a node the state machine itself could not handle) ends the node at once."""
         project = tx.conn.execute("SELECT status, failure_policy, caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()
         caps = json.loads(project["caps_json"] or "{}")
         retries = int(caps.get("retries") if caps.get("retries") is not None else NODE_DEFAULT_CAPS["retries"] or 1)
-        if project["status"] in ("running",) and node["attempt"] <= retries and self.tasks is not None and node["task_id"]:
+        if retry and project["status"] in ("running",) and node["attempt"] <= retries and self.tasks is not None and node["task_id"]:
             self._retry(tx, node, why)
             return
         self._teardown(tx, node, "failed", why)
@@ -308,6 +309,7 @@ class Conductor:
                 if slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None:
                     refuse.append((project["id"], GATE_REFUSED_SLEEP))
                     continue
+                self._fail_without_grant(tx, project["id"])
                 for node in tx.conn.execute(
                         "SELECT n.id AS id, n.role AS role, n.task_id AS task_id, n.state AS state, COALESCE(t.last_event_at, t.started_at, ?) AS beat FROM agent_nodes n "
                         "JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state IN ('leased','running')", (now, project["id"])).fetchall():
@@ -328,6 +330,26 @@ class Conductor:
                         self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="lease lost")
                         expire.append(node["task_id"])
         return {"expire": expire, "refuse": refuse, "extended": extended, "lease": lease_default}
+
+    def _fail_without_grant(self, tx: Tx, project_id: str) -> None:
+        """G3 (D310, D302): a node whose task waits and whose grant is missing, unreadable, too wide for its role or not its own is held by the gate for ever, and the project would hang. The tick fails it:
+        an audit row `grant.denied` (fixed words, nothing from the grant), the node `failed` with no retry (a second attempt has the same grant), its task cancelled, the failure policy applies."""
+        if self.tasks is None:
+            return
+        for node in tx.conn.execute(
+                "SELECT n.* FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state IN ('planned','queued','awaiting_approval','awaiting_system') "
+                "AND t.status IN ('blocked','queued') ORDER BY n.created_at, n.rowid", (project_id,)).fetchall():
+            try:
+                node_block_of(tx.conn, node["task_id"])
+                continue
+            except NodeBlockError:
+                pass
+            self.store.audit(tx, actor="conductor", action="grant.denied", project_id=project_id, node_id=node["id"], role=node["role"], decision="deny",
+                             reason="this step has no valid grant", ref=node["task_id"])
+            self._fail(tx, node, "no valid grant", retry=False)
+            self.tasks.cancel_in(tx, node["task_id"], "cancelled: this step has no valid grant")       # the node is final already: the task's end changes nothing more
+            tx.emit("node.updated", {"project_id": project_id, "node_id": node["id"], "state": "failed"})
+            self._sync_project(tx, project_id)
 
     async def refuse_open_gates(self, project_id: str, reason: str) -> int:
         """D296: every open gate of the project counts as refused. The questions are answered `denied` (by the system), the nodes that waited for them are `cancelled` with the reason, the project
