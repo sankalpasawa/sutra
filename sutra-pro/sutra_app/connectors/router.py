@@ -817,6 +817,8 @@ class Router:
         kw: dict[str, Any] = {"scripted": req.scripted} if provider == "stub" and req.scripted is not None else {}
         folder = self.folder_for(req.ctx.tag)              # the call's tag decides (the org chat agent tags itself `edit`); the owner's access caps it
         system = self._grounded(req.system, folder)
+        if state.cancel is not None:                          # a planner call's stop token reaches the spawned process (D301); a request with none passes nothing new
+            kw["cancel"] = state.cancel
         return connector.call_json_result(
             req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.effort_for(provider),
             model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,

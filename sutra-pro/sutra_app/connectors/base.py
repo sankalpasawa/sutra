@@ -391,9 +391,10 @@ class ModelConnector(ABC):
                          timeout: float = DEFAULT_TIMEOUT_S, *, system: str = "", ctx: Optional[RouteContext] = None,
                          effort: Optional[Effort] = None, model: Optional[str] = None, images: Sequence[str] = (),
                          hooks: Optional[Hooks] = None, on_event: Optional[Callable[[ConnectorEvent], None]] = None,
-                         force_prompted: bool = False, repair_rounds: Optional[int] = None, folder: str = "") -> JsonResult:
+                         force_prompted: bool = False, repair_rounds: Optional[int] = None, folder: str = "", cancel: Any = None) -> JsonResult:
         """The JSON strategy of one connector (3.6). `force_prompted` is the Router's `native_blocked`: skip the native path. `folder` is the
-        owner's working folder (GAP3-workdir): only the org chat agent's calls carry one."""
+        owner's working folder (GAP3-workdir): only the org chat agent's calls carry one. `cancel` is an optional `CancelToken` (a planner call of a multi-agent project, D301): it is
+        checked before each spawn and bound to the spawned process, so a Stop ends the running call with the cancel ladder, as a chat turn's does (D215)."""
         ctx = ctx or RouteContext()
         counting = _CountingHooks(hooks or self.hooks)
         rounds = self.repair_rounds if repair_rounds is None else repair_rounds
@@ -408,7 +409,7 @@ class ModelConnector(ABC):
         def spawn(text: str, native_now: bool, kind: str) -> TurnResult:
             plan = self._oneshot_plan(text, system=system, kind=kind, model=model, effort=effort or "low", timeout=timeout,
                                       ctx=ctx, images=images, tools=tools, schema=sent if native_now else None, partials=False,
-                                      spent=sum(u for u in spent if u is not None), folder=folder)
+                                      spent=sum(u for u in spent if u is not None), folder=folder, cancel=cancel)
             turn = self._execute(plan, counting, on_event)
             turns.append(turn)
             spent.append(turn.usd)
@@ -450,7 +451,7 @@ class ModelConnector(ABC):
 
     def _oneshot_plan(self, prompt: str, *, system: str, kind: str, model: Optional[str], effort: str, timeout: float,
                       ctx: RouteContext, images: Sequence[str], tools: Sequence[str], schema: Optional[dict], partials: bool,
-                      spent: float, folder: str = "", run_tools: Any = None) -> TurnPlan:
+                      spent: float, folder: str = "", run_tools: Any = None, cancel: Any = None) -> TurnPlan:
         self._check_prompt(prompt)
         if run_tools is not None and (not self.capabilities.run_tools or folder or tools):
             raise InvalidRequestError(f"{self.name} can't run J2's builder tools call" if not self.capabilities.run_tools
@@ -461,7 +462,7 @@ class ModelConnector(ABC):
             prompt=prompt, ctx=ctx, system=system or "", model=self.resolve_model(model), effort=effort, kind=kind,
             timeout_s=_positive(timeout, "timeout"), idle_timeout_s=self.idle_timeout_s if partials else None,
             partials=partials, schema=schema, images=images, tools=tool_names(tools), folder=folder, run_tools=run_tools,
-            max_budget_usd=self._budget_left(ctx, spent))
+            max_budget_usd=self._budget_left(ctx, spent), cancel=cancel)
 
     @staticmethod
     def _budget_left(ctx: RouteContext, spent: float) -> Optional[float]:

@@ -137,3 +137,64 @@ def test_a_token_that_was_not_requested_changes_nothing(rig):
 def test_a_call_with_no_token_is_what_it_was(rig):
     rig.call(context=ORG)
     assert len(rig.claude.seen) == 1
+
+
+# ---- a planner Stop ends the RUNNING call, not only the next attempt (D301) ------------------------------------------------------------
+
+import threading
+import time
+
+from sutra_app.connectors.claude import ClaudeConnector
+from sutra_app.connectors.models import JsonRequest, RouteContext
+from test_cancel_token import POSIX, SID  # noqa: F401
+from test_router_chat import History, policy as chat_policy
+
+
+def _real_router(fake, tmp_path):
+    fake.sequence("slow").set(FAKE_LINE_DELAY="0.2")
+    connector = ClaudeConnector(ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    return connector, Router({"claude": connector}, chat_policy(order=["claude"]), sleep=lambda s: None, transcripts=History())
+
+
+@POSIX
+def test_a_stop_during_a_running_planner_call_ends_the_process_with_the_cancel_ladder(fake, tmp_path):
+    connector, router = _real_router(fake, tmp_path)
+    token, outcome = CancelToken(), []
+
+    def run():
+        try:
+            router.call_json(JsonRequest(user="plan it", schema={"type": "object"}, ctx=RouteContext(tag=build_tag("chat_agent", "decide", PLANNER)), cancel=token))
+        except Exception as e:                                       # noqa: BLE001
+            outcome.append(e)
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    deadline = time.time() + 10
+    while not (connector.runner.live() and token._bound) and time.time() < deadline:     # the child is running and bound to the token
+        time.sleep(0.02)
+    assert connector.runner.live() and token._bound, "the planner call never bound a process to the token"
+    started = time.monotonic()
+    token.request()
+    assert token.cancel_bound() is True                               # the ladder runs on the bound process (at most 12 s; the fake ends at once)
+    worker.join(15)
+    assert not worker.is_alive() and len(outcome) == 1 and isinstance(outcome[0], CallCancelledError)
+    assert connector.runner.live() == [] and time.monotonic() - started < 13
+
+
+@POSIX
+def test_a_planner_call_with_a_token_that_is_never_requested_is_as_it_was(fake, tmp_path):
+    fake.sequence("ok_structured").reply(json={"answer": "ok"})
+    connector = ClaudeConnector(ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    router = Router({"claude": connector}, chat_policy(order=["claude"]), sleep=lambda s: None, transcripts=History())
+    ctx = RouteContext(tag=build_tag("chat_agent", "decide", PLANNER))
+    token = CancelToken()
+    assert router.call_json(JsonRequest(user="plan it", schema={"type": "object"}, ctx=ctx, cancel=token)).value == {"answer": "ok"}
+    assert not token.requested and token._bound == [] and connector.runner.live() == []
+
+
+def test_the_token_reaches_the_stub_and_a_requested_one_ends_the_call_there_too(rig):
+    token = CancelToken()
+    assert isinstance(rig.call(context=PLANNER, cancel=token)[0], dict)
+    token.request()
+    with pytest.raises(CallCancelledError):
+        rig.call(context=PLANNER, cancel=token)
