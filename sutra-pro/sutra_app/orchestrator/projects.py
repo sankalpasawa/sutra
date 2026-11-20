@@ -534,7 +534,7 @@ class ProjectService:
     _WORDS = {
         "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
-        "scope": "A step changes files in several places of your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "scope": "A step changes files in several places of your folder. It is kept apart from other steps that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
         "system": "Your computer must allow something first. Follow the steps below, then press Check again. If you skip it, the steps that need it are cancelled.",
     }

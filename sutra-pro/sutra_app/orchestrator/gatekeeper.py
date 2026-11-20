@@ -211,7 +211,7 @@ class RuleAnswer:
 RULE_TABLE: tuple[tuple[str, str, str], ...] = (
     ("tiers_0_3", "allow", "tiers 0 to 3 are the defaults: allowed for the project"),
     ("tier_4_github", "allow", "tier 4 is read-only GitHub, through the owner's own login, for this project only"),
-    ("scope_wide_or_missing", "allow", "a wide or missing write scope is allowed"),
+    ("scope_wide_or_missing", "allow", "a wide or missing write scope is allowed, and the step is kept apart from other writers"),
     ("credits_raise", "never", "credits are never raised (P25): a raise is asked of the owner each time"),
     ("estimate_within_ceiling", "allow", "the plan's estimate is allowed once, up to the project's ceiling and no further"),
     ("scope_violation", "quarantine", "a node that writes outside its scope is quarantined: ended, its files kept, nothing is merged"),
@@ -232,7 +232,7 @@ def decide_for_me_answer(kind: str, tier: int | None, *, estimate: int = 0, ceil
             return RuleAnswer("allow_once", "estimate_within_ceiling", f"the estimate of {estimate} credits is within the ceiling of {ceiling}")
         return None
     if kind == "scope":
-        return RuleAnswer("allow_once", "scope_wide_or_missing", "a wide write scope is allowed")
+        return RuleAnswer("allow_once", "scope_wide_or_missing", "a wide write scope is allowed and kept apart from other writers")
     if kind == "tier" and tier == 4:
         return RuleAnswer("allow_project", "tier_4_github", "read-only GitHub for this project")
     if kind == "tier" and tier is not None and 0 <= tier <= 3:

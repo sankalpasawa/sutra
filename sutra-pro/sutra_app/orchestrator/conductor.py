@@ -12,11 +12,13 @@ import json
 import logging
 import sqlite3
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
 from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_spend, slice_left
 from sutra_app.orchestrator.db import Tx, run_blocking
+from sutra_app.orchestrator.grants import scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
@@ -123,12 +125,43 @@ class Conductor:
         running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off','expired')", (node["project_id"],)).fetchone()[0]      # an expired node whose process is still there holds its slot (Minor 6)
         if running >= limit:
             return f"Waiting for a free slot in this project ({limit} at a time)"
+        apart = self._lease_conflict(conn, node["id"])                       # two writers whose scopes overlap never run together (D260, D323)
+        if apart:
+            return apart
         ceiling = conn.execute("SELECT budget_credits FROM projects WHERE id = ?", (node["project_id"],)).fetchone()["budget_credits"]
         if ceiling is not None:                                              # the slices of the nodes that still count must fit the project's ceiling (MAN-9)
             slices = conn.execute("SELECT COALESCE(SUM(slice_credits), 0) FROM agent_nodes WHERE project_id = ? AND role = 'worker' AND state NOT IN ('failed','cancelled')",
                                   (node["project_id"],)).fetchone()[0]
             if slices > ceiling:
                 return "Waiting: the credits set aside for this project's steps are more than the project may spend"
+        return ""
+
+    def _lease_of(self, conn: sqlite3.Connection, row: Any) -> tuple[str, ...] | None:
+        """The part of the owner's folder a node may change, as a lease: None for a node that cannot write, `()` for the whole folder (a writer with no scope, or a team whose output is `auto`: a
+        possible writer, D307 d), else its normalised paths."""
+        try:
+            grant = json.loads(row["grants_json"] or "{}")
+        except ValueError:
+            return None
+        if 2 in (grant.get("tiers") or []):
+            return tuple(json.loads(row["writes_json"] or "[]"))
+        plan = json.loads(conn.execute("SELECT caps_json FROM projects WHERE id = ?", (row["project_id"],)).fetchone()["caps_json"] or "{}").get("plan") or []
+        dept = next((s.get("dept") for s in plan if s.get("ref") == row["plan_ref"]), "")
+        return () if dept and self.service._output_name(dept) == "auto" else None
+
+    def _lease_conflict(self, conn: sqlite3.Connection, node_id: str) -> str:
+        """A waiting sentence when another writer that is alive holds a part of the folder that overlaps this node's, else "". The leases are the rows of `agent_nodes` (their `writes_json`), so they
+        survive a restart and are read in the transaction that starts the node. A folder that is not a git repository cannot say who changed what: writers run one at a time (D260)."""
+        mine_row = conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id = ?", (node_id,)).fetchone()
+        mine = self._lease_of(conn, mine_row) if mine_row is not None else None
+        if mine is None:
+            return ""
+        folder = self.service._folder_of()
+        serial = bool(folder) and not (Path(folder) / ".git").exists()
+        for other in conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id <> ? AND state IN ('leased','running','handing_off','expired')", (node_id,)).fetchall():
+            theirs = self._lease_of(conn, other)
+            if theirs is not None and (serial or scopes_overlap(mine, theirs)):
+                return "Waiting: another step is changing the same part of your folder" if not serial else "Waiting: another step is changing your folder (it is not a git folder, so steps change it one at a time)"
         return ""
 
     def on_starting(self, tx: Tx, row: Any) -> None:

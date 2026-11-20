@@ -30,7 +30,7 @@ def test_every_row_of_the_rule_table_answers_as_it_says():
     for tier in (1, 2, 3):
         assert decide_for_me_answer("tier", tier).decision == "allow_project"
     assert decide_for_me_answer("tier", 4).decision == "allow_project"                                       # read-only GitHub, for this project only
-    assert decide_for_me_answer("scope", 2).decision == "allow_once" and "alone" not in decide_for_me_answer("scope", 2).why
+    assert decide_for_me_answer("scope", 2).decision == "allow_once" and "apart from other writers" in decide_for_me_answer("scope", 2).why
     assert decide_for_me_answer("plan_estimate", 5, estimate=800, ceiling=1000).decision == "allow_once"
     assert decide_for_me_answer("plan_estimate", 5, estimate=1000, ceiling=1000).decision == "allow_once"
     assert decide_for_me_answer("plan_estimate", 5, estimate=1001, ceiling=1000) is None                    # over the ceiling: the owner decides
@@ -51,7 +51,7 @@ def test_with_decide_for_me_on_the_questions_are_answered_at_once_and_no_gate_is
     assert {(a.request["kind"], a.status, a.decided_by) for a in answered} == {("tier", "allowed_project", DECIDE_FOR_ME), ("scope", "allowed_once", DECIDE_FOR_ME), ("plan_estimate", "allowed_once", DECIDE_FOR_ME)}
     assert len(decided(rig)) == 3 and all(f"decided_by {DECIDE_FOR_ME}" in r["reason"] and r["actor"] == "gatekeeper" for r in decided(rig))
     assert json.loads(rig.sql("SELECT grants_json FROM agent_nodes WHERE plan_ref = 'a2'").fetchone()[0])["tool_profile"] == "github"
-    assert len(rig.start()) == 3 and rig.t.launcher.started                                                   # nothing was held
+    assert len(rig.start()) >= 1 and rig.t.launcher.started                                                  # nothing was held; the writers are kept apart, so they start one after another (MAN-10)
 
 
 def test_credits_over_the_ceiling_stay_a_question_for_the_owner_even_with_decide_for_me(rig):
