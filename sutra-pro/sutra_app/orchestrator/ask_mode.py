@@ -9,12 +9,17 @@ is refused as an unknown field, exactly as before this package, and nothing here
 
 What an Ask turn is, and where each part is held:
   * read only: the turn's tag asks for `workspace: read`, and the router (`Router._chat_turn`) never gives such a turn more than the owner's folder with the file tools that look, even when
-    Settings, Working folder lets the team change files; the grounding says so too (`chat_ground.ground(ask=True)`). No write tool, no command and no network tool exists in that turn.
-  * limited as a function's question is (`agent_ask`): two model calls, $0.25 and 120 seconds, through the turn's own `Allowance`; the owner's monthly limit and plan window hold it back with
-    their own words, as they hold a task back.
+    Settings, Working folder lets the team change files. For Claude that is exactly four tools (Read, Glob, Grep, LS): no write tool, no command and no web tool is offered to it.
+    Codex has no tool list: its sandbox is read-only (no write, no network) and its shell may still run commands that only read, anywhere on the disk; the same holds for the file
+    tools of Claude, which are not confined to the folder (D350). With no folder the sandbox is read-only too. The grounding says so (`chat_ground.ground(ask=True)`).
+  * limited as a function's question is (`agent_ask`: 2 calls, $0.25, 120 s), through the turn's own `Allowance`: the calls and the deadline hold for both providers (a gate before every
+    process, and the turn's timeout is cut to the deadline). The dollars are a real ceiling for Claude only (the remaining budget goes to the process as `--max-budget-usd`);
+    Codex has no such flag, so for it $0.25 is a check before each process, not a cap inside one. The owner's monthly limit and plan window hold Ask back with their own words.
   * scrubbed: the owner's line and the grounding go through the same secret scrub as every direct chat; what is written on the card goes through it too.
   * the sources: after the answer, ONE card (`AnswerCard`, a message of kind `card`) stored in the same transaction as the answer. Its labels come from `citations.check_answer` and from
-    nothing a model wrote. A turn that was stopped or failed has no card: nothing was claimed.
+    nothing a model wrote. A turn that was stopped or failed has no card: nothing was claimed. The card proves the citation (the file, the lines, the quoted words), never the claim:
+    a model can paraphrase what it read wrongly and still cite it.
+  * the mode is stored with the owner's line (`mode: "ask"` in its meta), so a Retry stays an Ask whatever the page says (`retry_mode`): a grant only narrows.
 """
 from __future__ import annotations
 

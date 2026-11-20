@@ -509,8 +509,9 @@ class CodexConnector(ModelConnector):
         return super().call_text(prompt, **kw)
 
     def stream(self, s: SessionState, m: Any, *, timeout_s: Optional[float] = None, partials: bool = False,
-               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
-        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel)
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None) -> Iterator[ConnectorEvent]:
+        # Codex has no flag that caps what one process spends: `max_usd` is accepted and not used (the router's gate before each spawn still holds the calls and the deadline)
+        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel, max_usd=max_usd)
 
     # ---- one spawn: notices before the first event, the rollout quota after the last --------------------------------------------
     def _spawn(self, plan: TurnPlan, hooks: Hooks, box: dict) -> Iterator[ConnectorEvent]:

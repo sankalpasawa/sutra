@@ -204,3 +204,37 @@ def test_the_limits_of_a_turn_reach_the_routers_gate_and_a_turn_without_them_is_
     assert len(fake.model_calls("claude")) == 1
     port.send(SID, ChatTurnIn(text="limited", allowance=Allowance(max_calls=2, max_usd=0.25)))
     assert len(fake.model_calls("claude")) == 2
+
+
+def test_claude_an_ask_turn_carries_the_remaining_money_as_a_budget_the_cli_enforces(rig, fake):
+    """Review M4: the dollars of the allowance reach the process as `--max-budget-usd`, so one spawn cannot read for ever at the owner's cost; a plain turn has no such flag."""
+    fake.sequence("ok_plain").reply(text="r")
+    router, _ = rig("claude", access="edit")
+    port = RouterChatPort(router)
+    port.send(SID, ChatTurnIn(text="plain"))
+    port.send(SID, ChatTurnIn(text="asked", allowance=Allowance(max_calls=2, max_usd=0.25)))
+    port.send(SID, ChatTurnIn(text="small", allowance=Allowance(max_calls=2, max_usd=0.0625)))
+    plain, ask, small = (c["argv"] for c in fake.model_calls("claude"))
+    assert "--max-budget-usd" not in plain
+    assert value(ask, "--max-budget-usd") == "0.25" and value(small, "--max-budget-usd") == "0.0625"
+
+
+def test_claude_a_second_process_of_one_turn_gets_only_what_the_first_left(rig, fake):
+    """The remaining budget is the limit less what earlier processes of the same turn cost (checked on the router's own bookkeeping)."""
+    from sutra_app.connectors.router import _Request
+    router, _ = rig("claude", access="read")
+    state = _Request(router, RouteContext(allowance=Allowance(max_usd=0.25)), router.policy.resolve(__import__("sutra_app.connectors.models", fromlist=["AskRequest"]).AskRequest(user="x")), kind="chat", purpose="chat")
+    assert state.money_left() == 0.25
+    state.usd_spent = 0.1
+    assert abs(state.money_left() - 0.15) < 1e-9
+    state.usd_spent = 0.4
+    assert state.money_left() == 0.0
+    assert _Request(router, RouteContext(), router.policy.resolve(__import__("sutra_app.connectors.models", fromlist=["AskRequest"]).AskRequest(user="x")), kind="chat", purpose="chat").money_left() is None
+
+
+def test_codex_cannot_cap_a_process_and_says_nothing_of_a_budget(rig, fake):
+    fake.sequence("ok_plain", cli="codex").reply(text="r")
+    router, _ = rig("codex", access="read", sandbox="read-only")
+    RouterChatPort(router).send(SID, ChatTurnIn(text="asked", allowance=Allowance(max_calls=2, max_usd=0.25)))
+    argv = fake.model_calls("codex")[0]["argv"]
+    assert not any("budget" in str(a) for a in argv)

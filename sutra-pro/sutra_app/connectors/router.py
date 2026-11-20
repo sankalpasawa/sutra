@@ -225,6 +225,11 @@ class _Request(Hooks):
             return self.ctx
         return self.ctx.model_copy(update={"allowance": a.model_copy(update={"max_usd": max(0.0, a.max_usd - self.usd_spent)})})
 
+    def money_left(self) -> Optional[float]:
+        """What the allowance still lets the request's NEXT process spend (the limit less what earlier processes of the request cost), or None when the allowance has no dollar limit."""
+        limit = self.ctx.allowance.max_usd
+        return None if limit is None else max(0.0, limit - self.usd_spent)
+
     def timeout_s(self) -> float:
         """The call timeout, cut to the time left until the envelope's deadline (at least one second)."""
         timeout = self.resolved.timeout_s
@@ -1058,6 +1063,9 @@ class Router:
             token_kw: dict[str, Any] = {} if state.cancel is None else {"cancel": state.cancel}
             try:
                 self._check_cancel(state, provider)
+                left = state.money_left()                         # DV-1: what this turn may still spend (None: no limit, nothing is passed, as it always was)
+                if left is not None:
+                    token_kw = {**token_kw, "max_usd": left}
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
                                               timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder, **token_kw):
                     if event.kind == "turn_done":
