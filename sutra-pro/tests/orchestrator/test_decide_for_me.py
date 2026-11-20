@@ -63,7 +63,7 @@ def test_credits_over_the_ceiling_stay_a_question_for_the_owner_even_with_decide
 
 def test_the_owners_own_budget_is_the_ceiling_and_never_raised(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 900, "a2": 900}, budget=600, decide_for_me=True)
-    assert rig.project(reservation.project_id)["budget_credits"] == 600
+    assert rig.project(reservation.project_id)["budget_credits"] == 1200                                    # the ceiling: two slices of the owner's 600 each
     assert rig.store.approvals(reservation.project_id) == []                                                  # the owner's number is the answer: no estimate question (D300), nothing for a rule to raise
 
 

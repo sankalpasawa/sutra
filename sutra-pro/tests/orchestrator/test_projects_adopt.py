@@ -148,7 +148,7 @@ def test_the_caps_are_copied_into_the_project_and_the_owners_own_budget_means_no
     asked = rig.projects.reserve("req-2", "t", big)
     assert rig.project(asked.project_id)["status"] == "awaiting_approval" and {n["state"] for n in rig.sql("SELECT state FROM agent_nodes WHERE project_id = ?", asked.project_id)} == {"awaiting_approval"}
     own = rig.projects.reserve("req-3", "t", big, budget=2000)
-    assert rig.project(own.project_id)["status"] == "running" and json.loads(rig.project(own.project_id)["caps_json"])["confirm_credits"] is None and rig.project(own.project_id)["budget_credits"] == 2000
+    assert rig.project(own.project_id)["status"] == "running" and json.loads(rig.project(own.project_id)["caps_json"])["confirm_credits"] is None and rig.project(own.project_id)["budget_credits"] == 2000 * len(big) and json.loads(rig.project(own.project_id)["caps_json"])["owner_budget"] == 2000          # the ceiling is the sum of the slices: 2 x 2000 (MAN-9)
 
 
 def test_conflict_edges_are_kept_for_the_lanes_package(rig, monkeypatch):

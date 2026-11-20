@@ -30,6 +30,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
+from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -42,7 +43,6 @@ from sutra_app.orchestrator.nodes_store import NodeStore
 __all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "default_output_name", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
 
 log = logging.getLogger(__name__)
-DEFAULT_SLICE = 100                       # the work credits a team's run starts with (J2_BUDGET): what a step with no estimate counts as (D300)
 
 
 @dataclass(frozen=True)
@@ -195,11 +195,14 @@ class ProjectService:
         caps["conflict_edges"] = [list(edge) for edge in evaluation.conflicts]     # kept for the lanes package (MAN-10): a delay, never a cancel (D259)
         caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0),
                               "depends_on": list(step.depends_on)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
+        wants = [budget if budget is not None else (step.estimate_credits or DEFAULT_SLICE) for step in steps]            # the owner's number wins over the planner's guess (D252)
+        slices = make_slices(wants)                                              # each step's share (MAN-9); the project's ceiling is their sum, written as `budget_credits`
+        caps["owner_budget"] = budget                                            # the owner's own number for each run (D252), None when they gave none
         status = "failed" if not evaluation.ok else "awaiting_approval" if evaluation.gates else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
             "INSERT INTO projects(id, request_id, title, status, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (project_id, request_id, " ".join(title.split())[:200], status, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), budget, now,
+            (project_id, request_id, " ".join(title.split())[:200], status, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), sum(slices), now,
              now if status == "failed" else None, why if status == "failed" else ""))
         self.store.audit(tx, actor="system", action="project.created", project_id=project_id, decision="n/a", reason=f"{len(steps)} steps", ref=request_id)
         if plan_defaults:
@@ -218,9 +221,9 @@ class ProjectService:
             writes = list(grant.scope)
             state = "awaiting_approval" if evaluation.gates else "planned"
             tx.conn.execute(
-                "INSERT INTO agent_nodes(id, project_id, role, runtime, plan_ref, depends_on, state, grants_json, writes_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO agent_nodes(id, project_id, role, runtime, plan_ref, depends_on, state, grants_json, writes_json, slice_credits, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (node_id, project_id, "worker", "engine", step.ref, json.dumps([node_ids[d] for d in step.depends_on if d in node_ids]), state,
-                 json.dumps(grant.to_json(), sort_keys=True), json.dumps(writes), now))
+                 json.dumps(grant.to_json(), sort_keys=True), json.dumps(writes), slices[steps.index(step)], now))
             self.store.audit(tx, actor="gatekeeper", action="grant.issued", project_id=project_id, node_id=node_id, role="worker", tier=max(grant.tiers), decision="allow",
                              reason=grant.describe(output=self._output_name(step.dept_id)), target=step.dept_id, ref=grant.id)
             for denial_step, denial in evaluation.denied:
@@ -328,9 +331,7 @@ class ProjectService:
     # ---- Decide for me, and the answer path (MAN-8, D294, D306, D308) --------------------------------------------------------------
 
     def _ceiling(self, project: sqlite3.Row) -> int | None:
-        """The most credits the project may be estimated at before only the owner can say yes: the owner's own budget when they gave one, else the cap `project_credits`."""
-        if project["budget_credits"] is not None:
-            return int(project["budget_credits"])
+        """The most credits a plan may be estimated at for Decide for me to say yes once: the cap `project_credits`, never more (D294). The project's own ceiling, `budget_credits`, is the sum of its slices."""
         found = json.loads(project["caps_json"] or "{}").get("project_credits")
         return int(found) if found else None
 
@@ -376,13 +377,14 @@ class ProjectService:
                 estimate_ok = True
         rows = caps.get("plan") or []
         if rows:
-            slice_credits = project["budget_credits"] if project["budget_credits"] is not None else DEFAULT_SLICE
+            owner_budget = caps.get("owner_budget")
+            slice_credits = owner_budget if owner_budget is not None else DEFAULT_SLICE
             plan = Plan(
                 steps=tuple(PlanStep(id=r["ref"], role="worker", depends_on=tuple(r.get("depends_on") or ()), output=self._output_of(r["dept"]), estimate_credits=r.get("estimate") or slice_credits,
                                      wants=frozenset({4}) if "github" in r.get("needs", ()) else frozenset(), scope=tuple(r.get("scope") or ()), tool_profile=_tool_profile(r.get("needs", ())))
                             for r in rows),
                 owner_access=self._owner_access(), approved={k: frozenset(v) for k, v in approved.items()}, approved_wide=frozenset(wide),
-                confirm_credits=None if estimate_ok or project["budget_credits"] is not None else int(caps.get("confirm_credits") or NODE_DEFAULT_CAPS["confirm_credits"] or 500))
+                confirm_credits=None if estimate_ok or caps.get("owner_budget") is not None else int(caps.get("confirm_credits") or NODE_DEFAULT_CAPS["confirm_credits"] or 500))
             evaluation = evaluate(plan)
             if evaluation.ok:
                 for ref, node in nodes.items():

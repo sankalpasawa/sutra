@@ -707,12 +707,17 @@ class TaskService:
         node = None
         if self.settings.nodes_v1:                                   # the identity block is written only while SUTRA_NODES_V1 is on: off, nothing of it is read or written (D254)
             node = node_block_of(conn, row.id)                       # a node with no usable grant raises: the task gate holds such a node, so it never gets here, and it is never started as an ordinary task (D302)
+        settings = row.settings
+        if node is not None:                                         # the node's slice, read from its row now (not rewritten into the task's settings): a retry or a later move cannot drift (MAN-9)
+            sliced = conn.execute("SELECT slice_credits FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone()
+            if sliced is not None and sliced["slice_credits"]:
+                settings = {**settings, "J2_BUDGET": str(int(sliced["slice_credits"])), "J2_BUDGET_CAP": str(int(sliced["slice_credits"]))}      # start with it and never go past it (P25: no raise without the Requester)
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,
             framing=framing_for(conn, row.dept_id, row.framing),                  # the team's standing rules in front, read now (GAP2 rules-notes)
             parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
-            settings=TaskSettings.model_validate(row.settings), connector=connector, node=node)
+            settings=TaskSettings.model_validate(settings), connector=connector, node=node)
 
     def _files_of(self, conn: sqlite3.Connection, dep: TaskRow) -> list[str]:
         """The files an upstream run left at the top of its folder (the engine's own plumbing is left out), up to 200."""
