@@ -42,7 +42,7 @@ def test_a_worker_whose_output_only_reads_has_tiers_0_and_1_whatever_the_plan_sa
 
 def test_a_worker_with_an_editing_output_and_an_owner_who_allowed_changes_writes_and_runs_the_builder_tools():
     grant = intersect("worker", StepRequest(scope=("site/pricing/",)), "edit", "edit")
-    assert grant.tiers == (0, 1, 2, 3) and grant.folder == "edit" and grant.commands == "sandboxed_builder" and grant.tool_profile == "none"
+    assert grant.tiers == (0, 1, 2, 3) and grant.folder == "edit" and grant.commands == "git_reads" and grant.tool_profile == "none" and grant.run_tools == "engine"
     assert grant.scope == ("site/pricing/",) and grant.scope_width == "one" and not grant.writes_alone
 
 
@@ -193,6 +193,8 @@ def test_the_same_inputs_give_the_same_grant_whatever_the_order_of_asking():
     {"role": "worker", "tiers": (0, 1), "folder": "read", "scope": ("a/",)}, {"role": "worker", "tiers": (0, 1, 4), "folder": "read", "tool_profile": "sutra"},
     {"role": "worker", "tiers": (0,), "folder": "read"}, {"role": "worker", "tiers": (0, 1)}, {"role": "owner", "tiers": (0,)}, {"role": "worker", "tiers": (0, True)},
     {"role": "worker", "tiers": (0, 1), "folder": "edit-all"}, {"role": "worker", "tiers": (0, 1, 2, 3), "folder": "edit", "commands": "shell"},
+    {"role": "worker", "tiers": (0, 1, 2, 3), "folder": "edit", "commands": "sandboxed_builder"}, {"role": "reviewer", "tiers": (0, 1), "folder": "read", "run_tools": "engine"},
+    {"role": "planner", "tiers": (0, 1), "run_tools": "engine"}, {"role": "worker", "tiers": (0, 1), "folder": "read", "run_tools": "everything"},
 ])
 def test_a_grant_that_is_wider_than_the_role_table_or_not_consistent_cannot_be_built(kwargs):
     with pytest.raises(GrantError):
@@ -299,3 +301,41 @@ def test_a_scope_on_a_step_that_cannot_write_is_checked_and_then_dropped():
 
 def test_the_module_lists_what_it_exports():
     assert set(grants.__all__) >= {"intersect", "resolve", "Grant", "ROLE_TABLE", "normalize_scope"}
+
+
+# ---- J2's builder tools are described, not a tier (D299) ----------------------------------------------------------------------------
+
+def test_a_worker_whose_output_only_reads_has_tiers_0_and_1_and_still_has_the_engines_builder_tools():
+    for owner in OWNER_ACCESS:
+        grant = intersect("worker", StepRequest(), "read", owner)
+        assert grant.run_tools == "engine" and grant.commands == "none" and (grant.tiers == (0, 1) if owner != "none" else grant.tiers == (0,))
+    edit = intersect("worker", StepRequest(), "edit", "edit")
+    assert edit.tiers == (0, 1, 2, 3) and edit.run_tools == "engine" and edit.commands == "git_reads"
+
+
+def test_run_tools_are_not_capped_by_the_owners_access_or_the_output_and_are_none_for_the_planner_and_the_reviewer():
+    for role, output, owner in itertools.product(ROLES, OUTPUTS, OWNER_ACCESS):
+        grant = intersect(role, StepRequest(), output, owner)
+        assert grant.run_tools == ("engine" if role == "worker" else "none")
+    assert COMMAND_LEVELS == ("none", "git_reads") and grants.RUN_TOOLS == ("none", "engine")
+
+
+def test_run_tools_are_in_the_json_and_in_the_audit_line_and_a_stored_grant_without_them_reads_as_none():
+    grant = intersect("worker", StepRequest(scope=("a/",)), "edit", "edit", grant_id="gr_" + "a" * 12, node_id="nd_" + "b" * 12)
+    stored = grant.to_json()
+    assert stored["run_tools"] == "engine" and Grant.from_json(stored) == grant
+    line = grant.describe()
+    assert "run_tools engine" in line and "commands git_reads" in line and "tiers 0,1,2,3" in line and len(line) <= 200
+    assert "run_tools none" in intersect("reviewer", None, "edit", "edit").describe()
+    old = {k: v for k, v in stored.items() if k != "run_tools"}
+    assert Grant.from_json(old).run_tools == "none"
+    for bad in ("shell", "", "ENGINE", None):
+        with pytest.raises(GrantError):
+            Grant.from_json({**stored, "run_tools": bad})
+    with pytest.raises(GrantError):
+        Grant.from_json({**{**stored, "role": "reviewer", "tiers": [0, 1, 3], "folder": "inspect", "scope": []}, "run_tools": "engine"})
+
+
+def test_a_grant_never_names_the_old_builder_command_level():
+    with open(grants.__file__, encoding="utf-8") as handle:
+        assert "sandboxed_builder" not in handle.read()

@@ -30,7 +30,7 @@ from sutra_app.config import NODE_DEFAULT_CAPS
 from sutra_app.orchestrator.models import NodeCaps
 
 __all__ = [
-    "ROLES", "TIER_NAMES", "GRANTABLE_TIERS", "APPROVABLE_TIERS", "FOLDER_LEVELS", "OWNER_ACCESS", "TOOL_PROFILES", "COMMAND_LEVELS", "ROLE_TABLE", "RoleRule",
+    "ROLES", "TIER_NAMES", "GRANTABLE_TIERS", "APPROVABLE_TIERS", "FOLDER_LEVELS", "OWNER_ACCESS", "TOOL_PROFILES", "COMMAND_LEVELS", "RUN_TOOLS", "ROLE_TABLE", "RoleRule",
     "Grant", "GrantError", "StepRequest", "Ask", "Denial", "Resolution", "intersect", "resolve", "output_level_of", "normalize_scope", "scopes_overlap", "scope_width",
     "MAX_SCOPE_ENTRIES",
 ]
@@ -42,7 +42,8 @@ APPROVABLE_TIERS = frozenset({4})          # the one tier an approval can add to
 FOLDER_LEVELS = ("none", "read", "inspect", "edit")        # inspect = read plus the four git reads (Router.folder_for)
 OWNER_ACCESS = ("none", "read", "edit")                    # no working folder chosen, read only, read and change (WorkFolder)
 TOOL_PROFILES = ("none", "sutra", "sutra+github")          # connectors/tools/profiles.py: the read-only app tools, and those plus the GitHub reads
-COMMAND_LEVELS = ("none", "git_reads", "sandboxed_builder")
+COMMAND_LEVELS = ("none", "git_reads")                # tier 3 is only the four git reads on the owner's folder (D299)
+RUN_TOOLS = ("none", "engine")                          # J2's builder tools in the run folder: a description, not a tier and not enforced by the grant (D299)
 MAX_SCOPE_ENTRIES = 50
 _MAX_SCOPE_LENGTH = 400
 
@@ -67,15 +68,16 @@ class RoleRule:
     folder: str
     commands: str
     profile: str
+    run_tools: str
 
 
 ROLE_TABLE: Mapping[str, RoleRule] = {
     # the planner (the chat agent's staged call, inline in the server): thinks, and sees the chart and the plan data it is given; no folder, no tools, no commands
-    "planner": RoleRule(frozenset({0, 1}), "none", "none", "none"),
-    # a worker (an ordinary team run): reads, may change files in its scope, runs the git reads and J2's sandboxed builder tools, may ask for the GitHub reads
-    "worker": RoleRule(frozenset({0, 1, 2, 3, 4}), "edit", "sandboxed_builder", "sutra+github"),
+    "planner": RoleRule(frozenset({0, 1}), "none", "none", "none", "none"),
+    # a worker (an ordinary team run): reads, may change files in its scope, runs the git reads, may ask for the GitHub reads; the engine's own builder tools in the run folder are as they are today
+    "worker": RoleRule(frozenset({0, 1, 2, 3, 4}), "edit", "git_reads", "sutra+github", "engine"),
     # a reviewer: reads and runs the four git reads, never writes, never reaches the network
-    "reviewer": RoleRule(frozenset({0, 1, 3}), "inspect", "git_reads", "sutra"),
+    "reviewer": RoleRule(frozenset({0, 1, 3}), "inspect", "git_reads", "sutra", "none"),
 }
 
 
@@ -200,7 +202,8 @@ class Grant:
     """The grant of one node, frozen at spawn (D267). Building one checks every rule below, so a wider grant than the role table cannot exist, tier 6 least of all.
 
     `tiers`: the tiers it holds, from 0 to 4. `folder`: none, read, inspect (read plus the four git reads) or edit. `scope`: the paths a writer may change (`()`: the whole folder;
-    only a writer has one). `tool_profile` and `commands`: the app tools and the commands it may run. `caps`: its calls, dollars and time. `id` and `node_id` are put on when
+    only a writer has one). `tool_profile` and `commands`: the app tools and the git reads it may run (tier 3). `run_tools`: what J2's builder tools in the run folder are for this node
+    (`engine` for a worker, as today; a description for the audit, not a tier and not capped by the owner's access or the output level, D299). `caps`: its calls, dollars and time. `id` and `node_id` are put on when
     the node exists (`for_node`)."""
 
     role: str
@@ -209,6 +212,7 @@ class Grant:
     scope: tuple[str, ...] = ()
     tool_profile: str = "none"
     commands: str = "none"
+    run_tools: str = "none"
     caps: NodeCaps = field(default_factory=lambda: _default_caps())
     id: str = ""
     node_id: str = ""
@@ -227,7 +231,7 @@ class Grant:
         if not set(tiers) <= rule.tiers:
             raise GrantError(f"a {self.role} cannot hold tier {sorted(set(tiers) - rule.tiers)[0]}")
         for name, value, order, ceiling in (("folder", self.folder, FOLDER_LEVELS, rule.folder), ("tool profile", self.tool_profile, TOOL_PROFILES, rule.profile),
-                                            ("commands", self.commands, COMMAND_LEVELS, rule.commands)):
+                                            ("commands", self.commands, COMMAND_LEVELS, rule.commands), ("run tools", self.run_tools, RUN_TOOLS, rule.run_tools)):
             if value not in order:
                 raise GrantError(f"a grant has no such {name}")
             if _rank(order, value) > _rank(order, ceiling):
@@ -242,8 +246,6 @@ class Grant:
             raise GrantError("tier 3 (run commands) goes with a commands level, and only with it")
         if self.commands == "git_reads" and self.folder not in ("inspect", "edit"):
             raise GrantError("the git reads need a folder to run in")
-        if self.commands == "sandboxed_builder" and self.folder != "edit":
-            raise GrantError("the builder tools of a worker go with a folder it may change")
         if (4 in has) != (self.tool_profile == "sutra+github"):
             raise GrantError("tier 4 (network) goes with the tool profile sutra+github, and only with it")
         if scope and 2 not in has:
@@ -276,20 +278,26 @@ class Grant:
         """A writer that declared no scope holds the whole folder, so it runs alone among writers (D260)."""
         return self.writer and not self.scope
 
+    def describe(self) -> str:
+        """The grant in one plain line for the audit row `grant.issued` (names and shapes only; at most 200 characters). It says `run_tools` so the record is true about J2's builder tools (D299)."""
+        scope = "whole folder" if self.writer and not self.scope else f"{len(self.scope)} path(s)" if self.scope else "none"
+        return (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; tools {self.tool_profile}; commands {self.commands}; run_tools {self.run_tools}; "
+                f"calls {self.caps.calls}; wall {self.caps.wall_s}s")[:200]
+
     def for_node(self, grant_id: str, node_id: str) -> "Grant":
         """The same grant with its ids put on (it is frozen: this is a new object)."""
         return dataclasses.replace(self, id=grant_id, node_id=node_id)
 
     def to_json(self) -> dict[str, Any]:
         return {"id": self.id, "node_id": self.node_id, "role": self.role, "tiers": list(self.tiers), "folder": self.folder, "scope": list(self.scope),
-                "tool_profile": self.tool_profile, "commands": self.commands, "caps": self.caps.model_dump(mode="json")}
+                "tool_profile": self.tool_profile, "commands": self.commands, "run_tools": self.run_tools, "caps": self.caps.model_dump(mode="json")}
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> "Grant":
         """A stored grant, checked by the same rules as a new one. Anything missing, unknown or wider than the role table is a GrantError."""
         if not isinstance(data, Mapping):
             raise GrantError("a stored grant is an object")
-        known = {"id", "node_id", "role", "tiers", "folder", "scope", "tool_profile", "commands", "caps"}
+        known = {"id", "node_id", "role", "tiers", "folder", "scope", "tool_profile", "commands", "run_tools", "caps"}
         if set(data) - known:
             raise GrantError("a stored grant has a field a grant does not have")
         if "role" not in data or "tiers" not in data:
@@ -297,7 +305,7 @@ class Grant:
         try:
             caps = NodeCaps.model_validate(data["caps"]) if "caps" in data else _default_caps()
             return cls(role=data["role"], tiers=tuple(data["tiers"]), folder=data.get("folder", "none"), scope=tuple(data.get("scope", ())),
-                       tool_profile=data.get("tool_profile", "none"), commands=data.get("commands", "none"), caps=caps, id=str(data.get("id", "")),
+                       tool_profile=data.get("tool_profile", "none"), commands=data.get("commands", "none"), run_tools=data.get("run_tools", "none"), caps=caps, id=str(data.get("id", "")),
                        node_id=str(data.get("node_id", "")))
         except (TypeError, ValueError) as exc:
             if isinstance(exc, GrantError):
@@ -337,11 +345,8 @@ def resolve(role: str, step: StepRequest | None, output: Any, owner_access: str,
     else:
         wanted = ("edit" if level == "edit" else "read") if role == "worker" else ("inspect" if level == "edit" else "read")
         folder = _least(FOLDER_LEVELS, wanted, rule.folder, owner_access)
-    commands = "none"
-    if role == "worker" and folder == "edit":
-        commands = "sandboxed_builder"
-    elif role == "reviewer" and folder == "inspect":
-        commands = "git_reads"
+    commands = "git_reads" if (role == "worker" and folder == "edit") or (role == "reviewer" and folder == "inspect") else "none"
+    run_tools = rule.run_tools                                  # the engine's own rule for a worker: not capped by the owner's access or the output level (D299)
 
     # tools: what the step asks for, capped by the role; tier 4 only with an approval, for a worker, when the owner allowed changes
     profile = "none" if role == "planner" else _least(TOOL_PROFILES, "sutra" if step.tool_profile == "sutra+github" else step.tool_profile, rule.profile)
@@ -375,7 +380,7 @@ def resolve(role: str, step: StepRequest | None, output: Any, owner_access: str,
             denied.append(Denial(tier, _why_not(tier, role, level, owner_access)))
         elif tier == 1 and 1 not in tiers:
             denied.append(Denial(1, _why_not(1, role, level, owner_access)))
-    grant = Grant(role=role, tiers=tuple(sorted(tiers)), folder=folder, scope=scope if 2 in tiers else (), tool_profile=profile, commands=commands,
+    grant = Grant(role=role, tiers=tuple(sorted(tiers)), folder=folder, scope=scope if 2 in tiers else (), tool_profile=profile, commands=commands, run_tools=run_tools,
                   caps=caps if caps is not None else _default_caps(), id=grant_id, node_id=node_id)
     return Resolution(grant, tuple(asks), tuple(denied))
 
