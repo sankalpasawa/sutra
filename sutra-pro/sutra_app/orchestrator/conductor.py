@@ -909,6 +909,7 @@ class Conductor:
         tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ?", (tx.now(), self.store.clean(reason), project_id))
         self.store.audit(tx, actor="system", action=PROJECT_STOPPED_ACTION, project_id=project_id, decision="n/a", reason=reason)
         cancelled = 0
+        self._end_held(tx, project_id, reason)
         for node in tx.conn.execute("SELECT n.id AS id, n.task_id AS task_id, n.state AS state, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id "
                                     "WHERE n.project_id = ? AND n.role <> 'planner' AND n.state NOT IN ('done','failed','cancelled')", (project_id,)).fetchall():
             if node["task_id"] and node["tstatus"] in ("blocked", "queued"):
@@ -1068,6 +1069,12 @@ class Conductor:
             "WHERE p.status NOT IN ('done','done_with_open_items','stopped','failed') AND t.status IN ('blocked','queued','starting','running','waiting_user') ORDER BY p.created_at").fetchall()
         return [r["id"] for r in rows]
 
+    def _end_held(self, tx: Tx, project_id: str, reason: str) -> None:
+        """PB-10: a step held for a scope question has no live task (its run is over), so no stop path reaches it; when the project ends it ends too: `cancelled`, with the reason, nothing handed on."""
+        now = tx.now()
+        tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE project_id = ? AND state = 'awaiting_approval' "
+                        "AND task_id IN (SELECT id FROM tasks WHERE status NOT IN ('blocked','queued','starting','running','waiting_user'))", (self.store.clean(reason), now, now, project_id))
+
     def _mark_stopped(self, project_id: str, reason: str, by: str) -> None:
         with self.db.tx() as tx:
             changed = tx.conn.execute("UPDATE projects SET status = 'stopped', ended_at = ?, stop_reason = ? WHERE id = ? AND status NOT IN ('done','done_with_open_items','stopped','failed')",
@@ -1078,6 +1085,7 @@ class Conductor:
                     self.store.decide(tx, approval.id, "deny", decided_by=actor)
                     self.store.audit(tx, actor=actor, action="approval.denied" if actor == "owner" else GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None,
                                      tier=approval.tier, decision="deny", reason="the project was stopped", ref=approval.id)
+                self._end_held(tx, project_id, reason)
                 self.store.audit(tx, actor=actor, action="project.stopped", project_id=project_id, decision="n/a", reason=reason)
                 self.service.sync_cards(tx, project_id)
                 tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})

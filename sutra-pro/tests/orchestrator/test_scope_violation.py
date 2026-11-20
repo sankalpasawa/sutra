@@ -164,3 +164,20 @@ def test_a_step_with_no_scope_of_its_own_is_said_to_be_unchecked(rig):
     rig.go(tasks["a1"])
     finish_with(rig, tasks["a1"], ["anywhere/x.txt"])
     assert node(rig, "a1")["state"] == "done" and "not given its own part" in rig.audit("scope.unchecked")[0]["reason"]
+
+
+def test_stopping_the_project_ends_a_step_held_for_a_question_and_so_does_a_sleep(rig):                        # PB-10
+    reservation, tasks = two_writers(rig)
+    finish_with(rig, tasks["a1"], ["site/index.html", "secrets/notes.txt"])
+    assert node(rig, "a1")["state"] == "awaiting_approval"
+    rig.t.run(rig.projects.stop(reservation.project_id))
+    assert rig.project(reservation.project_id)["status"] == "stopped" and node(rig, "a1")["state"] == "cancelled" and "stopped" in node(rig, "a1")["failure_reason"]
+    assert rig.sql("SELECT count(*) FROM agent_nodes WHERE state = 'awaiting_approval' AND project_id = ?", reservation.project_id).fetchone()[0] == 0
+
+
+def test_a_closed_laptop_refusal_ends_the_held_step_too(rig):                                                  # PB-10
+    reservation, tasks = two_writers(rig)
+    finish_with(rig, tasks["a1"], ["site/index.html", "secrets/notes.txt"])
+    rig.t.run(rig.projects.tick(now=1793786400 + 10))
+    rig.t.run(rig.projects.tick(now=1793786400 + 4000))
+    assert rig.project(reservation.project_id)["status"] == "stopped" and node(rig, "a1")["state"] == "cancelled"
