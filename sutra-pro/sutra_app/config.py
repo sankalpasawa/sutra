@@ -34,7 +34,7 @@ ENV_NAMES = {
     "chat_attempts": "SUTRA_CHAT_ATTEMPTS", "max_runs": "SUTRA_MAX_RUNS", "max_live": "SUTRA_MAX_LIVE",
     "watch_ms": "SUTRA_WATCH_MS", "live": "SUTRA_LIVE", "env_file": "SUTRA_ENV_FILE",
     "live_v1": "SUTRA_LIVE_V1", "live_heartbeat_s": "SUTRA_LIVE_HEARTBEAT_S", "live_coalesce_ms": "SUTRA_LIVE_COALESCE_MS",
-    "live_checkpoint_s": "SUTRA_LIVE_CHECKPOINT_S",
+    "live_checkpoint_s": "SUTRA_LIVE_CHECKPOINT_S", "ask_v1": "SUTRA_ASK_V1",
 }
 _TRUE = ("1", "true", "yes", "on")
 _FALSE = ("", "0", "false", "no", "off")
@@ -153,6 +153,9 @@ class Settings(BaseModel):
     live_heartbeat_s: float = Field(5.0, ge=0.2, le=60, allow_inf_nan=False)
     live_coalesce_ms: int = Field(33, ge=0, le=1000)
     live_checkpoint_s: float = Field(1.5, ge=0.05, le=60, allow_inf_nan=False)
+    # Ask (DV-1, D340 to D343): `ask_v1` lets the direct chat answer in `mode` "ask", a read-only answer whose every source Sutra checks by code. Off (the default) nothing
+    # of it exists: no field in any answer of the API, no changed route, no switch on the page
+    ask_v1: bool = False
     override_key: SecretStr | None = Field(None, exclude=True, repr=False)
     env_file: Path
 
@@ -248,13 +251,17 @@ class Settings(BaseModel):
     # ---- what other code may show and where files live ---------------------------------------------------------
 
     def public(self) -> dict[str, Any]:
-        """The non-secret settings, as `GET /api/config` shows them. Never the token or the override key."""
-        return {
+        """The non-secret settings, as `GET /api/config` shows them. Never the token or the override key. A flag that is off is not listed at all
+        (`ask_v1`, D342): the shape of the answer is what it was before the flag existed."""
+        out = {
             "data_dir": str(self.data_dir), "host": self.host, "port": self.port, "connector": self.connector,
             "engine": self.engine, "offline": self.offline, "chat_timeout": self.chat_timeout,
             "chat_attempts": self.chat_attempts, "max_runs": self.max_runs, "max_live": self.max_live,
             "watch_ms": self.watch_ms, "live": self.live, "live_v1": self.live_v1,
         }
+        if self.ask_v1:
+            out["ask_v1"] = True
+        return out
 
     @property
     def db_path(self) -> Path:

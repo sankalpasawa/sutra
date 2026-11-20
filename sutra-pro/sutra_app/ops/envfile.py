@@ -31,6 +31,7 @@ _HINTS = {
     "SUTRA_MAX_LIVE": "most live processes (at least SUTRA_MAX_RUNS)",
     "SUTRA_WATCH_MS": "how often a run's event file is read",
     "SUTRA_LIVE": "1: allow the tests that call the real CLIs",
+    "SUTRA_ASK_V1": "1: the chat's Ask mode (read-only answers with sources checked by code)",
 }
 
 

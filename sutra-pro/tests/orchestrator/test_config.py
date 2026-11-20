@@ -191,3 +191,26 @@ def test_layout_helpers_and_ensure_dirs(tmp_path):
     s.ensure_dirs()                                                     # idempotent
     assert (tmp_path / "d" / "logs").is_dir() and (tmp_path / "d" / "departments").is_dir()
     assert oct((tmp_path / "d").stat().st_mode & 0o777) == "0o700"
+
+
+# ---- SUTRA_ASK_V1 (DV-1, D342): off by default, and an off flag is not in any answer ---------------------------------------------------------
+
+OLD_PUBLIC_KEYS = {"data_dir", "host", "port", "connector", "engine", "offline", "chat_timeout", "chat_attempts", "max_runs", "max_live", "watch_ms", "live", "live_v1"}
+
+
+def test_ask_is_off_by_default_and_the_public_view_is_what_it_was_without_it():
+    s = load()
+    assert s.ask_v1 is False
+    assert set(s.public()) == OLD_PUBLIC_KEYS and "ask_v1" not in json.dumps(s.public())
+
+
+@pytest.mark.parametrize("value, expected", [("1", True), ("true", True), ("on", True), ("0", False), ("off", False), ("", False)])
+def test_ask_reads_its_variable(value, expected):
+    assert load({"SUTRA_ASK_V1": value}).ask_v1 is expected
+
+
+def test_ask_on_is_listed_in_the_public_view_and_a_bad_value_names_the_variable():
+    assert load({"SUTRA_ASK_V1": "1"}).public()["ask_v1"] is True
+    with pytest.raises(SettingsError, match="SUTRA_ASK_V1"):
+        load({"SUTRA_ASK_V1": "maybe"})
+    assert load(ask_v1=True).ask_v1 is True                                   # the keyword of the flag beats the environment, like every setting
