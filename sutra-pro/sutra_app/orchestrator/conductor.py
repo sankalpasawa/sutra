@@ -483,7 +483,9 @@ class Conductor:
         run at the end of the tick), with an audit row `trigger.project_wall` or `trigger.project_usd` and a plain note. True when it was stopped."""
         wall = int(caps.get("project_wall_s") or NODE_DEFAULT_CAPS["project_wall_s"] or 7200)
         reason = action = ""
-        if now - int(created_at) > wall:
+        began = tx.conn.execute("SELECT MIN(t.started_at) FROM tasks t JOIN agent_nodes n ON n.task_id = t.id WHERE n.project_id = ? AND t.started_at IS NOT NULL", (project_id,)).fetchone()[0]
+        # the wall time counts from the first node's start (a project that waits for an answer is not running, D321 b) and leaves out the time it was paused
+        if began is not None and now - int(began) - self._paused_seconds(tx, project_id, now, int(began)) > wall:
             reason, action = f"the project ran longer than {wall // 60} minutes", "trigger.project_wall"
         else:
             limit = tx.conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()["budget_usd"]
@@ -498,6 +500,18 @@ class Conductor:
         self._note(tx, project_id, f"I stopped it: {reason}.", f"project:{project_id}#limit")
         self._pending.append((project_id, f"stopped: {reason}"))
         return True
+
+    @staticmethod
+    def _paused_seconds(tx: Tx, project_id: str, now: int, since: int) -> int:
+        """How long the project was paused after `since`, from its audit rows (`project.paused`, `project.resumed`); a pause that is still on counts until `now`."""
+        total, began = 0, None
+        for row in tx.conn.execute("SELECT at, action FROM node_audit WHERE project_id = ? AND action IN ('project.paused','project.resumed') ORDER BY seq", (project_id,)):
+            if row["action"] == "project.paused" and began is None:
+                began = max(int(row["at"]), since)
+            elif row["action"] == "project.resumed" and began is not None:
+                total += max(0, int(row["at"]) - began)
+                began = None
+        return total + (max(0, now - began) if began is not None else 0)
 
     def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str]) -> None:
         """D303: a node whose prompts were scrubbed `SCRUB_LIMIT` times (rows of `egress.jsonl` that name it and found something) is ended: audit `trigger.egress_scrub`, a plain note, its task

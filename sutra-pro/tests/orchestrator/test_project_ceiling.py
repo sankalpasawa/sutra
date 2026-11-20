@@ -33,8 +33,7 @@ def notes(rig, project_id, tag):
 
 def test_a_project_that_ran_past_its_wall_time_is_stopped_with_a_row_and_one_note(rig):
     reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
-    rig.sql("UPDATE projects SET created_at = ? WHERE id = ?", BASE - 8000, reservation.project_id)          # 2 h 13 min ago; the cap is 7200 s
-    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    rig.sql("UPDATE tasks SET created_at = ?, started_at = ?, last_event_at = ?", BASE - 8100, BASE - 8000, BASE + 5)                    # the first node started 2 h 13 min ago; the cap is 7200 s
     done = tick(rig, 10)
     assert done["stopped"] == [reservation.project_id] and rig.project(reservation.project_id)["status"] == "stopped"
     assert [r["action"] for r in rig.audit("trigger.project_wall")] == ["trigger.project_wall"] and len(notes(rig, reservation.project_id, "limit")) == 1
@@ -86,3 +85,21 @@ def test_the_gate_holds_a_node_when_the_slices_do_not_fit_the_ceiling(rig):
     assert rig.start() == []
     rig.sql("UPDATE agent_nodes SET state = 'cancelled' WHERE plan_ref = 'a2'")                              # a node that no longer counts frees its credits
     assert rig.projects.gate(conn, BASE, rig.t.row(tasks["a1"])) == ""
+
+
+def test_a_project_that_waited_three_hours_for_an_answer_is_not_stopped_by_the_first_tick_after_it_starts(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)})
+    rig.sql("UPDATE projects SET created_at = ? WHERE id = ?", BASE - 3 * 3600, reservation.project_id)         # made three hours ago, waiting for the owner
+    rig.sql("UPDATE approvals SET expires_at = ?", BASE + 86_400)
+    assert tick(rig, 10)["stopped"] == [] and rig.project(reservation.project_id)["status"] == "awaiting_approval"      # no node has started: no wall limit yet
+    rig.t.run(rig.projects.answer(reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "allow_once"))
+    rig.go(tasks["a1"])
+    assert tick(rig, 60)["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
+
+
+def test_the_time_a_project_was_paused_is_not_counted(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET created_at = ?, started_at = ?, last_event_at = ?", BASE - 8100, BASE - 8000, BASE + 5)                       # 2 h 13 min since the start ...
+    rig.sql("INSERT INTO node_audit(at, project_id, actor, action, decision) VALUES (?, ?, 'owner', 'project.paused', 'n/a')", BASE - 7000, reservation.project_id)
+    rig.sql("INSERT INTO node_audit(at, project_id, actor, action, decision) VALUES (?, ?, 'owner', 'project.resumed', 'n/a')", BASE - 1000, reservation.project_id)      # ... of which 6000 s were paused
+    assert tick(rig, 10)["stopped"] == []
