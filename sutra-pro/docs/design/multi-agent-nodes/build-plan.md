@@ -7,6 +7,8 @@ Paths are under `sutra-pro/`. Read [architecture.md](architecture.md) and [guard
 
 **Status (2026-11-20, phase 2).** MAN-5 to MAN-7 are built (commits 707beb82, daa39f27, f08204f6, 72a31f0f, head 72a31f0f) and reviewed by the architect against the design. Their rulings are D306 to D312. The section "Before phase 3" lists what the developer must fix in the phase 2 code first (G1 to G11 and the move-only split C0); the packages below carry what the rulings added, marked with the D number.
 
+**Status (2026-11-20, final adherence check).** The fix round (PB-1 to PB-20, G23 to G26, R1 to R12, D342 to D345) is accepted with its deviations ruled (D346); a flag-on beta with a real Claude and a small read-only project is a GO under the conditions of D347. "Before publish" is rewritten as three groups: closed, what the first real-model run can close, what waits for a release.
+
 **Status (2026-11-20, phase 4, reviewed by the architect).** The phase 3 follow-up (G12 to G22, P1 to P3, D324, D325) and MAN-10 to MAN-14 are built with fakes (D326 to D331, dev-notes N52 to N64), head 7b6c62a0, and were reviewed against the design: faithfully built, with the rulings D332 to D341. The section "Before the beta build" lists four small fixes (G23 to G26); "Before publish" is split into what a flag-on beta needs and what a release needs (R1 to R12, P4, P5, P8, P9). The flag stays `0` in every release and every default (D341).
 
 **Status (2026-11-20, phase 3).** The phase 2 fixes (G1 to G11, C0, the Minor items, D313, D314) are built. MAN-8 is built except its chat card (NOT complete: D317), MAN-9 is built, MAN-15 is built with fakes only (the manual check on a real Mac and Windows is still open), head 49c162d0, and all were reviewed by the architect against the design. Their rulings are D315 to D323. The section "Before phase 4" lists what the developer must fix first (G12 to G22); "Before publish" lists what must be done before any beta reaches the owner with the flag on, and before any release (P1 to P9). The packages below carry what the rulings added, marked with the D number.
@@ -79,29 +81,51 @@ A flag-on beta is not built until these are done. None touches a flag-off path e
 
 ## Before publish (a flag-on beta for the owner, and any release)
 
-A flag-on beta waits for G23 to G26 and for the conditions of D341; a release waits for everything below. P1 to P3, P6 and P7 are done.
+**Status (2026-11-20, the architect's final adherence check, D346, D347).** Code head `88c0b32e` (the same code as `24c7c1be`; the later commits are documents only). A box ticked here means built or decided and tested with stand-ins (the gate: 12509 passed, 373 skipped at `24c7c1be`). **Nothing below is called seen unless it says "seen".** The list has three groups: what is closed, what the first real-model beta run can close (D347, [beta-run-checklist.md](beta-run-checklist.md)), and what still waits for a release.
 
-- [x] **P1 (D315, MAN-8).** A no to a question about one step cancels only that step. `projects.py` `_settle_answers`: a denied approval with a `node_id` and kind `tier` or `scope` cancels that node (`cancel_in`, "not approved: you said no"), its dependants follow the failure policy, the project goes on; a denied `plan_estimate`, an expiry and a stop still end the project. Test: step 3 says no to GitHub, steps 1, 2 and 4 run, the project ends `done_with_open_items`, nothing of step 3 started. Then the card words of G21 change.
-- [x] **P2 (D319, MAN-8).** Turning Decide for me on while questions are open answers them at once; turning it off applies to the next gate. The route behind the Simple view's switch (`POST /api/settings`) tells `ProjectService`; test both.
-- [x] **P3 (D322, MAN-15).** After a late system card clears, the failed node gets one fresh attempt that does not spend its retry (the D314 rule); at most once per node.
-- [ ] **P4 (D321, MAN-9).** Measure the model calls and the minutes of a real document run and a real website run in the beta (the `usage_ledger` rows by task) and set `node_calls` and `node_wall_s` from them (a normal run must be well under both). Write the numbers in D273's amendment.
-- [ ] **P5 (D322, MAN-15).** The manual check of MAN-15 on a real Mac and a real Windows computer, in the beta, with the exact card words recorded; the first real Windows measurement of this feature.
-- [x] **P6 (MAN-13, D326).** The project page (see MAN-13), the "Sutra decided for you" list, the `stop_reason` and the audit rows, `POST /api/projects` with `failure_policy`, the note for an app that is not in the usual place (D322 d).
-- [x] **P7 (MAN-12, MAN-14, D327, D331).** The load test and slots, and the tool-call audit, as in their packages.
-- [x] **P8 (docs).** `architecture.md` and `guardrails-and-permissions.md` agree with D316 and D320 to D341 (the architect did this in the phase 4 review; keep it true).
-- [ ] **P9 (release gate).** The cross-checks below, with the flag on, on the beta; `scripts/ownership-audit.sh`; the owner's own go-ahead.
-- [x] **R1 (D333, MAN-15).** The macOS probe also looks at `~/Library/Mobile Documents` (iCloud Drive) and at a working folder under `/Volumes`, with the same temporary file and the 45 s limit. Test with fakes; the manual check is part of P5.
-- [x] **R2 (D336 e, MAN-10).** A step that ran with no other writer alive in its time window (the `started_at` and `ended_at` of the writers) is checked against its own scope; the union is kept for steps that overlapped. Test: two sequential writers, the first writes in the second's scope: a question; two overlapping ones: no question (as built).
-- [x] **R3 (D337, MAN-10).** Decide and do one of: a project's writer waits while a live ordinary task of a team that may write exists (and the reverse only while a project writer is live), or every word that says "other writers" says "other steps of projects" (the audit row of `scope_wide_or_missing` and the owner documents). Test for whichever.
-- [x] **R4 (D336 d, MAN-10).** The owner's own choice, recorded: route a scoped writer to Claude when both programs are signed in, or keep the Codex limit written in the release note and OPERATIONS.
-- [x] **R5 (D338 b, MAN-11).** A review question that names no step is not asked as "send back"; the words say the reviewer named no step. `approve` is worded as an opinion on the page and in the chat.
-- [x] **R6 (D334 d, MAN-13).** A way back into a project: the receipt notes in the org chat (project finished, stopped) carry the "Open the project" link; `GET /api/projects?client_id=` finds the project a `POST /api/projects` started. No navigation item.
-- [ ] **R7 (P4, P5, N58, N51, N59 to N64).** The live checks in the beta, by hand, with what was seen written in the notes: real call counts and minutes (P4); the first-start dialogs on a real Mac and a real Windows computer with Claude and Codex (P5); the Claude and Codex programs accept tools with a JSON-schema call and Claude accepts the `Edit(path/**)` rules; a real folder watch on a real project; a real Codex step outside its scope; a real reviewer on two providers; the page in a real browser (phone width, dark and light, a long project); Windows `msvcrt` slots; Windows long and short names in the scope comparison; the load test again with real model latency.
-- [x] **R8 (D332 a).** J2 reports its own credits to the server so a retry's slice uses real credits, or the release note says in plain words that a credit is counted as one model call for a retry. The owner decides which.
-- [ ] **R9 (D326 e, MAN-13).** Words and links read once by the owner in the real app: the question cards, the project page, the "app is not in the usual place" note.
-- [x] **R10 (m13 leftovers).** `HandoffRefused` reasons that still say "hand-off" in the words the owner reads; the Windows probe for the `claude` and `codex` programs (D333).
-- [x] **R11 (D339).** The owner decides whether `calls.jsonl` is scrubbed when a node ends; whichever is chosen, the release note repeats what the audit and the scrub do not cover.
-- [x] **R12 (D341).** The release notes and `docs/OPERATIONS.md` section "Multi-agent projects: turning them on" are read once more against the code at the release head; the flag is `0` in every default.
+### A. Closed: built or decided, tested with stand-ins
+
+- [x] **P1 (D315).** A no to a question about one step cancels only that step.
+- [x] **P2 (D319).** Decide for me turned on answers the open questions at once; turned off it applies to the next gate.
+- [x] **P3 (D322).** A late system card that clears gives the failed step one fresh attempt that spends no retry.
+- [x] **P6 (MAN-13, D326).** The project page, the "Sutra decided for you" list, `stop_reason`, the audit rows, `POST /api/projects` with `failure_policy`, the note for an app that is not in the usual place.
+- [x] **P7 (MAN-12, MAN-14).** The load test and slots, and the tool-call audit.
+- [x] **P8 (docs).** `architecture.md` and `guardrails-and-permissions.md` agree with D316 and D320 to D347 (keep it true).
+- [x] **G23 to G26 (D338 to D340).** Done in the phase 4 review round; the conditions of D341 are the rest of what a flag-on beta needs.
+- [x] **R1 (D333, D345 n).** The Mac probe also looks at iCloud Drive (`~/Library/Mobile Documents`) and at a folder under `/Volumes`; the startup disk's own `/Volumes` link resolves to `/` and is not named. Fakes only. **Not covered and not known:** other cloud-file folders (for example `~/Library/CloudStorage`); P5 will show whether macOS asks there.
+- [x] **R2 (D336 e, D345 d).** A step that ran alone is checked against its own scope; overlapping steps against the union. Fakes only: a real folder watch is in R7.
+- [x] **R3 (D337).** The words say "other steps of projects"; no waiting between teams is added.
+- [x] **R4 (D342, the owner's ruling).** The Codex limit is kept and told. The release note and `OPERATIONS.md` say it. Live check (a real Codex step outside its scope) is in R7.
+- [x] **R5 (D338 b, D345 c).** A review question that names no step asks nothing; `approve` is an opinion.
+- [x] **R6 (D334 d, D345 o).** The way back into a project: notes end with the page address, shown as "Open the project"; `GET /api/projects?client_id=`.
+- [x] **R8 (D343, the owner's ruling).** No credit reporting; one model call is one credit. The sentence must be in the release note (see C).
+- [x] **R10 (D333, D345 m, n).** The owner words are clean of machine words; the Windows notice names the `claude` and `codex` programs (a notice, not a test).
+- [x] **R11 (D344, D346 b).** The inputs of a step's tool calls are emptied in `calls.jsonl` and `snapshot.json` by the host when it ends the run. **Limit written (D346 b):** a host killed hard or crashed hard does not run it. Follow-up F-1 below. The shape `tools.calls[*].input` was matched to J2's source, never seen from a real Claude run (check C10).
+
+### B. The first real-model beta run (D347): closes only what is SEEN
+
+A flag-on beta app, a real Claude, a throw-away read-only git folder, a request of two steps. The exact checks are C1 to C16 in [beta-run-checklist.md](beta-run-checklist.md). It can close, in part:
+
+- [ ] **B1.** A real planner splits a request into a project of two steps (the stub could not: not verified).
+- [ ] **P4, first sample only.** The real calls and minutes of two read steps. P4 itself still needs a document run and a website run.
+- [ ] **P5, Mac only, one folder.** The first-start window words with the beta's own bundle id (`os.sutra.pro.beta`) when the folder is under Documents, Desktop or Downloads. Windows is not touched.
+- [ ] **R7, in part.** Seen if it happens: Claude accepts the tool call with a JSON schema; the real shape of the tool log and of `calls.jsonl` (R11); the project page in the real desktop window (not phone width); the kill switch and Stop with a real process; a restart with the app closed; slots with a real program; the reviewer on one or two providers (second run).
+- [ ] **Decide for me, off and on, with real questions** (second run).
+
+### C. Remains before a release (not touched by the first beta run)
+
+- [ ] **P4.** Real calls and minutes of a document run and a website run; set `node_calls` and `node_wall_s`; write the numbers in D273's amendment.
+- [ ] **P5.** The manual check on a real Mac **and a real Windows** computer, the exact card words written down, either result.
+- [ ] **R7, the rest.** A real folder watch on a real project with a writer; Claude's `Edit(path/**)` rules with the real program; a real Codex step outside its scope (the question and its words); a real reviewer on two providers (if not seen in B); the page at phone width, dark and light, a long project; Windows `msvcrt` slots; Windows long and short names in the scope comparison; the load test with real model latency.
+- [ ] **R9.** The owner reads the words and links once in the real app: the question cards, the project page, the "app is not in the usual place" note, and the Work and Recipes pages if they ship.
+- [ ] **R12 (reopened).** The release notes and `OPERATIONS.md` sections 12 to 14 are read once more against the code **at the release head**: the text changed after the box was first ticked (D346 b), and three packages add lines. The flag is `0` in every default.
+- [ ] **R2 and R4, live.** Counted in R7: a writer that goes outside its place, on Claude and on Codex.
+- [ ] **R8 (words).** The release note carries "When a step is tried again, one model call counts as one credit; your dollar limit is the number that holds."
+- [ ] **M1 (new).** The migration on a copy of the owner's real data: copy `~/.sutra-pro` to the beta's folder as `RELEASE.md` says, open the beta, see the data intact and `<data>/backups/pre-upgrade-v5-to-v8.sqlite3` (or the versions that apply) written. An older app refuses a newer database; the way back is a backup taken before.
+- [ ] **F-1 (new, small).** The Conductor, at a node's end and outside any transaction, also calls `blank_tool_inputs(run_dir)` (idempotent, files only) so a host that was killed hard does not leave inputs behind. Until then the owner words say "when a step ends; a step killed hard may keep them".
+- [ ] **F-3 (new, small).** `sutra-pro prune` also removes `<data>/nodes/tools/<run>.jsonl` of runs it prunes (nothing removes them today; each is at most about 200 KB).
+- [ ] **F-2 (only if the beta shows it).** A reserved slot for interactive chat, if a chat turn waits more than 10 seconds behind step calls (D346 d). Not built.
+- [ ] **P9 (release gate).** The cross-checks below with the flag on, on the beta; `scripts/ownership-audit.sh`; the full gate on the **integration head** of the three branches ([../merge-plan-nodes-devin.md](../merge-plan-nodes-devin.md)); the owner's own go-ahead.
 
 
 ## Order and dependencies
@@ -280,6 +304,7 @@ flowchart LR
 - **Tests:** `test_tool_audit.py` (names and kinds only; a path is a basename; nothing when the tag has no node); connectors tests unchanged.
 - **Built (developer, phase 4):** `connectors/tool_audit.py`, the router's `on_tool`, `engine/host/toollog.py`, the Conductor's `prepare_tools` and `tool.used` rows (D327); tests `test_tool_audit.py`, `tests/engine/test_host_tool_log.py`.
 - **Status (architect, phase 4 review): built, accepted with G23 (D339).** Names, kinds and a file's base name only. The limits (a tool's network traffic and `calls.jsonl` are not scrubbed) are in the owner's documents.
+- **Status (architect, final check, D346): the log moved and the inputs are emptied.** The tool log is `<data>/nodes/tools/<run id>.jsonl`, outside the step's folder, a record kept by the host and not a proof (PB-6); at the end of a run the host empties the tool inputs in `calls.jsonl` and `snapshot.json` (R11, D344), except when it is killed hard (F-1). Tests: `tests/engine/test_host_tool_log.py`, `test_tool_scrub.py`, `tests/orchestrator/test_tool_audit.py`. Not seen with a real Claude run: the real shape of `tools.calls[*].input` (check C10).
 - **Flag:** `SUTRA_NODES_V1`.
 - **What stays the same:** `tool_kinds.py`, the chat's tool lines, the connector event stream.
 

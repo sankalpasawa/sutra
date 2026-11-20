@@ -1723,5 +1723,15 @@
   "id": "D345",
   "label": "phase 4 review fixes as built",
   "anchor": null
+ },
+ {
+  "id": "D346",
+  "label": "fix-round deviations accepted; limits written",
+  "anchor": null
+ },
+ {
+  "id": "D347",
+  "label": "real-Claude beta: go, read-only, 3 runs",
+  "anchor": null
  }
 ]
