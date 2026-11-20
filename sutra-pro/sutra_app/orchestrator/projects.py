@@ -652,6 +652,19 @@ class ProjectService:
                 needs = [syspermissions.Need("unknown", "write" if write else "read", "your folder")]
             for need in needs:
                 found.setdefault((need.item, need.level, need.label), []).extend(n["id"] for n in group)
+        notices = getattr(adapter, "notices", None)
+        if writers and callable(notices):                                           # a line for the owner that is not a question: the model programs are judged apart from Sutra Pro (R10, D333)
+            try:
+                said = await run_blocking(lambda: list(notices(Path(folder))))
+            except Exception:                                                       # noqa: BLE001
+                log.exception("could not read the system notices")
+                said = []
+            if said:
+                def tell() -> None:
+                    with self.db.tx() as tx:
+                        for index, text in enumerate(said[:3]):
+                            self.conductor._note(tx, project_id, text, f"project:{project_id}#system-notice:{index}")
+                await run_blocking(tell)
         if not found:
             return 0
 

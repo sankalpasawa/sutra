@@ -115,3 +115,45 @@ def test_a_refusal_of_the_computer_is_told_from_any_other_failure_by_the_word_th
 def test_the_oslayer_questions_are_false_or_true_where_nothing_can_be_found_out(monkeypatch):
     monkeypatch.setattr(oslayer, "IS_WINDOWS", False)
     assert oslayer.is_elevated() is False and oslayer.long_paths_enabled() is True
+
+
+def test_a_folder_in_icloud_drive_and_a_folder_on_another_disk_are_needs_on_a_mac(tmp_path, monkeypatch):          # R1
+    home = tmp_path / "home"
+    icloud = home / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "site"
+    disk = tmp_path / "Volumes" / "Work" / "site"
+    for folder in (icloud, disk, home / "Projects" / "site"):
+        folder.mkdir(parents=True)
+    adapter = MacAdapter(home=home, volumes=tmp_path / "Volumes")
+    refuse_scandir(monkeypatch)
+    assert adapter.probe(icloud, write=False) == [Need("files_folders", "read", "iCloud Drive")]
+    assert adapter.probe(disk, write=True) == [Need("files_folders", "write", "Removable Volumes or Network Volumes")]
+    assert adapter.probe(home / "Projects" / "site", write=True) == []                                        # an ordinary folder asks nothing
+    steps = " ".join(adapter.explain(Need("files_folders", "read", "iCloud Drive")))
+    assert "turn on iCloud Drive" in steps and "changes no setting" in steps
+
+
+def test_the_startup_disk_under_volumes_is_a_link_to_root_and_is_not_a_removable_volume(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / "Projects" / "site").mkdir(parents=True)
+    volumes = tmp_path / "Volumes"
+    volumes.mkdir()
+    (volumes / "Macintosh HD").symlink_to(tmp_path)                                                           # the startup disk: a link to "/"
+    adapter = MacAdapter(home=home, volumes=volumes)
+    refuse_scandir(monkeypatch)
+    assert adapter.probe(volumes / "Macintosh HD" / "home" / "Projects" / "site", write=True) == []
+
+
+def test_windows_with_controlled_folder_access_on_tells_the_owner_about_the_two_programs_once_and_asks_nothing(tmp_path, monkeypatch):      # R10
+    home = tmp_path / "home"
+    (home / "Documents" / "site").mkdir(parents=True)
+    (home / "Projects" / "site").mkdir(parents=True)
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: home))
+    adapter = WindowsAdapter()
+    monkeypatch.setattr(oslayer, "controlled_folder_access", lambda: True)
+    [line] = adapter.notices(home / "Documents" / "site")
+    assert "claude and codex" in line and "Allow an app through Controlled folder access" in line and "Sutra Pro itself is allowed" in line
+    assert adapter.notices(home / "Projects" / "site") == [] and adapter.notices(None) == []                    # a folder Windows does not protect by default: nothing to say
+    monkeypatch.setattr(oslayer, "controlled_folder_access", lambda: None)
+    assert adapter.notices(home / "Documents" / "site") == []                                                  # unknown or off: nothing
+    monkeypatch.setattr(oslayer, "controlled_folder_access", lambda: False)
+    assert adapter.notices(home / "Documents" / "site") == [] and MacAdapter(home=home).__dict__.get("notices") is None

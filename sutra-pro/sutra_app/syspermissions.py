@@ -42,6 +42,7 @@ class Adapter(Protocol):
 
     def probe(self, folder: Path | None, *, write: bool) -> list[Need]: ...
     def explain(self, need: Need) -> list[str]: ...
+    # an adapter may also have `notices(folder) -> list[str]`: plain lines for the owner that are not questions (Windows, R10)
     def open_settings(self, need: Need) -> bool: ...
 
 
@@ -90,14 +91,21 @@ def _can_write(folder: Path) -> bool:
 class MacAdapter:
     name = "macos"
 
-    def __init__(self, home: Path | None = None) -> None:
+    def __init__(self, home: Path | None = None, volumes: Path | None = None) -> None:
         self.home = home or Path.home()
+        self.volumes = volumes or Path("/Volumes")
 
     def _protected(self, folder: Path) -> str:
-        for name in _PROTECTED_MAC:
-            base = self.home / name
+        """The name macOS asks about for this folder, or "": Desktop, Documents and Downloads of the home folder; iCloud Drive (`~/Library/Mobile Documents`); and a folder on another disk under `/Volumes`
+        (macOS asks for "Removable Volumes", and for "Network Volumes" on a shared disk; it cannot be told which from here, so the words name both) (R1, D333). The startup disk's own `/Volumes/<name>`
+        is a link to `/` and resolves to an ordinary path, so it is never named here."""
+        try:
+            where = folder.resolve()
+        except OSError:
+            return ""
+        for name, base in (*((n, self.home / n) for n in _PROTECTED_MAC), ("iCloud Drive", self.home / "Library" / "Mobile Documents"), ("Removable Volumes or Network Volumes", self.volumes)):
             try:
-                folder.resolve().relative_to(base.resolve())
+                where.relative_to(base.resolve())
                 return name
             except (ValueError, OSError):
                 continue
@@ -148,6 +156,24 @@ class WindowsAdapter:
         elif write and not _can_write(path):
             found.append(Need("controlled_folder", "write", path.name or str(path)))
         return found
+
+    _CFA_FOLDERS = ("Documents", "Desktop", "Pictures", "Videos", "Music", "Favorites")        # what Controlled folder access protects by default
+
+    def notices(self, folder: Path | None) -> list[str]:
+        """Things to tell the owner that are not questions (R10, D333): with Controlled folder access on, Windows decides for each PROGRAM, and a step runs the model program (`claude` or `codex`),
+        not Sutra Pro. The probe above can only test Sutra Pro's own process, so even when it passes, the programs may be refused in a protected folder. Sutra cannot test them without running a model,
+        so it says so once and names the two programs; a step they block ends with the late refusal, which opens the card with the same steps."""
+        if folder is None or oslayer.controlled_folder_access() is not True:
+            return []
+        home = Path.home()
+        try:
+            inside = any(Path(folder).resolve().is_relative_to((home / name).resolve()) for name in self._CFA_FOLDERS)
+        except (OSError, ValueError):
+            inside = False
+        if not inside:
+            return []
+        return ["Windows Controlled folder access is on, and this folder is one it protects. The steps run through the programs claude and codex, and Windows may block them here even though Sutra Pro itself is allowed. "
+                "If a step is stopped, add those two programs in Windows Security, under Ransomware protection, then Allow an app through Controlled folder access."]
 
     def explain(self, need: Need) -> list[str]:
         if need.item == "elevated":

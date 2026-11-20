@@ -198,3 +198,14 @@ def test_the_permission_card_names_the_steps_it_holds_by_their_titles_not_by_ids
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], probe=True)
     [card] = rig.projects.system_cards(reservation.project_id)
     assert card.affects == ["a1"] and not any(word.startswith("nd_") for word in card.affects)
+
+
+def test_a_notice_of_the_adapter_is_one_plain_note_that_asks_nothing_and_blocks_nothing(rig):                    # R10
+    class Noisy(FakeMac):
+        def notices(self, folder):
+            return ["Windows Controlled folder access is on. The steps run through the programs claude and codex."]
+    rig.projects._adapter = Noisy(rig.adapter.home, blocked=False)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], probe=True)
+    notes = rig.sql("SELECT text FROM chat_messages WHERE src_ref LIKE ?", f"project:{reservation.project_id}#system-notice%").fetchall()
+    assert len(notes) == 1 and "claude and codex" in notes[0]["text"] and notes[0]["text"].endswith(f"/p/{reservation.project_id}")
+    assert system_questions(rig, reservation.project_id) == [] and rig.node_states(tasks)["a1"] in ("planned", "queued")          # nothing is asked, nothing waits

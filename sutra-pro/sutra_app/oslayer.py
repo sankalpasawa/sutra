@@ -385,3 +385,16 @@ def app_location(executable: str | None = None, platform: str | None = None, env
             return {"usual": True, "note": ""}
         return {"usual": False, "note": "Sutra Pro is not installed in the usual place. Windows may ask again, or block it, where it is. Run the installer again and open the app from there."}
     return {"usual": True, "note": ""}
+
+
+def controlled_folder_access() -> bool | None:
+    """Whether Windows Controlled folder access is turned on (`EnableControlledFolderAccess` is 1; 2 is "audit only" and blocks nothing), read only. None on every other system and whenever the answer
+    cannot be had: only a positive answer says anything (R10, D333)."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        import winreg                                               # type: ignore[import-not-found]
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access") as key:
+            return int(winreg.QueryValueEx(key, "EnableControlledFolderAccess")[0]) == 1
+    except Exception:                                               # noqa: BLE001
+        return None
