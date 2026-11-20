@@ -93,3 +93,15 @@ Read in the code by the architect after MAN-1 to MAN-4; they changed the design 
 - **F14. A one-shot JSON call has no process-level stop.** Fact: `call_json_result` takes no `cancel`; a chat turn's token reaches the spawned process through `TurnPlan.cancel` (D215). Answered by D301.
 - **F15. `agent_nodes.task_id UNIQUE` and retries.** Fact: a retry is a new `tasks` row (`TaskService.retry`, `parent_task_id`). The node row therefore follows the current attempt (D305).
 - **F16. Stop restarts the queue.** Fact: `TaskService._stop` ends with `start_ready()`, so the kill file must already be on disk when the ladders run (it is: `kill_all` writes it first), and a stopped node must never be picked up again by a retry rule (D303).
+
+## Addendum: facts found while building phase 2 (2026-11-20)
+
+Read in the code by the architect after MAN-5 to MAN-7; they changed the design through D306 to D312.
+
+- **F17. The planner's step model is pinned.** Fact: `AssignmentDraft` feeds the `chat_turn` transport schema (kinds `decide` and `assignments`), the field digest of the decide and assign prompts and `docs/schemas/`; `prompts.TEMPLATES` is a pinned tuple of four. New per-step fields would move flag-off goldens. A new family and a fifth template only add files. Answered by D306.
+- **F18. The planner was never read-only.** Fact: `build_tag` tags every `chat_agent` call `workspace="edit"` (D127) and `Router._json_call` hands that call the owner's folder, capped only by the owner's access. Answered by D307.
+- **F19. A run's finish steps stop at the first slow one.** Fact: `finish.run_steps` skips every later step after one that took more than 10 s, and a node's `handoff` step was last. Answered by D309.
+- **F20. A retry is made with no dependencies.** Fact: `TaskService.retry` (and so `retry_in`) inserts the new task with `depends_on=()`, and `_run_spec` builds `upstream` from `depends_on`. Harmless for an owner's retry of an ordinary task, wrong for a node. Answered by D310.
+- **F21. The tick measured its own work as sleep.** Fact: the tick's gap was taken from the START of the last tick, and a tick may run ladders for up to 12 s each. Answered by D311.
+- **F22. A node's start is not one transaction.** Fact: the chat agent's runner makes tasks one transaction each, so a project cannot be adopted in one transaction with its tasks; `reserve` plus `link_task` and `reconcile_projects` do it. Answered by D312.
+- **F23. Nothing built `POST /api/projects` or the way to set `failure_policy`.** Fact: no package had them. Answered by D310 (MAN-13).

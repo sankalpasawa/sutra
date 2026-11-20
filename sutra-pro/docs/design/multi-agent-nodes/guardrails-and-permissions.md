@@ -1,7 +1,7 @@
 # Multi-agent nodes: guardrails and permissions
 
 Status: proposed, 2026-11-20. Design only. Read [architecture.md](architecture.md) first for the words (node, project, Conductor, Gatekeeper, lease, grant).
-Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303).
+Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303). After phase 2 (MAN-5 to MAN-7), D306 to D312: the node plan, `auto` output and the planner's reach, a gate nothing answers yet, hand-off intake rules, retry and failure rules, the sleep check and the receipt.
 
 ## 1. The rules in six lines
 
@@ -58,7 +58,7 @@ A grant is the **intersection** of four things: the role table, the plan's step,
 
 | Role | T0 | T1 read | T2 write | T3 commands | T4 network | T5 spend | T6 publish |
 |---|---|---|---|---|---|---|---|
-| Planner (inline) | yes | chart and plan data only | no | no | no | small slice | no |
+| Planner (inline) | yes | chart and plan data, and the owner's folder read-only (D307) | no | no | no | small slice | no |
 | Worker | yes | yes | in scope, if output is `edit` and owner allows | git reads (folder `edit`); `run_tools` = engine, as today, not a tier | ask (approval, any folder access) | its slice, no self-raise | never |
 | Reviewer | yes | yes | **never** | git reads only | no | small slice | never |
 | Conductor, Gatekeeper | not models, no tools | | | | | | |
@@ -67,7 +67,9 @@ Rules that follow:
 
 - A worker with output `read` gets tiers 0 and 1 only in the owner's folder, whatever the plan says: it cannot change files or run the git reads there. (Tier 4 can still be added by an approval; its builder tools in its own run folder are as today, `run_tools = engine`.)
 - A reviewer's folder access is `inspect` at most (reads plus the four git reads, and only when the owner allowed changes, as `Router.folder_for` already decides). It never gets `edit`. The output level a reviewer is judged by is the strongest level among the steps it reviews: `edit` if it reviews a writer, so it gets the git reads exactly when the work it checks changed files (D305).
-- The planner may narrow a write scope. It may not add a tier. The Gatekeeper checks this before it stores the plan.
+- The planner may narrow a write scope. It may not add a tier. The Gatekeeper checks this before it stores the plan. The scope and the `needs` come from the separate node plan call (D306), and are only requests: the Gatekeeper and the owner decide.
+- The planner is not issued a grant (it is inline). The org chat agent's calls were tagged `workspace=edit` (D127), so it could edit the owner's folder when the owner allowed changes; with the flag on its calls are tagged `read` (D307), so it can read as before and never write.
+- A team whose output is `auto` is decided by the engine per run. Until MAN-10 the grant reads it as `read` and its `grant.issued` row says "output auto (decided in the run)"; from MAN-10, with lanes on, such a worker counts as a possible writer for scheduling (D307).
 - No FOLDER reach exceeds the owner's access (D298): with "read only" or no folder, no node has tier 2 or tier 3, and its folder level is at most `read`. That is the whole of the cap. Tier 4 and the `sutra` tools are not folder reach: they follow the role and the approval, so a read-only owner can still allow GitHub reads, and the Decide for me table can too.
 - A node whose grant is missing, unreadable or wider than the role table is never started, not even as an ordinary task (D302).
 
@@ -93,7 +95,7 @@ The Gatekeeper asks the owner through the card system the app already has (`need
 
 | Gate | When | What the owner sees | Answers |
 |---|---|---|---|
-| **Plan gate** | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope of more than one path, or an estimate over the project's confirm threshold (default 500 work credits, `caps_json["confirm_credits"]`; not asked when the owner gave their own budget: D300). A writer with no declared scope is not asked about: it holds the whole folder and runs alone. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
+| **Plan gate** (before the node plan exists, in MAN-8, it can ask the estimate question only: no step carries a tier-4 need or a wide scope, D306, D308) | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope of more than one path, or an estimate over the project's confirm threshold (default 500 work credits, `caps_json["confirm_credits"]`; not asked when the owner gave their own budget: D300). A writer with no declared scope is not asked about: it holds the whole folder and runs alone. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
 | **Grant gate** | After a light node ends with `needs.json` (it lacked a tier). | "The reviewer asked for: read GitHub. Why: ... Allow and run it again?" | same |
 | **Budget gate** | A node asks for more credits (J2's own question, routed) or the project ceiling is near. | The existing raise question, with "So far: 100 + 30 = 130 work credits approved" (P25). | exact amount, or no |
 
@@ -190,7 +192,7 @@ After the owner returns to the window, Sutra checks again by itself (and the car
 
 1. **Plan gate.** After the Gatekeeper computes the grants, the plan is probed. If everything is fine, nothing is shown.
 2. **Something missing.** One **system permission card** appears, in the same card system as the other gates. It says what, why, for which steps, the steps to turn it on for this system, and three buttons: **Open settings**, **Check again**, **Skip these steps**.
-3. **While it waits.** Only the nodes that need it sit in the state `awaiting_system`. Nothing is running for them. Other nodes go on. **A closed laptop is a refusal (D296):** if the computer goes to sleep, or the app is closed, while this card (or any approval card) is open, the card counts as refused. The waiting nodes are `cancelled` with the reason "the computer went to sleep before you answered", and the project is stopped (running nodes of the project are stopped with the stop ladder) and a receipt card explains it. The owner starts it again when back. An open card also ends after 24 hours as before. The owner can stop the project at any time.
+3. **While it waits.** Only the nodes that need it sit in the state `awaiting_system`. Nothing is running for them. Other nodes go on. **A closed laptop is a refusal (D296):** if the computer goes to sleep, or the app is closed, while this card (or any approval card) is open, the card counts as refused. The waiting nodes are `cancelled` with the reason "the computer went to sleep before you answered", and the project is stopped (running nodes of the project are stopped with the stop ladder) and a receipt note in the org chat explains it (D311: a receipt tells and asks nothing, so it is a note, not a card). The system permission gate is stored as an `approvals` row of tier 1 (read) or 2 (write), so the same refusal code covers it. The owner starts it again when back. An open card also ends after 24 hours as before. The owner can stop the project at any time.
 4. **Allowed.** The nodes become `ready` and go through the Conductor as usual.
 5. **Skipped or refused.** Those nodes are `cancelled` ("the computer did not allow it"). Dependants follow the project's failure policy.
 
@@ -271,11 +273,14 @@ reason (<= 200 chars, redacted), ref (run_id, message seq or call_ref), hash (sh
 | `node.spawned`, `node.leased`, `node.heartbeat_lost`, `node.expired`, `node.retry` | Conductor |
 | `handoff.accepted`, `handoff.refused` (with the reason) | Conductor |
 | `scope.violation` (the path) | Conductor |
+| `plan.defaults` (the node plan failed, no scope and no needs: D306) | ProjectService |
+| `node.lease_extended`, `trigger.lease_lost` (D303 e) | Conductor |
 | `budget.stop` (which cap) | Conductor, host |
 | `egress.hit` (shape names, count) | router, through the tag |
 | `review.verdict` (the enum only) | Gatekeeper |
 | `kill`, `pause`, `resume`, `node.stopped` (who, level) | `NodeControl` (route, command-line file, watcher) |
 | `gate.refused`, `project.stopped` (D296: names are constants in `nodes_store.py`) | Conductor |
+| `grant.denied` for a node held with no valid grant (D310) | Conductor |
 
 Where the owner reads it: `GET /api/projects/{id}/audit`, the project page, and `<data>/projects/<id>/audit.jsonl` (mode 0600) written at close. Local only.
 
