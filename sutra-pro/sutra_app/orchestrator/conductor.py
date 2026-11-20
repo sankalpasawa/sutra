@@ -21,6 +21,7 @@ from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.grants import scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
+from sutra_app.engine.host.toollog import TOOLS_FILE, read_log, summarize
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
 from sutra_app.syspermissions import is_permission_failure
@@ -64,6 +65,7 @@ class Conductor:
         self._ticker: Any = None
         self._stop_tasks: list[str] = []                                           # tasks of nodes that were failed closed and are still alive: the next tick stops them (M3)
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
+        self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
     @property
@@ -312,11 +314,50 @@ class Conductor:
         except Exception:                                                    # noqa: BLE001  (a look ahead that fails is no reason to fail anything)
             log.exception("could not look at the hand-off of task %s ahead of time", task_id)
 
+    def prepare_tools(self, task_id: str) -> None:
+        """MAN-14: before the projector's transaction, read the run's `tools.jsonl` of a node that is working (only when the file changed since the last look), so no file is read while the writer
+        transaction is open. Never raises."""
+        try:
+            node = self.db.conn().execute("SELECT id FROM agent_nodes WHERE task_id = ? AND role IN ('worker','reviewer') AND state IN ('leased','running','handing_off')", (task_id,)).fetchone()
+            if node is None or self.tasks is None:
+                return
+            row = self.tasks.store.find_row(task_id)
+            if row is None or row.run_id is None:
+                return
+            run_dir = self.tasks.store.run_dir_of(row)
+            stamp = self._stamp(run_dir, TOOLS_FILE)
+            if stamp is None or (task_id in self._tools and self._tools[task_id][0] == stamp):
+                return
+            self._tools[task_id] = (stamp, read_log(run_dir))
+        except Exception:                                                    # noqa: BLE001
+            log.exception("could not read the tool log of task %s ahead of time", task_id)
+
+    def _audit_tools(self, tx: Tx, node: sqlite3.Row) -> None:
+        """MAN-14, D327: at a node's end its tool calls become audit rows: one for each different tool, with its kind, the base name of a file and how many times. Names and kinds only, never an
+        input (the log holds none). The lines read ahead (`prepare_tools`) are used; when none were (the node ended before it could be read, or the server restarted) the file is read here: it is
+        small and has a hard limit. At most MAX_KINDS rows; the calls of the kinds that did not fit are counted in one last row. Nothing at all for a node that made no tool call."""
+        task_id = node["task_id"] or ""
+        ahead = self._tools.pop(task_id, None)
+        rows = ahead[1] if ahead is not None else None
+        if rows is None and task_id and self.tasks is not None:
+            try:
+                row = self.tasks.store.row_in(tx.conn, task_id)
+                rows = read_log(self.tasks.store.run_dir_of(row)) if row is not None and row.run_id is not None else []
+            except Exception:                                                # noqa: BLE001  (a tool log that cannot be read is no rows, never a node that cannot end)
+                rows = []
+        groups, left_out = summarize(rows or [])
+        for name, kind, target, times in groups:
+            self.store.audit(tx, actor="node", action="tool.used", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", target=name,
+                             reason=f"{kind}{' ' + target if target else ''}, {times} time{'s' if times != 1 else ''}", ref=task_id)
+        if left_out:
+            self.store.audit(tx, actor="node", action="tool.used", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", target="more",
+                             reason=f"{left_out} more calls of other tools", ref=task_id)
+
     @staticmethod
-    def _stamp(run_dir: Any) -> tuple[int, int, int] | None:
+    def _stamp(run_dir: Any, name: str = HANDOFF_FILE) -> tuple[int, int, int] | None:
         from pathlib import Path
         try:
-            info = (Path(run_dir) / HANDOFF_FILE).lstat()
+            info = (Path(run_dir) / name).lstat()
         except OSError:
             return None
         return (info.st_mtime_ns, info.st_size, info.st_ino)
@@ -412,6 +453,7 @@ class Conductor:
         now = tx.now()
         self._prepared.pop(node["task_id"] or "", None)
         tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?", (state, why[:200], now, now, node["id"]))
+        self._audit_tools(tx, node)                                                 # the tool calls of this attempt, as names and kinds (MAN-14); before the end row, so the story reads in order
         self.store.audit(tx, actor="conductor", action=f"node.{state}", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=node["task_id"] or "")
         if state == "failed" and self.tasks is not None:
             self._cancel_dependants(tx, node)
@@ -492,6 +534,7 @@ class Conductor:
         if node["slice_credits"] is not None and slice_left(node["slice_credits"], chain_spend(tx.conn, old_task)[0]) <= 0:
             raise AppError("busy", "That step used up all its credits, so it is not tried again")         # never a full fresh slice (D324)
         new = self.tasks.retry_in(tx, old_task, force=True)
+        self._audit_tools(tx, node)                                                 # what the attempt that ended did, before the node points at the new task (MAN-14)
         now = tx.now()
         tx.conn.execute("UPDATE agent_nodes SET task_id = ?, attempt = attempt + 1, state = 'queued', failure_reason = '', lease_expires_at = NULL, last_beat_at = NULL, ended_at = NULL, "
                         "torn_down_at = NULL WHERE id = ?", (new.id, node["id"]))

@@ -50,6 +50,7 @@ from ..spec import (
 )
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
+from .toollog import TOOLS_FILE, ToolLog
 
 __all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
            "EXIT_OK", "EXIT_BAD_TASK", "EXIT_START_FAILED", "EXIT_INTERNAL", "EXIT_TERM"]
@@ -390,8 +391,17 @@ class Host:
         except ModelError as exc:
             raise StartFailed(f"{type(exc).__name__}: {exc}", EXIT_START_FAILED, chat=True) from None
         self.meter = self._node_meter()
+        self._watch_tools()
         llm.configure(self.port, mock=self.mock, base_tag=self._base_tag(), meter=self.meter)
         llm.bind_atom(overhead)                  # a call made before the first turn carries the run overhead key
+
+    def _watch_tools(self) -> None:
+        """MAN-14, D327: a node's router tells the host about each tool call (a name and a kind, a file's base name at most) and the host appends it to `tools.jsonl` in the run folder; the Conductor
+        turns the file into audit rows when the node ends. Only for a run that is a node and a port that has a router: every other run is exactly as it was."""
+        router = getattr(self.port, "router", None)
+        if getattr(self.task, "node", None) is None or router is None or self.paths is None:
+            return
+        router.on_tool = ToolLog(self.paths.run_dir / TOOLS_FILE)
 
     def _node_meter(self) -> Optional["llm.NodeMeter"]:
         """The meter of a node of a multi-agent project (MAN-9, D272): its calls, dollars and wall time from the `node` block's caps, cumulative for the whole process. None for every run that is

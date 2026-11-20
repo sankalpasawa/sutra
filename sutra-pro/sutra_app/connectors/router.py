@@ -55,6 +55,7 @@ from .discover import explain_missing
 from .transcript import render_carry_over
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
+from . import tool_audit
 from .egress import scan
 from .workdir import Folder, grounding_text
 
@@ -359,6 +360,7 @@ class Router:
         self.finish_hooks: list[Callable[[CallTag], None]] = []              # called with the tag when an engine call (`complete`) ends, ok or not (D133)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
+        self.on_tool: Optional[Callable[[Any, str, str, str], None]] = None   # MAN-14: `(tag, name, kind, base_name)` for each tool call of a call whose tag names a node; set by the node's host
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
@@ -736,7 +738,7 @@ class Router:
     def _text_call(self, state: _Request, plan: Plan, req: AskRequest, provider: str, connector: ModelConnector,
                    on_progress: Optional[Callable[[dict], None]]) -> TurnResult:
         """One connector call for a text request (or a text request that carries a schema: the engine's `json_schema`)."""
-        on_event = _progress(on_progress)
+        on_event = self._watched(req.ctx.tag, provider, _progress(on_progress))
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
         # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D245) works in its run folder only
@@ -831,8 +833,28 @@ class Router:
             kw["cancel"] = state.cancel
         return connector.call_json_result(
             req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.effort_for(provider),
-            model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,
+            model=plan.models[provider], images=req.images, hooks=state, on_event=self._watched(req.ctx.tag, provider, _progress(on_progress)), force_prompted=force,
             repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
+
+    def _watched(self, tag: Any, provider: str, on_event: Optional[Callable[[ConnectorEvent], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
+        """MAN-14: `on_event` that also tells `on_tool` about each tool call, for a call whose tag names a node and only when a hook is set; every other call gets `on_event` unchanged (the very
+        same object, or None). The hook gets names and kinds, never an input; a hook that fails is logged and never stops the call."""
+        hook = self.on_tool
+        if hook is None or not getattr(tag, "node_id", ""):
+            return on_event
+
+        def watch(event: ConnectorEvent) -> None:
+            if event.kind == "tool_call":
+                found = tool_audit.facts(event.data, provider)
+                if found is not None:
+                    try:
+                        hook(tag, *found)
+                    except Exception:                          # noqa: BLE001
+                        log.exception("the tool hook failed")
+            if on_event is not None:
+                on_event(event)
+
+        return watch
 
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None, *, tools: Sequence[str] = ()) -> CompletionResult:

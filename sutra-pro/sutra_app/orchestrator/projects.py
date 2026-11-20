@@ -320,6 +320,7 @@ class ProjectService:
 
     def prepare_handoff(self, task_id: str) -> None:
         self.conductor.prepare_handoff(task_id)
+        self.conductor.prepare_tools(task_id)                                     # MAN-14: the tool log is read here too, outside the transaction
 
     async def tick(self, now: int | None = None) -> dict[str, list[str]]:
         return await self.conductor.tick(now)
