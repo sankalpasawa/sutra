@@ -452,6 +452,7 @@
     const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
     ctx.paint(el, html);
     el.hidden = html === "";
+    if (askExists() || (S.cc && S.cc.state().ask === "ask")) renderBar();            // DV-1: the pill is where the page learns that Ask exists, so the bar is drawn again once it is known (never with the flag off)
   }
 
   // A turn that ended may have moved the chat to the other model (the router switches on a failure): read the pill again, keeping what it shows until the answer comes.
@@ -549,10 +550,12 @@
   function askToWork(draft) {
     const c = composer();
     const box = $("sbox");
-    if (!c || !box || box.disabled) return false;
-    root.ChatComposer.fillBox(box, c.draft(draft));
+    if (!c || !box) return false;
+    const words = c.draft(draft);                   // leaves Ask first: the box may have been closed only because no model can answer an Ask
     renderBar();
     renderComposer();
+    if (box.disabled) return false;                 // closed for another reason: the words are not forced in
+    root.ChatComposer.fillBox(box, words);
     return true;
   }
 

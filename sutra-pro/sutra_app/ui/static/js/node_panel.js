@@ -569,6 +569,7 @@
           if (!st || st.pillSid !== sid || r.error || !r.value) return;
           st.pill = r.value;
           paintPill();
+          if (askExists() && st.tab === "chat" && chatRefs) paintBar();            // DV-1: the pill is where the page learns that Ask exists, so the bar is drawn again once it is known (never with the flag off)
         });
       }
       const data = st.pill || {providers: [], chosen: null};
@@ -1330,11 +1331,13 @@
     // "Turn this into work" on a sources card (DV-1): the request is DRAFTED in the box, with Send pointing at "Tell the team"; the owner edits it and presses Send. Nothing is sent here.
     function askToWork(draft) {
       const c = composerOf();
-      if (!c || !chatRefs || !chatRefs.box || chatRefs.box.disabled) return false;
-      root.ChatComposer.fillBox(chatRefs.box, c.draft(draft));
+      if (!c || !chatRefs || !chatRefs.box) return false;
+      const words = c.draft(draft);                 // leaves Ask first: the box may have been closed only because no model can answer an Ask
       st.ccMode = "team";
       paintBar();
       paintComposer();
+      if (chatRefs.box.disabled) return false;      // closed for another reason (the team is working): the words are not forced in
+      root.ChatComposer.fillBox(chatRefs.box, words);
       return true;
     }
 
