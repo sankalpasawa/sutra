@@ -348,12 +348,13 @@ class DoneCard(Value):
     outcome: Annotated[str, StringConstraints(max_length=2000)] = ""
     receipt: DoneReceipt | None = None
     report: DoneReport | None = None
+    project_id: ProjectId | None = None     # the project this task is a step of (nodes on): the card links to its page (D394); left out of the wire shape when there is none
 
     @model_serializer(mode="wrap")
     def _receipt_and_report_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """A card without a receipt or a report (every card stored before they existed) keeps the wire shape it always had: the keys are left out."""
+        """A card without a receipt, a report or a project (every card stored before they existed) keeps the wire shape it always had: the keys are left out."""
         data = handler(self)
-        for key in ("receipt", "report"):
+        for key in ("receipt", "report", "project_id"):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -737,6 +738,9 @@ class NodeOut(Value):
     runtime: NodeRuntime
     plan_ref: Annotated[str, StringConstraints(max_length=200)] = ""
     title: Annotated[str, StringConstraints(max_length=200)] = ""          # the step's own title (its task's), so the page names a step by what it does (D383)
+    calls: Count | None = None                                             # what the step used, every attempt counted (D395): model calls, dollars (None: no call priced) and minutes from its first start
+    usd: Annotated[float, Field(ge=0)] | None = None
+    minutes: Annotated[float, Field(ge=0)] | None = None
     depends_on: Annotated[list[AgentNodeId], Field(max_length=50)] = []
     state: AgentNodeState
     attempt: Annotated[int, Field(ge=1, le=10)] = 1

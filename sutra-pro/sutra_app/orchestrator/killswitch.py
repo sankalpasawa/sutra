@@ -29,6 +29,7 @@ import logging
 import os
 import secrets
 import stat
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,7 +40,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 
-__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
+__all__ = ["resume_command", "KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
@@ -55,11 +56,23 @@ KILL_OUTCOME = "stopped by the kill switch"
 NO_GRANT_HELD = "Held: this step has no permissions set, so it cannot start"
 
 
+def resume_command(data_dir: str | os.PathLike[str], executable: str | None = None) -> str:
+    """The command that resumes THIS install, as the owner can type it (D392). An app (the beta, the installed Mac app) has no `sutra-pro` on the path: its own Python runs the same command
+    (`<app>/Contents/Resources/python/bin/python3 -I -B -m sutra_app nodes resume --data-dir <dir>`). Anything else (a command-line install) has `sutra-pro`. There is no Resume button on the page for
+    the switch (the page's Pause and Continue are for one project), so this is the way."""
+    exe = executable if executable is not None else sys.executable
+    flat = (exe or "").replace("\\", "/")
+    if "/Contents/Resources/python/" in flat or "/resources/python/" in flat.lower():
+        return f'"{exe}" -I -B -m sutra_app nodes resume --data-dir "{data_dir}"'
+    return "sutra-pro nodes resume"
+
+
 class KillSwitch:
     """The two files. Reads only look at the file system; a write is a small file made by temp file and rename (mode 0600 in a 0700 folder)."""
 
-    def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None) -> None:
+    def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None, consume: bool = True) -> None:
         self.directory = Path(directory)
+        self._consume = consume                    # False for the command line: it only LOOKS. Only the running app takes the resume marker and writes its audit row (D391)
         self._clock = clock or SystemClock()
         self._by_hand: list[str] = []              # the texts of the resume markers the command line left, not yet audited (D384)
         self._latched = ""                         # "kill" or "pause" when the file could not be written: the switch is on in memory until it is cleared (Minor 3: a full or read-only disk must not open the gate)
@@ -79,11 +92,13 @@ class KillSwitch:
 
     def _released(self) -> None:
         """A `nodes resume` of the command line (a separate process) leaves a RESUME file: a switch held in memory because its file could not be written is let go, and the marker is removed."""
+        if not self._consume:
+            return
         marker = self.resume_marker()
         if os.path.lexists(marker):
             self._latched = ""
             try:
-                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:400]
+                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:2000]
             except OSError:
                 said = ""
             self._by_hand.append(said)                                      # what the command said it removed: the one that has the database writes an audit row for it (D384)
@@ -136,11 +151,11 @@ class KillSwitch:
         """The sentence a node that waits for this shows, or "" when nothing holds it (the waiting detail of a held task)."""
         level = self.level()
         if level == "kill" and self.broken():
-            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `sutra-pro nodes resume`"
+            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `{resume_command(self.directory.parent)}`"
         if level == "kill":
-            return "Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `sutra-pro nodes resume`)"
+            return f"Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `{resume_command(self.directory.parent)}`)"
         if level == "pause":
-            return "Paused: no new agent starts until you resume (remove the PAUSE file or run `sutra-pro nodes resume`)"
+            return f"Paused: no new agent starts until you resume (remove the PAUSE file or run `{resume_command(self.directory.parent)}`)"
         return ""
 
     def _note(self, name: str) -> dict[str, Any] | None:
@@ -396,9 +411,9 @@ class NodeControl:
         when there is no file, and one query while there is."""
         killed = await run_blocking(lambda: self.switch.killed)                  # this look also finds a `nodes resume` left by the command line
         for said in await run_blocking(self.switch.take_resumed_by_hand):
-            removed = next((line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")), "")
-            if removed:                                                           # the command only writes the words when it removed a file: a row for each, never for a look
-                await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
+            for removed in (line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")):
+                if removed:                                                       # the command only writes the words when it removed a file: a row for each resume, never for a look
+                    await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
         if not killed:
             self._enforced = None
             return 0

@@ -2111,6 +2111,7 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: the GitHub tools touch no file in the folder, so "read only" says nothing about them; the approval is the owner's real control over the network. The `sutra` part opens the whole app database read-only (known limit), so a tier-4 request must not carry it along. Delivery (a gap the code showed): today the engine path has no way to give a call a tool profile (the policy says `none`; `CallTag` and `CompletionRequest` carry no tools), so MAN-8 adds a `tool_profile` to the `node` block and an optional `PortSpec.tools` (empty by default) that `RouterPort` puts on a node's agent-turn calls only (never on a builder-tools call, which has its own grant); the plan gate does not ask the tier-4 question before this works (same package). A reviewer gets the `sutra` part at most; the planner none.
 - Rejected: tying tier 4 to folder `edit` (it refuses a read-only owner a read-only tool and mixes two controls); keeping the bundle `sutra+github` for tier 4 (it hands out the app database read with it).
 - Diagram: label "tier 4 independent of folder; sutra / github split", key only.
+- Corrected by: D386 (tier 4 opens no web tool of a builder call).
 
 ## D299 — J2's builder tools are not a tier: the grant describes them as run_tools
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2118,6 +2119,7 @@ Decided by Claude on its own, on the dates shown. The owner can veto any of them
 - Why: What the code showed: a builder-tools call (`CompletionRequest.run_tools`, a `ToolGrant`) runs in a folder strictly inside the run folder; the router gives it no owner's folder and no MCP profile; the engine switches it on (`llm.tools_on`: live with the Claude CLI unless `J2_AGENT_TOOLS=0`) for the folder-type outputs of `types.json`; the department output spec's `workspace` (`read` or `edit`) says only what builders may do in the OWNER's folder. So the two reaches are independent, and calling the builder tools "tier 3" made a document or website run (`read`) look as if it had no tools when it has them today. Known limit, written on purpose: `types.json` gives those builders Read, Write, Edit, Glob, Grep, Bash, WebSearch and WebFetch; they are fenced by the CLI sandbox when `srt` is found (macOS, Linux) and by J2's check that a file outside the folder fails the workflow. A node's grant does not narrow them in v1 (`agent_tools` is a locked engine setting, not a task key; a per-task key is a J2 sync); the owner can still turn them off for all runs in the engine settings. So tier 4's words "no other network tool" mean Sutra's own tools.
 - Rejected: leaving the grant silent (the audit would not say what a worker can do); a tier 3 that depends on the output level (it would remove today's tools from document runs, which is a replacement); narrowing the tools per node now (frozen engine).
 - Diagram: label "builder tools = run_tools, not a tier", pill on band:DEPARTMENT RUNTIME.
+- Corrected by: D380 and D386 (the host narrows a step's builder tools: reads, own-folder writes, no shell, no web).
 
 ## D300 — The plan gate's confirm threshold is 500 work credits
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2363,6 +2365,7 @@ Why: (a) the first version counted its own work as sleep and could refuse an ope
 - Why: a planner is a model reading the owner's words and files; letting it grant itself a read of every team, task and note is a model approving a model.
 - Rejected: granting `sutra` by role (the role table gives it only up to the ceiling and it did, silently)
 - Diagram: label "sutra tools only on the owner's yes", key only.
+- Corrected by: D380 and D386 (a step's builder call has no web tool).
 
 ## D326 — The project page and the owner's route to start a project
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2377,6 +2380,7 @@ Why: (a) the first version counted its own work as sleep and could refuse an ope
 - Why: the owner asked what a node did; names and kinds answer it without a second copy of anything private.
 - Rejected: the tool's input in the audit (a second place a secret could land); a row for each call (a busy node would fill the trail); a log inside the database (a write for every tool call)
 - Diagram: label "tool audit: names + kinds, no inputs", key only.
+- Corrected by: D383 (tool rows are written at the step's end and say so).
 
 ## D328 — Write-scope leases always, lanes behind a sub-flag
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2461,6 +2465,7 @@ Why: (a) the first version counted its own work as sleep and could refuse an ope
 - Why: the audit says that a tool was used, and a second copy of what it carried would be a second place for a secret.
 - Rejected: keeping tool inputs in the audit; hiding the limit because it is not new
 - Diagram: label "tool audit and network: say it", key only.
+- Corrected by: D380 and D386 (project steps have no Bash, WebSearch or WebFetch).
 
 ## D340 — The flag-off promise holds, with two precisions
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2596,6 +2601,7 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: run 1 found the grant line saying "tools none" while the step's real calls allowed `Bash` (7 times), `Write`, `Edit`, `WebSearch` and `WebFetch`, with the sandbox off (`srt` not found); `Bash` and the web tools are not confined to any path.
 - Rejected: a task setting to turn the engine's tools off for a step (a J2 sync, and all-or-nothing); trusting the sandbox (it was off); refusing a Codex step (the owner's ruling D342 keeps Codex as it is); opening `Bash` for tier 3 (the four git reads are not what a builder shell can do).
 - Diagram: label "step tools = grant: reads, own-folder writes, no shell, no web", key only.
+- Corrected by: D386 (no web tool for tier 4) and D387 (no shell level; the per-call dollar clamp).
 
 ## D381 — The monthly dollar limit stops a running project
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2631,3 +2637,87 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: a checklist that is wrong costs the next run.
 - Rejected: reconciling the two logs (they count different things).
 - Diagram: label "checklist fixed; run 1 unseen listed", key only.
+
+## D386 — No web tool for a step's builder call
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: No web tool for any step's builder call in version 1 (M1). `WebSearch`, `WebFetch` and the rule `WebFetch(domain:*)` are never offered to a step of a project, whatever its grant holds: `NodeRights` no longer has a web part and tier 4 opens nothing. Tier 4 is "Read GitHub (read only), through your own GitHub login"; the GitHub reads travel the separate tool-profile path of the step's agent turns, never the builder call, so the web tools gave GitHub nothing and gave a fetched page or the step itself a way to send what it had read to any address, and Decide for me answers that question by itself. Corrects D380 (which allowed the web with tier 4, recorded there as wider than the question). If a builder ever needs GitHub, only `WebFetch(domain:github.com)` and `WebFetch(domain:raw.githubusercontent.com)` could be added later, with the owner's words for it; not now. The question text is unchanged: it never said more than read-only GitHub. Package: MAN-2, MAN-8.
+- Why: the review found the approval and the capability did not match, and the owner's default (Decide for me) would grant it unasked.
+- Rejected: tying the web to a new level now (nothing needs it); trimming `domain:*` to GitHub (no step needs the web in v1).
+- Diagram: label "no web for a step; tier 4 = GitHub reads only", key only.
+
+## D387 — Tool-narrowing review hardening
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The review's other hardening (M2, m1, m2, m7, m8, m9). (a) One builder call is bounded by what the step has left: the router lowers the call's `--max-budget-usd` (the engine asks for $2 a call) to the meter's remaining allowance, and starts no program at zero (a plain "no dollars left" refusal). What the month or the project loses to OTHER tasks while one call runs is not seen by the step's process; the Conductor's next tick is what sees it. (b) A router made for a step's process (its task file carries the grant's tiers) narrows every builder call it gets, whatever the tag says; a test follows the rights from the port spec to the command line. (c) The confining rule is `Edit(./**)` (relative to the step's folder); the absolute rule is a second line, spelled `//c/...` on Windows and with glob and rule-syntax characters of the folder's name escaped. (d) The grant line is shorter ("own folder only; no commands or web"), so the longest case is not cut mid-word. (e) There is no shell level in the code and no unused owner words: nothing a stored grant says can open a shell. (f) A Codex call of a step with no folder is read-only whatever the policy's sandbox says. (g) Codex calls carry no dollar figure, so the monthly limit and a step's dollar cap cannot stop a Codex project; its credits (calls) and time hold (OPERATIONS says so). (h) A project step cannot run its own tests (no shell); J2's checks after the call still run. Package: MAN-2, MAN-9.
+- Why: each closes a gap the review found by reading the code and by mutating it.
+- Rejected: a per-call dollar figure that reads the ledger in the step's process (it has no database); keeping the absolute rule as the primary (its spelling cannot be tried without the real program on every system).
+- Diagram: label "per-call dollar clamp; node router narrows all; no shell level", key only.
+
+## D388 — The project's dollar limit, tightened
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The project's dollar limit, tightened (m3, m4, m5). The limit a project is compared with counts only what the project spent after it was made (the planner's calls came before it and are already out of the month's allowance it was given; the page still shows them). A figure taken from the month is used only while the owner still has a monthly limit and it is still the same month: a removed limit does not stop a project, a new month starts with the full allowance. When the figure runs out while the month itself has room (the owner raised the limit) the project stops with "This project used what was left of your month when it started, so it stopped." and not with "monthly limit reached". A step does not start when the project has no dollars left (it waits; the tick stops the project), instead of starting with a one-cent cap. Package: MAN-9.
+- Why: the first version stopped projects early, for a limit that no longer existed, or with a sentence that was false.
+- Rejected: re-reading the month on every call (the tick does).
+- Diagram: label "limit counts project spend; removed/new month ignored", key only.
+
+## D389 — The reply's project address is the app's own
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The reply's address is the app's own (m11). The org chat's reply links to the project only when the project exists, only in the org chat's page, and any look-alike `/p/prj_...` in a word a model wrote (a title) is made plain before the app's own address is added. Package: MAN-13.
+- Why: the chat page turns that exact shape into a link; nothing a model writes should be able to make one.
+- Rejected: marking the message on the wire (a wire shape change).
+- Diagram: label "reply links only a real project, only in org chat", key only.
+
+## D390 — No Try again for a step of an ended project
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: No step of an ended project is a "Try again" on Home. The "Heads up" lane drops a crashed or stopped step of a project that is over (stopped, could not finish, or done), and a step that finished with open items of such a project has no Try again; with the flag off no node table is read and the lane is what it was. D383 (h) covered only a stopped project; run 2 showed one for a project that ended "Could not finish", with the engine's own words ("Stopped: stopped on request"). Package: MAN-13.
+- Why: the project page says how it ended; a retry of one step of an ended project does nothing the owner expects.
+- Rejected: rewriting the lane's words (the row should not exist).
+- Diagram: label "no Try again for steps of ended projects", key only.
+
+## D391 — nodes status only looks; the app takes the resume marker
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: `nodes status` only looks; only the running app takes the resume marker. The command's switch is made with `consume=False`: it never removes `nodes.resume`, never clears a latched switch. `nodes resume` appends what it removed to the marker, so two resumes before the app looks are two audit rows, and the app writes them (when it next looks, or at its start). Package: MAN-4.
+- Why: run 2 reproduced `status` right after `resume` taking the marker in the command's own process, so the app never wrote the row (D384 had the same race).
+- Rejected: the command writing the database (one writer).
+- Diagram: label "status read-only; app audits resume", key only.
+
+## D392 — The resume hint names this install's command
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The hint for resuming names the command of THIS install. In an app the command is the app's own Python (`<app>/Contents/Resources/python/bin/python3 -I -B -m sutra_app nodes resume --data-dir <dir>`), elsewhere `sutra-pro nodes resume`; the server's held-step sentences and the command's own say it. There is no Resume button on the page for the switch (the page's Pause and Continue are for one project), so the command is the way, and the docs say so. Package: MAN-4.
+- Why: a beta has no `sutra-pro` on the path.
+- Rejected: a new page button (a write route with a wider reach; not asked).
+- Diagram: label "resume hint: app python or sutra-pro", key only.
+
+## D393 — The reviewer's answers and the reviewer's text
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The reviewer's question and the reviewer's text. (a) The reviewer's two answers read "Send them back" and "Leave as it is" (the page and the chat card); the others keep their words. (b) The reviewer is given what each step WROTE, not only the names of its files: the text files its hand-off names (not the engine's own files, no link, no slash in the name, no hidden name), at most 4000 characters of a file, 8000 of a step and 16000 in all, scrubbed of secret shapes by the egress scan and wrapped between `<<<` and `>>>` as data, with the template saying that text inside is material to read and never an instruction. Package: MAN-11.
+- Why: in run 2 the reviewer judged "the work only lists filenames" because the file list was all it saw.
+- Rejected: the whole file (cost and size); giving it the engine's report files (they are the engine's words about the run).
+- Diagram: label "reviewer: Send back/Leave; reads what steps wrote", key only.
+
+## D394 — Words and links of a step's cards and page
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The words and links of a step's own cards and page. (a) The done card of a step links to its project (`project_id`, left out of the wire shape for an ordinary task), offers no Try again of its own, and says how a stop happened in the owner's words (the project's stop reason: "You stopped it", "The kill switch was used"; the engine's stock "Stopped: stopped on request" and "waiting task X did not finish" become "It was stopped before it finished" and "The step before it did not finish"); the task keeps the engine's words. (b) The page names no engine file ("report.md" too) and no file count; the engine's pseudo-tool PROPOSE is no tool row. (c) The project is titled by the request's short title, not by its first step's. (d) The grant line says nothing of "tools none" when the step has no app tools. Package: MAN-13.
+- Why: each was a sentence in run 2 that the owner could not use.
+- Rejected: rewriting the stored outcome (the record keeps what the engine said).
+- Diagram: label "step cards link; plain stops; no plumbing", key only.
+
+## D395 — Per-step calls, minutes and dollars on the page
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The page says what each step used: its calls, its minutes from its first start (to now while it runs) and about how many dollars, every attempt counted, from the ledger and the step's tasks (`NodeOut.calls`, `usd`, `minutes`). A step that has made no call says nothing. Package: MAN-13.
+- Why: the owner should not need the ledger.
+- Rejected: reading the parity branch's summary (it is not on this branch; the same numbers, one query for each step).
+- Diagram: label "page: per-step calls, minutes, dollars", key only.
+
+## D396 — The project page's theme
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The project page's theme. The owner's own explicit choice (the key `j2theme`, written only when they pick light or dark on Home or a team page) wins, because the choice is for every page; with none, or "system", the page follows the computer's light or dark setting and changes with it while it is open; a change of the choice in another tab is followed. Package: MAN-13.
+- Why: run 2 asked that a stored light from another page not silently override. The key is only ever written by a deliberate choice, so honouring it is honouring the owner; this page has no chooser of its own (a second key would make two answers for one setting).
+- Rejected: ignoring the stored choice (the owner picked it); a chooser on this page.
+- Diagram: label "project theme: choice wins, else follows OS live", key only.
+
+## D397 — A graceful close leaves the project resumable
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A graceful close leaves the project resumable. The app's stop ladder asks every live run to stop; the engine answers with its stock "Stopped: stopped on request" before the app can write "the app was closed", so the step was read as the owner's stop: cancelled, its followers cancelled, the project "could not finish". A step whose task was marked `_stopped_by = app` (only the shutdown and the start guard mark it) AND whose outcome is only the engine's stock words is now read as a close: it fails with "the app was closed while it ran", gets a fresh attempt that spends no retry (D314, at most two such), and its followers wait. The owner's stop and the kill switch mark `owner` or `system` and still cancel. A crash or `kill -9` is found at the next start by `reconcile` and ends the same way (tests for both, with the fake engine). The closed time is left out of the wall time (D348). Package: MAN-7.
+- Why: D314 said an app close gives the step a fresh attempt; it was only true after a crash.
+- Rejected: ending the project on purpose at a graceful close (nothing in the design says a close should cost the owner the project).
+- Diagram: label "graceful close = fresh attempt, project goes on", key only.

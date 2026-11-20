@@ -46,3 +46,35 @@ def test_a_resume_made_while_the_app_was_closed_is_audited_when_the_app_looks_ne
     assert rig.switch.resume_marker().exists()
     rig.t.run(rig.control.enforce())
     assert len(resumes(rig)) == 1
+
+
+def test_a_status_run_between_the_resume_and_the_apps_look_does_not_eat_the_marker(rig, capsys):
+    """Run 2: `nodes status` right after `nodes resume` took the marker in the command's own process, so the app never wrote the row. Only the app may take it."""
+    command(rig, "kill")
+    command(rig, "resume")
+    marker = rig.switch.resume_marker()
+    assert marker.exists()
+    for _ in range(3):
+        assert command(rig, "status") == 0
+    assert marker.exists() and "removed: KILL" in marker.read_text(), "status only looks"
+    command(rig, "pause")
+    command(rig, "resume")
+    command(rig, "status", "--json")
+    assert marker.exists()
+    rig.t.run(rig.control.enforce())
+    assert not marker.exists()
+    assert len(resumes(rig)) == 2, "one row for each resume, and the app wrote both"
+
+
+def test_the_hint_names_the_command_of_this_install_the_apps_own_python_for_an_app_and_sutra_pro_otherwise(rig, capsys):
+    from sutra_app.orchestrator.killswitch import resume_command
+    bundle = "/Applications/Sutra Pro Beta.app/Contents/Resources/python/bin/python3"
+    assert resume_command("/data/d", bundle) == f'"{bundle}" -I -B -m sutra_app nodes resume --data-dir "/data/d"'
+    assert resume_command("/data/d", "C:\\Program Files\\Sutra Pro\\resources\\python\\python.exe").endswith('-m sutra_app nodes resume --data-dir "/data/d"')
+    assert resume_command("/data/d", "/usr/bin/python3") == "sutra-pro nodes resume"
+    command(rig, "kill")
+    held = rig.switch.held()
+    assert "kill switch is on" in held and "nodes resume" in held, held
+    code = command(rig, "pause")
+    out = capsys.readouterr().out
+    assert code == 0 and "nodes resume" in out

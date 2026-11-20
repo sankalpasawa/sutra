@@ -5,7 +5,7 @@ import json
 import pytest
 from orchestrator.projects_rig import PRig  # noqa: F401
 
-from sutra_app.orchestrator.conductor import MONTH_REASON
+from sutra_app.orchestrator.conductor import MONTH_REASON, MONTH_START_REASON
 
 BASE = 1793786400
 NODE_A = "nd_"
@@ -49,8 +49,8 @@ def test_a_project_that_spent_more_dollars_than_the_owner_set_is_stopped(rig):
     rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
     assert tick(rig, 10)["stopped"] == []                                                                  # nothing spent yet
     for task_id, usd in ((tasks["a1"], 0.3), (tasks["a2"], 0.3)):                                          # the two nodes together spent 0.6: over the 0.5 the owner set
-        rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, 'claude', 'agent_turn', ?, ?)", BASE + 11, task_id, usd)
-    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, 'stub', 'agent_turn', ?, 5.0)", BASE + 11, tasks["a1"])        # a stub call costs nothing
+        rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, 'claude', 'agent_turn', ?, ?)", LATER, task_id, usd)
+    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, 'stub', 'agent_turn', ?, 5.0)", LATER, tasks["a1"])        # a stub call costs nothing
     done = tick(rig, 15)
     assert done["stopped"] == [reservation.project_id] and [r["action"] for r in rig.audit("trigger.project_usd")] == ["trigger.project_usd"]
     assert len(notes(rig, reservation.project_id, "limit")) == 1 and rig.project(reservation.project_id)["status"] == "stopped"
@@ -194,11 +194,15 @@ def test_a_project_is_not_stopped_at_once_by_the_wall_limit_because_the_app_was_
 # ---- the owner's monthly dollar limit is the project's limit too (D381) -----------------------------------------------------------------
 
 MONTH_SENTENCE = MONTH_REASON
+MONTH_START_SENTENCE = MONTH_START_REASON
 assert MONTH_SENTENCE == "Your monthly limit was reached, so the project stopped."
 
 
-def spend(rig, usd, task_id=None, provider="claude"):
-    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, ?, 'agent_turn', ?, ?)", BASE + 3, provider, task_id, usd)
+LATER = BASE + 5000                                                                          # after the project exists (a ledger row of its own steps); BASE + 3 is before it
+
+
+def spend(rig, usd, task_id=None, provider="claude", at=None):
+    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, ?, 'agent_turn', ?, ?)", at if at is not None else (LATER if task_id or at is not None else BASE + 3), provider, task_id, usd)
 
 
 def month_limit(rig, usd):
@@ -247,7 +251,7 @@ def test_when_the_monthly_limit_is_reached_a_running_step_is_stopped_with_one_pl
     assert tick(rig, 10)["stopped"] == []
     spend(rig, 2.9, tasks["a1"])                                                              # the running step spent 2.9 of the 3.0
     assert tick(rig, 12)["stopped"] == []
-    spend(rig, 0.2, None)                                                                     # a planner call or an ordinary task takes the month past its limit
+    spend(rig, 0.2, None, at=LATER)                                                           # an ordinary task takes the month past its limit
     done = tick(rig, 15)
     assert done["stopped"] == [reservation.project_id]
     project = rig.project(reservation.project_id)
@@ -259,7 +263,7 @@ def test_when_the_monthly_limit_is_reached_a_running_step_is_stopped_with_one_pl
     assert tick(rig, 20)["stopped"] == []                                                     # nothing is done twice
 
 
-def test_a_project_that_spent_past_its_starting_allowance_is_stopped_with_the_same_sentence(rig):
+def test_a_project_that_spent_past_its_starting_allowance_is_stopped_and_says_so(rig):
     month_limit(rig, 3.0)
     spend(rig, 1.0)
     reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
@@ -267,7 +271,7 @@ def test_a_project_that_spent_past_its_starting_allowance_is_stopped_with_the_sa
     month_limit(rig, 100.0)                                                                   # the owner raised the month meanwhile: the project still keeps to what it was given at its start
     spend(rig, 2.1, tasks["a1"])                                                              # more than the 2.0 it was given
     assert tick(rig, 10)["stopped"] == [reservation.project_id]
-    assert rig.project(reservation.project_id)["stop_reason"] == MONTH_SENTENCE
+    assert rig.project(reservation.project_id)["stop_reason"] == MONTH_START_SENTENCE, "the month itself still has room, so the sentence is not 'monthly limit reached'"
 
 
 def test_the_owners_own_lower_dollars_keep_their_own_words(rig):
@@ -287,3 +291,55 @@ def test_an_ordinary_task_keeps_todays_rule_it_waits_and_nothing_stops_it(rig):
     waiting = rig.limits.gate(rig.t.db.conn(), BASE + 10, "web")
     assert waiting.startswith("This month's spending limit is used up") or "used up" in waiting
     assert tick(rig, 10)["stopped"] == []                                                       # no project exists: nothing is stopped
+
+
+# ---- the frozen figure and the live month (D388) -----------------------------------------------------------------------------------------
+
+def test_the_planners_calls_are_not_counted_twice_against_the_project(rig):
+    """The planner's calls were made before the project existed, so they are already out of the month's allowance the project was given: they must not come off it a second time."""
+    from sutra_app.orchestrator.budgets import project_cost
+    month_limit(rig, 3.0)
+    planner = "nd_" + "a" * 12
+    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, usd, detail_json) VALUES (?, 'claude', 'chat_plan', 0.5, ?)", BASE + 1, '{"agent_node": "%s"}' % planner)     # before the project
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    assert rig.project(reservation.project_id)["budget_usd"] == 2.5
+    rig.sql("INSERT INTO agent_nodes(id, project_id, role, runtime, state, created_at) VALUES (?, ?, 'planner', 'inline', 'done', ?)", planner, reservation.project_id, BASE)
+    spend(rig, 0.3, tasks["a1"])
+    created = rig.project(reservation.project_id)["created_at"]
+    assert project_cost(rig.t.db.conn(), reservation.project_id)[0] == pytest.approx(0.8), "the page shows everything"
+    assert project_cost(rig.t.db.conn(), reservation.project_id, created)[0] == pytest.approx(0.3), "the limit counts what the project itself spent"
+    assert rig.projects.usd_left(rig.t.db.conn(), reservation.project_id, BASE + 200) == pytest.approx(2.2), "2.5 given, 0.3 spent: not 1.7"
+
+
+def test_removing_the_monthly_limit_mid_run_does_not_stop_the_project(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 1.0)
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    month_limit(rig, None)                                                                    # the owner clears the limit
+    spend(rig, 5.0, tasks["a1"])                                                              # far more than the 2.0 the project was given
+    assert tick(rig, 10)["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
+    assert rig.audit("trigger.project_month") == []
+    assert rig.projects.usd_left(rig.t.db.conn(), reservation.project_id, BASE + 10) is None, "no limit: nothing caps a new step"
+
+
+def test_a_new_month_forgets_the_old_months_leftover(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 1.0)
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    spend(rig, 2.1, tasks["a1"])                                                              # past the 2.0 it was given, in the old month
+    later = 40 * 86400                                                                        # a month on: the full limit is there again
+    rig.sql("UPDATE tasks SET started_at = ?, last_event_at = ?", BASE + later - 5, BASE + later - 1)
+    assert tick(rig, later)["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
+    assert rig.projects.usd_left(rig.t.db.conn(), reservation.project_id, BASE + later) == pytest.approx(3.0), "the new month's allowance, not the old figure"
+
+
+def test_a_step_does_not_start_when_the_project_has_no_dollars_left(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 0.5)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    conn = rig.t.db.conn()
+    assert rig.projects.gate(conn, BASE + 50, rig.t.row(tasks["a1"])) == ""
+    spend(rig, 2.5, tasks["a1"])                                                              # the project's 2.5 are gone, the month is at 3.0
+    assert rig.projects.gate(conn, BASE + 50, rig.t.row(tasks["a1"])) == "Waiting: the dollars for this project are used up"
+    assert rig.start() == [], "no step is started with a token cap"

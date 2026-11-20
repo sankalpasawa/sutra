@@ -56,6 +56,7 @@
     const low = raw.toLowerCase();
     if (!raw) return "";
     if (/kill switch|kill file/.test(low)) return "The kill switch was used";
+    if (/^waiting task .* did not finish$/.test(low)) return "The step before it did not finish";
     if (low === "stopped by you" || low === "reset by you") return "You stopped it";
     if (low === "stopped on request") {
       const why = isObj(project) && project.status === "stopped" ? clean(project.stop_reason) : "";
@@ -83,7 +84,7 @@
     if (action === "project.ended") return word(STATUS_WORDS, reason, "");
     if (action === "verdict.received") return word(OPINION_WORDS, reason, "");
     if (action === "gate.decided") return reason.startsWith("decided_by owner") ? "you answered" : reason.replace(/^decided_by rule:decide_for_me:?\s*/, "Sutra answered for you: ").replace(/^(Sutra answered for you: )[a-z0-9_]+:\s*/, "$1");
-    if (action === "handoff.accepted") { const m = /^(\d+) file\(s\)/.exec(reason); return m ? (m[1] === "1" ? "1 file" : m[1] + " files") : ""; }
+    if (action === "handoff.accepted") return "";                    // the count was of every file of the run folder, plumbing included: the messages below say what it made (D394)
     return reason;
   }
 
@@ -126,9 +127,12 @@
     return text ? '<p class="pnote" role="note">' + esc(text) + "</p>" : "";
   }
 
-  function answerButtons(options, project, approval, item) {
+  // The reviewer's question is "send the steps back?" (D393): its two answers say that, not "Allow once" and "No".
+  const REVIEW_ANSWERS = freeze({allow_once: "Send them back", deny: "Leave as it is"});
+  function answerButtons(options, project, approval, item, kind) {
+    const words = kind === "review" ? Object.assign({}, ANSWERS, REVIEW_ANSWERS) : ANSWERS;
     return arr(options).map(clean).filter(o => Object.prototype.hasOwnProperty.call(ANSWERS, o)).map(o =>
-      '<button type="button" data-act="node-answer" data-project="' + esc(project) + '" data-approval="' + esc(approval) + '" data-item="' + esc(item) + '" data-decision="' + o + '">' + esc(ANSWERS[o]) + "</button>").join("");
+      '<button type="button" data-act="node-answer" data-project="' + esc(project) + '" data-approval="' + esc(approval) + '" data-item="' + esc(item) + '" data-decision="' + o + '">' + esc(words[o]) + "</button>").join("");
   }
 
   // The open questions: a card for each, its answers as buttons. A permission of the computer lists its steps for this system.
@@ -137,7 +141,7 @@
     const project = clean(isObj(s.project) ? s.project.id : "");
     const asked = arr(s.cards).filter(isObj).map(c =>
       '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-approval="' + esc(clean(c.approval_id)) + '"><p class="sq">' + esc(clean(c.question)) + "</p>" +
-      '<div class="opts">' + answerButtons(c.options, project, clean(c.approval_id), clean(c.item)) + "</div></div>");
+      '<div class="opts">' + answerButtons(c.options, project, clean(c.approval_id), clean(c.item), clean(c.kind)) + "</div></div>");
     const system = arr(s.system_cards).filter(isObj).map(c => {
       const steps = arr(c.steps).map(clean).filter(Boolean);
       const affects = arr(c.affects).map(clean).filter(Boolean);
@@ -194,6 +198,15 @@
       (edges.some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
   }
 
+  // What one step used, in the owner's units: calls, minutes, about how many dollars (D395). Nothing before it has made a call.
+  function usedHtml(n) {
+    if (!Number.isFinite(n.calls) || n.calls <= 0) return "";
+    const parts = [n.calls + (n.calls === 1 ? " call" : " calls")];
+    if (Number.isFinite(n.minutes)) parts.push(n.minutes < 1 ? "under a minute" : (n.minutes >= 10 ? Math.round(n.minutes) : n.minutes) + (n.minutes === 1 ? " minute" : " minutes"));
+    if (Number.isFinite(n.usd)) parts.push("about $" + n.usd.toFixed(2));
+    return '<span class="cnote pused">Used: ' + esc(parts.join(", ")) + "</span>";
+  }
+
   function stepsHtml(snap) {
     const s = isObj(snap) ? snap : {};
     const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
@@ -205,7 +218,7 @@
       const files = arr(n.scope).map(clean).filter(Boolean);
       return '<li class="pstep" data-state="' + esc(clean(n.state)) + '" data-node="' + esc(clean(n.id)) + '"><b>' + esc(Store().nodeName(n)) + "</b> " +
         '<span class="pstate">' + esc(word(STATE_WORDS, n.state, "")) + "</span>" +
-        (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") +
+        (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") + usedHtml(n) +
         (after.length ? '<span class="cnote">Starts after: ' + esc(after.join(", ")) + "</span>" : "") +
         (waits.length ? '<span class="cnote">Shares files with, so waits for: ' + esc(waits.join(", ")) + "</span>" : "") +
         (files.length ? '<span class="cnote">May change: ' + esc(files.join(", ")) + "</span>" : "") +
@@ -240,9 +253,9 @@
   function auditHtml(rows, project) {
     const list = arr(rows).filter(isObj);
     if (list.length === 0) return '<h2>What happened</h2><p class="cempty">Nothing yet.</p>';
-    const tools = list.some(r => r.action === "tool.used");
+    const tools = list.some(r => r.action === "tool.used" && !/^other,/.test(clean(r.reason)));          // a tool of no kind (the engine's own PROPOSE) says nothing the owner can use (D394)
     return '<h2>What happened</h2>' + (tools ? '<p class="cnote">What a step used is written down when the step ends, so those lines carry the time it ended.</p>' : "") +
-      '<ol class="plist paudit">' + list.slice().reverse().map(r => {
+      '<ol class="plist paudit">' + list.filter(r => !(r.action === "tool.used" && /^other,/.test(clean(r.reason)))).slice().reverse().map(r => {
         const label = r.action === "tool.used" ? toolWords(r.reason) : word(ACTION_WORDS, r.action, "Something happened");
         const detail = reasonWords(r, project);
         return '<li data-seq="' + esc(r.seq) + '"><span class="cnote">' + esc(clock(r.at)) + "</span> <b>" + esc(label) + "</b>" + (detail ? " <span>" + esc(detail) + "</span>" : "") + "</li>";
@@ -252,7 +265,7 @@
   // The run's own plumbing is not what a step produced: its files are the engine's, so a hand-off names only the rest (D383).
   const PLUMBING = freeze(["artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl",
     "goal.json", "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "settings.json", "snapshot.json", "summary.json", "task.json", "timing.json",
-    "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log"]);
+    "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log", "report.md"]);
   const ENGINE_WORDS = /rubric|done-when|necessary condition|workflow|\batoms?\b|\bJ2\b|checks? (?:pass|fail)/i;
   const names = (list, n) => (list.length <= n ? list.join(", ") : list.slice(0, n).join(", ") + " and " + (list.length - n) + " more");
   // What a hand-off says in plain words: that the step handed in its work, and which files it made. What the engine wrote as the step's summary is not shown (it is the engine's words).

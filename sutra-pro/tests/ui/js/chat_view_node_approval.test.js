@@ -71,10 +71,12 @@ const reply = text => ({id: 2, session_id: "cs_x", role: "agent", who: "sutra", 
 const taskCard = over => Object.assign({type: "task", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "running"}, over || {});
 
 test("a reply that ends with a project's address links to the project, any other reply is as it was (D382)", () => {
-  const html = ChatView.transcript(SESSION, [reply("I gave this to the Web team. You can follow it here: /p/" + PROJECT)]);
+  const ORG = Object.assign({}, SESSION, {id: "cs_org", kind: "org", node_id: "", title: "Org"});
+  const html = ChatView.transcript(ORG, [reply("I gave this to the Web team. You can follow it here: /p/" + PROJECT)]);
   assert.ok(html.includes('You can follow it here: <a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  assert.equal(ChatView.transcript(SESSION, [reply("a model wrote /p/" + PROJECT)]).includes('class="plink"'), false, "a team's own chat never links it (D389)");
   for (const same of ["I gave this to the Web team.", "see /p/prj_zz", "/p/" + PROJECT + "abc"]) {
-    assert.equal(ChatView.transcript(SESSION, [reply(same)]).includes('class="plink"'), false, same);
+    assert.equal(ChatView.transcript(ORG, [reply(same)]).includes('class="plink"'), false, same);
   }
 });
 
@@ -83,4 +85,19 @@ test("the card of a step of a project links to the project, the card of an ordin
   const plain = ChatView.card(taskCard());
   assert.equal(plain.includes("plink"), false);
   assert.equal(ChatView.card(taskCard({project_id: '"><script>'})).includes("<script"), false);
+});
+
+test("the reviewer's card says 'Send them back' and 'Leave as it is' (D393)", () => {
+  const html = ChatView.card(card({kind: "review", question: "The reviewer asks for changes to a1. Send them back?", options: ["allow_once", "deny"]}));
+  assert.ok(html.includes('data-decision="allow_once">Send them back</button>') && html.includes('data-decision="deny">Leave as it is</button>'));
+  assert.equal(/Allow once|>No</.test(html), false);
+});
+
+test("the done card of a step of a project links to the project and offers no Try again of its own (D394)", () => {
+  const done = over => Object.assign({type: "done", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "crashed", outcome: "The kill switch was used"}, over || {});
+  const ctx = {retry: true};
+  const linked = ChatView.card(done({project_id: PROJECT}), ctx);
+  assert.ok(linked.includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  assert.equal(/data-act="retry/.test(linked), false);
+  assert.ok(/data-act="retry/.test(ChatView.card(done(), ctx)), "an ordinary task keeps its Try again");
 });

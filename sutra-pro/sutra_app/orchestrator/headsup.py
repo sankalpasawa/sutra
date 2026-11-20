@@ -98,9 +98,10 @@ class HeadsUp:
             (r["dept_id"], r["id"], r["id"], r["ended_at"], r["seq"])).fetchone() is not None
 
     @staticmethod
-    def _of_a_stopped_project(conn: sqlite3.Connection, task_id: str) -> bool:
-        """The task is a step of a project that was stopped (by the owner, by the kill switch or by a limit)."""
-        return conn.execute("SELECT 1 FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ? AND p.status = 'stopped' LIMIT 1", (task_id,)).fetchone() is not None
+    def _of_an_ended_project(conn: sqlite3.Connection, task_id: str) -> bool:
+        """The task is a step of a project that is over: stopped (by the owner, the kill switch or a limit), could not finish, or done."""
+        return conn.execute("SELECT 1 FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ? AND p.status IN ('stopped','failed','done','done_with_open_items') LIMIT 1",
+                            (task_id,)).fetchone() is not None
 
     def _item(self, conn: sqlite3.Connection, r: sqlite3.Row, now: int) -> HeadsUpOut | None:
         status = r["status"]
@@ -115,8 +116,9 @@ class HeadsUp:
                 return None
             return HeadsUpOut(kind="quiet", tone="warn", text=f'{team} has gone quiet on "{title}": no sign of work for {age_words(since)}',
                               at=iso_z(seen), since_s=since, **base)
-        if status in ("stopped", "crashed") and self.nodes and self._of_a_stopped_project(conn, r["id"]):
-            return None                                                          # D383: the owner, the kill switch or a limit stopped the whole project; its page says so. Not a problem to try again
+        ended_project = self.nodes and status in ("stopped", "crashed", "done_with_open_items") and self._of_an_ended_project(conn, r["id"])
+        if ended_project and status != "done_with_open_items":
+            return None                                                          # D383, D390: the project is over (stopped, failed or done); its page says how. Not a problem to try again
         since = max(0, now - int(r["ended_at"]))
         ended = dict(at=iso_z(r["ended_at"]), since_s=since)
         app_closed = outcome.lower().startswith("the app was closed")
@@ -124,7 +126,7 @@ class HeadsUp:
             return HeadsUpOut(kind="finished", tone="ok", text=f'{team} finished "{title}"', **ended, **base)
         if status == "done_with_open_items":
             return HeadsUpOut(kind="finished", tone="warn", text=f'{team} finished "{title}" with some things left open',
-                              retry=not self._replaced(conn, r), **ended, **base)
+                              retry=not ended_project and not self._replaced(conn, r), **ended, **base)
         if status == "stopped":
             by = _stopped_by(r["settings_json"])
             if by == "owner" or (by != "app" and outcome.lower().rstrip(".") in OWNER_STOP_WORDS):

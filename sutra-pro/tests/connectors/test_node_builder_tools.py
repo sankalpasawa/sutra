@@ -86,8 +86,8 @@ def test_a_step_with_the_default_grant_is_started_with_reads_and_writes_in_its_o
 
 
 def test_an_ordinary_call_keeps_the_whole_list(fake, tmp_path, folders):
-    """No node in the tag: byte for byte what J2 asked for, with a router that has rights set and one that has none."""
-    for rights in (NodeRights((0, 1), "none"), None):
+    """No node in the tag and a router that was not made for a node: byte for byte what J2 asked for."""
+    for rights in (None,):
         fake.sequence("ok_plain").reply(text="built")
         router = rig(fake, tmp_path, rights)
         try:
@@ -111,12 +111,13 @@ def test_a_step_whose_rights_are_not_known_gets_the_narrowest_list(fake, tmp_pat
     assert value(argv, "--tools") == "Read,Write,Edit,Glob,Grep" and "Bash" not in value(argv, "--allowedTools")
 
 
-@pytest.mark.parametrize("rights, shell, web", [
-    (NodeRights((0, 1, 2, 3), "git_reads"), False, False),         # tier 3 is the four git reads of the owner's folder, not a shell
-    (NodeRights((0, 1, 2, 3, 4), "git_reads"), False, True),       # tier 4 opens the web tools
-    (NodeRights((0, 1, 3), "sandboxed_builder"), True, False),     # a shell level that no grant holds today
+@pytest.mark.parametrize("rights", [
+    NodeRights((0, 1, 2, 3), "git_reads"),                          # tier 3 is the four git reads of the owner's folder, not a shell
+    NodeRights((0, 1, 2, 3, 4), "git_reads"),                       # tier 4 is "Read GitHub, read only": it opens NO web tool (D386)
+    NodeRights((0, 1, 3, 4), "sandboxed_builder"),                  # a level that does not exist: whatever a stored grant says, there is no shell level in the code (D387, m8)
+    NodeRights((0, 1, 2, 3, 4), "shell"),
 ])
-def test_the_shell_needs_a_shell_level_and_the_web_needs_tier_four(fake, tmp_path, folders, rights, shell, web):
+def test_no_grant_opens_the_shell_or_the_web_for_a_builder_call(fake, tmp_path, folders, rights):
     fake.sequence("ok_plain").reply(text="built")
     router = rig(fake, tmp_path, rights)
     try:
@@ -125,17 +126,17 @@ def test_the_shell_needs_a_shell_level_and_the_web_needs_tier_four(fake, tmp_pat
     finally:
         router.close()
     offered = value(argv, "--tools").split(",")
-    assert ("Bash" in offered) is shell and ("WebSearch" in offered and "WebFetch" in offered) is web
-    assert ("Bash" in value(argv, "--allowedTools").split(" ")) is shell
-    assert ("WebFetch(domain:*)" in value(argv, "--allowedTools").split(" ")) is web
-    assert {"Read", "Glob", "Grep"} <= set(offered)
+    allowed = value(argv, "--allowedTools").split(" ")
+    assert offered == ["Read", "Write", "Edit", "Glob", "Grep"]
+    for name in ("Bash", "WebSearch", "WebFetch", "WebFetch(domain:*)"):
+        assert name not in offered and name not in allowed and not any(a.startswith(name + "(") for a in allowed if name != "WebFetch(domain:*)")
 
 
 # ---- the pure rule -------------------------------------------------------------------------------------------------------------
 
 def test_a_tool_the_rule_does_not_name_is_never_offered(folders):
     odd = ToolGrant(tools=("Read", "Task", "TodoWrite", "mcp__x"), allow=("Read", "Task"), cwd=folders[0], root=folders[1], usd=0.5, log_chars=10)
-    narrowed = node_tools.narrow(odd, NodeRights((0, 1, 2, 3, 4), "sandboxed_builder"))
+    narrowed = node_tools.narrow(odd, NodeRights((0, 1, 2, 3, 4), "git_reads"))
     assert narrowed.tools == ("Read",) and narrowed.allow == ("Read",)
 
 
@@ -146,11 +147,11 @@ def test_the_narrowed_grant_is_a_copy_and_the_engines_own_is_untouched(folders):
     assert (narrowed.cwd, narrowed.root, narrowed.usd, narrowed.log_chars, narrowed.sandbox) == (grant.cwd, grant.root, grant.usd, grant.log_chars, grant.sandbox)
 
 
-def test_the_words_of_the_grant_line_are_true_for_each_case():
-    assert node_tools.words(NARROWEST) == "reads; writes only in its own folder; no commands; no web"
-    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "reads; writes only in its own folder; no commands; web"
-    assert node_tools.owner_words(NARROWEST) == "This step can look at the files it is given and write its own working files in a scratch space of its own. It cannot run commands or use the web."
-    assert "search and read the web" in node_tools.owner_words(NodeRights((0, 1, 4), "none"))
+def test_the_words_of_the_grant_line_are_true_for_each_case_and_no_shell_level_exists_in_the_code():
+    from sutra_app.orchestrator import builder_rights
+    assert not hasattr(builder_rights, "SHELL_LEVELS") and not hasattr(builder_rights, "owner_words") and not hasattr(NodeRights(), "shell")
+    assert node_tools.words(NARROWEST) == "own folder only; no commands or web"
+    assert node_tools.words(NodeRights((0, 1, 4), "none")) == "own folder only; no commands or web"
 
 
 # ---- Codex ---------------------------------------------------------------------------------------------------------------------
@@ -177,3 +178,76 @@ def test_a_codex_step_with_a_read_folder_runs_in_the_read_only_sandbox(fake, tmp
     CodexConnector(cfg, sandbox="read-only").call_text("look", folder=Folder(str(work), edit=False))
     argv = fake.model_calls("codex")[-1]["argv"]
     assert value(argv, "-s") == "read-only" and "workspace-write" not in argv and "danger-full-access" not in " ".join(argv)
+
+
+# ---- the whole way: the node block of task.json, the port spec, the router, the command line (D387, m1) -----------------------------------
+
+def test_the_port_made_from_a_nodes_spec_narrows_every_builder_call_even_one_whose_tag_lost_the_node(fake, tmp_path, folders):
+    """`port_from_config` sets the router's rights from `PortSpec.node_tiers`: delete that line and this fails. The tag is not what the narrowing hangs on in a node's own process."""
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    fake.sequence("ok_plain").reply(text="built")
+    spec = PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(tmp_path / "data"), node_tiers=(0, 1, 4), node_commands="git_reads")
+    port = engine_port.port_from_config(spec, ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert port.router.node_rights == NodeRights((0, 1, 4), "git_reads")
+        port.complete(CompletionRequest(system="s", user="build it", tag=CallTag(function="W-1", role="builder"), run_tools=builder_grant(folders)))     # no node in the tag
+        argv = command_of(fake)
+    finally:
+        port.close()
+    assert value(argv, "--tools") == "Read,Write,Edit,Glob,Grep" and "Bash" not in value(argv, "--allowedTools")
+
+
+def test_the_port_of_an_ordinary_run_has_no_rights_and_keeps_the_whole_list(fake, tmp_path, folders):
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    fake.sequence("ok_plain").reply(text="built")
+    spec = PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(tmp_path / "data"))
+    port = engine_port.port_from_config(spec, ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert port.router.node_rights is None
+        port.complete(CompletionRequest(system="s", user="build it", tag=CallTag(function="W-1", role="builder"), run_tools=builder_grant(folders)))
+        argv = command_of(fake)
+    finally:
+        port.close()
+    assert value(argv, "--tools") == ",".join(FULL_TOOLS)
+
+
+# ---- the spelling of the confining rule (D387, m2) -----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("path, absolute", [
+    ("/private/tmp/x/out", "Edit(//private/tmp/x/out/**)"),
+    ("/Users/A (work)/data[1]/out", "Edit(//Users/A \\(work\\)/data\\[1\\]/out/**)"),         # a folder called (work) or [1] is not a pattern
+    ("/srv/a*b?/out", "Edit(//srv/a\\*b\\?/out/**)"),
+    ("C:\\Users\\Me\\data\\out", "Edit(//c/Users/Me/data/out/**)"),                           # the Windows spelling of the program: //c/...
+    ("C:/Users/Me/out", "Edit(//c/Users/Me/out/**)"),
+])
+def test_the_absolute_rule_is_spelled_for_the_system_and_escapes_what_a_rule_reads_as_syntax(path, absolute):
+    assert node_tools.confined_rules(path) == [absolute, "Edit(./**)"], "the relative rule is the one that confines, and it is always there and always last"
+
+
+def test_a_folder_with_glob_characters_reaches_the_command_line_escaped(fake, tmp_path):
+    fake.sequence("ok_plain").reply(text="built")
+    out = os.path.realpath(tmp_path / "A (work)" / "run" / "out")
+    os.makedirs(out)
+    grant = ToolGrant(tools=FULL_TOOLS, allow=FULL_ALLOW, cwd=out, root=os.path.dirname(out), usd=0.5, log_chars=10)
+    router = rig(fake, tmp_path, NodeRights((0, 1), "none"))
+    try:
+        run(router, grant, NODE_TAG)
+        allowed = value(command_of(fake), "--allowedTools")
+    finally:
+        router.close()
+    assert allowed.endswith("Edit(./**)") and "Edit(//" in allowed and "A \\(work\\)" in allowed
+
+
+def test_a_codex_call_of_a_step_with_no_folder_is_read_only_whatever_the_policy_sandbox_says(fake, tmp_path):
+    """m9: the policy may say workspace-write for Codex; a call that names a node and has no folder of the owner's must still be read-only. An ordinary call keeps the policy's sandbox."""
+    from sutra_app.connectors.models import RouteContext
+    cfg = ConnectorConfig(**fake.config_kwargs(tmp_path))
+    fake.sequence("ok_plain").reply(text="ok")
+    connector = CodexConnector(cfg, sandbox="workspace-write")
+    connector.call_text("review", ctx=RouteContext(tag=CallTag(function="audit", node_id="nd_0123456789ab", node_role="reviewer")))
+    assert value(fake.model_calls("codex")[-1]["argv"], "-s") == "read-only"
+    fake.sequence("ok_plain").reply(text="ok")
+    connector.call_text("ordinary", ctx=RouteContext(tag=CallTag(function="audit")))
+    assert value(fake.model_calls("codex")[-1]["argv"], "-s") == "workspace-write"

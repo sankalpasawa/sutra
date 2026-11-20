@@ -1813,5 +1813,65 @@
   "id": "D385",
   "label": "checklist fixed; run 1 unseen listed",
   "anchor": null
+ },
+ {
+  "id": "D386",
+  "label": "no web for a step; tier 4 = GitHub reads only",
+  "anchor": null
+ },
+ {
+  "id": "D387",
+  "label": "per-call dollar clamp; node router narrows all; no shell level",
+  "anchor": null
+ },
+ {
+  "id": "D388",
+  "label": "limit counts project spend; removed/new month ignored",
+  "anchor": null
+ },
+ {
+  "id": "D389",
+  "label": "reply links only a real project, only in org chat",
+  "anchor": null
+ },
+ {
+  "id": "D390",
+  "label": "no Try again for steps of ended projects",
+  "anchor": null
+ },
+ {
+  "id": "D391",
+  "label": "status read-only; app audits resume",
+  "anchor": null
+ },
+ {
+  "id": "D392",
+  "label": "resume hint: app python or sutra-pro",
+  "anchor": null
+ },
+ {
+  "id": "D393",
+  "label": "reviewer: Send back/Leave; reads what steps wrote",
+  "anchor": null
+ },
+ {
+  "id": "D394",
+  "label": "step cards link; plain stops; no plumbing",
+  "anchor": null
+ },
+ {
+  "id": "D395",
+  "label": "page: per-step calls, minutes, dollars",
+  "anchor": null
+ },
+ {
+  "id": "D396",
+  "label": "project theme: choice wins, else follows OS live",
+  "anchor": null
+ },
+ {
+  "id": "D397",
+  "label": "graceful close = fresh attempt, project goes on",
+  "anchor": null
  }
 ]

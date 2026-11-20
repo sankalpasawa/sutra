@@ -135,3 +135,55 @@ def test_a_node_that_was_stopped_by_the_closing_of_the_app_is_a_restart_too_and_
     reconcile(rig)
     assert rig.sql("SELECT attempt, state FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[:] == (2, "queued")
     assert rig.sql("SELECT attempt, state FROM agent_nodes WHERE plan_ref = 'a2'").fetchone()[:] == (1, "cancelled")
+
+
+# ---- a graceful close of the app leaves the project resumable, as a crash found at the next start does (D397) ---------------------------------------
+
+def engine_answers_the_stop(rig, tasks):
+    """What the real engine does when the app's stop ladder asks it to stop: it writes `run.ended stopped` with its own stock words before the app can write 'the app was closed'."""
+    from sutra_app.orchestrator.testing.fake_engine import ev
+    launcher = rig.t.service.launcher
+    original = launcher.stop
+    by_pid = {rig.t.row(task_id).pid: task_id for task_id in tasks.values()}
+
+    async def stop(run_dir, pid, **kw):
+        await original(run_dir, pid, **kw)
+        if pid in by_pid:
+            rig.t.write_events(by_pid[pid], ev("run.ended", status="stopped", outcome="Stopped: stopped on request"))
+    launcher.stop = stop
+
+
+def test_a_graceful_shutdown_gives_the_running_step_a_fresh_attempt_and_the_project_goes_on(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.run(rig.t.service.shutdown())
+    assert rig.t.row(tasks["a1"]).outcome.lower().startswith("stopped: stopped on request"), "the engine said only its stock words"
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert node["attempt"] == 2 and node["state"] == "queued", dict(node)
+    assert [r["action"] for r in rig.audit("node.restarted")] == ["node.restarted"] and rig.audit("node.retry") == [] and rig.audit("node.cancelled") == []
+    assert rig.project(reservation.project_id)["status"] == "running"
+    assert rig.sql("SELECT state FROM agent_nodes WHERE plan_ref = 'a2'").fetchone()[0] != "cancelled", "the step that waits for it is not cancelled"
+
+
+def test_the_owners_stop_and_the_kill_switch_still_cancel_and_do_not_restart(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.t.run(rig.projects.stop(reservation.project_id))                     # the owner's Stop everything
+    assert rig.sql("SELECT state FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == "cancelled"
+    assert rig.audit("node.restarted") == [] and rig.project(reservation.project_id)["status"] == "stopped"
+
+
+def test_every_running_step_is_restarted_by_a_graceful_shutdown_and_a_kill_minus_nine_is_the_same_after_reconcile(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", []), ("a3", "ops", [])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.run(rig.t.service.shutdown())
+    graceful = {r["plan_ref"]: (r["attempt"], r["state"]) for r in rig.sql("SELECT plan_ref, attempt, state FROM agent_nodes WHERE role = 'worker'")}
+    assert graceful == {"a1": (2, "queued"), "a2": (2, "queued"), "a3": (2, "queued")}
+    assert rig.project(reservation.project_id)["status"] == "running"
+
+
+def test_a_kill_minus_nine_is_found_at_the_next_start_and_ends_the_same_way(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", []), ("a3", "ops", [])])
+    for ref in ("a1", "a2", "a3"):
+        node = app_closed_under(rig, ref)
+        assert (node["attempt"], node["state"]) == (2, "queued")
+    assert rig.project(reservation.project_id)["status"] == "running"

@@ -222,11 +222,14 @@
   function projectAddress(html) {
     return html.replace(/\/p\/(prj_[0-9a-f]{12})(?![0-9a-zA-Z_])/g, '<a class="plink" href="/p/$1">Open the project</a>');
   }
+  // The reviewer's question is "send the steps back?" (D393): its two answers say that, not "Allow once" and "No".
+  const REVIEW_ANSWER_WORDS = freeze({allow_once: "Send them back", deny: "Leave as it is"});
   function nodeApprovalCard(c, ctx) {
+    const words = clean(c.kind) === "review" ? Object.assign({}, NODE_ANSWER_WORDS, REVIEW_ANSWER_WORDS) : NODE_ANSWER_WORDS;
     const done = ctx.answered === true || clean(ctx.answer) !== "";
     const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
     const buttons = options.map(o => '<button type="button" data-act="node-answer" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '" data-item="' +
-      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(NODE_ANSWER_WORDS[o]) + "</button>").join("");
+      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(words[o]) + "</button>").join("");
     return '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '"' +
       (done ? ' data-answered="true"' : "") + '><p class="sq">' + safeText(clean(c.question)) + "</p>" +
       (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + projectLink(c.project_id) + "</div>";
@@ -305,8 +308,8 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
       receiptLine(c.receipt) +
-      '<div class="acts">' + retryButton(c, ctx) + reportLink(c.report, "Open the report") +
-      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + (projectLink(c.project_id) === "" ? retryButton(c, ctx) : "") + reportLink(c.report, "Open the report") +
+      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div>" + projectLink(c.project_id) + "</div>";      // a step of a project is tried again by its project, never by this card (D394)
   }
 
   // The finished deliverable of a run in the team's chat (D135, a `deliverable` card): the report as the team wrote it, the files git saw change in the owner's
@@ -510,7 +513,7 @@
       } else if (directReply(m) && root.ChatMarkdown) {
         inner = root.ChatMarkdown.render(text(m.text));                 // as the model wrote it: an "@name" at its start is not an agent's address
       } else {
-        inner = projectAddress(safeText(body));                        // D382: a reply that ends with a project's address links to its page; only that exact shape, any other text is as it was
+        inner = clean(s.kind) === "org" ? projectAddress(safeText(body)) : safeText(body);      // D382, D389: in the org chat only (the app's own reply there); only that exact shape, any other text is as it was
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});

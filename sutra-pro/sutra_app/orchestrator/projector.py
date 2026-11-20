@@ -36,6 +36,7 @@ from sutra_app.orchestrator.attempts import attempt_in
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.deliverable import Deliverable, read_deliverable
 from sutra_app.orchestrator.errors import AppError, NotFound
+from sutra_app.orchestrator.stopwords import plain_outcome
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
     DeliverableCard, DoneCard, DoneReceipt, DoneReport, EventParseError, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, TeamChatCard,
@@ -488,8 +489,14 @@ class Projector:
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
         left = self._deliverable(row)
         report = DoneReport(dept_id=row.dept_id, run_id=row.run_id or "", label=left.label) if left is not None and left.has_report and row.run_id else None
+        project_id, shown = None, text
+        if self.node_sync is not None:                                      # nodes on: a step of a project links to the project and says how it was stopped in the owner's words (D394)
+            step = tx.conn.execute("SELECT p.id AS id, p.status AS status, p.stop_reason AS why FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ?", (row.id,)).fetchone()
+            if step is not None:
+                project_id = step["id"]
+                shown = plain_outcome(text, step["why"] if step["status"] == "stopped" else "")
         card = DoneCard(type="done", task_id=row.id, dept_name=name["name"] if name is not None else row.dept_id, title=clip(row.title, 200),
-                        status=status, outcome=text, receipt=self._receipt(tx.conn, row), report=report)
+                        status=status, outcome=shown, receipt=self._receipt(tx.conn, row), report=report, project_id=project_id)
         self._post(batch, ORG_SESSION_ID, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#done", at=ended_at)
         session = self._session_of(tx, row.dept_id)
         if left is not None and session is not None and row.run_id:

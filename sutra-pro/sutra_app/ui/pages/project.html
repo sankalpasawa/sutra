@@ -9,8 +9,17 @@
 <link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-console.css"><link rel="stylesheet" href="/ui/css/sutra-project.css">
 <!--SUTRA-BOOT-->
 <script src="/ui/js/sutra_ctx.js"></script>
-<script>/* the viewer's Appearance before the first paint (Home's Settings sets it): light, dark or system. This page follows the computer's own light or dark setting until the owner has chosen one (D383) */
-try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" || tp === "dark" ? tp : matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
+<script>/* the viewer's Appearance before the first paint, and after it (D396). The owner's own choice, light or dark (the key `j2theme` is written only when they pick one on Home or a team page: one choice for every page), wins.
+   With none, or "system", this page follows the computer's light or dark setting and changes with it while it is open. A change of the choice in another tab is followed too. */
+(function () {
+  var root = document.documentElement;
+  function chosen() { try { var tp = localStorage.getItem("j2theme"); return tp === "light" || tp === "dark" ? tp : ""; } catch (e) { return ""; } }
+  function os() { try { return matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { return "dark"; } }
+  function apply() { root.dataset.theme = chosen() || os(); }
+  apply();
+  try { var query = matchMedia("(prefers-color-scheme: light)"); if (query.addEventListener) query.addEventListener("change", apply); else if (query.addListener) query.addListener(apply); } catch (e) { /* no media queries: the first paint stands */ }
+  try { addEventListener("storage", function (event) { if (!event.key || event.key === "j2theme") apply(); }); } catch (e) { /* no events */ }
+})();</script>
 </head>
 <body class="console project">
 <!-- One project of several agents: what waits for the owner, the steps and the order they run in, what it used, what Sutra decided for the owner and what happened. This page exists

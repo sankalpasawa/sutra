@@ -166,3 +166,18 @@ def test_without_the_flag_the_reply_and_the_task_cards_are_what_they_were(tmp_pa
         assert all("/p/" not in text for text in texts) and all("project_id" not in card for card in tasks)
         for card in rows(services, "SELECT card_json FROM chat_messages WHERE kind = 'card'"):
             assert "project_id" not in card["card_json"]
+
+
+def test_only_the_apps_own_address_can_be_a_link_a_look_alike_in_a_models_word_is_made_plain(tmp_path):
+    """D389: the chat page links the exact shape `/p/prj_<12 hex>`; the reply keeps the app's own address for a project that exists and breaks the shape in anything else."""
+    from sutra_app.orchestrator.agent.runner import _NO_PROJECT_ADDRESS
+    assert _NO_PROJECT_ADDRESS.sub("/p/ ", "see /p/prj_0123456789ab and /p/other") == "see /p/ prj_0123456789ab and /p/other"
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        texts, _ = _reply_and_cards(services)
+        real = _project_id(services)
+        assert sum(t.count("/p/prj_") for t in texts) == 1 and texts[-1].endswith(f"/p/{real}")

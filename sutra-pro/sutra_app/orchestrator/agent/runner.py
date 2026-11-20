@@ -53,6 +53,7 @@ __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO"
 
 log = logging.getLogger(__name__)
 ORG = ORG_SESSION_ID
+_NO_PROJECT_ADDRESS = re.compile(r"/p/(?=prj_)")        # the shape the chat page turns into a link: only the app writes it
 PROJECT_SRC = "project:"        # the `src_ref` prefix of a line the owner sent with `POST /api/projects` (MAN-13): a repeated `client_id` finds the same line
 TITLE_CHARS = 60
 YES, NO, NONE_OPTION = "yes", "no", "none"
@@ -617,7 +618,7 @@ class TurnRunner:
         from sutra_app.orchestrator.projects import ProjectStep
         asked = asked or {}
         steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
-        title = drafts[0].title if drafts else one_line_title(request.text, 80)
+        title = one_line_title(request.text, 80)                  # the request's own short title, not the first step's (D394)
         return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
                                       plan_defaults=defaulted, decide_for_me=self._decide_for_me_of(request.message_id),
                                       failure_policy=self._failure_policy_of(request.message_id))
@@ -659,7 +660,8 @@ class TurnRunner:
         sentences = self._sentences(plan, applied, drafts)
         if waits:
             sentences = sentences + [waits]
-        if project_id and failure is None:
+        sentences = [_NO_PROJECT_ADDRESS.sub("/p/ ", text) for text in sentences]     # a word of the model's (a title) that looks like a project address is not one (D389, m11)
+        if project_id and failure is None and self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None:     # only a project that exists
             sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]
