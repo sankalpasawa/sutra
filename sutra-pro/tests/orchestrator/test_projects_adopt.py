@@ -231,3 +231,22 @@ def test_a_node_that_has_its_task_is_never_given_a_second_one(rig):
             second = rig.t.service.create(tx, dept_id="ops", text="again", title="again", request="req-1")
             rig.projects.link_task(tx, reservation, "a1", second.id)
     assert rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == tasks["a1"] and rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == before
+
+
+# ---- the record says "output auto" when the team's output is auto (G10, D307) ------------------------------------------------------------
+
+def test_the_grant_issued_row_says_output_auto_for_a_team_whose_output_is_auto_and_nothing_for_the_others(rig):
+    rig.projects._output_name = lambda dept: "auto" if dept == "web" else "landing_page"
+    rig.request([("a1", "web", []), ("a2", "sales", [])])
+    by_team = {r["target"]: r["reason"] for r in rig.audit("grant.issued")}
+    assert "output auto (decided in the run)" in by_team["web"] and "output" not in by_team["sales"] and "run_tools engine" in by_team["web"] and len(by_team["web"]) <= 200
+
+
+def test_the_configured_output_is_read_from_the_teams_engine_settings_then_the_global_ones(tmp_path):
+    from sutra_app.orchestrator.projects import default_output_name, default_output_of
+    (tmp_path / "departments" / "web").mkdir(parents=True)
+    (tmp_path / "engine.json").write_text(json.dumps({"output": "auto"}))
+    (tmp_path / "departments" / "web" / "engine.json").write_text(json.dumps({"output": "landing_page"}))
+    name, spec = default_output_name(tmp_path), default_output_of(tmp_path)
+    assert name("web") == "landing_page" and name("sales") == "auto" and spec("sales") is None                   # auto is not known before the run
+    assert default_output_name(tmp_path / "nowhere")("web") == ""

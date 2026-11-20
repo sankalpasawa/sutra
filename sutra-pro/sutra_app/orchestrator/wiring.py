@@ -51,7 +51,7 @@ from sutra_app.orchestrator.graph import GraphStore
 from sutra_app.orchestrator.killswitch import KillSwitch, NodeControl
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
 from sutra_app.orchestrator.nodes_store import NodeStore
-from sutra_app.orchestrator.projects import ProjectService, default_output_of
+from sutra_app.orchestrator.projects import ProjectService, default_output_name, default_output_of
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
@@ -200,8 +200,8 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
             grant = folders.grant() if folders is not None else None
             return "none" if grant is None else ("edit" if getattr(grant, "edit", False) else "read")
 
-        projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access, output_of=default_output_of(settings.data_dir),
-                                  node_control=node_control, tasks=tasks, chats=chats)
+        projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access,
+                                  output_of=default_output_of(settings.data_dir), output_name=default_output_name(settings.data_dir), node_control=node_control, tasks=tasks, chats=chats)
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task

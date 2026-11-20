@@ -293,11 +293,15 @@ class Grant:
         """A writer that declared no scope holds the whole folder, so it runs alone among writers (D260)."""
         return self.writer and not self.scope
 
-    def describe(self) -> str:
-        """The grant in one plain line for the audit row `grant.issued` (names and shapes only; at most 200 characters). It says `run_tools` so the record is true about J2's builder tools (D299)."""
+    def describe(self, *, output: str = "") -> str:
+        """The grant in one plain line for the audit row `grant.issued` (names and shapes only; at most 200 characters). It says `run_tools` so the record is true about J2's builder tools (D299), and
+        "output auto (decided in the run)" when the team's output is `auto`, because then the folder line is a reading, not a fact (G10, D307)."""
         scope = "whole folder" if self.writer and not self.scope else f"{len(self.scope)} path(s)" if self.scope else "none"
-        return (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; tools {self.tool_profile}; commands {self.commands}; run_tools {self.run_tools}; "
-                f"calls {self.caps.calls}; wall {self.caps.wall_s}s")[:200]
+        line = (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; tools {self.tool_profile}; commands {self.commands}; run_tools {self.run_tools}; "
+                f"calls {self.caps.calls}; wall {self.caps.wall_s}s")
+        if output == "auto":
+            line += "; output auto (decided in the run)"
+        return line[:200]
 
     def for_node(self, grant_id: str, node_id: str) -> "Grant":
         """The same grant with its ids put on (it is frozen: this is a new object)."""

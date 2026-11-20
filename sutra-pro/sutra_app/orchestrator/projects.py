@@ -38,7 +38,7 @@ from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
 from sutra_app.orchestrator.models import NodeOut, ProjectOut
 from sutra_app.orchestrator.nodes_store import NodeStore
 
-__all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
+__all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "default_output_name", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
 
 log = logging.getLogger(__name__)
 DEFAULT_SLICE = 100                       # the work credits a team's run starts with (J2_BUDGET): what a step with no estimate counts as (D300)
@@ -67,31 +67,45 @@ class Reservation:
     waits: tuple[int, int] | None = None                      # (the estimate, the limit it is over) while the project waits for the owner's OK on its estimate (D308); None otherwise
 
 
-def default_output_of(data_dir: Any) -> Callable[[str], Any]:
-    """The output spec of a team as far as it is known BEFORE a run: its engine setting `output` when that names a type (`engine.json` of the team, then the global one); `auto` is chosen
-    by the engine per run, so it is not known here and counts as `read` (the conservative reading: nothing in the owner's folder beyond reading; D299 says the grant describes, it does not
-    enforce). Anything that cannot be read is None (`read`)."""
+def _configured_output(data_dir: Any, dept_id: str) -> str:
+    """The `output` setting of a team as the engine would read it BEFORE a run (`engine.json` of the team, then the global one): a type name, or `auto`, or "" when nothing can be read."""
     from pathlib import Path
+    try:
+        from sutra_app.engine.spec import read_settings_file
+        for path in (Path(data_dir) / "departments" / dept_id / "engine.json", Path(data_dir) / "engine.json"):
+            name = (read_settings_file(path) or {}).get("output")
+            if isinstance(name, str) and name:
+                return name
+    except Exception:                                       # noqa: BLE001  (an unreadable setting is "not known")
+        return ""
+    return ""
 
+
+def default_output_of(data_dir: Any) -> Callable[[str], Any]:
+    """The output spec of a team as far as it is known BEFORE a run: its engine setting `output` when that names a type; `auto` is chosen by the engine per run, so it is not known here and counts as
+    `read` (the conservative reading: nothing in the owner's folder beyond reading; D299 says the grant describes, it does not enforce). Anything that cannot be read is None (`read`)."""
     def output_of(dept_id: str) -> Any:
-        try:
-            from sutra_app.engine.spec import read_settings_file
-            for path in (Path(data_dir) / "departments" / dept_id / "engine.json", Path(data_dir) / "engine.json"):
-                found = read_settings_file(path) or {}
-                name = found.get("output")
-                if isinstance(name, str) and name != "auto":
-                    from sutra_app.engine.capabilities.base import output_spec
-                    return output_spec(name)
-        except Exception:                                   # noqa: BLE001  (an unreadable setting is "not known": read)
+        name = _configured_output(data_dir, dept_id)
+        if not name or name == "auto":
             return None
-        return None
+        try:
+            from sutra_app.engine.capabilities.base import output_spec
+            return output_spec(name)
+        except Exception:                                   # noqa: BLE001
+            return None
 
     return output_of
 
 
+def default_output_name(data_dir: Any) -> Callable[[str], str]:
+    """The team's `output` setting as a word (`auto`, a type name, or ""), so the record of a grant can say "output auto" instead of pretending it knows (G10, D307)."""
+    return lambda dept_id: _configured_output(data_dir, dept_id)
+
+
 class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
-                 owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None) -> None:
+                 owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None,
+                 output_name: Callable[[str], str] | None = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -99,6 +113,7 @@ class ProjectService:
         self.settings = settings
         self._owner_access = owner_access or (lambda: "none")
         self._output_of = output_of or (lambda dept: None)
+        self._output_name = output_name or (lambda dept: "")
         self.control = node_control
         self.tasks = tasks
         self.chats = chats                                                        # the org chat's store: where the receipt of a stopped project is written (MAN-7)
@@ -194,7 +209,7 @@ class ProjectService:
                 (node_id, project_id, "worker", "engine", step.ref, json.dumps([node_ids[d] for d in step.depends_on if d in node_ids]), state,
                  json.dumps(grant.to_json(), sort_keys=True), json.dumps(writes), now))
             self.store.audit(tx, actor="gatekeeper", action="grant.issued", project_id=project_id, node_id=node_id, role="worker", tier=max(grant.tiers), decision="allow",
-                             reason=grant.describe(), target=step.dept_id, ref=grant.id)
+                             reason=grant.describe(output=self._output_name(step.dept_id)), target=step.dept_id, ref=grant.id)
             for denial_step, denial in evaluation.denied:
                 if denial_step == step.ref:
                     self.store.audit(tx, actor="gatekeeper", action="grant.denied", project_id=project_id, node_id=node_id, role="worker", tier=denial.tier, decision="deny",
