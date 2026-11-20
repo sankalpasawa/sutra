@@ -859,17 +859,24 @@ class Router:
         return watch
 
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
-    def tools_for(self, tag: Any, grant: Any) -> Any:
+    def tools_for(self, tag: Any, grant: Any, allowance: Any = None) -> Any:
         """The builder tools grant a call is planned with (D380). A call with no builder tools, or whose tag names no node, is returned as it came (the very same object): an ordinary run keeps
         J2's whole list. A call of a step of a project is taken down to what that step's frozen grant allows; with no rights known it is the narrowest list."""
         if grant is None or not getattr(tag, "node_id", ""):
             return grant
-        return narrow_tools(grant, self.node_rights or NARROWEST)
+        narrowed = narrow_tools(grant, self.node_rights or NARROWEST)
+        left = getattr(allowance, "max_usd", None)
+        if left is not None:                                     # D387: one builder call is bounded by what the step has left, not by the engine's $2 per call; none left: no program is started
+            if left <= 0:
+                raise EnvelopeExceededError("this step has no dollars left", detail={"max_usd": 0.0})
+            if left < narrowed.usd:
+                narrowed = narrowed.model_copy(update={"usd": round(left, 6)})
+        return narrowed
 
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None, *, tools: Sequence[str] = ()) -> CompletionResult:
         """`CompletionRequest` in, `CompletionResult` out (connectors 3.10). With a `json_schema` only the native step runs and the
         reply text comes back as it is; the router never repairs here, so every call the engine pays for is a call it sees."""
-        run_tools = self.tools_for(req.tag, req.run_tools)
+        run_tools = self.tools_for(req.tag, req.run_tools, req.allowance)
         ask = AskRequest(
             system=req.system, user=req.user, ctx=RouteContext(tag=req.tag, allowance=req.allowance or Allowance()),
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
