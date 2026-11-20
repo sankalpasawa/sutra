@@ -679,6 +679,8 @@ class NodeBlock(Value):
     # call). `none` for a node whose grant holds none.
     tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"
     slots: bool = False                       # SUTRA_NODES_SLOTS is on: the run takes a machine-wide slot for each model program it starts (MAN-12)
+    tiers: list[int] = []                     # D380: the tiers of the frozen grant and its commands level: the host takes the builder tools of this node's calls down to them
+    commands: str = "none"
 
 
 class ProjectOut(Value):

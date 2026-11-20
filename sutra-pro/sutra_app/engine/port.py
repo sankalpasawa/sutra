@@ -84,6 +84,10 @@ class PortSpec(BaseModel):
     # the paths of the owner's folder a step of a project may change (MAN-10): the router narrows an editing call's tools to them. Empty for every run that is not a node and for a node with no scope.
     scope: tuple[str, ...] = ()
     slots: bool = False                           # SUTRA_NODES_SLOTS: the router takes a machine-wide slot (a lock file) for each model program it starts (MAN-12)
+    # what the frozen grant of a node says about its builder tools (D380): the tiers it holds and its commands level. The router takes a builder tools call of a node down to them. A node whose
+    # rights are not given gets the narrowest list; a call with no node in its tag is never touched.
+    node_tiers: tuple[int, ...] = ()
+    node_commands: str = "none"
 
 
 class ToolGrant(BaseModel):

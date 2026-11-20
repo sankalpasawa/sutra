@@ -381,3 +381,14 @@ def test_the_superscript_device_names_are_refused_and_scopes_compare_without_cas
     assert normalize_scope(["Site/Pricing"]) == ("Site/Pricing",)
     assert scopes_overlap(("Site/",), ("site/pricing",)) is True and scopes_overlap(("Site/a",), ("site/b",)) is False and scopes_overlap(("DOCS",), ("docs/readme.md",)) is True
     assert normalize_scope(["Site", "site/pricing"]) == ("Site",)                                  # a spelling of a path covered by another is dropped
+
+
+def test_the_grant_line_is_true_about_the_builder_tools_the_host_allows(monkeypatch):
+    """D380: the line says what the step's tools may do, and the words are the ones the host narrows to (`connectors/node_tools.py`), for every owner access."""
+    from sutra_app.connectors import node_tools
+    for owner in OWNER_ACCESS:
+        grant = intersect("worker", StepRequest(), "edit", owner)
+        line = grant.describe()
+        assert "run_tools engine (reads; writes only in its own folder; no commands; no web)" in line and len(line) <= 200
+        assert node_tools.words(node_tools.NodeRights(grant.tiers, grant.commands)) in line
+    assert "(" not in intersect("reviewer", None, "edit", "edit").describe().split("run_tools")[1].split(";")[0]

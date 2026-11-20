@@ -31,6 +31,7 @@ from .discover import connector_config
 from .egress import Egress
 from .errors import ConnectorError, NoProviderError
 from .models import AskRequest, ConnectorConfig, RouteContext
+from .node_tools import NodeRights
 from .policy import PolicyLoad, RoutingPolicy, load_policy
 from .router import Router
 from .stub import StubConnector
@@ -113,6 +114,7 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
             from .slots import SlotPool
             router.slots = SlotPool(Path(spec.data_dir) / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
         router.node_scope = tuple(spec.scope)                                     # a step of a project edits only inside its scope (MAN-10)
+        router.node_rights = NodeRights(tuple(spec.node_tiers), spec.node_commands)   # a step's builder tools are taken down to its grant (D380)
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 
 

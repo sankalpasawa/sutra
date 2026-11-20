@@ -154,3 +154,25 @@ def test_only_a_node_run_gets_the_permission_prefix_an_ordinary_run_crashes_with
     long = host(None)
     Host._internal(long, RuntimeError("x" * 3000))
     assert len(ended[-1][1]) == 2000 and ended[-1][1].startswith("Crashed: RuntimeError")                                       # the whole 2000, not 1900 plus 100 of a prefix
+
+
+# ---- the builder tools of a node (D380) -------------------------------------------------------------------------------------------
+
+def _spec_of(monkeypatch, node):
+    seen = {}
+    monkeypatch.setattr("sutra_app.connectors.engine_port.make_port", lambda spec, usage_sink=None: seen.setdefault("spec", spec))
+    task = TaskSpec.model_validate({**EXAMPLE_TASK, **({"node": node} if node is not None else {})})
+    loop.Host._connector_port(SimpleNamespace(task=task, paths=SimpleNamespace(data_dir="/tmp/x"), sink=None))
+    return seen["spec"]
+
+
+def test_the_port_spec_of_a_node_carries_the_tiers_and_commands_of_its_grant(monkeypatch):
+    spec = _spec_of(monkeypatch, {**NODE, "tiers": [0, 1, 2, 3], "commands": "git_reads"})
+    assert spec.node_tiers == (0, 1, 2, 3) and spec.node_commands == "git_reads"
+
+
+def test_a_node_block_without_rights_means_none_given_and_an_ordinary_run_has_none(monkeypatch):
+    spec = _spec_of(monkeypatch, NODE)                          # an older task file: the router then holds the narrowest rights
+    assert spec.node_tiers == () and spec.node_commands == "none"
+    ordinary = _spec_of(monkeypatch, None)
+    assert ordinary.node_tiers == () and ordinary.node_commands == "none" and ordinary.scope == ()
