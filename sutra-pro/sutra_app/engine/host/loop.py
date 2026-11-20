@@ -198,9 +198,16 @@ class Host:
         _stderr("engine host: internal error\n" + "".join(traceback.format_exception(exc)))
         if self.run is not None:
             self.stopping.set()
-        said = permission_outcome(exc)
-        self._emit_ended("crashed", clip(f"{said}. " if said else "", 100) + clip(f"Crashed: {type(exc).__name__}: {exc}", 1900), "internal")
+        said = self._permission_said(exc)
+        if said:
+            self._emit_ended("crashed", clip(f"{said}. ", 100) + clip(f"Crashed: {type(exc).__name__}: {exc}", 1900), "internal")
+        else:
+            self._emit_ended("crashed", clip(f"Crashed: {type(exc).__name__}: {exc}", 2000), "internal")           # exactly what an ordinary run always wrote (G24)
         return EXIT_INTERNAL
+
+    def _permission_said(self, what: Any) -> Optional[str]:
+        """The "Your computer did not allow it" prefix, only for a run that is a node of a project (G24, D340 b): an ordinary run's crash text is what it always was, byte for byte."""
+        return permission_outcome(what) if getattr(getattr(self, "task", None), "node", None) is not None else None
 
     def _emit_ended(self, status: str, outcome: str, code: Optional[str]) -> None:
         """`run.ended`, once, the last line. Best effort: a closed or missing writer is only a stderr line."""
@@ -805,7 +812,7 @@ class Host:
         outcome = run.outcome or ""
         if status == "crashed":
             code = getattr(self.hooks, "error_code", None) or "internal"
-            said = permission_outcome(getattr(run, "error", None) or outcome)       # the computer refused a file: the outcome starts with the word the orchestrator reads (MAN-15)
+            said = self._permission_said(getattr(run, "error", None) or outcome)       # the computer refused a file: the outcome starts with the word the orchestrator reads (MAN-15)
             if said and not outcome.startswith(NEEDS_PERMISSION):
                 outcome = f"{said}. {outcome}"
         self._conclude(status, outcome, code)

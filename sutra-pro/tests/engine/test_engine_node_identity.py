@@ -133,3 +133,24 @@ def test_the_host_marks_a_refusal_of_the_computer_with_the_word_the_orchestrator
     assert permission_outcome("[WinError 5] Access is denied: 'C:\\\\work'").startswith(NEEDS_PERMISSION)
     assert permission_outcome("Crashed: PermissionError: [Errno 1] x").startswith(NEEDS_PERMISSION)
     assert permission_outcome("the model said permission denied") is None and permission_outcome(ValueError("x")) is None and permission_outcome("[Errno 2] No such file") is None
+
+
+def test_only_a_node_run_gets_the_permission_prefix_an_ordinary_run_crashes_with_the_text_it_always_had():          # G24, D340 b
+    from types import SimpleNamespace
+
+    from sutra_app.engine.host.loop import NEEDS_PERMISSION, Host
+    ended = []
+    exc = PermissionError(1, "Operation not permitted", "/x")
+
+    def host(node):
+        stand_in = SimpleNamespace(task=SimpleNamespace(node=node), run=None, stopping=SimpleNamespace(set=lambda: None))
+        stand_in._permission_said = lambda what: Host._permission_said(stand_in, what)
+        stand_in._emit_ended = lambda status, outcome, code: ended.append((status, outcome, code))
+        return stand_in
+    Host._internal(host(None), exc)
+    assert ended[-1] == ("crashed", "Crashed: PermissionError: [Errno 1] Operation not permitted: '/x'", "internal")             # byte for byte as before
+    Host._internal(host(object()), exc)
+    assert ended[-1][1].startswith(NEEDS_PERMISSION + ": PermissionError. Crashed: PermissionError")
+    long = host(None)
+    Host._internal(long, RuntimeError("x" * 3000))
+    assert len(ended[-1][1]) == 2000 and ended[-1][1].startswith("Crashed: RuntimeError")                                       # the whole 2000, not 1900 plus 100 of a prefix
