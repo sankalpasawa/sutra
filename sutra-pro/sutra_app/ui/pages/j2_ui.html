@@ -1014,10 +1014,10 @@ function parseAsk(text){   // "@Requester say\n1. question\n   Option 1: text" -
   const lines = String(text).split("\n"), qs = []; let say = [];
   lines.forEach(l => { let m;
     if ((m = l.match(/^(\d+)\. (.*)$/))) qs.push({q: m[2], opts: []});
-    else if ((m = l.match(/^\s+Option \d+: (.*?)(?: \[adds \d+ (?:units|work credits)[^\]]*\])?$/)) && qs.length) qs[qs.length - 1].opts.push(m[1]);
+    else if ((m = l.match(/^\s+Option \d+: (.*?)(?: \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\])?$/)) && qs.length) qs[qs.length - 1].opts.push(m[1]);
     else if (/^\s+Option \d+: /.test(l) && !qs.length){   // one unnumbered question: the line above its options
       const q = say.length && !/^-|^Still not right|^Some parts|^I couldn't tell/.test(say[say.length - 1]) ? say.pop() : "";
-      qs.push({q, opts: [l.replace(/^\s+Option \d+: /, "").replace(/ \[adds \d+ (?:units|work credits)[^\]]*\]$/, "")]}); }
+      qs.push({q, opts: [l.replace(/^\s+Option \d+: /, "").replace(/ \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]$/, "")]}); }
     else if (!qs.length) say.push(l); });
   return {say: say.join("\n"), qs};
 }
@@ -1143,7 +1143,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
     else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
   if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
-  else h += `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
+  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
     + `<div class="acts"><button type="button" class="ghost" data-later>Answer later</button></div>`;
   if (later) h += `<p class="qnote">Saved for later. The team waits for your answer. <button type="button" class="ghost" data-now>Answer now</button></p>`;
   else h += `<p class="qnote">${(s.paused || {}).auto_waits ? "Decide for me never answers this one: it needs you." : qp ? `${PEOPLE[qp.person].name} waits on this.` : "The team waits for your answer."}</p>`;
@@ -1155,11 +1155,17 @@ function sQText(t){      // a question that asks several things ("Please send th
   return (m ? `<p class="q">${esc(m[1])}</p>` : "") + `<ol class="qlist">${items.map(x => `<li>${esc(x.charAt(0).toUpperCase() + x.slice(1))}</li>`).join("")}</ol>`;
 }
 // a click on a card (Asha's panel or the copy on the work): an option, your own words, Answer later / now, an approval
+function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars
+  const q = live && kind === "limit" && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \$/.test(o));
+  const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;
+  return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }
 function sCardClick(e){
   const b = e.target.closest && e.target.closest("button"), c = b && b.closest(".qcard"); if (!c || b.disabled) return;
   if (b.dataset.approve) return sendText(b.dataset.approve === "yes" ? "Yes, approve it." : "No, not now.");      // only a click sends an approval
   if (b.dataset.later !== undefined){ SLATER.add(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
   if (b.dataset.now !== undefined){ SLATER.delete(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
+  if (b.dataset.raise !== undefined){ const i = c.querySelector(".bchipraisein"), n = window.BudgetChip ? BudgetChip.parse(i && i.value) : null;      // E27
+    if (n === null){ if (i) i.setAttribute("aria-invalid", "true"); return; } return sendText("Add $" + n + " and keep going"); }
   const inp = c.querySelector(".own input");
   if (b.dataset.own !== undefined){ const t = inp.value.trim(); if (t) sendText(t); return; }
   const g = b.closest(".opts"); if (!g) return;

@@ -222,6 +222,28 @@ def test_home_stop_after_send(browser, fake):
 
 
 @browser_only
+def test_needs_you_raise_input(browser, fake):
+    """D257: a dollar raise question on Home's Needs you card takes a typed amount (the suggested one filled in) and answers the team with
+    "Add $N and keep going"; a bad amount marks the box and sends nothing."""
+    load(browser, fake)
+    browser.wait_for("document.querySelector('#fdattn .fdcard') !== null")
+    browser.js("""(() => { const S = HomePage.state(); S.needs = [{message_id: 77, session_id: "%s", kind: "question", dept_id: "web", dept_name: "Web",
+      text: "@Requester The site isn't finished yet.\\nThis run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.\\n   Option 1: Add $10 and keep going: more. Or type your own amount [adds $10]\\n   Option 2: Finish as it is",
+      options: [], asked_at: "2026-11-12T10:00:00Z", waiting_s: 30, stale: false}]; HomePage.renderFront(); })()""" % DEPT_SESSION)
+    browser.wait_for("document.querySelector('#fdattn .bchipraisein') !== null")
+    assert browser.js("document.querySelector('#fdattn .bchipraisein').value") == "$10"
+    assert "credit" not in browser.js("document.getElementById('fdattn').innerText").lower()
+    browser.js("document.querySelector('#fdattn .bchipraisein').value = 'lots'")
+    browser.click("#fdattn [data-act=fd-raise]")
+    assert browser.js("document.querySelector('#fdattn .bchipraisein').getAttribute('aria-invalid')") == "true" and not posts(fake, f"/api/chats/{DEPT_SESSION}/messages")
+    browser.js("document.querySelector('#fdattn .bchipraisein').value = '$25'")
+    browser.click("#fdattn [data-act=fd-raise]")
+    browser.wait_for("Object.values(HomePage.state().answers).includes('Add $25 and keep going')")
+    sent = posts(fake, f"/api/chats/{DEPT_SESSION}/messages")
+    assert [r["body"] for r in sent] == [{"text": "Add $25 and keep going"}]
+
+
+@browser_only
 def test_sutras_question_shows_as_a_card_on_the_front_door_in_plain_words(browser, fake):
     load(browser, fake, stage="1")
     browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;

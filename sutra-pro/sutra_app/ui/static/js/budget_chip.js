@@ -10,6 +10,9 @@
      chipHtml({value, source})   the chip's line; source "team" ("team default"), "default" ("default") or "request" ("this request")
      menuHtml(value)             the four choices and the two lines
      mount(el, def, source)      draws the chip in `el` and wires it; -> {value() (the chosen dollars, null for the default), reset()}
+     raiseHtml(suggested, attrs) the raise input of a dollar question: the suggested amount filled in, "Add and keep going" (its button carries
+                                 `attrs`, written by code: `data-raise` on the team page), and "API price, estimated"
+     raiseFromText(text)         the suggested dollars of a question's continue option, read from its "[adds $Z]" tail; null when there is none
 
    A classic script with ONE global, BudgetChip; in node it is module.exports. Every amount on screen says "API price". */
 (function (root) {
@@ -82,7 +85,19 @@
     return {value: () => chosen, reset: () => { chosen = null; draw(); }};
   }
 
-  const BudgetChip = {fmt, parse, presets, chipHtml, menuHtml, mount, STOPS, NOT_BILLED};
+  function raiseHtml(suggested, attrs) {
+    return '<div class="bchipraise" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0">' +
+      '<input class="bchipraisein" inputmode="decimal" value="' + esc(fmt(suggested)) + '" aria-label="Dollars to add (API price)" style="width:7em">' +
+      '<button type="button" class="pri" ' + (attrs || "data-raise") + ">Add and keep going</button>" +
+      '<small class="bchipapi" style="opacity:.65">API price, estimated</small></div>';
+  }
+
+  function raiseFromText(text) {
+    const m = /\[adds \$([\d,]+(?:\.\d{1,2})?)\]/.exec(String(text === undefined || text === null ? "" : text));
+    return m ? parse(m[1]) : null;
+  }
+
+  const BudgetChip = {fmt, parse, presets, chipHtml, menuHtml, mount, raiseHtml, raiseFromText, STOPS, NOT_BILLED};
   if (typeof module === "object" && module !== null && module.exports) module.exports = BudgetChip;
   else root.BudgetChip = BudgetChip;
 })(globalThis);

@@ -960,6 +960,11 @@
     const card = b.closest(".fdcard");
     if (act === "fd-option") answerFront(b.dataset.msg, "Option " + b.dataset.opt);
     else if (act === "fd-answer") { const box = card && card.querySelector("textarea[data-msg]"); if (box) answerFront(b.dataset.msg, box.value); }
+    else if (act === "fd-raise") {      // D257: a dollar raise, typed; a bad amount marks the box and sends nothing
+      const box = card && card.querySelector(".bchipraisein"), n = root.BudgetChip ? root.BudgetChip.parse(box && box.value) : null;
+      if (n === null) { if (box) box.setAttribute("aria-invalid", "true"); }
+      else answerFront(b.dataset.msg, "Add $" + n + " and keep going");
+    }
     else if (act === "fd-approve" || act === "fd-decline") decideFront(b.dataset.msg, b.dataset.text || (act === "fd-approve" ? "Yes" : "No"));
     else if (act === "fd-choose") { const id = Number(b.dataset.msg); if (Number.isInteger(id)) { S.answers[id] = b.dataset.text || ""; send(b.dataset.text || b.dataset.option, {message_id: id, option: b.dataset.option || b.dataset.text}).then(renderFrontLatest); } }
     else if (act === "fd-retry" || act === "retry-task") retryTask(b.dataset.task, b);

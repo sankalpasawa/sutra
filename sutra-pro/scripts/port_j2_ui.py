@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 47 edits (E1 to E13, E19 to E26; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d and E26a to E26c count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 51 edits (E1 to E13, E19 to E27; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c and E27a to E27d count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 47 edits
+    pages/j2_ui.html            the page after the 51 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -289,6 +289,21 @@ PAGE_EDITS: tuple[Edit, ...] = (
              '$("sbox").addEventListener("input", () => { if (!state) return; const stop = sStopOn(state); $("ssend").disabled = $("sbox").disabled && !stop; sStopMode(stop); });',
              '$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop(); const t = $("sbox").value.trim(); '
              'if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });'), 1),
+    # E27 (D257): a dollar raise question's card takes a typed amount (budget_chip.js raiseHtml), the suggested one filled in; it sends
+    # "Add $N and keep going", which the engine reads (P26 parse_usd); a bad amount marks the box and sends nothing. The option tail "[adds $Z]"
+    # is stripped like the credits one.
+    Edit("E27a", '  else h += `<div class="own"><input aria-label="Your answer"', '  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer"', 1),
+    Edit("E27b", "function sCardClick(e){",
+         _lines("function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars",
+                '  const q = live && kind === "limit" && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \\$/.test(o));',
+                "  const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;",
+                '  return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }',
+                "function sCardClick(e){"), 1),
+    Edit("E27c", '  const inp = c.querySelector(".own input");\n',
+         _lines('  if (b.dataset.raise !== undefined){ const i = c.querySelector(".bchipraisein"), n = window.BudgetChip ? BudgetChip.parse(i && i.value) : null;      // E27',
+                '    if (n === null){ if (i) i.setAttribute("aria-invalid", "true"); return; } return sendText("Add $" + n + " and keep going"); }',
+                '  const inp = c.querySelector(".own input");', ""), 1),
+    Edit("E27d", r"\[adds \d+ (?:units|work credits)[^\]]*\]", r"\[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]", 2),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

@@ -41,3 +41,19 @@ test("menu: the three presets, another amount, and both lines", () => {
   assert.match(html, /API price, estimated\. Runs use your Claude subscription; nobody is billed this amount\./);
   assert.doesNotMatch(html, /credit/i);
 });
+
+test("raise input: the suggested dollars filled in, Add and keep going, the API price note", () => {
+  const html = BC.raiseHtml(10);
+  assert.match(html, /<input class="bchipraisein"[^>]*value="\$10"/);
+  assert.match(html, /<button type="button" class="pri" data-raise>Add and keep going<\/button>/);
+  assert.match(html, /API price, estimated/);
+  assert.match(BC.raiseHtml(12.5, 'data-act="fd-raise" data-msg="7"'), /value="\$12\.50"[\s\S]*data-act="fd-raise" data-msg="7">Add and keep going/);
+});
+
+test("raiseFromText: the continue option's [adds $Z] tail, else null (a credits tail is not a dollar raise)", () => {
+  const q = "This run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.\n   Option 1: Add $10 and keep going: more [adds $10]\n   Option 2: Finish as it is";
+  assert.equal(BC.raiseFromText(q), 10);
+  assert.equal(BC.raiseFromText("Option 1: Add $1,250.50 [adds $1,250.50]"), 1250.5);
+  assert.equal(BC.raiseFromText("Option 1: Add 30 work credits [adds 30 work credits]"), null);
+  assert.equal(BC.raiseFromText(null), null);
+});

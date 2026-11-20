@@ -181,3 +181,21 @@ test("stopOf (D254): Stop while the box is empty, the card shows the work this s
   assert.deepEqual(FD.stopOf({...base, messages: [...sent, choice]}), no);                              // the card is a question, not the work
   assert.deepEqual(FD.stopOf(null), no);
 });
+
+test("raise input (D257): a dollar question's card takes a typed amount; the option tail is stripped; no credits; every $ says API price", () => {
+  const text = "@Requester The site isn't finished yet.\nThis run has used $20.40 of $20 (API price). Add $10? So far: $20 approved. 3 calls estimated: Codex reports no price." +
+    "\n   Option 1: Add $10 and keep going: you get more of the missing parts built. Or type your own amount [adds $10]\n   Option 2: Finish as it is: you get the site";
+  const html = FD.needCard(question(12, {text}), {});
+  assert.match(html, /<input class="bchipraisein"[^>]*value="\$10"/);
+  assert.match(html, /data-act="fd-raise" data-msg="12">Add and keep going/);
+  assert.match(html, /3 calls estimated: Codex reports no price\./);
+  assert.doesNotMatch(html, /\[adds/);
+  assert.doesNotMatch(html, /credit/i);
+  const shown = html.replace(/<[^>]+>/g, " ");
+  for (const m of shown.matchAll(/\$\d[\d,.]*/g)) {
+    const near = shown.slice(Math.max(0, m.index - 80), m.index + 120);
+    assert.match(near, /API price|estimated/, `${m[0]} has API price near it`);
+  }
+  assert.match(FD.needCard(question(13, {options: ["Add $10 and keep going [adds $10]", "Finish"]}), {}), /data-text="Add \$10 and keep going \[adds \$10\]"><b>Add \$10 and keep going<\/b>|>Add \$10 and keep going</);
+  assert.doesNotMatch(FD.needCard(question(7), {}), /bchipraise/);                    // an ordinary question has no raise input
+});

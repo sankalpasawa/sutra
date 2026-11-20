@@ -74,3 +74,40 @@ def test_send_text_carries_usd_budget_beside_a_run_template():
 def test_only_the_start_form_sends_a_budget():
     calls = re.findall(r"sendText\(([^)]*)\)", PAGE)
     assert [c for c in calls if re.fullmatch(r"\w+, \w+", c)] == ["text, usdBudget", "t, b"], calls
+
+
+# ---- E27 (D257): the team page's raise card takes a typed amount in dollars ---------------------------------------------------------
+SRAISE = PAGE[PAGE.index("function sRaise(s, kind, live){"):PAGE.index("function sCardClick(e){")]
+RAISE_CLICK = PAGE[PAGE.index("  if (b.dataset.raise !== undefined){"):PAGE.index('  const inp = c.querySelector(".own input");')]
+PAUSED = {"kind": "limit", "questions": [{"question": "This run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.",
+                                          "options": ["Add $10 and keep going: more. Or type your own amount", "Finish as it is"], "budget": [10, 0]}]}
+
+
+def raise_node(body: str):
+    js = ("const window = {BudgetChip: require(" + json.dumps(str(ROOT / "sutra_app" / "ui" / "static" / "js" / "budget_chip.js")) + ")};\n"
+          "const BudgetChip = window.BudgetChip; const SENT = []; const sendText = t => SENT.push(t);\n" + SRAISE + "\n"
+          "function click(value){ const i = {value, attrs: {}, setAttribute(k, v){ this.attrs[k] = v; }}; const c = {querySelector: () => i};\n"
+          "  const b = {dataset: {raise: ''}}; (function(){ " + RAISE_CLICK + " })(); return i.attrs; }\n"
+          "(() => {" + body + "})();")
+    done = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+@needs_node
+def test_raise_card_sends_typed_dollars():
+    got = raise_node(f"const s = {{paused: {json.dumps(PAUSED)}}}; const html = sRaise(s, 'limit', true);"
+                     "const marks = [click('$15'), click('12.5'), click('0.5'), click('abc')];"
+                     "console.log(JSON.stringify({html, sent: SENT, marks}));")
+    assert 'value="$10"' in got["html"] and "Add and keep going" in got["html"] and "API price" in got["html"]
+    assert got["sent"] == ["Add $15 and keep going", "Add $12.5 and keep going"]
+    assert got["marks"] == [{}, {}, {"aria-invalid": "true"}, {"aria-invalid": "true"}]
+
+
+@needs_node
+def test_the_raise_input_is_only_on_a_live_dollar_question():
+    credits = {**PAUSED, "questions": [{**PAUSED["questions"][0], "options": ["Add 30 work credits and keep going", "Finish"], "budget": [30, 0]}]}
+    got = raise_node(f"const p = {json.dumps(PAUSED)}; const c = {json.dumps(credits)};"
+                     "console.log(JSON.stringify([sRaise({paused: p}, 'limit', false), sRaise({paused: p}, 'fact', true), sRaise({paused: c}, 'limit', true),"
+                     "sRaise({paused: {...p, questions: [{...p.questions[0], budget: [0, 0]}]}}, 'limit', true)]));")
+    assert got == ["", "", "", ""]
