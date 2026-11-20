@@ -32,7 +32,7 @@ from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
-from sutra_app.orchestrator.errors import NotFound
+from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.gatekeeper import Evaluation, Plan, PlanStep, evaluate
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
 from sutra_app.orchestrator.models import NodeOut, ProjectOut
@@ -154,8 +154,10 @@ class ProjectService:
         evaluation = evaluate(plan)
         with self.db.tx() as tx:
             if tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone() is not None:
-                found = tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone()
+                found = tx.conn.execute("SELECT id, status FROM projects WHERE request_id = ?", (request_id,)).fetchone()
                 nodes = {r["plan_ref"]: r["id"] for r in tx.conn.execute("SELECT id, plan_ref FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (found["id"],))}
+                if found["status"] in PROJECT_FINAL:                                  # fail closed (G8, B2): a request whose project ended makes no task, so no ordinary task escapes the gate
+                    return Reservation(found["id"], False, "that project has already ended, so it was not started again")
                 return Reservation(found["id"], True, "", nodes, waits=self._waits_of(tx, found["id"]))        # a request planned again (stale chart) finds its project
             return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id)
 
@@ -224,11 +226,14 @@ class ProjectService:
         return None
 
     def link_task(self, tx: Tx, reservation: Reservation, step_ref: str, task_id: str) -> None:
-        """In the transaction that makes the task: tie the node of `step_ref` to it. From then on the task is a node (the gate sees it)."""
+        """In the transaction that makes the task: tie the node of `step_ref` to it. From then on the task is a node (the gate sees it). A step that has no node in an ok reservation, or whose node has a task
+        already, raises: the transaction ends and no task is made, so a request that is planned or retried again can never leave an ordinary, ungated task behind (G8, B2)."""
         node_id = reservation.nodes.get(step_ref)
         if node_id is None:
-            return
-        tx.conn.execute("UPDATE agent_nodes SET task_id = ? WHERE id = ? AND task_id IS NULL", (task_id, node_id))
+            raise AppError("busy", "That step has no place in its project, so its task was not made")                 # fail closed (G8, B2): the task is never made without its node
+        linked = tx.conn.execute("UPDATE agent_nodes SET task_id = ? WHERE id = ? AND task_id IS NULL", (task_id, node_id)).rowcount
+        if not linked:
+            raise AppError("busy", "That step of the project already has its task, so no second one was made")
         self.sync_task(tx, task_id)
 
     # ---- the Conductor (conductor.py): same names, so nothing that calls the service changes (C0) -----------------------------------------

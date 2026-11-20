@@ -10,6 +10,7 @@ from orchestrator.test_scripted_conversation import ORG, TOKEN
 
 from sutra_app.config import Settings
 from sutra_app.main import create_app
+from sutra_app.orchestrator.errors import AppError
 from sutra_app.orchestrator.projects import ProjectStep
 from sutra_app.orchestrator.testing.fake_engine import FakeLauncher, node_script
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
@@ -199,3 +200,34 @@ def test_the_two_new_lines_are_not_in_the_flag_off_set_and_are_never_said_with_t
         five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
         talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
         assert rows(services, "SELECT * FROM projects") == [] and not any("waits for your OK" in r["text"] for r in rows(services, "SELECT text FROM chat_messages"))
+
+
+# ---- a retried request can never leave an ordinary task behind (G8, B2, MJ6) ---------------------------------------------------------
+
+@pytest.mark.parametrize("how", ["failed", "stopped", "done"])
+def test_a_request_whose_project_has_ended_makes_no_task(rig, how):
+    first, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE projects SET status = ? WHERE id = ?", how, first.project_id)
+    count = rig.sql("SELECT count(*) FROM tasks").fetchone()[0]
+    again, made = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    assert again.ok is False and "already ended" in again.why and made == {} and rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == count
+
+
+def test_a_step_with_no_node_in_an_ok_reservation_raises_and_its_task_is_not_made(rig):
+    reservation = rig.projects.reserve("req-1", "t", steps(2))
+    before = rig.sql("SELECT count(*) FROM tasks").fetchone()[0]
+    with pytest.raises(AppError):
+        with rig.t.db.tx() as tx:
+            task = rig.t.service.create(tx, dept_id="web", text="x", title="x", request="req-1")
+            rig.projects.link_task(tx, reservation, "a9", task.id)                     # the plan has no step a9
+    assert rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == before
+
+
+def test_a_node_that_has_its_task_is_never_given_a_second_one(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    before = rig.sql("SELECT count(*) FROM tasks").fetchone()[0]
+    with pytest.raises(AppError):
+        with rig.t.db.tx() as tx:
+            second = rig.t.service.create(tx, dept_id="ops", text="again", title="again", request="req-1")
+            rig.projects.link_task(tx, reservation, "a1", second.id)
+    assert rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == tasks["a1"] and rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == before
