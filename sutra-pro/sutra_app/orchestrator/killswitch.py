@@ -60,6 +60,7 @@ class KillSwitch:
     def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None) -> None:
         self.directory = Path(directory)
         self._clock = clock or SystemClock()
+        self._latched = ""                         # "kill" or "pause" when the file could not be written: the switch is on in memory until it is cleared (Minor 3: a full or read-only disk must not open the gate)
 
     # ---- reading ---------------------------------------------------------------------------------------------------------------
 
@@ -70,19 +71,22 @@ class KillSwitch:
             os.lstat(self.directory / name)
         except FileNotFoundError:
             return False
-        except NotADirectoryError:
-            return False                           # `<data>/nodes` is a file: nothing can be inside it, so nothing was put there
-        except OSError:
+        except OSError:                            # includes NotADirectoryError (`<data>/nodes` is a file, or a part of the path was swapped for one): not known, so stop (Minor 3)
             return True
         return True
 
     @property
     def killed(self) -> bool:
-        return self._present(KILL_FILE)
+        return self._latched == "kill" or self._present(KILL_FILE)
 
     @property
     def paused(self) -> bool:
-        return self._present(PAUSE_FILE)
+        return self._latched in ("kill", "pause") or self._present(PAUSE_FILE)
+
+    def latch(self, level: str) -> None:
+        """Hold the switch in memory at `level` ("pause" or "kill") because its file could not be written; `clear` lets it go. The strongest level wins."""
+        if level == "kill" or (level == "pause" and self._latched != "kill"):
+            self._latched = level
 
     def level(self) -> str:
         """`kill` while the KILL file is there, else `pause` while the PAUSE file is, else `none`."""
@@ -105,6 +109,8 @@ class KillSwitch:
     def _note(self, name: str) -> dict[str, Any] | None:
         """What the file says (who, why, when), or None when it is not there. A file made by hand, empty or not JSON, says nothing: `{}`."""
         if not self._present(name):
+            if self._latched == ("kill" if name == KILL_FILE else "pause"):
+                return {"by": "system", "reason": "the file could not be written, so the switch is held in memory"}
             return None
         path = self.directory / name
         try:
@@ -136,6 +142,13 @@ class KillSwitch:
         """Put the PAUSE or the KILL file there (`level` is `pause` or `kill`). An existing file is replaced by the new words."""
         if level not in ("pause", "kill"):
             raise ValueError("the switch is set to pause or kill")
+        try:
+            self._write(level, by, reason)
+        except OSError:
+            self.latch(level)                      # the file is not there, so the switch is held in memory: the gate still holds (Minor 3)
+            raise
+
+    def _write(self, level: str, by: str, reason: str) -> None:
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         target = self.directory / (KILL_FILE if level == "kill" else PAUSE_FILE)
         body = json.dumps({"v": 1, "by": str(by)[:40], "reason": scrubbed(" ".join(str(reason).split()))[:REASON_MAX], "at": iso_z(self._clock.now())}, ensure_ascii=False) + "\n"
@@ -157,6 +170,9 @@ class KillSwitch:
     def clear(self, *, kill: bool = True, pause: bool = True) -> list[str]:
         """Remove the files asked for; returns the names that were there. A folder or link at the name is removed as the owner would (a link itself, not what it points at)."""
         removed = []
+        if (self._latched == "kill" and kill) or (self._latched == "pause" and pause):
+            removed.append(KILL_FILE if self._latched == "kill" else PAUSE_FILE)
+            self._latched = ""
         for wanted, name in ((kill, KILL_FILE), (pause, PAUSE_FILE)):
             if not wanted or not self._present(name):
                 continue
@@ -166,7 +182,8 @@ class KillSwitch:
                     path.rmdir()                      # an empty folder only: what is inside a folder the owner made is never deleted by this
                 else:
                     path.unlink()
-                removed.append(name)
+                if name not in removed:
+                    removed.append(name)
             except FileNotFoundError:
                 continue
             except OSError as exc:                    # a folder that is not empty, a file nobody may remove: it stays, and `held()` still says so
@@ -276,6 +293,7 @@ class NodeControl:
             await run_blocking(lambda: self.switch.set("kill", by=by, reason=reason))
         except OSError as exc:
             written = False
+            self.switch.latch("kill")                                  # the gate holds in memory although the file is not there (Minor 3)
             log.error("the KILL file could not be written (%s): the agents are stopped anyway", type(exc).__name__)
         if written:
             self._enforced = await run_blocking(self._marker)

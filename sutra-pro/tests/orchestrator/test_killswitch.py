@@ -86,9 +86,10 @@ def test_a_folder_a_link_or_a_file_that_cannot_be_looked_at_counts_as_present(sw
     assert switch.killed and switch.level() == "kill"                              # fails closed
 
 
-def test_a_nodes_folder_that_is_a_file_holds_nothing(tmp_path):
+def test_a_nodes_folder_that_is_a_file_fails_closed(tmp_path):
+    """Minor 3: a part of the path that is a file (swapped, or wrong from the start) cannot be looked inside: not known, so nothing starts. (It once read as "nothing is there".)"""
     (tmp_path / "nodes").write_text("x")
-    assert KillSwitch(tmp_path / "nodes").level() == "none"
+    assert KillSwitch(tmp_path / "nodes").level() == "kill"
 
 
 def test_the_stamp_changes_with_a_new_file_so_each_kill_is_dealt_with_once(switch):
@@ -548,7 +549,8 @@ def test_the_kill_file_is_written_with_a_unique_temp_name_synced_and_cleaned_up_
     monkeypatch.setattr(os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("disk")))
     with pytest.raises(OSError):
         switch.set("pause")
-    assert sorted(p.name for p in switch.directory.iterdir()) == [KILL_FILE] and not switch.paused                  # no temp file left, no half file
+    assert sorted(p.name for p in switch.directory.iterdir()) == [KILL_FILE]                  # no temp file left, no half file
+    assert switch.paused                                                                                                  # and the pause that could not be written is held in memory (Minor 3)
 
 
 def test_a_stale_temp_file_of_the_same_kind_does_not_block_the_next_write(switch):
@@ -588,3 +590,29 @@ def test_clear_is_safe_when_kill_is_a_folder_with_something_in_it(switch, caplog
     assert (switch.directory / KILL_FILE / "keep.txt").read_text() == "the owner's own file" and switch.killed and "could not be removed" in caplog.text
     (switch.directory / PAUSE_FILE).touch()
     assert switch.clear() == [PAUSE_FILE] and switch.killed                                                           # the pause went, the kill stays and still holds
+
+
+# ---- a KILL file that cannot be written is held in memory (Minor 3) ---------------------------------------------------------------------
+
+def test_a_switch_that_cannot_be_written_is_held_in_memory_until_it_is_cleared(tmp_path, monkeypatch):
+    switch = KillSwitch(tmp_path / "nodes")
+    monkeypatch.setattr(switch, "_write", lambda *a, **k: (_ for _ in ()).throw(PermissionError("read-only disk")))
+    with pytest.raises(OSError):
+        switch.set("kill", reason="disk is read-only")
+    assert not (tmp_path / "nodes" / KILL_FILE).exists()
+    assert switch.killed and switch.level() == "kill" and not switch.allows_spawn() and "Stopped" in switch.held()
+    assert switch.status()["kill"]["by"] == "system"
+    monkeypatch.undo()
+    assert switch.clear(pause=False) == [KILL_FILE] and switch.level() == "none" and switch.clear() == []
+
+
+def test_the_gate_still_holds_a_node_when_the_kill_file_could_not_be_written(rig, monkeypatch):
+    t = rig.t
+    a, b, na, nb = two_live_nodes(rig)
+    monkeypatch.setattr(rig.switch, "_write", lambda *x, **k: (_ for _ in ()).throw(OSError("no space left on device")))
+    result = t.run(rig.control.kill_all(reason="disk is full"))
+    assert result.file_written is False and not (rig.switch.directory / KILL_FILE).exists() and rig.switch.level() == "kill"
+    waiting = t.new("web", "a node that waits for the team")
+    seed_node(t, waiting.id, 3)
+    assert "kill switch" in rig.control.gate(t.db.conn(), 0, t.row(waiting.id)) and rig.control.spawn_guard(t.db.conn(), t.row(waiting.id)) == KILL_OUTCOME
+    assert t.run(rig.control.resume()) is True and rig.switch.level() == "none"                      # resume lets the memory go too

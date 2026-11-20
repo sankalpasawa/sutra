@@ -171,4 +171,4 @@ def test_kill_all_says_when_the_file_could_not_be_written_and_stops_the_nodes_an
     seed_node(t, task.id, 1)
     monkeypatch.setattr(KillSwitch, "set", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("read-only disk")))
     assert client.post("/api/nodes/kill-all", json={}, headers=headers).json() == {"affected": 1, "file_written": False}
-    assert t.status(task.id) == "stopped" and switch.level() == "none"
+    assert t.status(task.id) == "stopped" and switch.level() == "kill"          # no file, but the switch is held in memory so the gate still holds (Minor 3)
