@@ -214,7 +214,8 @@
     const name = id => (byId[id] ? Store().nodeName(byId[id]) : "A step");
     return '<h2>What the steps said to each other</h2><ol class="plist pmsgs">' + list.map(m => {
       const from = isObj(m.from) ? m.from.node_id : "";
-      const text = textOf(m.body);
+      const opinion = isObj(m.body) && Object.prototype.hasOwnProperty.call(OPINION_WORDS, m.body.verdict) ? "gave its opinion: " + OPINION_WORDS[m.body.verdict] + ". " : "";
+      const text = opinion + textOf(m.body);
       return '<li data-seq="' + esc(m.seq) + '"><b>' + esc(name(from)) + "</b> " + esc(text.length > 240 ? text.slice(0, 240) + "..." : text || "(handed in its work)") + "</li>";
     }).join("") + "</ol>";
   }

@@ -575,7 +575,7 @@ class ProjectService:
     # the words of a card (plain, simple). A no to a question about one step cancels that step (D315 b); a no to the estimate stops the project; nothing here says a writer "runs alone" before MAN-10 (D323).
     _WORDS = {
         "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
-        "review": "The reviewer says the work needs changes: {summary} Send the steps it names back for another try? If you say no, the project ends as it is.{independent}",
+        "review": "The reviewer thinks the work needs changes. This is only its opinion, and you decide. It says: {summary} Send the steps it names back for another try? If you say no, the project ends as it is.{independent}",
         "scope_violation": "A step changed files that no step was given ({count}, for example {paths}). Keep its work? If you say no, its work is set aside, its files are kept for you to look at, and the steps that need it are cancelled.",
         "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "scope": "A step changes files in several places of your folder. It is kept apart from other steps of projects that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",

@@ -204,3 +204,25 @@ def test_a_reviewer_that_could_not_run_does_not_make_a_finished_project_look_unf
     project = rig.project(reservation.project_id)
     assert project["status"] == "done" and project["stop_reason"] == "The review could not run, so nobody has checked the work"
     assert rig.sql("SELECT count(*) FROM chat_messages WHERE src_ref = ?", f"project:{reservation.project_id}#review-failed").fetchone()[0] == 1
+
+
+def test_a_verdict_that_names_no_step_asks_nothing_and_approve_is_worded_as_an_opinion(rig):                    # R5
+    reservation, tasks = two_done(rig)
+    node = reviewer(rig)
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], files=verdict_files("changes", [], "It feels thin."))
+    assert rig.store.approvals(reservation.project_id) == [] and rig.project(reservation.project_id)["status"] == "done"          # no "send back" question that would send nothing
+    [note] = rig.sql("SELECT text FROM chat_messages WHERE src_ref LIKE ?", f"project:{reservation.project_id}#opinion:%").fetchall()
+    assert "did not say which steps" in note["text"] and "only its opinion" in note["text"] and "It feels thin." in note["text"]
+    reservation2, tasks2 = rig.request([("b1", "dev", []), ("b2", "legal", [])], request_id="req-2")
+    rig.start()
+    for ref in ("b1", "b2"):
+        rig.go(tasks2[ref])
+        rig.finish(tasks2[ref])
+    node2 = rig.sql("SELECT * FROM agent_nodes WHERE role = 'reviewer' ORDER BY rowid DESC").fetchone()
+    rig.start()
+    rig.go(node2["task_id"])
+    rig.finish(node2["task_id"], files=verdict_files("approve", [], "Looks right."))
+    [approve] = rig.sql("SELECT text FROM chat_messages WHERE src_ref LIKE ?", f"project:{reservation2.project_id}#opinion:%").fetchall()
+    assert "approves of the work" in approve["text"] and "only its opinion, and you decide" in approve["text"]

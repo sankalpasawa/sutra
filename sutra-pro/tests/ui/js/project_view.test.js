@@ -166,3 +166,10 @@ test("reasons that are not plain words are put into words or left out", () => {
   assert.equal(r("tool.used", "read a.txt, 2 times"), "read a.txt, 2 times");
   assert.equal(r("scope.unchecked", "git could not say which files this step changed"), "git could not say which files this step changed");
 });
+
+test("the reviewer's verdict is shown as its opinion, never as an approval", () => {
+  const html = View.messagesHtml([{seq: 1, from: {node_id: "nd_zzz"}, body: {v: 1, verdict: "approve", summary: "Looks right.", needs_work: [], points: []}}, {seq: 2, from: {node_id: "nd_zzz"}, body: {verdict: "changes", summary: "Thin."}}], snap());
+  assert.match(html, /gave its opinion: approves of the work\. Looks right\./);
+  assert.match(html, /gave its opinion: asks for changes\. Thin\./);
+  assert.equal(/approved/i.test(html), false);
+});

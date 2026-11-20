@@ -898,7 +898,12 @@ class Conductor:
         self.store.audit(tx, actor="conductor", action="verdict.received", project_id=node["project_id"], node_id=node["id"], role="reviewer", decision="allow" if verdict["verdict"] == "approve" else "ask",
                          reason=verdict["verdict"], ref=str(posted.seq))
         self._teardown(tx, node, "done", "")
-        if verdict["verdict"] != "approve":
+        said = verdict["summary"][:200]
+        if verdict["verdict"] == "approve":                                  # an opinion, never an approval: the owner is told so (R5, D338 b)
+            self._note(tx, node["project_id"], f"The reviewer approves of the work. That is only its opinion, and you decide whether it is right. It says: {said}", f"project:{node['project_id']}#opinion:{node['id']}")
+        elif not verdict["needs_work"]:                                      # nothing to send back: no question that would do nothing (R5)
+            self._note(tx, node["project_id"], f"The reviewer asks for changes but did not say which steps, so there is nothing to send back. That is only its opinion. It says: {said}", f"project:{node['project_id']}#opinion:{node['id']}")
+        if verdict["verdict"] != "approve" and verdict["needs_work"]:
             loops = tx.conn.execute("SELECT review_loops FROM projects WHERE id = ?", (node["project_id"],)).fetchone()[0]
             cap = int(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()[0] or "{}").get("review_loops") or NODE_DEFAULT_CAPS["review_loops"] or 2)
             if int(loops) >= cap:                                            # the loop cap: no more going back; the owner is told, and the project ends as it is
