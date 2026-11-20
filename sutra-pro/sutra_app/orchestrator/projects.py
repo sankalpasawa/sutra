@@ -20,6 +20,7 @@ With SUTRA_NODES_V1 off none of this is built.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import sqlite3
@@ -45,6 +46,7 @@ from sutra_app.orchestrator.nodes_store import NodeStore
 __all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "default_output_name", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
 
 log = logging.getLogger(__name__)
+PROBE_SECONDS = 45.0                       # the longest the probe of the computer's permissions may take (D322 e)
 
 
 @dataclass(frozen=True)
@@ -277,6 +279,9 @@ class ProjectService:
     def link_task(self, tx: Tx, reservation: Reservation, step_ref: str, task_id: str) -> None:
         """In the transaction that makes the task: tie the node of `step_ref` to it. From then on the task is a node (the gate sees it). A step that has no node in an ok reservation, or whose node has a task
         already, raises: the transaction ends and no task is made, so a request that is planned or retried again can never leave an ordinary, ungated task behind (G8, B2)."""
+        ended = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (reservation.project_id,)).fetchone()
+        if ended is not None and ended["status"] in PROJECT_FINAL:                  # a stop or a kill between `reserve` and the tasks makes no task (D322 f)
+            raise AppError("busy", "That project has ended, so no step of it was started")
         node_id = reservation.nodes.get(step_ref)
         if node_id is None:
             raise AppError("busy", "That step has no place in its project, so its task was not made")                 # fail closed (G8, B2): the task is never made without its node
@@ -511,7 +516,11 @@ class ProjectService:
         for group, write in ((writers, True), (readers, False)):
             if not group:
                 continue
-            for need in await run_blocking(lambda write=write: adapter.probe(Path(folder), write=write)):
+            try:                                                                    # a system dialog can stay unanswered: past the limit the folder counts as a need and its card opens (D322 e)
+                needs = await asyncio.wait_for(run_blocking(lambda write=write: adapter.probe(Path(folder), write=write)), PROBE_SECONDS)
+            except asyncio.TimeoutError:
+                needs = [syspermissions.Need("unknown", "write" if write else "read", "your folder")]
+            for need in needs:
                 found.setdefault((need.item, need.level, need.label), []).extend(n["id"] for n in group)
         if not found:
             return 0

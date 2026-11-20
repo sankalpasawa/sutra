@@ -472,8 +472,11 @@ class TurnRunner:
                     if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
                         raise AppError("validation", reservation.why or "the plan was refused")
                     if reservation is not None:
-                        if await self.projects.probe_system(reservation.project_id):   # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
-                            asked_system = True
+                        try:
+                            if await self.projects.probe_system(reservation.project_id):   # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
+                                asked_system = True
+                        except Exception:                                           # noqa: BLE001  (a probe that fails for any reason must not leave a reserved project with no tasks; a refusal found late is still caught)
+                            log.exception("the permission probe of request %s failed", request.request_id)
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
                 if reservation is not None:                                             # every question the owner has to answer is said in plain words, not only the estimate (D308, D317)
                     said = []

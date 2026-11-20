@@ -118,3 +118,53 @@ def test_the_probe_is_not_run_inside_the_task_gate_and_the_gate_only_reads_the_n
     for _ in range(3):
         rig.start()
     assert len(rig.adapter.probes) == before                                                           # starting things never probes
+
+
+# ---- the probe has a time limit, and a stopped project makes no task (G16, D322) ----------------------------------------------------------
+
+def test_a_probe_that_never_returns_ends_in_a_card_after_the_time_limit(rig, monkeypatch):
+    import threading
+    from sutra_app.orchestrator import projects
+    monkeypatch.setattr(projects, "PROBE_SECONDS", 0.2)
+    release = threading.Event()
+
+    class Hanging(FakeMac):
+        def probe(self, folder, *, write):
+            release.wait(5)
+            return []
+    rig.projects._adapter = Hanging(rig.projects._folder_of() and __import__("pathlib").Path("/tmp"))
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], probe=True)
+    release.set()
+    questions = system_questions(rig, reservation.project_id)
+    assert {q.request["item"] for q in questions} == {"unknown"} and {q.request["level"] for q in questions} == {"write", "read"}              # the write probe and the read probe both timed out
+    assert rig.node_states(tasks) == {"a1": "awaiting_system", "a2": "awaiting_system"}
+
+
+def test_a_project_stopped_between_the_reservation_and_its_tasks_makes_no_task(rig):
+    from sutra_app.orchestrator.errors import AppError
+    from sutra_app.orchestrator.projects import ProjectStep
+    reservation = rig.projects.reserve("req-9", "t", [ProjectStep("a1", "web"), ProjectStep("a2", "sales")])
+    rig.t.run(rig.projects.stop(reservation.project_id))
+    before = rig.sql("SELECT count(*) FROM tasks").fetchone()[0]
+    with pytest.raises(AppError):
+        with rig.t.db.tx() as tx:
+            task = rig.t.service.create(tx, dept_id="web", text="x", title="x", request="req-9")
+            rig.projects.link_task(tx, reservation, "a1", task.id)
+    assert rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == before
+
+
+def test_a_probe_that_raises_leaves_the_reserved_project_with_its_tasks(tmp_path):
+    import time
+    from fastapi.testclient import TestClient
+    from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
+    from orchestrator.test_projects_adopt import BASE as APP_BASE, NO_REQUESTS, make_app, rows, talk
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    with TestClient(app, base_url=APP_BASE) as client:
+        services = app.state.services
+
+        async def boom(project_id):
+            raise RuntimeError("the probe broke")
+        services.projects.probe_system = boom
+        talk(client, services, connector, "A page and a quote", decide(change="add", reuse=(), why="two"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")),
+             assignments(draft("a1", "web", title="Page"), draft("a2", "sales", title="Quote")), NO_REQUESTS)
+        assert len(rows(services, "SELECT * FROM tasks")) == 2 and len(rows(services, "SELECT * FROM projects")) == 1
