@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
+from sutra_app.orchestrator.budgets import SCRUB_LIMIT, egress_scrubs
 from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
@@ -35,6 +36,11 @@ APP_CLOSED = "the app was closed"
 APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
+CAP_REACHED = "stopped: this step reached its"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
+
+
+def caps_of(project: Any) -> dict[str, Any]:
+    return json.loads(project["caps_json"] or "{}")
 
 
 class Conductor:
@@ -112,6 +118,12 @@ class Conductor:
         running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off','expired')", (node["project_id"],)).fetchone()[0]      # an expired node whose process is still there holds its slot (Minor 6)
         if running >= limit:
             return f"Waiting for a free slot in this project ({limit} at a time)"
+        ceiling = conn.execute("SELECT budget_credits FROM projects WHERE id = ?", (node["project_id"],)).fetchone()["budget_credits"]
+        if ceiling is not None:                                              # the slices of the nodes that still count must fit the project's ceiling (MAN-9)
+            slices = conn.execute("SELECT COALESCE(SUM(slice_credits), 0) FROM agent_nodes WHERE project_id = ? AND role = 'worker' AND state NOT IN ('failed','cancelled')",
+                                  (node["project_id"],)).fetchone()[0]
+            if slices > ceiling:
+                return "Waiting: the credits set aside for this project's steps do not fit its ceiling"
         return ""
 
     def on_starting(self, tx: Tx, row: Any) -> None:
@@ -180,6 +192,14 @@ class Conductor:
         elif want in ("cancelled", "failed") and outcome.startswith(APP_CLOSED):
             want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is tried again, not cancelled
             outcome = APP_CLOSED_WHY
+        if want in ("cancelled", "failed") and outcome.startswith(CAP_REACHED):
+            self.store.audit(tx, actor="conductor", action="trigger.cap_reached", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=outcome[:200],
+                             ref=task_id)
+            self._note(tx, node["project_id"], f"A step stopped: {outcome[len('stopped: '):]}. It was not tried again.", f"project:{node['project_id']}#cap:{node['id']}")
+            self._fail(tx, node, outcome[:200], retry=False)               # a second attempt would meet the same cap
+            tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
+            self._sync_project(tx, node["project_id"])
+            return
         if state in HELD_STATES and want in ("queued", "planned"):
             want = state                                                    # a node that waits for an answer stays there until it is answered
         if want == state:
@@ -390,6 +410,8 @@ class Conductor:
         did = await run_blocking(self._tick_sync, moment, gap)
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s", by="system") for task_id in did["expire"]), return_exceptions=True)
+        if did["scrub"]:
+            await asyncio.gather(*(self.tasks.stop_node(task_id, "stopped: its prompts held secrets again and again", by="system") for task_id in did["scrub"]), return_exceptions=True)
         for project_id, reason in did["refuse"]:
             await self._stop_nodes(project_id, reason, "system")                     # the database part of the refusal was done in the tick's own transaction
         pending, self._pending = self._pending, []
@@ -399,11 +421,12 @@ class Conductor:
 
     def _tick_sync(self, now: int, gap: int) -> dict[str, Any]:
         expire: list[str] = []
+        scrub: list[str] = []
         extended: list[str] = []
         refuse: list[tuple[str, str]] = []
         lease_default = int(NODE_DEFAULT_CAPS["lease_s"] or 90)
         with self.db.tx() as tx:
-            for project in tx.conn.execute("SELECT id, status, caps_json FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
+            for project in tx.conn.execute("SELECT id, status, caps_json, created_at, budget_usd FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
                 lease_s = int(json.loads(project["caps_json"] or "{}").get("lease_s") or lease_default)
                 slept = gap > lease_s // 2
                 ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
@@ -421,6 +444,9 @@ class Conductor:
                     self._refuse_in(tx, project["id"], reason)                       # the decision and the stop are one transaction: no crash can leave one without the other (MJ7)
                     refuse.append((project["id"], reason))
                     continue
+                if self._project_limit(tx, project["id"], now, project["created_at"], caps_of(project)):
+                    continue
+                self._scrubbed_nodes(tx, project["id"], scrub)
                 self._fail_without_grant(tx, project["id"])
                 for stuck in tx.conn.execute("SELECT n.task_id AS task_id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state = 'expired' "
                                              "AND t.status IN ('starting','running','waiting_user')", (project["id"],)).fetchall():
@@ -444,7 +470,43 @@ class Conductor:
                                          reason=f"silent for {silent} s (lease {lease_s} s)")
                         self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="lease lost")
                         expire.append(node["task_id"])
-        return {"expire": expire, "refuse": refuse, "extended": extended, "lease": lease_default}
+        return {"expire": expire, "scrub": scrub, "refuse": refuse, "extended": extended, "lease": lease_default}
+
+    def _project_limit(self, tx: Tx, project_id: str, now: int, created_at: int, caps: dict[str, Any]) -> bool:
+        """The project's own limits (MAN-9): wall time (`project_wall_s`, 2 hours) and dollars (`budget_usd`, when the owner set one). Past either the project is stopped by the system (the ladders
+        run at the end of the tick), with an audit row `trigger.project_wall` or `trigger.project_usd` and a plain note. True when it was stopped."""
+        wall = int(caps.get("project_wall_s") or NODE_DEFAULT_CAPS["project_wall_s"] or 7200)
+        reason = action = ""
+        if now - int(created_at) > wall:
+            reason, action = f"the project ran longer than {wall // 60} minutes", "trigger.project_wall"
+        else:
+            limit = tx.conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()["budget_usd"]
+            if limit is not None:
+                spent = tx.conn.execute("SELECT COALESCE(SUM(u.usd), 0) FROM usage_ledger u JOIN agent_nodes n ON n.task_id = u.task_id WHERE n.project_id = ? AND u.provider != 'stub'",
+                                        (project_id,)).fetchone()[0]
+                if spent > float(limit):
+                    reason, action = "the project spent more than the dollars you set", "trigger.project_usd"
+        if not reason:
+            return False
+        self.store.audit(tx, actor="conductor", action=action, project_id=project_id, decision="deny", reason=reason)
+        self._note(tx, project_id, f"I stopped it: {reason}.", f"project:{project_id}#limit")
+        self._pending.append((project_id, f"stopped: {reason}"))
+        return True
+
+    def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str]) -> None:
+        """D303: a node whose prompts were scrubbed `SCRUB_LIMIT` times (rows of `egress.jsonl` that name it and found something) is ended: audit `trigger.egress_scrub`, a plain note, its task
+        through the stop ladder at the end of the tick. Counted from the node's own rows, so a repeat is the same node and never another."""
+        live = tx.conn.execute("SELECT n.id AS id, n.role AS role, n.task_id AS task_id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? "
+                               "AND n.state IN ('leased','running') AND t.status IN ('starting','running','waiting_user')", (project_id,)).fetchall()
+        if not live:
+            return
+        counts = egress_scrubs(self.settings.data_dir / "connectors" / "egress.jsonl", [row["id"] for row in live])
+        for row in live:
+            if counts.get(row["id"], 0) >= SCRUB_LIMIT:
+                self.store.audit(tx, actor="conductor", action="trigger.egress_scrub", project_id=project_id, node_id=row["id"], role=row["role"], decision="deny",
+                                 reason=f"its prompts were scrubbed {counts[row['id']]} times", ref=row["task_id"])
+                self._note(tx, project_id, "A step was stopped because its prompts held secrets again and again.", f"project:{project_id}#scrub:{row['id']}")
+                scrub.append(row["task_id"])
 
     def _fail_without_grant(self, tx: Tx, project_id: str) -> None:
         """G3 (D310, D302): a node whose task waits and whose grant is missing, unreadable, too wide for its role or not its own is held by the gate for ever, and the project would hang. The tick fails it:
@@ -501,6 +563,17 @@ class Conductor:
         self._receipt(tx, project_id, reason)
         tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
         return cancelled
+
+    def _note(self, tx: Tx, project_id: str, text: str, src_ref: str) -> None:
+        """A plain note in the org chat about a project (once, by its `src_ref`): a trigger that ended a step or the project says so (D311: a note, not a card)."""
+        if self.chats is None:
+            return
+        from sutra_app.library.gate import GATE
+        from sutra_app.orchestrator.ids import ORG_SESSION_ID
+        title = tx.conn.execute("SELECT title FROM projects WHERE id = ?", (project_id,)).fetchone()["title"]
+        full = f"Project \u201c{title}\u201d: {text}" if title else text
+        payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=full[:2000], src_ref=src_ref, at=tx.now())
+        self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
 
     def _receipt(self, tx: Tx, project_id: str, reason: str) -> None:
         """The one line in the org chat that says why a project stopped by itself (D296). A plain note, once (by its `src_ref`)."""
