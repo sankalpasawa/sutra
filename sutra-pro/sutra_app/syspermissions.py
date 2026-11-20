@@ -119,8 +119,8 @@ class MacAdapter:
     def explain(self, need: Need) -> list[str]:
         where = need.label or "that folder"
         if need.item == "full_disk":
-            return ["Open System Settings, then Privacy & Security, then Full Disk Access.", "Turn on Sutra in the list.", "Come back here and press Check again."]
-        return ["Open System Settings, then Privacy & Security, then Files & Folders.", f"Find Sutra and turn on {where}.",
+            return ["Open System Settings, then Privacy & Security, then Full Disk Access.", "Turn on Sutra Pro in the list.", "Come back here and press Check again."]
+        return ["Open System Settings, then Privacy & Security, then Files & Folders.", f"Find Sutra Pro and turn on {where}.",
                 "Come back here and press Check again.", "Nothing starts until you do, and Sutra changes no setting for you."]
 
     def open_settings(self, need: Need) -> bool:
@@ -155,7 +155,7 @@ class WindowsAdapter:
         if need.item == "long_paths":
             return ["Windows is set to refuse long file names, and this folder has one.", "Move the work to a folder with a shorter path, or ask the person who looks after this computer to allow long paths.", "Then press Check again."]
         return ["Open Windows Security, then Virus & threat protection, then Ransomware protection.", "Open Manage Controlled folder access, then Allow an app through Controlled folder access.",
-                "Add Sutra, then come back here and press Check again.", "Nothing starts until you do, and Sutra changes no setting for you."]
+                "Add Sutra Pro and the programs it runs, `claude` and `codex`, then come back here and press Check again.", "Nothing starts until you do, and Sutra changes no setting for you."]
 
     def open_settings(self, need: Need) -> bool:
         try:

@@ -81,6 +81,7 @@ def test_the_steps_are_those_of_the_system_in_plain_words(tmp_path):
     assert "Full Disk Access" in " ".join(MacAdapter(home=tmp_path).explain(Need("full_disk")))
     windows = " ".join(WindowsAdapter().explain(Need("controlled_folder", "write", "work")))
     assert "Controlled folder access" in windows and "Check again" in windows and "Files & Folders" not in windows
+    assert "`claude`" in windows and "`codex`" in windows and "Sutra Pro" in windows and "Sutra Pro" in steps          # the programs that write are named (m4)
     assert "administrator" in " ".join(WindowsAdapter().explain(Need("elevated"))) and syspermissions.explain(Need("x"), NoAdapter())
 
 
