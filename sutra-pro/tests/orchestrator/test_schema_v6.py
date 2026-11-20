@@ -50,8 +50,8 @@ def message(db, project_id, seq, src_ref, kind="handoff"):
 
 # ---- the migration -----------------------------------------------------------------------------------------------------------------
 
-def test_the_migration_list_ends_with_the_nodes_migration_and_the_tables_are_registered():
-    assert schema.MIGRATIONS[-1] is schema.DDL_V6_NODES and schema.SCHEMA_VERSION >= 6
+def test_the_nodes_migration_is_the_sixth_and_the_tables_are_registered():
+    assert schema.MIGRATIONS[5] is schema.DDL_V6_NODES and schema.SCHEMA_VERSION >= 6          # later migrations (v7 work, v8 recipes) come after it, never before
     assert NEW_TABLES <= set(schema.TABLES)
 
 
