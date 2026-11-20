@@ -15,7 +15,7 @@ from sutra_app.orchestrator.db import Database, SchemaError, StoreContext, Store
 from sutra_app.orchestrator.errors import StoreBusy
 
 T = "tsk_aaaaaaaaaaaa"
-LATER_TABLES = {"chat_turn_checkpoint", "projects", "agent_nodes", "node_messages", "node_audit", "approvals"}      # added by migrations v5 and v6
+LATER_TABLES = {"chat_turn_checkpoint", "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions"}      # added by migrations v5 to v8
 T2 = "tsk_bbbbbbbbbbbb"
 
 

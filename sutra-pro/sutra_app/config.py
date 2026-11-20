@@ -37,6 +37,7 @@ ENV_NAMES = {
     "live_v1": "SUTRA_LIVE_V1", "live_heartbeat_s": "SUTRA_LIVE_HEARTBEAT_S", "live_coalesce_ms": "SUTRA_LIVE_COALESCE_MS",
     "live_checkpoint_s": "SUTRA_LIVE_CHECKPOINT_S",
     "nodes_v1": "SUTRA_NODES_V1", "nodes_lanes": "SUTRA_NODES_LANES", "nodes_reviewer": "SUTRA_NODES_REVIEWER", "nodes_slots": "SUTRA_NODES_SLOTS",
+    "work_v1": "SUTRA_WORK_V1", "recipes_v1": "SUTRA_RECIPES_V1",
 }
 # The default caps of a project and its nodes (multi-agent nodes, D273): data, not code paths. A project row copies them into `caps_json` at plan time, so a later
 # change here never moves a project that is already running. Nothing reads them while SUTRA_NODES_V1 is off.
@@ -178,6 +179,10 @@ class Settings(BaseModel):
     nodes_lanes: bool = False
     nodes_reviewer: bool = False
     nodes_slots: bool = False
+    # Devin parity (docs/design/devin-parity.md): each package has its own switch, off by default. With one off, its tables are not read, its routes and page do not exist (404 before any token
+    # check), no navigation item shows and nothing else changes. `work_v1`: the Work page and its tags (DV-2); `recipes_v1`: Recipes (DV-3).
+    work_v1: bool = False
+    recipes_v1: bool = False
     override_key: SecretStr | None = Field(None, exclude=True, repr=False)
     env_file: Path
 

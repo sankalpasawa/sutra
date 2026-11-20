@@ -231,6 +231,8 @@ def create_app(settings: Settings | None = None, *, connector: Any = None, launc
     install_error_handlers(app, redacted_response_class(services.redact))
     for module in ROUTERS:
         app.include_router(module.build_router())
+    if services.settings.work_v1:                                                              # the Work routes exist only with the switch on (DV-2): off, they are 404 before any token check
+        app.include_router(importlib.import_module("sutra_app.orchestrator.api.work").build_router())
     app.state.ops_api = _mount_ops_api(app)
     app.state.plugins = {name: _mount_plugin(app, services, name) for name in PLUGINS}
     if services.settings.nodes_v1 and getattr(services, "projects", None) is not None and app.state.plugins.get("sutra_app.ui"):

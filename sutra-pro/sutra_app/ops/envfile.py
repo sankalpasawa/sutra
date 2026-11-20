@@ -35,6 +35,8 @@ _HINTS = {
     "SUTRA_NODES_LANES": "1: two workers of one team may run together (needs SUTRA_NODES_V1)",
     "SUTRA_NODES_REVIEWER": "1: a read-only reviewer node (needs SUTRA_NODES_V1)",
     "SUTRA_NODES_SLOTS": "1: Claude and Codex limits shared by the whole machine (needs SUTRA_NODES_V1)",
+    "SUTRA_WORK_V1": "1: the Work page: everything Sutra did, with tags and a 'How did it go?' (default 0)",
+    "SUTRA_RECIPES_V1": "1: Recipes: save a way of working and start it again (default 0)",
 }
 
 

@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "DDL_V6_NODES", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "DDL_V6_NODES", "DDL_V7_WORK", "DDL_V8_RECIPES", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -309,11 +309,34 @@ DDL_V6_NODES: tuple[str, ...] = (
     "CREATE UNIQUE INDEX tasks_one_live_per_dept_lane ON tasks(dept_id, lane) WHERE status IN ('starting','running','waiting_user')",
 )
 
+# The work list (Devin parity DV-2, docs/design/devin-parity.md; migration v7). Inert: nothing reads the table until SUTRA_WORK_V1 is on. Additive: one new table. A tag is a plain word the
+# owner puts on a task or a project so the Work page can find it; `item_id` names a task or a project and has no foreign key (a tag outlives nothing it depends on and is never a reason a
+# task or a project cannot be removed).
+DDL_V7_WORK: tuple[str, ...] = (
+    """CREATE TABLE work_tags (
+  item_kind TEXT NOT NULL CHECK (item_kind IN ('task','project')), item_id TEXT NOT NULL, tag TEXT NOT NULL CHECK (length(tag) BETWEEN 1 AND 30),
+  created_at INTEGER NOT NULL, PRIMARY KEY (item_kind, item_id, tag))""",
+    "CREATE INDEX work_tags_tag ON work_tags(tag, item_kind)",
+)
+
+# Recipes (Devin parity DV-3; migration v8). Inert until SUTRA_RECIPES_V1 is on; additive: two new tables. A recipe is a title and a status; its words live in `recipe_versions`, which only
+# ever grows (the triggers copy `node_audit`): a change is a new version, a revert is a new version that copies an old one, so the owner can always go back and nothing is lost.
+DDL_V8_RECIPES: tuple[str, ...] = (
+    """CREATE TABLE recipes (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 80), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  current_version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
+    """CREATE TABLE recipe_versions (
+  recipe_id TEXT NOT NULL REFERENCES recipes(id), version INTEGER NOT NULL CHECK (version >= 1), body_json TEXT NOT NULL, sha256 TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, PRIMARY KEY (recipe_id, version))""",
+    "CREATE TRIGGER recipe_versions_no_update BEFORE UPDATE ON recipe_versions BEGIN SELECT RAISE(ABORT, 'recipe versions are append-only'); END",
+    "CREATE TRIGGER recipe_versions_no_delete BEFORE DELETE ON recipe_versions BEGIN SELECT RAISE(ABORT, 'recipe versions are append-only'); END",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES, DDL_V7_WORK, DDL_V8_RECIPES)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
     "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs", "chat_turn_checkpoint",
-    "projects", "agent_nodes", "node_messages", "node_audit", "approvals",
+    "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions",
 )
