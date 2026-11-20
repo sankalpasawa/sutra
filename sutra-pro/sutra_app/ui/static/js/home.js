@@ -539,7 +539,7 @@
     if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
     clearBanner();
     const said = root.ChatView.attachedOf(line.text);
-    const out = await c.retry(line.id, said.text, {files: said.names.length});
+    const out = await c.retry(line.id, said.text, {files: said.names.length, mode: line.mode === "ask" ? "ask" : "do"});          // DV-1: the line's own mode, as the server stored it
     if (!out.ok) return false;
     S.own = true;
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }

@@ -464,6 +464,7 @@ class ChatMessageOut(Value):
     superseded: bool = False                                               # a reply of a try that a later try of the same owner line replaced (kept, not shown as the answer)
     ordered: bool = False                                                  # `blocks` holds the whole turn in order, text included (D212)
     via: JsonObject | None = None                                          # a direct reply: {provider, model} that wrote it, so the header says the same live and after a reload
+    mode: Literal["ask"] | None = None                                     # the owner's line of an Ask turn (DV-1, D350): left out of every other message, so a page that does not know Ask sees what it always saw
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -479,6 +480,8 @@ class ChatMessageOut(Value):
             data.pop("steer", None)
         if data.get("ask") is None:
             data.pop("ask", None)
+        if data.get("mode") is None:
+            data.pop("mode", None)
         if data.get("client_id") is None:
             data.pop("client_id", None)
         if data.get("attempt") is None:

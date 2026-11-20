@@ -53,6 +53,7 @@ from sutra_app.orchestrator import ask_mode, direct_running
 from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator import live_checkpoint
+from sutra_app.orchestrator.chats import mode_of as stored_mode_of
 from sutra_app.orchestrator.chat_v2 import (DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch, attempts_stored, find_owner_line, last_outcome, newest_owner_line,
                                             next_attempt)
 from sutra_app.orchestrator.live_turn import LiveConfig, LiveTurn
@@ -260,7 +261,7 @@ def build_router() -> APIRouter:
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
-            message_id = await run_blocking(_store_user_line, services, sid, said, attached)
+            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None)
             direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
             await run_blocking(_ground, services, port, sid, asking is not None)
         except BaseException:
@@ -317,13 +318,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None) -> int | None:
+          src_ref: str | None = None, mode: str | None = None) -> int | None:
     """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
     not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
+            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now(),
+            **({"mode": mode} if mode else {})), ctx=tx.ctx))
     return None if out is None else out.id
 
 
@@ -349,12 +351,12 @@ def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: s
     return ids
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None) -> int:
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
     start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
     `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
     ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
-    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref)
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode)
     if stored is None:                                      # the ref was stored already: this is the same line
         found = find_owner_line(services.db.conn(), sid, client_id or "")
         if found is None:
@@ -459,7 +461,7 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     generation = uuid.uuid4().hex
     live: LiveTurn | None = None
     try:
-        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id)
+        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None)
         direct_running.attach(sid, message_id)
         await run_blocking(_ground, services, port, sid, ask is not None)
         live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)
@@ -492,19 +494,21 @@ def _new_live(services: Any, sid: str, message_id: int, generation: str, client_
 
 async def _retry_live(request: Request, services: Any, port: Any, sid: str, body: RetryIn, session: Any = None) -> RedactedJSONResponse:
     """Answer the owner's newest line again: the same owner line, a new generation, attempt-scoped refs (D216). Only a failed or stopped try can be retried."""
-    def check() -> tuple[str, int]:
+    def check() -> tuple[str, int, str | None]:
         conn = services.db.conn()
-        row = conn.execute("SELECT id, role, text, src_ref FROM chat_messages WHERE id = ? AND session_id = ?", (body.message_id, sid)).fetchone()
+        row = conn.execute("SELECT id, role, text, src_ref, meta_json FROM chat_messages WHERE id = ? AND session_id = ?", (body.message_id, sid)).fetchone()
         if row is None or row["role"] != "user" or not str(row["src_ref"] or "").startswith(DIRECT_ASK):
             raise NotFound("that line")
         if newest_owner_line(conn, sid) != body.message_id:
             raise AppError("not_retryable", "Only the last question of a chat can be answered again.")
         if last_outcome(conn, sid, body.message_id) == "done":
             raise AppError("not_retryable", "That question was answered. Ask it again as a new message.")
-        return str(row["text"]), next_attempt(conn, sid, body.message_id)
-    text, attempt = await run_blocking(check)
+        return str(row["text"]), next_attempt(conn, sid, body.message_id), stored_mode_of(row["meta_json"])
+    text, attempt, line_mode = await run_blocking(check)
     said = re.sub(r"\n\(attached: [^\n]*\)$", "", text)          # the files of the first send cannot be sent again: the question can
-    asking = ask_mode.begin(services, port, session, said, lambda value: _clean(services, value)) if ask_mode.requested(request) == "ask" else None     # DV-1: a retry names its mode again
+    # DV-1 (D350): the mode of the owner's line is stored with it. A retry of an Ask is an Ask whatever the body says (a body that names `do` is refused); a body may only narrow: `ask` on a line that was not
+    wanted = ask_mode.retry_mode(line_mode, ask_mode.requested(request))
+    asking = await run_blocking(ask_mode.begin, services, port, session, said, lambda value: _clean(services, value)) if wanted == "ask" else None
     claim = direct_running.begin_turn(sid, body.client_id)
     if isinstance(claim, direct_running.Busy):
         raise Busy("This chat is already answering")

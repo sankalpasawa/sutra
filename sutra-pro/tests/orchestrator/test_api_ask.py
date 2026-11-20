@@ -329,16 +329,72 @@ def test_a_retry_with_a_bad_mode_is_refused_in_words_and_starts_nothing(ask):
     assert port2.streams == [] and [m.kind for m in chats.messages(sid)] == ["text", "error"] and not direct_running.answering(sid)
 
 
-def test_a_retry_without_a_mode_is_the_chat_as_it_was(ask):
+def test_a_failed_ask_retried_with_no_mode_stays_read_only_with_its_card(ask):
+    """Review M2: the mode is stored with the owner's line, so a page that forgot it (a reload, another tab) cannot widen the retry into a Do with the owner's write access."""
     client, world, chats, bus, services = ask
     sid = world.session_of["web"]
     services.chat_port = Port(started(), CrashedError("died"))
     line = say(client, sid, mode="ask").json()["message_id"]
     assert finish(chats, sid, 2)
+    assert chats.messages(sid)[0].mode == "ask"                                              # stored with the line, in its own meta
+    services.chat_port = port2 = Port(started(), text("Again [src/app.py:4]."))
+    assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line}, headers=H).status_code == 202 and finish(chats, sid, 4)
+    turn = port2.streams[0][1]
+    assert turn.tag.workspace == "read" and turn.allowance.max_calls == 2 and port2.systems[0].endswith(ASK_RULES)
+    assert [m.kind for m in chats.messages(sid)] == ["text", "error", "text", "card"]
+    assert card_of(chats.messages(sid)[3])["sources"][0]["label"] == GOOD
+
+
+def test_a_retry_that_names_ask_for_a_stored_ask_is_the_same_and_one_that_names_do_is_refused(ask):
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), CrashedError("died"))
+    line = say(client, sid, mode="ask").json()["message_id"]
+    assert finish(chats, sid, 2)
+    services.chat_port = port2 = Port(started(), text("never"))
+    refused = client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line, "mode": "do"}, headers=H)
+    assert error_code(refused, 422) == "validation" and "read only" in refused.json()["error"]["message"]
+    assert port2.streams == [] and [m.kind for m in chats.messages(sid)] == ["text", "error"] and not direct_running.answering(sid)
+    services.chat_port = port3 = Port(started(), text("ok [src/app.py:1]"))
+    assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line, "mode": "ask"}, headers=H).status_code == 202 and finish(chats, sid, 4)
+    assert port3.streams[0][1].tag.workspace == "read"
+
+
+def test_a_retry_of_a_do_line_stays_a_do_unless_the_body_narrows_it_to_ask(ask):
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), CrashedError("died"))
+    line = say(client, sid).json()["message_id"]
+    assert finish(chats, sid, 2) and chats.messages(sid)[0].mode is None
     services.chat_port = port2 = Port(started(), text("Again [src/app.py:4]."))
     assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line}, headers=H).status_code == 202 and finish(chats, sid, 3)
     assert port2.streams[0][1].tag.workspace == "none" and port2.streams[0][1].allowance is None and ASK_RULES not in port2.systems[0]
-    assert [m.kind for m in chats.messages(sid)] == ["text", "error", "text"]               # no card: the retry was not an Ask
+    assert [m.kind for m in chats.messages(sid)] == ["text", "error", "text"]               # no card: a Do
+    services.chat_port = Port(started(), CrashedError("died"))
+    line2 = say(client, sid, "second").json()["message_id"]
+    assert finish(chats, sid, 5)
+    services.chat_port = port3 = Port(started(), text("Narrowed [src/app.py:4]."))
+    assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line2, "mode": "ask"}, headers=H).status_code == 202 and finish(chats, sid, 7)
+    assert port3.streams[0][1].tag.workspace == "read" and chats.messages(sid)[-1].kind == "card"       # a Do may be asked again as an Ask
+
+
+def test_the_mode_is_on_the_wire_only_for_the_line_of_an_ask(ask):
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), text("A [src/app.py:1]."))
+    assert say(client, sid, "first", mode="ask").status_code == 202 and finish(chats, sid, 3)
+    assert say(client, sid, "second").status_code == 202 and finish(chats, sid, 5)
+    wire = client.get(f"/api/chats/{sid}/messages").json()["messages"]
+    assert [(m["role"], m.get("mode")) for m in wire] == [("user", "ask"), ("agent", None), ("agent", None), ("user", None), ("agent", None)]
+    assert all("mode" not in m for m in wire if m.get("mode") is None)
+
+
+def test_a_chat_with_no_ask_in_it_has_no_mode_key_on_any_message(live):
+    client, world, chats, bus, services = live
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), text("plain"))
+    assert say(client, sid).status_code == 202 and finish(chats, sid, 2)
+    assert all("mode" not in m for m in client.get(f"/api/chats/{sid}/messages").json()["messages"])
 
 
 def test_one_ask_turn_and_one_plain_turn_in_the_same_chat_do_not_leak_into_each_other(ask):

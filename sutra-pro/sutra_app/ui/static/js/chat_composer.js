@@ -26,8 +26,8 @@
          removeFile(key)
          send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal; a text over
                                        MAX_MESSAGE (8000) characters is refused first, in words, with nothing sent (QA direct-chat bug 7)
-         retry(lineId, text, {files})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
-                                       them; else text only, and the note says so)
+         retry(lineId, text, {files, mode})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
+                                       them; else text only, and the note says so). `mode` ("ask" | "do") is the line's own mode as the server stored it (DV-1)
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
          resync()                      ask GET /api/chats/{sid} whether a direct turn answers: a turn this page does not know is shown with its Stop (a reload, a
@@ -301,7 +301,9 @@
     const sent = new Map();                 // owner line id -> the attachment refs this page sent with it (a Retry sends them again)
     const modes_ = new Map();               // owner line id -> "ask" | "do": how this page sent it, so that a Retry is the same kind of turn (an Ask stays read only)
     const remember = (id, asked) => { if (id !== null) { modes_.set(id, asked ? "ask" : "do"); while (modes_.size > 50) modes_.delete(modes_.keys().next().value); } };
-    const askedBefore = lineId => (modes_.has(lineId) ? modes_.get(lineId) === "ask" : asking());
+    // How a Retry asks (D350): the server stores the mode with the owner's line and the page passes it (`opts.mode`, from the line's own `mode`); a server that does not say, and a line this page
+    // sent itself, are told by what the page remembers; only then does the switch decide. The server never lets a Retry widen an Ask, whatever the page sends.
+    const askedBefore = (lineId, told) => (told === "ask" ? true : told === "do" ? false : (modes_.has(lineId) ? modes_.get(lineId) === "ask" : asking()));
     const base = "/api/chats/" + encodeURIComponent(sid);
     const urls = isObj(o.objectUrl) ? o.objectUrl : {
       create: file => (root.URL && typeof root.URL.createObjectURL === "function" ? root.URL.createObjectURL(file) : ""),
@@ -482,7 +484,7 @@
       const o = isObj(opts) ? opts : {};
       const known = sent.get(Number(lineId));
       state.mode = "direct";
-      const how = askedBefore(Number(lineId));
+      const how = askedBefore(Number(lineId), isObj(opts) ? opts.mode : undefined);
       const out = live && Number.isInteger(Number(lineId)) && Number(lineId) > 0 ? await retryLive(Number(lineId), body, known, how) : (known ? await ask(body, known.refs, known.names, how) : await ask(body, [], [], how));
       if (out.ok && !known && Number.isFinite(o.files) && o.files > 0) {
         state.note = "Sent again without its files: attach them again to include them.";

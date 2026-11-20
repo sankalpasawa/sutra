@@ -37,7 +37,7 @@ from sutra_app.orchestrator.direct_turns import CardEnding, Ending, ref_of
 from sutra_app.orchestrator.errors import AppError, validation_error
 from sutra_app.orchestrator.models import AnswerCard, AnswerSource
 
-__all__ = ["AskRoute", "AskTurn", "begin", "requested", "ask_on", "MODES", "MODE_KEY", "MODE_WORDS", "ASK_MAX_CALLS", "ASK_MAX_USD", "ASK_TIMEOUT_S"]
+__all__ = ["AskRoute", "AskTurn", "begin", "requested", "retry_mode", "ask_on", "MODES", "MODE_KEY", "MODE_WORDS", "ASK_MAX_CALLS", "ASK_MAX_USD", "ASK_TIMEOUT_S"]
 
 log = logging.getLogger(__name__)
 MODES = ("ask", "do")
@@ -95,6 +95,16 @@ def requested(request: Request) -> str | None:
     if not isinstance(found, str) or found not in MODES:
         raise validation_error([violation("mode", "enum", MODE_WORDS)], MODE_WORDS)
     return found
+
+
+def retry_mode(stored: str | None, named: str | None) -> str | None:
+    """The mode a Retry runs in, from the mode stored with the owner's line (`ask` or None) and the one the body named (`ask`, `do` or None). A grant can only narrow: a line that was an Ask is
+    retried as an Ask, with no body mode or with `ask`, and a body that names `do` for it is refused; a line that was not an Ask is an Ask only when the body says so."""
+    if stored == "ask":
+        if named == "do":
+            raise AppError("validation", "That question was asked read only (Ask), so it can only be asked again that way.")
+        return "ask"
+    return "ask" if named == "ask" else None
 
 
 # ---- one Ask turn -----------------------------------------------------------------------------------------------------------------

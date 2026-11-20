@@ -1351,7 +1351,7 @@
       const g = gen;
       const said = CV().attachedOf(line.text);
       st.banner = "";
-      const out = await c.retry(line.id, said.text, {files: said.names.length});
+      const out = await c.retry(line.id, said.text, {files: said.names.length, mode: line.mode === "ask" ? "ask" : "do"});          // DV-1: the line's own mode, as the server stored it
       if (g !== gen || !st) return;
       if (out.ok) { st.stick = true; await refreshMessages(g); }
       if (st && g === gen && chatRefs) paintChat();

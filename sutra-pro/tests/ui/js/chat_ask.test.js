@@ -182,20 +182,21 @@ test("Retry of a line this page sent as an Ask asks again, even after the switch
   s.c.close();
 });
 
-test("Retry of a line this page did not send follows the switch now (an Ask in the switch is an Ask)", async () => {
-  const r = liveRig({mode: "direct"});
-  r.api.post = async (p, body) => { r.calls.push({p, body}); return {message_id: body.message_id, turn: "started", generation_id: "g2", attempt_no: 2}; };
-  r.c.enableAsk(true);
-  await r.c.retry(41, "from before the reload");
-  assert.deepEqual(r.calls[0].body, {message_id: 41, client_id: "client-0001"});
-  r.c.close();
-  const s = liveRig({mode: "direct"});
-  s.api.post = async (p, body) => { s.calls.push({p, body}); return {message_id: body.message_id, turn: "started", generation_id: "g2", attempt_no: 2}; };
-  s.c.enableAsk(true);
-  s.c.setAsk("ask");
-  await s.c.retry(41, "from before the reload");
-  assert.deepEqual(s.calls[0].body, {message_id: 41, client_id: "client-0001", mode: "ask"});
-  s.c.close();
+test("Retry of a line from before a reload is told by the line's own mode, as the server stored it, whatever the switch says now", async () => {
+  const fresh = async (mode, switchTo) => {
+    const r = liveRig({mode: "direct"});
+    r.api.post = async (p, body) => { r.calls.push({p, body}); return {message_id: body.message_id, turn: "started", generation_id: "g2", attempt_no: 2}; };
+    r.c.enableAsk(true);
+    if (switchTo === "ask") r.c.setAsk("ask");
+    await r.c.retry(41, "from before the reload", mode === undefined ? {} : {mode});
+    const body = r.calls[0].body;
+    r.c.close();
+    return body;
+  };
+  assert.deepEqual(await fresh("ask", "do"), {message_id: 41, client_id: "client-0001", mode: "ask"});         // an Ask line: asked again as an Ask even with the switch on Do
+  assert.deepEqual(await fresh("do", "ask"), {message_id: 41, client_id: "client-0001"});                       // a Do line: a Do even with the switch on Ask
+  assert.deepEqual(await fresh(undefined, "ask"), {message_id: 41, client_id: "client-0001", mode: "ask"});    // a server that does not say: the switch decides
+  assert.deepEqual(await fresh(undefined, "do"), {message_id: 41, client_id: "client-0001"});
 });
 
 test("a plain-turn retry of an Ask resends it as an Ask", async () => {
