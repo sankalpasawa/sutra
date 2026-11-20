@@ -16,7 +16,7 @@ import sys
 import pytest
 
 from sutra_app.orchestrator import citations as c
-from sutra_app.orchestrator.citations import CHECKED, MISSING, Mark, absolute_parts, check_answer, check_mark, clean_relative, parse_marks, spelling_problem
+from sutra_app.orchestrator.citations import CHECKED, MISSING, Mark, absolute_parts, check_answer, check_mark, clean_relative, looks_like_path, parse_marks, spelling_problem
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX links or pipes")
 
@@ -306,6 +306,41 @@ def test_the_label_does_not_depend_on_the_answer_around_the_mark(folder):
     a = check_answer("[src/app.py:1-2]", folder).sources[0]
     b = check_answer("Everything here is certain, checked and confirmed. [src/app.py:1-2] Trust it.", folder).sources[0]
     assert a == b and a.label == CHECKED
+
+
+# ---- what is a citation and what only has its shape (m6) -----------------------------------------------------------------------------------------------------------------------
+
+def test_text_with_the_shape_of_a_mark_that_is_not_a_path_is_not_a_source(folder):
+    answer = "Take `x[0:5]` and values[1:2] of the list, the log line [12:30] says, version [1.2:3], a slice [start:5], [i:9] and [Makefile.:2] and [a b:4]."
+    report = check_answer(answer, folder)
+    assert (report.sources, report.checked, report.missing, report.more) == ((), 0, 0, 0)
+    assert len(parse_marks(answer)) >= 5                                                  # the grammar sees them; the check does not count them
+
+
+def test_a_path_with_a_slash_or_an_extension_is_a_citation_even_when_it_does_not_exist(folder):
+    report = check_answer("[nope.py:1] [src/nothere:2] [a/b.md:3] [archive.tar.gz:4] [config.v2:5]", folder)
+    assert [s.path for s in report.sources] == ["nope.py", "src/nothere", "a/b.md", "archive.tar.gz", "config.v2"] and report.missing == 5
+
+
+def test_a_bare_name_is_a_citation_only_when_that_file_is_in_the_folder(folder):
+    assert check_answer("[Makefile:1-2]", folder).checked == 1                              # it is there: checked, as before
+    gone = check_answer("[LICENSE:1] [Dockerfile:3]", folder)                                # not there: not a source at all
+    assert gone.sources == () and gone.missing == 0
+    assert check_answer("[Makefile:1]", "").sources == ()                                    # with no folder a bare name cannot be told from a slice
+    assert check_answer("[../Makefile:1]", folder).missing == 1                              # a slash makes it a citation, and a refused one
+    assert check_answer("[CON:1]", folder).sources == ()                                     # refused by spelling and not path-shaped: not a source either
+
+
+def test_looks_like_path():
+    for yes in ("a.py", "src/a", "a/b.c", ".gitignore.bak", "x.tar.gz", "a.v2", "/etc/hosts"):
+        assert looks_like_path(yes), yes
+    for no in ("0", "12", "1.2", "x", "start", "Makefile", "", "a b", "v1.", None, 5):
+        assert not looks_like_path(no), no
+
+
+def test_a_card_is_not_turned_into_two_of_three_by_a_slice_in_the_answer(folder):
+    report = check_answer("The list is cut by `items[0:5]` in [src/app.py:3-4] and by [src/gone.py:1] and ends in [12:30].", folder)
+    assert [(s.path, s.label) for s in report.sources] == [("src/app.py", CHECKED), ("src/gone.py", MISSING)] and (report.checked, report.missing) == (1, 1)
 
 
 # ---- the whole answer -----------------------------------------------------------------------------------------------------------------

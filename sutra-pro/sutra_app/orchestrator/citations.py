@@ -33,7 +33,7 @@ import time
 from dataclasses import dataclass
 from typing import Iterable
 
-__all__ = ["Mark", "Source", "Report", "parse_marks", "check_mark", "check_answer", "clean_relative", "spelling_problem", "absolute_parts", "CHECKED", "MISSING", "MAX_MARKS", "MAX_SPAN",
+__all__ = ["Mark", "Source", "Report", "parse_marks", "check_mark", "check_answer", "clean_relative", "spelling_problem", "absolute_parts", "looks_like_path", "CHECKED", "MISSING", "MAX_MARKS", "MAX_SPAN",
            "MAX_FILE_BYTES", "MAX_QUOTE", "MIN_QUOTE", "MAX_LINE_NUMBER", "BUDGET_S"]
 
 CHECKED = "checked"
@@ -281,10 +281,32 @@ def _read_and_check(mark: Mark, handle, size: int) -> Source:
 
 # ---- the whole answer -------------------------------------------------------------------------------------------------------------
 
+_EXTENSION = re.compile(r"\.[A-Za-z][A-Za-z0-9_+-]*$")
+
+
+def looks_like_path(path: str) -> bool:
+    """A path part that a citation would have: a `/` in it, or a name that ends in an extension (`.py`, `.md`, `.tar.gz`). `0` of `x[0:5]`, `12` of a log line `[12:30]` and `1.2` of a
+    version are not (m6): they are not citations and are not shown as sources that "could not be found"."""
+    return isinstance(path, str) and ("/" in path or _EXTENSION.search(path) is not None)
+
+
+def _is_a_citation(mark: Mark, folder: str) -> bool:
+    """A mark that looks like a path is a citation. A bare name (`Makefile:3`, `LICENSE:1`) is one only when that file is in the folder: the check is the spelling rules, then one look
+    at whether the name is a file there (nothing is read)."""
+    if looks_like_path(mark.path):
+        return True
+    if not isinstance(folder, str) or not folder or spelling_problem(mark.path):
+        return False
+    try:
+        return os.path.isfile(os.path.join(os.path.realpath(folder), mark.path))
+    except (OSError, ValueError):
+        return False
+
+
 def check_answer(answer: str, folder: str, *, budget_s: float = BUDGET_S, marks: Iterable[Mark] | None = None) -> Report:
-    """Every mark of the answer checked against `folder` (at most MAX_MARKS; `more` counts the rest). A mark that is still waiting when `budget_s` seconds
-    have passed is MISSING with the reason "ran out of time", never silently dropped and never checked."""
-    found = list(parse_marks(answer) if marks is None else marks)
+    """Every mark of the answer that is a citation (`looks_like_path`, or a bare name that is a file in the folder) checked against `folder` (at most MAX_MARKS; `more` counts the rest).
+    A mark that is still waiting when `budget_s` seconds have passed is MISSING with the reason "ran out of time", never silently dropped and never checked."""
+    found = [m for m in (parse_marks(answer) if marks is None else marks) if _is_a_citation(m, folder)]
     shown, more = found[:MAX_MARKS], max(0, len(found) - MAX_MARKS)
     deadline = time.monotonic() + max(0.0, budget_s)
     out: list[Source] = []
