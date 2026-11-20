@@ -385,3 +385,14 @@ test("without Ask the team bar never draws a note, as it never did", () => {
   assert.doesNotMatch(bar(r.c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}}), /ccnote/);
   assert.doesNotMatch(bar(r.c.state(), {ask: false}), /ccnote/);
 });
+
+
+test("a turn that tried to change something or reach the web says so on the card, plainly, and a turn that did not says nothing", () => {
+  assert.doesNotMatch(ChatView.card(card()), /asrefused|tried/);
+  assert.doesNotMatch(ChatView.card(card({tried: 0})), /asrefused/);
+  const one = ChatView.card(card({tried: 1}));
+  wellFormed(one);
+  assert.match(one, /<p class="asnote asrefused">This answer also tried one action that changes something or reaches the web\. Ask does not allow that\.<\/p>/);
+  assert.match(ChatView.card(card({tried: 3})), /also tried 3 actions that change something or reach the web\./);
+  assert.match(ChatView.card(card({sources: [], checked: 0, missing: 0, tried: 2})), /asrefused/);          // also on an answer that named no source
+});

@@ -10,7 +10,7 @@ import json
 
 import pytest
 from orchestrator.test_api_chat_v2 import H, error_code, rig, wait_for, world  # noqa: F401  (the fixtures of the chat v2 routes)
-from orchestrator.test_api_live_chat import LivePort, live, started, text  # noqa: F401
+from orchestrator.test_api_live_chat import LivePort, live, started, text, tool  # noqa: F401
 
 from sutra_app.connectors.chat_models import ChatEvent
 from sutra_app.connectors.errors import CrashedError
@@ -568,3 +568,15 @@ def test_no_reason_on_a_card_uses_a_developers_word():
     reasons.add(c.check_mark(c.Mark("a.py", 0, 1), "/some/folder").reason)
     for reason in reasons:
         assert reason and len(reason) <= 70 and not any(w in reason for w in ("envelope", "realpath", "spelling", "regex", "device name", "path inside the folder (use"))
+
+
+def test_a_turn_that_made_an_edit_or_a_web_call_says_so_on_its_card_and_a_read_does_not(ask):
+    """Review m4 (tool_kinds): Ask does not allow them; if a provider made one anyway the owner is told. Reads, searches and (Codex's) shell commands are normal and not counted."""
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), tool("t1", "Read"), tool("t2", "Grep"), tool("t3", "Bash"), text("Only reading [src/app.py:4]."))
+    assert say(client, sid, mode="ask").status_code == 202 and finish(chats, sid, 3)
+    assert "tried" not in card_of(chats.messages(sid)[2])
+    services.chat_port = Port(started(), tool("t1", "Write"), tool("t2", "WebFetch"), tool("t3", "Edit"), tool("t4", "Read"), text("I changed it [src/app.py:4]."))
+    assert say(client, sid, "again", mode="ask").status_code == 202 and finish(chats, sid, 6)
+    assert card_of(chats.messages(sid)[5])["tried"] == 3

@@ -98,3 +98,9 @@ def test_the_page_reads_which_line_and_which_try_a_card_belongs_to(ref, owner, a
 def test_a_ref_that_is_not_a_direct_ref_is_still_not_one():
     for ref in ("direct-sources:", "direct-sourcesx:5", "direct-source:5", "ask:5", None, ""):
         assert chats._turn_of(ref) is None
+
+
+def test_tried_is_on_the_wire_only_when_there_were_some():
+    assert "tried" not in card().model_dump(mode="json") and card(tried=2).model_dump(mode="json")["tried"] == 2
+    with pytest.raises(ValidationError):
+        card(tried=-1)

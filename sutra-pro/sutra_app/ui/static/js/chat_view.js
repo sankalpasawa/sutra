@@ -370,11 +370,13 @@
     else if (ok === 0) { tone = "bad"; head = (list.length === 1 ? "The source could not be found" : "None of the " + list.length + " sources could be found") + ". Do not rely on this answer until you have looked yourself."; }
     else if (bad === 0) { tone = "ok"; head = (list.length === 1 ? "The source was checked." : "All " + list.length + " sources were checked."); }
     else head = ok + " of " + list.length + " sources checked; " + bad + " could not be found.";
+    const tried = count(c.tried) || 0;
+    const refused = tried > 0 ? '<p class="asnote asrefused">This answer also tried ' + (tried === 1 ? "one action that changes something or reaches the web" : tried + " actions that change something or reach the web") + ". Ask does not allow that.</p>" : "";
     const what = list.length === 0 ? "" : '<p class="asnote">Checked means Sutra looked: the file and the lines are there, and so are the quoted words when there are any. It does not mean the answer is right.</p>';
     return '<div class="ncard c-answer t-' + tone + '" data-card="answer_sources" data-tone="' + tone + '" data-checked="' + ok + '" data-missing="' + bad + '">' +
       '<h2 class="cdtitle">Sources</h2><p class="ashead">' + esc(head) + "</p>" +
       (list.length ? '<ul class="assrcs">' + list.map(sourceLine).join("") + "</ul>" : "") +
-      (more > 0 ? '<p class="asmore">and ' + more + " more marks that were not checked.</p>" : "") + what +
+      (more > 0 ? '<p class="asmore">and ' + more + " more marks that were not checked.</p>" : "") + refused + what +
       '<div class="acts"><button type="button" class="lbtn" data-act="ask-to-work" data-draft="' + esc(workDraft(c)) + '" title="This only writes a request in the box for you to change and send.">Turn this into work</button></div></div>';
   }
 

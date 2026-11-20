@@ -136,20 +136,26 @@ class AskTurn:
         """The turn as the chat port takes it: `workspace: read` (the router caps the folder at read), and the limits of a function's question."""
         return ChatTurnIn(text=text, attachments=attachments, tag=CallTag(workspace="read"), allowance=self.allowance)
 
-    def card(self, answer: str) -> dict[str, Any]:
+    @staticmethod
+    def tried(blocks: Any) -> int:
+        """How many tool calls of the turn were of kind edit or web (`tool_kinds`, as the blocks already say): Ask does not allow them, and a turn that made one says so on its card.
+        A `run` is not counted: Codex reads files through its read-only shell, which is its normal way of looking."""
+        return sum(1 for b in (blocks if isinstance(blocks, list) else []) if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("kind") in ("edit", "web"))
+
+    def card(self, answer: str, blocks: Any = None) -> dict[str, Any]:
         """The card of `answer`: every mark checked in the folder by code, scrubbed, as the wire shape. No mark makes an empty list: the card says so."""
         report = citations.check_answer(answer, self.folder)
         sources = [AnswerSource(
             path=clip(self.scrub(s.path), 300) or "?", start=s.start, end=s.end, quote=clip(self.scrub(s.quote), 1000) if s.quote else None,
             label=s.label, how=s.how or None, reason=s.reason) for s in report.sources]
         card = AnswerCard(type="answer_sources", question=clip(self.question, QUESTION_CHARS), sources=sources, checked=report.checked, missing=report.missing,
-                          more=report.more)
+                          more=report.more, tried=self.tried(blocks))
         return card.model_dump(mode="json")
 
-    def with_card(self, endings: list[Ending], user_id: int, attempt: int, answer: str) -> list[Ending]:
+    def with_card(self, endings: list[Ending], user_id: int, attempt: int, answer: str, blocks: Any = None) -> list[Ending]:
         """The endings of a finished turn and, after them, the card of its answer. A card that cannot be made is logged and left out: it never fails an answer."""
         try:
-            card = self.card(answer)
+            card = self.card(answer, blocks)
             return [*endings, CardEnding(src_ref=ref_of(user_id, "sources", attempt), card=card)]
         except Exception:                                  # noqa: BLE001  (a bug in the check must not cost the owner the answer)
             log.exception("the sources of the answer to line %s could not be checked", user_id)

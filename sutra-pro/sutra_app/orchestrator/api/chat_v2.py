@@ -411,7 +411,7 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
             raise RuntimeError("the turn ended without a result")
         endings = finished(user_message_id, done, attempt)
         if ask is not None:                                          # DV-1: the card of the answer's sources, in the same transaction as the answer
-            endings = ask.with_card(endings, user_message_id, attempt, str(done.get("text") or ""))
+            endings = ask.with_card(endings, user_message_id, attempt, str(done.get("text") or ""), done.get("blocks"))
         _post_all(services, sid, endings)
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
@@ -599,7 +599,7 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             stored["text"] = join_text((b.get("type") == "text", str(b.get("text") or "")) for b in stored["blocks"] if isinstance(b, dict))
         endings = finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier"), via=live.via())
         if ask is not None:                                          # DV-1: the card of the answer's sources, in the same transaction as the answer
-            endings = ask.with_card(endings, user_message_id, attempt, str(stored["text"]))
+            endings = ask.with_card(endings, user_message_id, attempt, str(stored["text"]), stored.get("blocks"))
         ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
         live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, {**done, "text": stored["text"]})
     except Exception as exc:                                         # a failed turn is a message, not a lost line

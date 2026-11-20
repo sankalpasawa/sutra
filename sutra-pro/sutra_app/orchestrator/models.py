@@ -418,6 +418,14 @@ class AnswerCard(Value):
     checked: Count = 0
     missing: Count = 0
     more: Count = 0
+    tried: Count = 0                                                   # edit or web tool calls the turn made although Ask does not allow them (counted from the turn's own blocks, `tool_kinds`); left out when 0
+
+    @model_serializer(mode="wrap")
+    def _tried_only_when_there_were_some(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if not data.get("tried"):
+            data.pop("tried", None)
+        return data
 
 
 class CardRow(Value):
