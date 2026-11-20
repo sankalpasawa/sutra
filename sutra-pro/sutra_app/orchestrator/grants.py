@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
-from sutra_app.connectors import node_tools
+from sutra_app.orchestrator import builder_rights
 from sutra_app.orchestrator.models import NodeCaps
 
 __all__ = [
@@ -233,7 +233,7 @@ class Grant:
 
     `tiers`: the tiers it holds, from 0 to 4. `folder`: none, read, inspect (read plus the four git reads) or edit. `scope`: the paths a writer may change (`()`: the whole folder;
     only a writer has one). `tool_profile` and `commands`: the app tools and the git reads it may run (tier 3). `run_tools`: what J2's builder tools in the run folder are for this node
-    (`engine` for a worker; not a tier and not capped by the owner's access or the output level, D299; since D380 the host takes the tools down to what the tiers and commands allow: `connectors/node_tools.py`). `caps`: its calls, dollars and time. `id` and `node_id` are put on when
+    (`engine` for a worker; not a tier and not capped by the owner's access or the output level, D299; since D380 the host takes the tools down to what the tiers and commands allow: `orchestrator/builder_rights.py`, applied by `connectors/node_tools.py`). `caps`: its calls, dollars and time. `id` and `node_id` are put on when
     the node exists (`for_node`)."""
 
     role: str
@@ -316,7 +316,7 @@ class Grant:
         """The grant in one plain line for the audit row `grant.issued` (names and shapes only; at most 200 characters). It says `run_tools` so the record is true about J2's builder tools (D299), and
         "output auto (decided in the run)" when the team's output is `auto`, because then the folder line is a reading, not a fact (G10, D307)."""
         scope = "whole folder" if self.writer and not self.scope else f"{len(self.scope)} path(s)" if self.scope else "none"
-        built = f" ({node_tools.words(node_tools.NodeRights(self.tiers, self.commands))})" if self.run_tools == "engine" else ""      # D380: true, because the host narrows the tools to exactly this
+        built = f" ({builder_rights.words(builder_rights.NodeRights(self.tiers, self.commands))})" if self.run_tools == "engine" else ""      # D380: true, because the host narrows the tools to exactly this
         line = (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; tools {self.tool_profile}; commands {self.commands}; run_tools {self.run_tools}{built}; "
                 f"calls {self.caps.calls}; wall {self.caps.wall_s}s")
         if output == "auto":
