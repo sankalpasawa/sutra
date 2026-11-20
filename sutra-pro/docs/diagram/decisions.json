@@ -1723,5 +1723,20 @@
   "id": "D345",
   "label": "phase 4 review fixes as built",
   "anchor": null
+ },
+ {
+  "id": "D360",
+  "label": "work list + tags + code-made summary (DV-2)",
+  "anchor": null
+ },
+ {
+  "id": "D361",
+  "label": "recipes: owner-written, versions only grow (DV-3)",
+  "anchor": null
+ },
+ {
+  "id": "D362",
+  "label": "flag per package; routes mounted only when on",
+  "anchor": null
  }
 ]

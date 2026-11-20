@@ -2521,3 +2521,24 @@ Why: an input can be a command or a URL with something private in it, and nothin
 - Why: each answers a finding of the review with the smallest change that closes it, and records the limit that is left.
 - Rejected: a second hold flag separate from `paused` (the gate already holds the dependants, and Continue is refused); a cross-process queue for slots; reading the tool log through a pipe the step cannot reach (the same person could still reach it); routing steps to a provider.
 - Diagram: label "phase 4 review fixes as built", key only.
+
+## D360 — The Work list, tags and How did it go? (DV-2)
+- Sources: `docs/design/devin-parity.md` and `docs/design/devin-parity-dev-notes.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: The Work list, tags and "How did it go?" are built behind `SUTRA_WORK_V1`: one list of tasks and (with the nodes) projects, tags as the owner's plain words through the note gate, and a project summary computed by code; no navigation item, no model sentence.
+- Why: the owner wants one place to find work and to see what a project cost and where it stuck, without a model guessing and without a changed Home page.
+- Rejected: a model-written summary (quota, and a model's guess where code can count); a navigation item (changes the flag-off Home).
+- Diagram: label "work list + tags + code-made summary (DV-2)", key only.
+
+## D361 — Recipes (DV-3)
+- Sources: `docs/design/devin-parity.md` and `docs/design/devin-parity-dev-notes.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: Recipes are built behind `SUTRA_RECIPES_V1`: six parts and up to nine blanks, every line through the note gate, versions that only grow (triggers), four read-only starters in code, Markdown in and out by the owner's action (an import is a draft), a code-made draft from a project, and starting writes a plain request that is planned and asked like any request.
+- Why: a way of working the owner saved should start again with one click without freezing a plan or skipping a question; only the owner writes a recipe, so it is not a door for injected text.
+- Rejected: a frozen graph (it would skip the plan gate); a standing rule made from Forbidden (a rule the owner did not choose); a model that drafts and saves a recipe.
+- Diagram: label "recipes: owner-written, versions only grow (DV-3)", key only.
+
+## D362 — Rules for the Devin-parity packages
+- Sources: `docs/design/devin-parity.md` and `docs/design/devin-parity-dev-notes.md`; the owner's direction of 2026-11-20 (take inspiration from Devin, decide autonomously, document every decision).
+- Decided: Each Devin-parity package has its own flag (default 0); its routes and page are mounted only while it is on (404 before any token check otherwise); its migration is additive and in order; one `db.tx()` writer; owner words only; pure view plus controller with node tests.
+- Why: flag off must be byte-identical: no route, no table read, no page, no nav item, no prompt or golden change.
+- Rejected: routes always mounted with a guard (they would be in the route table with the flag off).
+- Diagram: label "flag per package; routes mounted only when on", key only.

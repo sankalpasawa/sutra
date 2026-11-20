@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 345,
+  "decisions": 348,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 345,
+ "max_decision": 362,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -534,7 +534,10 @@
     "D342",
     "D343",
     "D344",
-    "D345"
+    "D345",
+    "D360",
+    "D361",
+    "D362"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5546,6 +5549,30 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"phase 4 review fixes as built\", key only."
+  },
+  {
+   "id": "D360",
+   "title": "The Work list, tags and How did it go? (DV-2)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"work list + tags + code-made summary (DV-2)\", key only."
+  },
+  {
+   "id": "D361",
+   "title": "Recipes (DV-3)",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"recipes: owner-written, versions only grow (DV-3)\", key only."
+  },
+  {
+   "id": "D362",
+   "title": "Rules for the Devin-parity packages",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"flag per package; routes mounted only when on\", key only."
   }
  ],
  "packages": [
