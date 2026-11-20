@@ -99,7 +99,7 @@ def test_a_question_of_another_project_is_404(rig):
 def test_the_plan_estimate_is_tier_5_and_is_answered_allow_once_or_deny_only(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 400, "a2": 400})
     [asked] = rig.store.approvals(reservation.project_id, status="open")
-    assert asked.tier == 5 and asked.request["kind"] == "plan_estimate" and asked.request["credits"] == 800 and asked.request["limit"] == 500
+    assert asked.tier == 5 and asked.request["kind"] == "plan_estimate" and asked.request["credits"] == 800 and asked.request["limit"] == 400
     with pytest.raises(AppError) as error:
         answer(rig, reservation.project_id, asked.id, "allow_project")
     assert error.value.code == "validation" and rig.project(reservation.project_id)["status"] == "awaiting_approval"

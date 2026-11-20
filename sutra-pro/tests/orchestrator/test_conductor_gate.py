@@ -22,7 +22,7 @@ def no_retries(rig, reservation):
 
 
 def test_independent_steps_start_together_up_to_the_projects_parallel_cap_of_three_and_the_rest_wait_with_a_sentence(rig):
-    reservation, tasks = rig.request(FIVE)
+    reservation, tasks = rig.request(FIVE, budget=100)
     started = rig.start()
     assert started == [tasks["a1"], tasks["a2"], tasks["a3"]]                              # FIFO, three at a time
     assert [rig.t.status(tasks[r]) for r in ("a4", "a5")] == ["queued", "queued"]
@@ -46,7 +46,7 @@ def test_a_dependant_waits_for_its_step_and_starts_when_it_is_done(rig):
 
 def test_the_machine_wide_caps_still_bound_the_nodes(db, settings, clock, events):
     rig = PRig(db, settings, clock, events, max_runs=2, max_live=2)
-    reservation, tasks = rig.request(FIVE)
+    reservation, tasks = rig.request(FIVE, budget=100)
     assert len(rig.start()) == 2                                                            # SUTRA_MAX_RUNS (2) beats the project's cap of 3
     assert "waiting" in (rig.detail(tasks["a3"]) or "").lower()
 
@@ -110,7 +110,7 @@ def test_a_paused_project_holds_its_nodes_and_resume_lets_them_start(rig):
 
 
 def test_a_project_that_waits_for_the_owner_starts_nothing(rig):
-    steps = [(f"a{i}", team, []) for i, team in enumerate(("web", "sales", "ops", "hr", "dev", "legal"), 1)]       # 6 steps x the default slice of 100 = 600 > 500
+    steps = [(f"a{i}", team, []) for i, team in enumerate(("web", "sales", "ops", "hr", "dev", "legal"), 1)]       # 6 steps x the default slice of 100 = 600 > 400
     reservation, tasks = rig.request(steps)
     assert rig.project(reservation.project_id)["status"] == "awaiting_approval"
     assert rig.start() == [] and "Waiting for your answer" in rig.detail(tasks["a1"])

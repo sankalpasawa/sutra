@@ -83,14 +83,14 @@ def test_a_write_scope_wider_than_one_folder_is_a_question_and_a_single_or_missi
     assert evaluate(plan(PlanStep("a1", output=READ, scope=("site/", "docs/")))).gates == ()         # a step that cannot write has no scope to ask about
 
 
-def test_the_estimate_is_a_question_only_above_the_confirm_threshold_which_is_500_unless_given():
+def test_the_estimate_is_a_question_only_above_the_confirm_threshold_which_is_400_unless_given():
     steps = (PlanStep("a1", output=READ, estimate_credits=100), PlanStep("a2", output=READ, estimate_credits=80))
     over = evaluate(plan(*steps, confirm_credits=150))
     assert [(g.kind, g.step_id) for g in over.gates] == [("estimate", None)] and "180" in over.gates[0].why
     assert evaluate(plan(*steps, confirm_credits=180)).gates == () and evaluate(plan(*steps, confirm_credits=None)).gates == ()
     assert evaluate(plan(PlanStep("a1", output=READ, estimate_credits=-50), confirm_credits=0)).gates == ()
-    assert Plan(steps=()).confirm_credits == 500 == int(config.NODE_DEFAULT_CAPS["confirm_credits"])             # the default is the configured number (D300)
-    for total, asks in ((500, False), (501, True), (0, False), (2500, True)):
+    assert Plan(steps=()).confirm_credits == 400 == int(config.NODE_DEFAULT_CAPS["confirm_credits"])             # the default is the configured number (D300)
+    for total, asks in ((400, False), (401, True), (0, False), (2500, True)):
         found = evaluate(plan(PlanStep("a1", output=READ, estimate_credits=total)))                                  # no confirm_credits given: the default applies
         assert bool(found.gates) == asks, total
     assert evaluate(plan(PlanStep("a1", output=READ, estimate_credits=10_000), confirm_credits=None)).gates == ()   # an owner's own budget: never asked

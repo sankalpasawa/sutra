@@ -143,7 +143,7 @@ def test_a_request_that_is_planned_again_finds_its_project_and_makes_no_second_o
 def test_the_caps_are_copied_into_the_project_and_the_owners_own_budget_means_no_confirm_question(rig):
     plain = rig.projects.reserve("req-1", "t", steps(2))
     caps = json.loads(rig.project(plain.project_id)["caps_json"])
-    assert caps["max_parallel"] == 3 and caps["confirm_credits"] == 500 and caps["depth"] == 1 and caps["lease_s"] == 90 and rig.project(plain.project_id)["status"] == "running"
+    assert caps["max_parallel"] == 3 and caps["confirm_credits"] == 400 and caps["depth"] == 1 and caps["lease_s"] == 90 and rig.project(plain.project_id)["status"] == "running"
     big = [ProjectStep(ref=f"a{i}", dept_id="web") for i in range(1, 9)]
     asked = rig.projects.reserve("req-2", "t", big)
     assert rig.project(asked.project_id)["status"] == "awaiting_approval" and {n["state"] for n in rig.sql("SELECT state FROM agent_nodes WHERE project_id = ?", asked.project_id)} == {"awaiting_approval"}
@@ -174,11 +174,8 @@ def test_the_projects_routes_need_no_token_to_read_and_a_token_to_stop(world):
 
 
 def test_a_plan_over_the_confirm_threshold_makes_a_project_that_waits_and_the_reply_says_so(tmp_path, monkeypatch):
-    """G7 (D308): over the confirm threshold the project is held; the owner is told in plain words, once; nothing starts. The chat agent plans at most five steps (5 x 100 = 500 is not over the
-    default 500; estimates come with MAN-8), so the threshold is lowered here."""
-    from sutra_app.config import NODE_DEFAULT_CAPS
+    """G7, G18 (D308, D318): five default steps are about 500 credits, over the default 400: the project is held; the owner is told in plain words, once; nothing starts. Four ask nothing."""
     from sutra_app.orchestrator.agent.planner import NODE_LINES, line
-    monkeypatch.setattr("sutra_app.orchestrator.projects.NODE_DEFAULT_CAPS", {**NODE_DEFAULT_CAPS, "confirm_credits": 300})
     app, connector = make_app(tmp_path, nodes_v1=True)
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
@@ -187,14 +184,12 @@ def test_a_plan_over_the_confirm_threshold_makes_a_project_that_waits_and_the_re
         project = rows(services, "SELECT * FROM projects")[0]
         assert project["status"] == "awaiting_approval" and len(rows(services, "SELECT * FROM tasks")) == 5 and all(r["status"] != "running" for r in rows(services, "SELECT status FROM tasks"))
         said = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE role = 'agent' ORDER BY id")]
-        waits = line("project_waits", title="Step 1", credits="500", limit="300")
+        waits = line("project_waits", title="Step 1", credits="500", limit="400")
         assert any(waits in text for text in said) and sum(text.count("waits for your OK") for text in said) == 1
         assert "project_waits" in NODE_LINES
 
 
-def test_the_two_new_lines_are_not_in_the_flag_off_set_and_are_never_said_with_the_flag_off(tmp_path, monkeypatch):
-    from sutra_app.config import NODE_DEFAULT_CAPS
-    monkeypatch.setattr("sutra_app.orchestrator.projects.NODE_DEFAULT_CAPS", {**NODE_DEFAULT_CAPS, "confirm_credits": 300})
+def test_the_two_new_lines_are_not_in_the_flag_off_set_and_are_never_said_with_the_flag_off(tmp_path):
     from sutra_app.orchestrator.agent import planner
     assert "stopped" not in planner.LINES and "project_waits" not in planner.LINES and planner.matches_template(planner.line("stopped"))
     app, connector = make_app(tmp_path)
@@ -253,3 +248,10 @@ def test_the_configured_output_is_read_from_the_teams_engine_settings_then_the_g
     name, spec = default_output_name(tmp_path), default_output_of(tmp_path)
     assert name("web") == "landing_page" and name("sales") == "auto" and spec("sales") is None                   # auto is not known before the run
     assert default_output_name(tmp_path / "nowhere")("web") == ""
+
+
+def test_four_default_steps_ask_nothing_and_five_ask(rig):
+    four = rig.projects.reserve("req-4", "t", steps(4))
+    five = rig.projects.reserve("req-5", "t", steps(5))
+    assert rig.project(four.project_id)["status"] == "running" and four.waits is None
+    assert rig.project(five.project_id)["status"] == "awaiting_approval" and five.waits == (500, 400)

@@ -62,7 +62,7 @@ def test_the_estimate_and_scope_questions_say_what_a_no_does_and_none_of_the_wor
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("a/", "b/", "c/")}, estimates={"a1": 300, "a2": 300})
     questions = {json.loads(r["card_json"])["kind"]: json.loads(r["card_json"]) for r in cards(rig)}
     assert set(questions) == {"scope", "plan_estimate"} and questions["scope"]["options"] == ["allow_once", "deny"]
-    assert "about 600 credits, which is over 500" in questions["plan_estimate"]["question"]
+    assert "about 600 credits, which is over 400" in questions["plan_estimate"]["question"]
     for card in questions.values():
         assert "whole project stops" in card["question"] and "alone" not in card["question"].lower()
     assert "alone" not in json.dumps(gatekeeper.RULE_TABLE).lower() and "alone" not in gatekeeper.decide_for_me_answer("scope", 2).why
