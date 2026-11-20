@@ -28,7 +28,7 @@ from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES
 
 __all__ = ["read_handoff", "write_accepted", "Accepted", "HandoffRefused", "DATA_NOTE", "MAX_HASHED_BYTES"]
 
-MAX_HASHED_BYTES = 64 * 1024 * 1024        # a file larger than this is checked for its size only (reading it all inside the projector's transaction would stall the writer)
+MAX_HASHED_BYTES = 64 * 1024 * 1024        # the files of ONE hand-off share this many bytes of hashing; past it a file is checked for its size only and counted `unchecked` (G9, D309: reading it all would stall the writer)
 _KEYS = {"v", "node_id", "status", "summary", "files", "claims", "needs"}
 _FILE_KEYS = {"path", "sha256", "bytes"}
 _STATUS = ("done", "done_with_open_items", "blocked")
@@ -66,8 +66,8 @@ def _check_path(raw: Any) -> str:
     return raw
 
 
-def _verify_file(root: Path, rel: str, sha: str, size: int) -> bool:
-    """True when the file's sha256 was recomputed, False when it was too large and only its size was checked. Raises HandoffRefused."""
+def _verify_file(root: Path, rel: str, sha: str, size: int, budget: list[int]) -> bool:
+    """True when the file's sha256 was recomputed, False when the hand-off's budget of hashed bytes (`budget[0]`, shared by all its files) was too small and only its size was checked. Raises HandoffRefused."""
     current = root
     for part in PurePosixPath(rel).parts:
         current = current / part
@@ -83,8 +83,9 @@ def _verify_file(root: Path, rel: str, sha: str, size: int) -> bool:
         raise _refuse("a listed file leaves the run folder")
     if info.st_size != size:
         raise _refuse("a listed file has a different size than the hand-off says")
-    if size > MAX_HASHED_BYTES:
+    if size > budget[0]:
         return False
+    budget[0] -= size
     digest = hashlib.sha256()
     try:
         with open(current, "rb") as handle:
@@ -135,6 +136,7 @@ def read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, re
         raise _refuse("an engine node has no needs to hand on")
     seen: set[str] = set()
     checked = unchecked = 0
+    budget = [MAX_HASHED_BYTES]                                   # read when the call starts, so a test may lower it
     clean_files: list[dict[str, Any]] = []
     for entry in files:
         if not isinstance(entry, dict) or set(entry) != _FILE_KEYS:
@@ -146,7 +148,7 @@ def read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, re
         if rel in seen:
             raise _refuse("a file is listed twice")
         seen.add(rel)
-        if _verify_file(root, rel, sha, size):
+        if _verify_file(root, rel, sha, size, budget):
             checked += 1
         else:
             unchecked += 1

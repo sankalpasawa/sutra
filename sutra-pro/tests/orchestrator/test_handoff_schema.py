@@ -174,3 +174,25 @@ def test_the_accepted_file_is_private_carries_the_data_note_and_replaces_nothing
     assert (root / "handoff.json").is_file() and sorted(p.name for p in root.iterdir() if p.name.startswith(".")) == []
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_the_files_of_one_hand_off_share_the_hashing_budget_and_the_rest_are_checked_by_size_only(tmp_path, monkeypatch):
+    """G9 (D309): three 30-byte files against a budget of 64 bytes (the real one is 64 MB): two are hashed, one is counted `unchecked`, and the hand-off is still accepted."""
+    from sutra_app.orchestrator import handoff_intake
+    monkeypatch.setattr(handoff_intake, "MAX_HASHED_BYTES", 64)
+    root = folder(tmp_path, {"a.bin": b"a" * 30, "b.bin": b"b" * 30, "c.bin": b"c" * 30})
+    put(root, good(root))
+    accepted = read_handoff(root, NODE, "engine")
+    assert (accepted.checked, accepted.unchecked) == (2, 1) and [f["path"] for f in accepted.document["files"]] == ["a.bin", "b.bin", "c.bin"]
+    (tmp_path / "again").mkdir()
+    other = folder(tmp_path / "again", {"a.bin": b"a" * 30, "b.bin": b"b" * 30, "c.bin": b"c" * 30})
+    put(other, good(other))
+    assert read_handoff(other, NODE, "engine").checked == 2                       # the budget is per hand-off, not per process
+
+
+def test_a_listed_file_whose_size_is_wrong_is_still_refused_when_it_is_past_the_budget(tmp_path, monkeypatch):
+    from sutra_app.orchestrator import handoff_intake
+    monkeypatch.setattr(handoff_intake, "MAX_HASHED_BYTES", 10)
+    root = folder(tmp_path, {"a.bin": b"a" * 30})
+    put(root, good(root, files=[{"path": "a.bin", "sha256": "0" * 64, "bytes": 31}]))
+    refused(root, "different size")
