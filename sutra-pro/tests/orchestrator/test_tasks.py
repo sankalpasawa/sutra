@@ -742,6 +742,23 @@ def test_stop_a_queued_task_cancels_it_and_a_finished_one_is_busy(tenv):
         tenv.run(tenv.service.stop(a))
 
 
+def test_cancelling_a_queued_task_announces_it_once_with_nodes_off_and_with_nodes_on(db, settings, clock, events):
+    """Minor 1: a cancel is ONE `task.updated` for the cancelled task, as before nodes existed; the node's own sync adds none."""
+    t = tenv_with(db, settings, clock, events)
+    t.started()
+    queued = t.new(text="queued")
+    before = len(t.env.events.events)
+    assert t.run(t.service.stop(queued.id)).status == "cancelled"
+    announced = [e for e in t.env.events.events[before:] if e.type == "task.updated" and e.data["task"]["id"] == queued.id]
+    assert len(announced) == 1
+    with_nodes = t.service
+    with_nodes.node_sync = lambda tx, task_id: None                          # a node hook that does nothing of its own: still one
+    other = t.new(text="queued too")
+    before = len(t.env.events.events)
+    t.run(with_nodes.stop(other.id))
+    assert len([e for e in t.env.events.events[before:] if e.type == "task.updated" and e.data["task"]["id"] == other.id]) == 1
+
+
 def test_stopping_starts_the_next_queued_task(tenv):
     a = tenv.started()
     b = tenv.new(text="next")

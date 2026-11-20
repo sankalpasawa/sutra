@@ -999,8 +999,9 @@ class TaskService:
 
     def _cancel(self, tx: Tx, task_id: str, outcome: str) -> TaskRow:
         row = self.store.update(tx, task_id, status="cancelled", ended_at=tx.now(), outcome=outcome)
-        self.taskgraph.sync(tx, row)
-        self._moved(tx, row)
+        self.taskgraph.sync(tx, row)                                 # the one `task.updated` of a cancel, as before nodes existed (Minor 1)
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
         self.store.settle_blocked(tx, lambda moved: self._moved(tx, moved))
         return row
 
