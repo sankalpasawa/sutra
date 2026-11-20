@@ -179,6 +179,9 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     router = build_connector_router(router_settings, usage_sink=usage, events=lambda type_, data: bus.publish_one(type_, data),
                                     transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
                                     replybook=demo_book() if router_settings.offline else None, redactor=redactor)
+    if settings.slots_on and not router_settings.offline:                     # SUTRA_NODES_SLOTS: the model-program limits count the whole computer, engine processes too (MAN-12)
+        from sutra_app.connectors.slots import SlotPool
+        router.slots = SlotPool(settings.data_dir / "connectors" / "slots", {name: router.policy.max_concurrency(name) for name in ("claude", "codex") if name in router.policy.providers})
     port = connector if connector is not None else AsyncConnector(router)
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)

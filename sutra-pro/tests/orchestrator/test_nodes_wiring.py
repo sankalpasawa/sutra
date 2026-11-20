@@ -118,3 +118,11 @@ def test_an_app_that_never_made_a_project_installs_no_gate_even_with_the_flag_of
     app = app_with(tmp_path)
     with TestClient(app, base_url=BASE):
         assert app.state.services.tasks.task_gate is None
+
+
+def test_the_server_router_gets_a_slot_pool_only_with_the_slots_flag(tmp_path):
+    from sutra_app.connectors.slots import SlotPool
+    assert getattr(app_with(tmp_path / "a", nodes_v1=True).state.services.connector_router, "slots", None) is None
+    on = app_with(tmp_path / "b", nodes_v1=True, nodes_slots=True)
+    assert getattr(on.state.services.connector_router, "slots", None) is None or isinstance(on.state.services.connector_router.slots, SlotPool)      # stub mode (offline tests) takes none
+    assert getattr(app_with(tmp_path / "c", nodes_slots=True).state.services.connector_router, "slots", None) is None      # the master flag is off
