@@ -438,3 +438,26 @@ def test_on_a_lone_surrogate_in_the_text_is_refused_like_with_the_flag_off(live)
     on_plain = raw(client, f"/api/chats/{sid}/direct", body)
     on_mode = raw(client, f"/api/chats/{sid}/direct", b'{"text": "x\\ud800", "mode": "ask"}')
     assert off.status_code == on_plain.status_code == on_mode.status_code == 422 and off.json() == on_plain.json() == on_mode.json()
+
+
+# ---- the document the chat routes publish is the one that was published before DV-1, byte for byte (review m2) ----------------------------------------------------------------
+
+def test_the_openapi_document_of_the_chat_routes_is_byte_for_byte_what_it_was_before_ask():
+    """`tests/fixtures/openapi/chat_routes_before_ask.json` was written from the code of the commit before DV-1 (22bbbf0a) with the same few lines as below. The flag is off (the
+    default): the two direct routes are registered in the old place with the same request models, so the paths come in the same order and no `mode` or card appears."""
+    import warnings
+    from pathlib import Path
+
+    from fastapi import FastAPI
+
+    from sutra_app.orchestrator.api import chat as chat_api
+    from sutra_app.orchestrator.api import chat_v2 as chat_v2_api
+    app = FastAPI()
+    for module in (chat_v2_api, chat_api):
+        app.include_router(module.build_router())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        now = json.dumps(app.openapi(), indent=1) + "\n"
+    before = (Path(__file__).resolve().parents[1] / "fixtures" / "openapi" / "chat_routes_before_ask.json").read_text(encoding="utf-8")
+    assert now == before
+    assert '"mode"' not in now and "AnswerCard" not in now and "answer_sources" not in now

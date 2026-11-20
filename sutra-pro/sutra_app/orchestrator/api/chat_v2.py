@@ -269,6 +269,10 @@ def build_router() -> APIRouter:
         asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs) if asking is None else asking.turn_in(said, refs), 1, asking))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
 
+    # DV-1: registered here, where the decorator was, with the route class that takes `mode` out of the body when the flag is on (orchestrator/ask_mode.py); inert while it is off
+    router.add_api_route("/chats/{sid}/direct", direct, methods=["POST"], summary="Ask the chat model directly", dependencies=[Depends(require_token)],
+                         route_class_override=ask_mode.AskRoute)
+
     @router.post("/chats/{sid}/direct/stop", summary="Stop the turn that is answering", dependencies=[Depends(require_token)])
     async def stop(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         services = services_of(request)
@@ -301,9 +305,7 @@ def build_router() -> APIRouter:
             raise ReadOnly("This chat cannot be asked directly")
         return await _retry_live(request, services, port, sid, body, session)
 
-    # the two routes that take the Ask mode: the same routes as ever; `AskRoute` is inert while the flag is off (orchestrator/ask_mode.py)
-    router.add_api_route("/chats/{sid}/direct", direct, methods=["POST"], summary="Ask the chat model directly", dependencies=[Depends(require_token)],
-                         route_class_override=ask_mode.AskRoute)
+    # the same route as ever, in the same place (the order of /openapi.json is the order of registration); `AskRoute` is inert while the flag is off (orchestrator/ask_mode.py)
     router.add_api_route("/chats/{sid}/direct/retry", retry, methods=["POST"], status_code=202, summary="Answer the owner's last line again",
                          dependencies=[Depends(require_token)], route_class_override=ask_mode.AskRoute)
     return router

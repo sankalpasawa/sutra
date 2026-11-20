@@ -1,0 +1,901 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "FastAPI",
+  "version": "0.1.0"
+ },
+ "paths": {
+  "/api/chats/search": {
+   "get": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Search the chats",
+    "operationId": "search_api_chats_search_get",
+    "parameters": [
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 200,
+       "default": "",
+       "title": "Q"
+      }
+     },
+     {
+      "name": "scope",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "maxLength": 80,
+       "default": "all",
+       "title": "Scope"
+      }
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^archived$"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Include"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/archive": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Archive a chat (a mark)",
+    "operationId": "archive_api_chats__sid__archive_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/unarchive": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Bring an archived chat back",
+    "operationId": "unarchive_api_chats__sid__unarchive_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/providers": {
+   "get": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "The provider pill of a chat",
+    "operationId": "providers_api_chats__sid__providers_get",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/choice": {
+   "put": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Choose the provider, model and effort of this chat",
+    "operationId": "choose_api_chats__sid__choice_put",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ChoiceIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/attachments": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Attach a file",
+    "operationId": "attach_api_chats__sid__attachments_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UploadIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/direct": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Ask the chat model directly",
+    "operationId": "direct_api_chats__sid__direct_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DirectIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/direct/stop": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Stop the turn that is answering",
+    "operationId": "stop_api_chats__sid__direct_stop_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/turn": {
+   "get": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Where the live turn of this chat is",
+    "operationId": "turn_api_chats__sid__turn_get",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/direct/retry": {
+   "post": {
+    "tags": [
+     "chats v2"
+    ],
+    "summary": "Answer the owner's last line again",
+    "operationId": "retry_api_chats__sid__direct_retry_post",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/RetryIn"
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats": {
+   "get": {
+    "tags": [
+     "chats"
+    ],
+    "summary": "The chat sessions",
+    "operationId": "list_chats_api_chats_get",
+    "parameters": [
+     {
+      "name": "node_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "only the sessions of this node",
+       "title": "Node Id"
+      },
+      "description": "only the sessions of this node"
+     },
+     {
+      "name": "include",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^archived$"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "description": "archived: add the sessions of merged-away nodes",
+       "title": "Include"
+      },
+      "description": "archived: add the sessions of merged-away nodes"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}": {
+   "get": {
+    "tags": [
+     "chats"
+    ],
+    "summary": "One chat session",
+    "operationId": "get_chat_api_chats__sid__get",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/chats/{sid}/messages": {
+   "get": {
+    "tags": [
+     "chats"
+    ],
+    "summary": "The messages of a session, oldest first",
+    "operationId": "get_messages_api_chats__sid__messages_get",
+    "parameters": [
+     {
+      "name": "sid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_.:\\-]{1,120}$",
+       "title": "Sid"
+      }
+     },
+     {
+      "name": "after",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 9007199254740991,
+       "minimum": 0,
+       "description": "only messages with an id above this",
+       "default": 0,
+       "title": "After"
+      },
+      "description": "only messages with an id above this"
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 500,
+       "minimum": 1,
+       "default": 200,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/needs-you": {
+   "get": {
+    "tags": [
+     "chats"
+    ],
+    "summary": "What waits for the owner",
+    "operationId": "get_needs_you_api_needs_you_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/heads-up": {
+   "get": {
+    "tags": [
+     "chats"
+    ],
+    "summary": "What happened to the teams lately",
+    "operationId": "get_heads_up_api_heads_up_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "ChoiceIn": {
+    "properties": {
+     "provider": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^(claude|codex)$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Provider"
+     },
+     "model": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 100
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Model"
+     },
+     "effort": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^(low|medium|high|xhigh|max)$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Effort"
+     }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "title": "ChoiceIn"
+   },
+   "DirectIn": {
+    "properties": {
+     "text": {
+      "type": "string",
+      "maxLength": 200000,
+      "minLength": 1,
+      "title": "Text"
+     },
+     "attachments": {
+      "items": {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      },
+      "type": "array",
+      "maxItems": 10,
+      "title": "Attachments",
+      "default": []
+     },
+     "names": {
+      "items": {
+       "type": "string",
+       "maxLength": 200
+      },
+      "type": "array",
+      "maxItems": 10,
+      "title": "Names",
+      "default": []
+     },
+     "client_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{8,64}$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Id"
+     }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+     "text"
+    ],
+    "title": "DirectIn"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "RetryIn": {
+    "properties": {
+     "message_id": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Message Id"
+     },
+     "client_id": {
+      "anyOf": [
+       {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{8,64}$"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Client Id"
+     }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+     "message_id"
+    ],
+    "title": "RetryIn"
+   },
+   "UploadIn": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "content_b64": {
+      "type": "string",
+      "maxLength": 27962034,
+      "minLength": 1,
+      "title": "Content B64"
+     }
+    },
+    "additionalProperties": false,
+    "type": "object",
+    "required": [
+     "name",
+     "content_b64"
+    ],
+    "title": "UploadIn"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   }
+  }
+ }
+}
