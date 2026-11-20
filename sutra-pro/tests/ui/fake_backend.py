@@ -379,6 +379,7 @@ class FakeState:
             self.signin_sequence = "success"
             self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
             self.retried: list[str] = []
+            self.stopped: list[str] = []            # D254: POST /api/tasks/{id}/stop, in order; a team's live task ends with its stop
             # gap routines-limits: GET /api/limits, GET and PUT /api/ops/attention, /api/recurring (set by /__fake/limits and /__fake/recurring)
             self.limits = {"spend": {"limit": None, "spent": 0.0, "pct": None, "level": "none", "unpriced_calls": 0, "month": "2026-11",
                                      "month_ends_at": "2026-12-01T00:00:00Z", "line": ""},
@@ -486,7 +487,11 @@ class FakeState:
         return next((n for n in self.fx.graphs[self.graph_stage]["nodes"] if n["id"] == node_id), None)
 
     def departments(self) -> list[dict]:
-        return copy.deepcopy(self.fx.departments.get(self.graph_stage, []))
+        rows = copy.deepcopy(self.fx.departments.get(self.graph_stage, []))
+        for row in rows:
+            if row.get("live_task_id") in self.stopped:
+                row["live_task_id"] = None
+        return rows
 
     def department(self, dept_id: str) -> dict | None:
         return next((d for d in self.departments() if d["id"] == dept_id), None)
@@ -1487,6 +1492,20 @@ def register_api(app: FastAPI, state: FakeState) -> None:
                 "status": "queued", "parent_task_id": task_id, "created_at": "2026-11-04T10:00:00Z"}
         state.publish("task.updated", {"task": task})
         return JSONResponse(task, status_code=201)
+
+    @app.post("/api/tasks/{task_id}/stop")
+    def stop_task(task_id: str, request: Request):
+        """D254: the stop ladder of a live task (a team's `live_task_id`): the task ends `cancelled` and its team has no live task any more;
+        a task that is not live is 409 busy, as the real route answers one that already ended."""
+        require_token(request, state)
+        with state.lock:
+            row = next((d for d in state.departments() if d.get("live_task_id") == task_id), None)
+            if row is None:
+                raise ApiError(409, "busy", "That run already ended.")
+            state.stopped.append(task_id)
+        task = {"id": task_id, "dept_id": row["id"], "dept_name": row.get("name", ""), "title": "", "status": "cancelled", "created_at": "2026-11-04T10:00:00Z"}
+        state.publish("task.updated", {"task": task})
+        return JSONResponse(task)
 
     @app.get("/api/departments")
     def departments():

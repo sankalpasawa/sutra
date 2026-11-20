@@ -1466,6 +1466,7 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("PUT", "/api/tasks/tsk_000000000001/choice", {"provider": None}, "/api/tasks/{task_id}/choice"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
     ("POST", "/api/tasks/tsk_000000000001/retry", {}, "/api/tasks/{task_id}/retry"),
+    ("POST", "/api/tasks/tsk_000000000001/stop", {}, "/api/tasks/{task_id}/stop"),
     ("PUT", "/api/limits", {"guard_enabled": True}, "/api/limits"),
     ("POST", "/api/limits/continue", {}, "/api/limits/continue"),
     ("PUT", "/api/ops/attention", {"nudges_per_hour": 1}, "/api/ops/attention"),

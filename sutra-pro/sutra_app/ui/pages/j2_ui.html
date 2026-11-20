@@ -69,7 +69,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
         <div class="sph"><span class="sphav" id="sphav"></span><span class="sphn"><b>Asha</b> <span>· Client Lead</span><small class="sright" id="smood"></small></span><button type="button" class="sx sashax" id="sashax" aria-label="Close the chat">×</button></div>
         <div class="sprog" id="sprog" aria-label="Progress"></div>
         <div class="smsgs" id="smsgs" role="log" aria-live="polite" aria-label="Conversation with Asha, your Client Lead"></div>
-        <form class="scbox" id="sform"><input id="sbox" aria-label="Your message" placeholder="Ask for a change…" autocomplete="off"><button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>
+        <form class="scbox" id="sform"><input id="sbox" aria-label="Your message" placeholder="Ask for a change…" autocomplete="off"><button class="sgo" id="ssend" type="submit" aria-label="Send"><svg data-icon="send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg></button></form>
       </aside>
     </div>
     <nav class="sdock" id="sdock" aria-label="Team, plan and chat"></nav>
@@ -1274,7 +1274,7 @@ function sChat(s, open, live, M){      // Asha's panel: your messages, hers, a c
   $("smood").textContent = ready ? "Your project is ready" : s.status === "running" ? "Working with the team…" : open.length ? "Waiting for you" : s.saved ? "Saved project" : "";
   if (!$("sphav").__v){ $("sphav").__v = 1; $("sphav").innerHTML = face("asha", 38, {label: false}); }
   const busy = s.status === "running" || !!s.saved;
-  $("sbox").disabled = $("ssend").disabled = busy;
+  const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D254)
   $("sbox").placeholder = s.saved ? "Saved project. Press + for a new one" : live ? "Or type your answer here…" : ready ? "Ask for a change…" : s.status === "running" ? "The team is working…" : "Write a message…";
 }
 function sTop(s, M, open, ready){
@@ -1818,7 +1818,21 @@ $("schips").addEventListener("click", e => { const b = e.target.closest("[data-b
 $("sautoland").onclick = $("sauto").onclick = function(){ if (!this.disabled) sAutoSet(this.getAttribute("aria-checked") !== "true"); };
 $("slanddetail").onclick = $("sdetail").onclick = () => setView("detail", true);
 // the studio: Asha's box, the cards, the views, the parts, the team, the dock
-$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim(); if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });
+// E26 (D254): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only
+// until the owner types. Stop asks first, then calls the stop ladder once; 409 means the run already ended: refresh only
+function sStopOn(s){ return !!s && !s.saved && (s.status === "running" || (!!s.paused && !$("sbox").value.trim())); }
+function sStopMode(on){ const b = $("ssend"); b.dataset.stop = on ? "1" : ""; b.setAttribute("aria-label", on ? "Stop the run" : "Send");
+  b.querySelectorAll("svg[data-icon]").forEach(g => { g.style.display = (g.dataset.icon === "stop") === on ? "" : "none"; }); }
+async function sStop(){
+  if (!confirm("Stop this run? What's built so far is kept.")) return;
+  try {
+    const d = await SutraCtx.api.get("/api/departments/" + encodeURIComponent(SutraCtx.dept)), id = d && d.live_task_id;
+    if (typeof id === "string" && /^tsk_[0-9a-f]{12}$/.test(id)) await SutraCtx.api.post("/api/tasks/" + id + "/stop", {});
+  } catch (e) { if (!e || e.status !== 409){ sToast("Could not stop the run. Try again."); return; } }
+  poll();
+}
+$("sbox").addEventListener("input", () => { if (!state) return; const stop = sStopOn(state); $("ssend").disabled = $("sbox").disabled && !stop; sStopMode(stop); });
+$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop(); const t = $("sbox").value.trim(); if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });
 $("smsgs").addEventListener("click", e => { const c = e.target.closest && e.target.closest("[data-change]"); if (c) return sChangeAnswer();
   const u = e.target.closest && e.target.closest("[data-unfold]"); if (u){ SV.unfold.add(u.dataset.unfold); simpleHTML = null; if (state) renderSimple(state); return; } sCardClick(e); });
 $("smsgs").addEventListener("keydown", sCardKey);

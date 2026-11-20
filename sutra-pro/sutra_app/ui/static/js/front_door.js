@@ -14,6 +14,8 @@
      finishedHtml(state)                 "Just finished": the work finished lately, each row with Open (nothing when there is none)
      latestHtml(state)                   under the box, after the owner sent something there: one calm line, a choice to press, or the way to the work
      summary(state)                      "2 things need you" / "Nothing needs you right now" (the document title and the screen reader line)
+     stopOf(state)                       D254: {show, taskId}: the box's Go is Stop while the box is empty and the card under it shows the work it
+                                         just started ("Your project is set up") whose team has a live task
      budgetOf(value)                     the box's "Budget (work credits)" (D252): {ok, budget, error}; empty is ok with budget null (the team's own
                                          budget), a whole number from 1 to 100000 is that number, anything else is not ok with the sentence to show
 
@@ -294,6 +296,17 @@
     return latestSimple(s, r, status);
   }
 
+  // D254: Go is Stop while the box is empty, the card under it shows the work this send started (latestSimple's r.task, no choice before it)
+  // and that team has a live task. state: latestHtml's, plus {box, departments}.
+  const TASK_ID = /^tsk_[0-9a-f]{12}$/;
+  function stopOf(state) {
+    const s = isObj(state) ? state : {};
+    const r = replyOf(s);
+    const team = s.show === true && !r.choice && r.task && Array.isArray(s.departments) ? s.departments.find(d => isObj(d) && d.id === r.task.card.dept_id) : null;
+    const id = team ? text(team.live_task_id) : "";
+    return text(s.box).trim() === "" && TASK_ID.test(id) ? {show: true, taskId: id} : {show: false, taskId: ""};
+  }
+
   // D252: the Budget field, as POST /api/chats/cs_org/messages takes it (J2_BUDGET's limits); empty means the team's own budget
   const BUDGET_SAID = "Budget: a whole number of work credits from 1 to 100000, or empty for the team default";
   function budgetOf(value) {
@@ -302,7 +315,7 @@
     return /^[1-9][0-9]{0,5}$/.test(v) && Number(v) <= 100000 ? {ok: true, budget: Number(v), error: ""} : {ok: false, budget: null, error: BUDGET_SAID};
   }
 
-  const FrontDoor = {ORG, budgetOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
+  const FrontDoor = {ORG, budgetOf, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

@@ -188,6 +188,30 @@ def test_home_takes_the_owner_to_the_project_once_a_team_has_the_work(browser, f
 
 
 @browser_only
+def test_home_stop_after_send(browser, fake):
+    """D254: while the card shows the work this box started and its team's task is live, Go is Stop (box empty); typing turns it back into
+    Go; Stop asks first and on yes calls the stop ladder once with {} (no force); the team's task ends and Go is back."""
+    load(browser, fake)                                                                # stage 2: the Web team's task tsk_a1b2c3d4e5f6 is live
+    browser.js("""(() => { const S = HomePage.state(); S.front.sent = true; S.front.going = true;      // stay on Home (no landing)
+      S.messages.push({id: 900, role: "user", text: "A website for my cafe"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A website for my cafe"}});
+      HomePage.renderFront(); })()""")
+    assert texts(browser, "#fdsend") == ["Stop"] and browser.js("document.getElementById('fdsend').getAttribute('aria-label')") == "Stop the run"
+    browser.type("#fdbox", "more")
+    assert texts(browser, "#fdsend") == ["Go"]
+    browser.js("(() => { const b = document.getElementById('fdbox'); b.value = ''; b.dispatchEvent(new Event('input')); })()")
+    assert texts(browser, "#fdsend") == ["Stop"]
+    browser.js("window.ASKED = []; window.confirm = q => { ASKED.push(q); return false; }")
+    browser.click("#fdsend")
+    assert browser.js("ASKED") == ["Stop this run? What's built so far is kept."] and not posts(fake, "/api/tasks/")
+    browser.js("window.confirm = q => { ASKED.push(q); return true; }")
+    browser.click("#fdsend")
+    browser.wait_for("document.getElementById('fdsend').textContent.trim() === 'Go'")
+    sent = posts(fake, "/api/tasks/")
+    assert [(r["path"], r["body"], r["token"]) for r in sent] == [("/api/tasks/tsk_a1b2c3d4e5f6/stop", {}, True)]
+    assert browser.console_errors == []
+
+
+@browser_only
 def test_sutras_question_shows_as_a_card_on_the_front_door_in_plain_words(browser, fake):
     load(browser, fake, stage="1")
     browser.js("""(() => { const S = HomePage.state(); S.front.sent = true;

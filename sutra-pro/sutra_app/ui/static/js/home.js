@@ -838,7 +838,8 @@
     // only what came after this send: an older project's task card must never be where a new project lands
     const since = S.front.since || 0;
     const fresh = S.messages.filter(m => !(typeof m.id === "number" && m.id <= since));
-    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going};
+    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going,
+      departments: S.departments, box: $("fdbox") ? $("fdbox").value : ""};
     const href = S.front.sent && fd.landing ? fd.landing(st) : "";
     if (href && place() === "front" && !S.front.going) {
       S.front.going = true;
@@ -849,6 +850,30 @@
       }, LAND_MS);
     }
     ctx.paint($("fdlatest"), fd.latestHtml(st));
+    if (fd.stopOf) paintStop(fd.stopOf(st));
+  }
+
+  // D254: Go is Stop (a square and "Stop") while the run this box started is live and the box is empty; data-stop holds the task id
+  const STOP_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor"/></svg> ';
+  function paintStop(stop) {
+    const b = $("fdsend");
+    if (!b || (b.dataset.stop || "") === stop.taskId) return;
+    b.dataset.stop = stop.taskId;
+    b.classList.toggle("fdstop", stop.show);
+    b.innerHTML = stop.show ? STOP_ICON + "Stop" : "Go";
+    if (stop.show) b.setAttribute("aria-label", "Stop the run"); else b.removeAttribute("aria-label");
+  }
+
+  // Stop: asks first, then the existing stop ladder (POST /api/tasks/{id}/stop, no force); 409 means it already ended, so only the lists refresh
+  async function stopFront(taskId) {
+    if (!/^tsk_[0-9a-f]{12}$/.test(text(taskId)) || !root.confirm("Stop this run? What's built so far is kept.")) return false;
+    try {
+      await api.post("/api/tasks/" + enc(taskId) + "/stop", {});
+    } catch (e) {
+      if (!e || e.status !== 409) { showBanner(errorWords(e)); return false; }
+    }
+    await fetchDepartments().catch(handleFetchError);
+    return true;
   }
 
   async function sendFront() {
@@ -918,7 +943,7 @@
   }
 
   function onFrontClick(e) {
-    if (e.target.closest("#fdsend")) { sendFront(); return; }
+    if (e.target.closest("#fdsend")) { const stop = $("fdsend").dataset.stop; if (stop) stopFront(stop); else sendFront(); return; }
     const tryit = e.target.closest("[data-act=fd-try]");
     if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
     const b = e.target.closest("button[data-act]");
@@ -952,6 +977,7 @@
   function wireFront() {
     if (!$("front")) return;
     $("front").addEventListener("click", onFrontClick);
+    $("fdbox").addEventListener("input", renderFrontLatest);      // D254: typing turns Stop back into Go
     $("fdbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFront(); } });
     $("front").addEventListener("keydown", e => {
       const t = e.target;
@@ -1928,7 +1954,7 @@
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, openRawChat,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, stopFront, openRawChat,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

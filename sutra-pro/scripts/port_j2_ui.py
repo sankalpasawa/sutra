@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 44 edits (E1 to E13, E19 to E25; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f and E25a to E25d count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 47 edits (E1 to E13, E19 to E26; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d and E26a to E26c count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 44 edits
+    pages/j2_ui.html            the page after the 47 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -262,6 +262,34 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000, or empty for the team default"); if (!ok){ el.reportValidity(); return null; } return +v; };\n'
          '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = lbudget(); if (b === null) return; '
          '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); });', 1),
+    # E26 (D254): the studio's send button is Stop while the team's run is live: always while it works (the box is disabled), and while it waits
+    # for an answer until the owner types. Stop asks first, then calls the existing stop ladder (POST /api/tasks/{id}/stop, no force).
+    Edit("E26a", '<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+                 'stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>',
+         '<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg data-icon="send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+         'stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><svg data-icon="stop" width="13" height="13" '
+         'viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg></button></form>', 1),
+    Edit("E26b", '$("sbox").disabled = $("ssend").disabled = busy;',
+         'const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D254)', 1),
+    Edit("E26c", '$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim(); if (!t || $("sbox").disabled) return; '
+                 '$("sbox").value = ""; sendText(t); });',
+         _lines(
+             "// E26 (D254): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only",
+             "// until the owner types. Stop asks first, then calls the stop ladder once; 409 means the run already ended: refresh only",
+             'function sStopOn(s){ return !!s && !s.saved && (s.status === "running" || (!!s.paused && !$("sbox").value.trim())); }',
+             'function sStopMode(on){ const b = $("ssend"); b.dataset.stop = on ? "1" : ""; b.setAttribute("aria-label", on ? "Stop the run" : "Send");',
+             '  b.querySelectorAll("svg[data-icon]").forEach(g => { g.style.display = (g.dataset.icon === "stop") === on ? "" : "none"; }); }',
+             "async function sStop(){",
+             "  if (!confirm(\"Stop this run? What's built so far is kept.\")) return;",
+             "  try {",
+             '    const d = await SutraCtx.api.get("/api/departments/" + encodeURIComponent(SutraCtx.dept)), id = d && d.live_task_id;',
+             '    if (typeof id === "string" && /^tsk_[0-9a-f]{12}$/.test(id)) await SutraCtx.api.post("/api/tasks/" + id + "/stop", {});',
+             '  } catch (e) { if (!e || e.status !== 409){ sToast("Could not stop the run. Try again."); return; } }',
+             "  poll();",
+             "}",
+             '$("sbox").addEventListener("input", () => { if (!state) return; const stop = sStopOn(state); $("ssend").disabled = $("sbox").disabled && !stop; sStopMode(stop); });',
+             '$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop(); const t = $("sbox").value.trim(); '
+             'if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });'), 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

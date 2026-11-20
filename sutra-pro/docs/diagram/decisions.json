@@ -1258,5 +1258,10 @@
   "id": "D252",
   "label": "Budget field on home + team page, empty = team default",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D254",
+  "label": "Stop button on team page + home box (stop ladder)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

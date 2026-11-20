@@ -175,3 +175,19 @@ test("the home box (D252): an empty Budget field with the team-default placehold
   assert.match(js, /choice \? \{text: body, choice\} : \{text: body, \.\.\.budget\}/);      // a budget never rides with a card answer
   assert.match(js, /send\(body, null, \{plan: true, budget: b\.budget\}\)/);
 });
+
+test("stopOf (D254): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {
+  const sent = [{id: 900, role: "user", text: "A cafe site"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A cafe site"}}];
+  const base = {show: true, messages: sent, answers: {}, box: "", departments: [dept("web", "running", {live_task_id: tid(7)}), dept("ads", "idle", {live_task_id: tid(8)})]};
+  assert.deepEqual(FD.stopOf(base), {show: true, taskId: tid(7)});
+  const no = {show: false, taskId: ""};
+  assert.deepEqual(FD.stopOf({...base, box: "more please"}), no);                                       // typing turns it back into Go
+  assert.deepEqual(FD.stopOf({...base, box: "   "}), {show: true, taskId: tid(7)});
+  assert.deepEqual(FD.stopOf({...base, show: false}), no);                                              // nothing sent from this box
+  assert.deepEqual(FD.stopOf({...base, departments: [dept("web", "filed", {live_task_id: null})]}), no);  // the run ended
+  assert.deepEqual(FD.stopOf({...base, departments: [dept("web", "running", {live_task_id: "../x"})]}), no);
+  assert.deepEqual(FD.stopOf({...base, messages: sent.slice(0, 1)}), no);                                // no team has the work yet
+  const choice = {id: 902, role: "agent", text: "", card: {type: "choice", question: "Which team?", options: [{id: "web", label: "Web"}]}};
+  assert.deepEqual(FD.stopOf({...base, messages: [...sent, choice]}), no);                              // the card is a question, not the work
+  assert.deepEqual(FD.stopOf(null), no);
+});
