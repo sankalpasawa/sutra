@@ -1,7 +1,7 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 352,
+  "decisions": 354,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
@@ -537,6 +537,8 @@
     "D345",
     "D346",
     "D347",
+    "D348",
+    "D349",
     "D360",
     "D361",
     "D362",
@@ -5609,6 +5611,24 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"merge order; decision blocks; one release\", key only."
+  },
+  {
+   "id": "D348",
+   "title": "The wall time leaves out time once, and a closed app counts as a sleep",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"wall time: union of pauses and gaps; closed app = sleep\", key only."
+  },
+  {
+   "id": "D349",
+   "title": "Housekeeping of the tool records: prune, a server sweep, a durable debt",
+   "packages": [
+    "GAP-DATA"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool records: prune, sweep, durable debt\", key only."
   }
  ],
  "packages": [

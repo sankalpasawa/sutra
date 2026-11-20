@@ -27,15 +27,24 @@ def _blank(record: Any) -> int:
 
 
 def _replace(path: Path, text: str) -> None:
+    """The file with `text` instead, by a temp file and a rename. A failure removes the temp file and raises: the caller counts it (N-12)."""
     temp = oslayer.temp_path(path)
-    fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(text)
-    oslayer.replace(temp, path)
+    try:
+        fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        oslayer.replace(temp, path)
+    except BaseException:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+        raise
 
 
-def blank_tool_inputs(run_dir: Path | str) -> int:
-    """Blank the tool inputs in `calls.jsonl` and `snapshot.json` of `run_dir`; returns how many were blanked (0 when there were none or a file could not be handled)."""
+def blank_tool_inputs(run_dir: Path | str, failed: list[str] | None = None) -> int:
+    """Blank the tool inputs in `calls.jsonl` and `snapshot.json` of `run_dir`; returns how many were blanked (0 when there were none or a file could not be handled). A file that could not be
+    rewritten (on Windows, one that something still holds open) is named in `failed` (when given), so the caller can say so (N-12)."""
     root = Path(run_dir)
     total = 0
     calls = root / "calls.jsonl"
@@ -60,7 +69,8 @@ def blank_tool_inputs(run_dir: Path | str) -> int:
                 _replace(calls, "".join(out))
                 total += changed
     except (OSError, UnicodeError):
-        pass
+        if failed is not None:
+            failed.append("calls.jsonl")
     snap = root / "snapshot.json"
     try:
         if snap.is_file() and not snap.is_symlink():
@@ -70,5 +80,6 @@ def blank_tool_inputs(run_dir: Path | str) -> int:
                 _replace(snap, json.dumps(document, ensure_ascii=False))
                 total += changed
     except (OSError, ValueError, UnicodeError):
-        pass
+        if failed is not None:
+            failed.append("snapshot.json")
     return total

@@ -450,6 +450,7 @@ class TaskService:
         # asked about ONE task after `start_gate`, in the same transaction: a waiting sentence, or "" to let it start (multi-agent nodes, D257; set only while SUTRA_NODES_V1 is on).
         # MAN-4 uses it for the kill switch and pause; the Conductor's task gate (MAN-5) takes its place and keeps that rule.
         self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
+        self.before_prepare: Callable[[], None] | None = None          # the project service's look at the links of the steps' scopes, run BEFORE the start transaction (N-6); None with SUTRA_NODES_V1 off
         # asked just before and just after a process is started: an outcome sentence ends the start (a kill that came in between); "" lets it go on (MAN-4, M1)
         self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
         # called in the transaction of any change of a task's state that is made here (starting, cancelled): the project service moves the node of a task with it (MAN-5); None while off
@@ -612,6 +613,8 @@ class TaskService:
         started: list[str] = []
         async with self._gate():
             while True:
+                if self.before_prepare is not None:
+                    await run_blocking(self.before_prepare)
                 prepared = await run_blocking(self._prepare_next)
                 if prepared is None:
                     return started
@@ -622,6 +625,8 @@ class TaskService:
     async def start(self, task_id: str) -> bool:
         """Start one queued task now (the caps still apply: False when it has to wait)."""
         async with self._gate():
+            if self.before_prepare is not None:
+                await run_blocking(self.before_prepare)
             prepared = await run_blocking(self._prepare_next, task_id)
             if prepared is None:
                 return False

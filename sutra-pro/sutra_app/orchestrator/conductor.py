@@ -24,6 +24,7 @@ from sutra_app.orchestrator.grants import fold, scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
 from sutra_app.engine.host.toollog import log_path, read_log, summarize
+from sutra_app.engine.host.toolscrub import blank_tool_inputs
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
 from sutra_app.syspermissions import is_permission_failure
@@ -75,8 +76,11 @@ class Conductor:
         self._ticker: Any = None
         self._stop_tasks: list[str] = []                                           # tasks of nodes that were failed closed and are still alive: the next tick stops them (M3)
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
+        self._resolved_seen: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}      # (folder, scope) -> (when, scope with its links followed): `warm_scopes`
         self._folder_seen: tuple[Any, float, Any] | None = None                    # (the lookup, when it was read, the folder): see `_folder`
-        self._owed_tools: list[tuple[str, str, str, str, str]] = []               # (node, project, role, task, run) whose tool log was not read ahead: written as audit rows by the next tick, outside any transaction (PB-16)
+        self._sweep: list[str] = []                                               # task ids of nodes that ended: their run record is looked at once more for tool inputs (F-1, R11)
+        self._sweep_recent = True                                                  # at start: the nodes that ended in the last 7 days too (a crash or a force stop may have left inputs)
+        self._maybe_owed = True                                                    # a `tool.pending` row may be waiting for the next tick (true at start: a restart may have left one) (PB-16, N-7)
         self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
@@ -200,13 +204,40 @@ class Conductor:
             for entry in scope:
                 real = os.path.realpath(os.path.join(root, *entry.rstrip("/").split("/")))
                 rel = os.path.relpath(real, root).replace("\\", "/")
-                if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+                if rel == ".." or rel.startswith("../") or os.path.isabs(rel) or rel == ".":         # a link out of the folder, or one that points at the folder itself: the whole folder
                     return ()
                 if rel != "." and rel != entry.rstrip("/"):
                     found.append(rel + ("/" if entry.endswith("/") else ""))
             return tuple(dict.fromkeys(found))
-        except (OSError, ValueError):
+        except ValueError:                                                      # Windows: a link to another drive has no path relative to the folder: it leaves the folder (N-6)
+            return ()
+        except OSError:
             return scope
+
+    def _resolved_for(self, folder: Any, scope: tuple[str, ...]) -> tuple[str, ...]:
+        """`_resolved`, from what `warm_scopes` looked up a moment ago (outside any transaction) when it is there, else looked up now. The stat calls of a link check belong before the start
+        transaction (N-6, PB-16); the cache lives `FOLDER_TTL_S` seconds."""
+        found = self._resolved_seen.get((str(folder), scope))
+        if found is not None and time.monotonic() - found[0] < FOLDER_TTL_S:
+            return found[1]
+        return self._resolved(folder, scope)
+
+    def warm_scopes(self) -> None:
+        """Called by the scheduler BEFORE it opens the start transaction (`TaskService.before_prepare`): the links of every unfinished step's scope are followed here, so the gate and the scope check
+        inside the transaction only read the answer. Never raises."""
+        try:
+            folder = self._folder()
+            if not folder:
+                return
+            fresh: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}
+            now = time.monotonic()
+            for row in self.db.conn().execute("SELECT writes_json FROM agent_nodes WHERE role = 'worker' AND state NOT IN ('done','failed','cancelled')").fetchall():
+                scope = tuple(json.loads(row["writes_json"] or "[]"))
+                if scope:
+                    fresh[(str(folder), scope)] = (now, self._resolved(folder, scope))
+            self._resolved_seen = fresh
+        except Exception:                                                       # noqa: BLE001
+            log.exception("could not look at the links of the steps' scopes ahead of time")
 
     def _lease_conflict(self, conn: sqlite3.Connection, node_id: str) -> str:
         """A waiting sentence when another writer that is alive holds a part of the folder that overlaps this node's, else "". The leases are the rows of `agent_nodes` (their `writes_json`), so they
@@ -217,11 +248,11 @@ class Conductor:
             return ""
         folder = self._folder()
         serial = bool(folder) and not (Path(folder) / ".git").exists()           # one stat, no read
-        mine = self._resolved(folder, mine)
+        mine = self._resolved_for(folder, mine)
         for other in conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id <> ? AND state IN ('leased','running','handing_off','expired')", (node_id,)).fetchall():
             theirs = self._lease_of(conn, other)
             if theirs is not None:
-                theirs = self._resolved(folder, theirs)
+                theirs = self._resolved_for(folder, theirs)
             if theirs is not None and (serial or scopes_overlap(mine, theirs)):
                 return "Waiting: another step is changing the same part of your folder" if not serial else "Waiting: another step is changing your folder (it is not a git folder, so steps change it one at a time)"
         return ""
@@ -395,8 +426,9 @@ class Conductor:
         rows = ahead[1] if ahead is not None else None
         if rows is None and task_id and self.tasks is not None:
             row = self.tasks.store.row_in(tx.conn, task_id)
-            if row is not None and row.run_id is not None:                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16)
-                self._owed_tools.append((node["id"], node["project_id"], node["role"], task_id, row.run_id))
+            if row is not None and row.run_id is not None and log_path(self.settings.data_dir, row.run_id).is_file():                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16).
+                self.store.audit(tx, actor="node", action="tool.pending", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)      # a row, so it is kept with the transaction (a rollback takes it back) and survives a restart (N-7)
+                self._maybe_owed = True
             return
         self._tool_rows(tx, node["id"], node["project_id"], node["role"], task_id, rows or [])
 
@@ -409,16 +441,48 @@ class Conductor:
             self.store.audit(tx, actor="node", action="tool.used", project_id=project_id, node_id=node_id, role=role, decision="n/a", target="more",
                              reason=f"{left_out} more calls of other tools", ref=task_id)
 
+    def _sweep_tool_inputs(self) -> int:
+        """F-1 (R11, D344): the host empties the tool inputs of a step's record when it ends normally; a step that was force-stopped, killed or crashed never got there. Here, outside any transaction,
+        the record of every node that ended is looked at once more and emptied (idempotent: a file with no input left is not rewritten). Only a task that is over is touched, so a run that is
+        still writing is never raced. Returns how many inputs were emptied."""
+        ids, self._sweep = list(dict.fromkeys(self._sweep)), []
+        conn = self.db.conn()
+        if self._sweep_recent:
+            self._sweep_recent = False
+            ids += [r[0] for r in conn.execute("SELECT t.id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.state IN ('done','failed','cancelled') AND t.ended_at > ?",
+                                               (int(self._clock.now()) - 7 * 86400,))]
+        emptied = 0
+        for task_id in dict.fromkeys(ids):
+            row = self.tasks.store.find_row(task_id) if self.tasks is not None else None
+            if row is None or row.run_id is None or row.status not in ("done", "done_with_open_items", "stopped", "crashed", "cancelled"):
+                if row is not None and row.status in ("queued", "starting", "running", "waiting_user", "blocked"):
+                    self._sweep.append(task_id)                                  # not over yet: asked again next time
+                continue
+            try:
+                emptied += blank_tool_inputs(self.tasks.store.run_dir_of(row))
+            except Exception:                                                    # noqa: BLE001
+                log.exception("could not empty the tool inputs of task %s", task_id)
+        return emptied
+
     def _pay_tools(self) -> int:
-        """The tool rows of nodes whose log could not be read ahead (PB-16): the files are read here, outside any transaction, and the rows are written in one short one. Called by the tick."""
-        owed, self._owed_tools = self._owed_tools, []
-        if not owed:
+        """The tool rows of nodes whose log could not be read ahead (PB-16, N-7): a `tool.pending` row says one is owed; the files are read here, outside any transaction, and the rows are written
+        in one short one, with a `tool.logged` row that closes the debt, so a repeat or a restart never writes them twice. Called by the tick (and once after a restart)."""
+        pending = self.db.conn().execute(
+            "SELECT a.node_id AS node_id, a.project_id AS project_id, a.role AS role, a.ref AS task_id, t.run_id AS run_id FROM node_audit a JOIN tasks t ON t.id = a.ref "
+            "WHERE a.action = 'tool.pending' AND NOT EXISTS (SELECT 1 FROM node_audit b WHERE b.action = 'tool.logged' AND b.node_id = a.node_id AND b.ref = a.ref)").fetchall()
+        self._maybe_owed = False
+        if not pending:
             return 0
-        read = [(*item, read_log(log_path(self.settings.data_dir, item[4]))) for item in owed]
+        read = [(r["node_id"], r["project_id"], r["role"], r["task_id"], read_log(log_path(self.settings.data_dir, r["run_id"]))) for r in pending if r["run_id"]]
+        paid = 0
         with self.db.tx() as tx:
-            for node_id, project_id, role, task_id, _run, rows in read:
+            for node_id, project_id, role, task_id, rows in read:
+                if tx.conn.execute("SELECT 1 FROM node_audit WHERE action = 'tool.logged' AND node_id = ? AND ref = ?", (node_id, task_id)).fetchone() is not None:
+                    continue
                 self._tool_rows(tx, node_id, project_id, role, task_id, rows)
-        return len(read)
+                self.store.audit(tx, actor="node", action="tool.logged", project_id=project_id, node_id=node_id, role=role, decision="n/a", ref=task_id)
+                paid += 1
+        return paid
 
     @staticmethod
     def _stamp(run_dir: Any, name: str = HANDOFF_FILE) -> tuple[int, int, int] | None:
@@ -506,7 +570,7 @@ class Conductor:
             return []
         folder = self._folder()
         if mine is not None and self._ran_alone(tx, node, task_id):
-            own = self._resolved(folder, mine)
+            own = self._resolved_for(folder, mine)
             if not own:                                                         # a link that leads out of the folder: the scope cannot be said
                 self._unchecked(tx, node, task_id, "one of this step's paths leads out of your folder, so what it changed could not be checked")
                 return []
@@ -515,7 +579,7 @@ class Conductor:
         for row in tx.conn.execute("SELECT plan_ref, grants_json, writes_json, project_id FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (node["project_id"],)).fetchall():
             lease = self._lease_of(tx.conn, row)
             if lease is not None:
-                owned.append(self._resolved(folder, lease))
+                owned.append(self._resolved_for(folder, lease))
         if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing can be said to be outside
             if mine is not None:
                 self._unchecked(tx, node, task_id, "another step may change the whole folder, so one step's files cannot be told from another's")
@@ -567,6 +631,8 @@ class Conductor:
         """A node ended: its final state, its lease released, the time stamped, one audit row. The run folder stays where it is (D276: nothing the owner could want is deleted)."""
         now = tx.now()
         self._prepared.pop(node["task_id"] or "", None)
+        if node["task_id"]:
+            self._sweep.append(node["task_id"])
         tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?", (state, why[:200], now, now, node["id"]))
         self._audit_tools(tx, node)                                                 # the tool calls of this attempt, as names and kinds (MAN-14); before the end row, so the story reads in order
         self.store.audit(tx, actor="conductor", action=f"node.{state}", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=node["task_id"] or "")
@@ -679,7 +745,12 @@ class Conductor:
         began = int(self._clock.now())
         moment = int(now) if now is not None else began
         gap = 0 if self._last_tick is None else moment - self._last_tick
-        if self._owed_tools:
+        if self._sweep or self._sweep_recent:
+            try:
+                await run_blocking(self._sweep_tool_inputs)                              # outside any transaction (F-1)
+            except Exception:                                                        # noqa: BLE001
+                log.exception("could not look at the tool inputs of nodes that ended")
+        if self._maybe_owed:
             try:
                 await run_blocking(self._pay_tools)                                     # outside any transaction of the tick's own (PB-16)
             except Exception:                                                           # noqa: BLE001
@@ -746,7 +817,7 @@ class Conductor:
                     refuse.append((project["id"], reason))
                     continue
                 if slept:                                                            # the time the computer slept is not time the project worked (PB-12, D311's own gap): written down, left out of the wall time
-                    self.store.audit(tx, actor="system", action="project.slept", project_id=project["id"], decision="n/a", reason=f"the computer was asleep or closed for about {max(1, gap // 60)} minutes", ref=str(gap))
+                    self.store.audit(tx, actor="system", action="project.slept", project_id=project["id"], decision="n/a", reason=f"the computer was asleep or closed for about {max(1, gap // 60)} minutes", ref=str(gap), target=str(now))      # `target` is when the gap ended (the tick's own moment)
                 if self._project_limit(tx, project["id"], now, project["created_at"], caps_of(project)):
                     continue
                 self._scrubbed_nodes(tx, project["id"], scrub, scrubs or {})
@@ -771,7 +842,7 @@ class Conductor:
                         tx.conn.execute("UPDATE agent_nodes SET state = 'expired' WHERE id = ?", (node["id"],))
                         self.store.audit(tx, actor="conductor", action="node.heartbeat_lost", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a",
                                          reason=f"silent for {silent} s (lease {lease_s} s)")
-                        self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="lease lost")
+                        self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="it went quiet")
                         expire.append(node["task_id"])
         return {"expire": expire, "scrub": scrub, "refuse": refuse, "extended": extended, "lease": lease_default}
 
@@ -799,19 +870,31 @@ class Conductor:
 
     @staticmethod
     def _paused_seconds(tx: Tx, project_id: str, now: int, since: int) -> int:
-        """How long the project was paused after `since`, from its audit rows (`project.paused`, `project.resumed`); a pause that is still on counts until `now`. A gap the tick found (the computer slept: `project.slept`)
-        counts too. Not counted: a closed app (the tick's gap is kept in memory, so a restart does not know how long it was closed: D345)."""
-        total, began = 0, None
+        """How long the project did not work after `since`: the UNION of its pauses (audit rows `project.paused` and `project.resumed`; one still on counts until `now`) and of the gaps found while the
+        computer slept or Sutra was closed (`project.slept`: its `target` is when the gap ended, else the row's time, and its `ref` the seconds). Overlapping intervals count once: a project paused overnight with the
+        laptop closed is away once, not twice (N-1)."""
+        spans: list[tuple[int, int]] = []
+        began = None
         for row in tx.conn.execute("SELECT at, action FROM node_audit WHERE project_id = ? AND action IN ('project.paused','project.resumed') ORDER BY seq", (project_id,)):
             if row["action"] == "project.paused" and began is None:
-                began = max(int(row["at"]), since)
+                began = int(row["at"])
             elif row["action"] == "project.resumed" and began is not None:
-                total += max(0, int(row["at"]) - began)
+                spans.append((began, int(row["at"])))
                 began = None
-        total += (max(0, now - began) if began is not None else 0)
-        for row in tx.conn.execute("SELECT at, ref FROM node_audit WHERE project_id = ? AND action = 'project.slept'", (project_id,)):         # a sleeping computer is not working time (PB-12)
-            if int(row["at"]) >= since and str(row["ref"]).isdigit():
-                total += int(row["ref"])
+        if began is not None:
+            spans.append((began, now))
+        for row in tx.conn.execute("SELECT at, ref, target FROM node_audit WHERE project_id = ? AND action = 'project.slept'", (project_id,)):         # a sleeping computer or a closed app is not working time (PB-12, N-2)
+            if str(row["ref"]).isdigit():
+                end = int(row["target"]) if str(row["target"]).isdigit() else int(row["at"])
+                spans.append((end - int(row["ref"]), end))
+        total, reach = 0, since
+        for start, end in sorted((max(a, since), min(b, now)) for a, b in spans):
+            if end <= start:
+                continue
+            start = max(start, reach)
+            if end > start:
+                total += end - start
+                reach = end
         return total
 
     def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str], counts: dict[str, int]) -> None:
@@ -1069,6 +1152,16 @@ class Conductor:
         payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=text[:2000], src_ref=f"project:{project_id}#stopped", at=tx.now())
         self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
 
+    def _closed_gap(self, tx: Tx, project_id: str) -> None:
+        """N-2: Sutra was closed (or the computer off) since the project last showed any sign of life: one `project.slept` row with that gap, so the wall time leaves it out (the same rule as a sleep, D311).
+        The gap is from the newest audit row or task event of the project to now; under half a lease it is not a gap. Dollars and the per-step caps still bound the project."""
+        lease = int(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (project_id,)).fetchone()["caps_json"] or "{}").get("lease_s") or NODE_DEFAULT_CAPS["lease_s"] or 90)
+        last = tx.conn.execute("SELECT MAX(at) FROM node_audit WHERE project_id = ?", (project_id,)).fetchone()[0] or 0
+        beat = tx.conn.execute("SELECT MAX(COALESCE(t.last_event_at, t.started_at, 0)) FROM tasks t JOIN agent_nodes n ON n.task_id = t.id WHERE n.project_id = ?", (project_id,)).fetchone()[0] or 0
+        gap = tx.now() - max(int(last), int(beat))
+        if gap > lease // 2 and max(int(last), int(beat)) > 0:
+            self.store.audit(tx, actor="system", action="project.slept", project_id=project_id, decision="n/a", reason=f"Sutra was closed or the computer was off for about {max(1, gap // 60)} minutes", ref=str(gap), target=str(tx.now()))
+
     async def reconcile_projects(self) -> dict[str, int]:
         """Run once at start, after `reconcile` has settled the tasks and before anything starts (D277, D296). A project with an open gate was left open by a closed app: every gate is refused
         ("Sutra was closed before you answered"). The nodes follow their tasks (a task `reconcile` crashed gives a node that is retried); a node that was reserved but never got its task
@@ -1078,6 +1171,7 @@ class Conductor:
             fixed = 0
             with self.db.tx() as tx:
                 for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running','reviewing') ORDER BY created_at").fetchall():
+                    self._closed_gap(tx, project["id"])
                     gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND request_json NOT LIKE '%\"late\":1%'", (project["id"],)).fetchone() is not None
                     if gate_open:
                         refused.append(project["id"])

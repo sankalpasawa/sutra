@@ -302,3 +302,25 @@ def test_prune_without_a_database_is_not_a_crash(tmp_path, capsys):
     assert code == 0 and "0 run(s)" in capsys.readouterr().out
     cli.build_parser()
     assert "prune" in cli.COMMANDS
+
+
+# ============================================================ the tool log of a project step (N-15) =========================
+
+def test_the_tool_log_of_an_old_finished_run_goes_with_the_run_and_a_young_or_open_one_stays(folder, capsys):
+    from sutra_app.engine.host.toollog import log_path
+    old = folder.run("web", days=120)
+    young = folder.run("web", days=5)
+    open_run = folder.run("web", days=200, status="running", ended=False)
+    logs = {}
+    for name, run in (("old", old), ("young", young), ("open", open_run)):
+        path = log_path(folder.root, run.name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"name":"Read","kind":"read","target":""}\n')
+        logs[name] = path
+    stray = log_path(folder.root, "j2-2026-9999")                                                              # a log of a run the database does not list: never touched
+    stray.write_text("x")
+    code, out = prune(folder, "--json", capsys=capsys)
+    assert code == 0 and [c["path"] for c in json.loads(out)["candidates"] if c["what"] == "tool log"] == [str(logs["old"])] and logs["old"].exists()      # a dry run lists it and removes nothing
+    code, out = prune(folder, "--yes", capsys=capsys)
+    assert code == 0
+    assert not logs["old"].exists() and logs["young"].exists() and logs["open"].exists() and stray.exists()

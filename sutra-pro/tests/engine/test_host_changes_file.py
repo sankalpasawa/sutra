@@ -34,3 +34,13 @@ def test_a_node_gets_every_changed_path_up_to_the_cap_and_an_ordinary_run_the_an
     assert set(plain) == {"files", "more"} and len(plain["files"]) == 100 and plain["more"] == 150                            # flag off: exactly as before
     full = watch.finish(True, full=True)
     assert len(full["all"]) == 250 and full["all"][0] == "site/f0.txt"
+
+
+def test_a_whole_list_longer_than_the_cap_is_not_given_so_it_never_reads_as_complete(monkeypatch):                # N-11
+    after = {f"site/f{i}.txt": ("??", "x") for i in range(folder_watch.MAX_ENTRIES + 1)}
+    monkeypatch.setattr(folder_watch, "snapshot", lambda exe, folder, timeout: after)
+    got = folder_watch.FolderWatch("/work", "git", {}, True).finish(True, full=True)
+    assert "all" not in got and len(got["files"]) == 100 and got["more"] == folder_watch.MAX_ENTRIES + 1 - 100          # the hand-off still names 100 and counts the rest: the server says "partial"
+    exactly = {f"site/f{i}.txt": ("??", "x") for i in range(folder_watch.MAX_ENTRIES)}
+    monkeypatch.setattr(folder_watch, "snapshot", lambda exe, folder, timeout: exactly)
+    assert len(folder_watch.FolderWatch("/work", "git", {}, True).finish(True, full=True)["all"]) == folder_watch.MAX_ENTRIES

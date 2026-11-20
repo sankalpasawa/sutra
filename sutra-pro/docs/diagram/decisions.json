@@ -1758,5 +1758,15 @@
   "id": "D364",
   "label": "merge order; decision blocks; one release",
   "anchor": null
+ },
+ {
+  "id": "D348",
+  "label": "wall time: union of pauses and gaps; closed app = sleep",
+  "anchor": null
+ },
+ {
+  "id": "D349",
+  "label": "tool records: prune, sweep, durable debt",
+  "anchor": null
  }
 ]

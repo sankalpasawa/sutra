@@ -96,8 +96,12 @@ def test_scopes_that_differ_only_in_how_an_accent_is_written_are_the_same_place(
     nfc, nfd = "café/", "café/menu"
     assert scopes_overlap(normalize_scope([nfc]), normalize_scope([nfd])) and normalize_scope([nfc, "café/"]) == (nfc,)            # one place, once
     for bad in ("!notes", "a(b)", "site/(draft)", "x)"):
-        with pytest.raises(GrantError):
+        with pytest.raises(GrantError) as refused:
             normalize_scope([bad])
+        assert "bracket or an exclamation mark" in str(refused.value) and "parent folder" in str(refused.value) and "wild-card" not in str(refused.value)
+    with pytest.raises(GrantError) as star:
+        normalize_scope(["site/*"])
+    assert "no wild-card" in str(star.value)
 
 
 def test_a_link_inside_the_folder_leads_to_the_place_it_points_at_and_one_that_leaves_the_folder_is_the_whole_folder(tmp_path):
@@ -118,3 +122,46 @@ def test_a_writer_of_a_link_waits_for_the_writer_of_what_the_link_points_at(rig)
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("site/",), "a2": ("docs/",)})
     rig.start()
     assert len(rig.t.launcher.started) == 1                                                                    # they would have run together by their names; the link makes them one place
+
+
+def test_a_link_to_another_drive_or_to_the_folder_itself_makes_the_scope_the_whole_folder(tmp_path, monkeypatch):          # N-6
+    import os
+
+    from sutra_app.orchestrator.conductor import Conductor
+    folder = tmp_path / "work"
+    (folder / "docs").mkdir(parents=True)
+    (folder / "self").symlink_to(folder)
+    assert Conductor._resolved(str(folder), ("self/",)) == ()                                                  # a link at the folder itself
+    real = os.path.relpath
+    monkeypatch.setattr(os.path, "relpath", lambda *a, **k: (_ for _ in ()).throw(ValueError("path is on mount 'C:', start on mount 'D:'")))     # what Windows says for another drive
+    assert Conductor._resolved(str(folder), ("docs/",)) == ()
+    monkeypatch.setattr(os.path, "relpath", real)
+    assert Conductor._resolved(str(folder), ("docs/",)) == ("docs/",)
+
+
+def test_the_links_of_the_steps_scopes_are_followed_before_the_start_transaction_not_inside_it(rig):           # N-6, PB-16
+    from sutra_app.orchestrator.conductor import Conductor
+    rig.t.service.before_prepare = rig.projects.conductor.warm_scopes
+    depths = []
+    real = Conductor._resolved
+
+    def spying(folder, scope):
+        depths.append(getattr(rig.t.db._local, "depth", 0))
+        return real(folder, scope)
+    Conductor._resolved = staticmethod(spying)
+    try:
+        reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("site/",), "a2": ("docs/",)})
+        rig.start()
+    finally:
+        Conductor._resolved = staticmethod(real)
+    assert depths and set(depths) == {0}                                                                        # every look at a link was outside any transaction
+    assert len(rig.t.launcher.started) == 2                                                                      # and the gate still did its work from the answers
+
+
+def test_a_path_from_git_written_with_the_other_accent_form_is_covered_by_the_scope(rig):                       # N-10
+    from sutra_app.orchestrator.conductor import _covers_path
+    from sutra_app.orchestrator.grants import normalize_scope
+    scope = normalize_scope(["caf\u00e9/"])                                                                    # the owner typed the accent as one letter ...
+    assert _covers_path(scope, "cafe\u0301/menu.txt") and _covers_path(scope, "CAFE\u0301/Menu.txt")         # ... git reports it as a letter and a mark (macOS)
+    assert not _covers_path(scope, "cafe/menu.txt") and not _covers_path(scope, "caf\u00e9s/menu.txt")
+    assert _covers_path(("cafe\u0301/",), "caf\u00e9/menu.txt")                                              # and the other way round

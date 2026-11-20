@@ -678,7 +678,7 @@ class ProjectService:
                     if asked.duplicate:
                         continue
                     opened += 1
-                    self.store.audit(tx, actor="gatekeeper", action="system.asked", project_id=project_id, tier=asked.tier, decision="ask", reason=f"{item}: {label}"[:200], ref=asked.id)
+                    self.store.audit(tx, actor="gatekeeper", action="system.asked", project_id=project_id, tier=asked.tier, decision="ask", reason=(label or "a permission of your computer")[:200], ref=asked.id)               # the folder's name, never the machine item id (N-8)
                     for node_id in dict.fromkeys(ids):
                         tx.conn.execute("UPDATE agent_nodes SET state = 'awaiting_system' WHERE id = ? AND state IN ('planned','queued')", (node_id,))
                         tx.emit("node.updated", {"project_id": project_id, "node_id": node_id, "state": "awaiting_system"})

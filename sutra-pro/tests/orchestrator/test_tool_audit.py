@@ -174,14 +174,30 @@ def test_a_node_that_fails_still_leaves_what_it_did_and_an_attempt_leaves_only_i
     assert [r["target"] for r in mine] == ["Bash", "Edit"]
 
 
-def test_a_node_ended_before_the_file_could_be_read_ahead_is_read_at_its_end(rig):
+def test_a_node_ended_before_the_file_could_be_read_ahead_is_read_at_its_end_once_even_after_a_restart(rig):          # N-7
     reservation, tasks = started(rig)
     write_tools(rig, tasks["a1"], [("Grep", "search", "")])
     rig.projects.conductor.prepare_tools = lambda task_id: None                              # nothing was read ahead (a restart, or a task that ended at once)
     rig.finish(tasks["a1"], files={"out.md": "done"})
-    assert rig.audit("tool.used") == [] and len(rig.projects.conductor._owed_tools) == 1     # no file is read inside the transaction (PB-16)
+    assert rig.audit("tool.used") == [] and [r["ref"] for r in rig.audit("tool.pending")] == [tasks["a1"]]     # no file read in the transaction: a row says one is owed (kept with the transaction)
+    rig.projects.conductor._maybe_owed = False
+    rig.projects.conductor._maybe_owed = True                                                # a restart: the flag starts true
     rig.t.run(rig.projects.tick(now=1793786400 + 5))                                         # the next tick reads it outside any transaction and writes the rows
-    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and rig.projects.conductor._owed_tools == []
+    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and len(rig.audit("tool.logged")) == 1
+    rig.projects.conductor._maybe_owed = True
+    rig.t.run(rig.projects.tick(now=1793786400 + 9))                                         # asked again: paid already, nothing is written twice
+    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and len(rig.audit("tool.logged")) == 1
+
+
+def test_a_debt_written_in_a_transaction_that_rolled_back_is_not_owed(rig):
+    reservation, tasks = started(rig)
+    conductor = rig.projects.conductor
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    with pytest.raises(RuntimeError):
+        with rig.t.db.tx() as tx:
+            conductor._audit_tools(tx, node)
+            raise RuntimeError("the transaction fails")
+    assert rig.audit("tool.pending") == [] and conductor._pay_tools() == 0
 
 
 def test_many_different_tools_are_capped_and_the_rest_are_counted(rig):
@@ -200,3 +216,39 @@ def test_a_node_that_fails_for_good_leaves_what_it_did_once(rig):
     node_id = rig.sql("SELECT id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()["id"]
     assert rig.sql("SELECT state FROM agent_nodes WHERE id = ?", node_id).fetchone()["state"] == "failed"
     assert [(r["target"], r["reason"]) for r in rig.audit("tool.used") if r["node_id"] == node_id] == [("Bash", "run, 2 times")]
+
+
+SECRET = "curl -H 'token: ghp_" + "a" * 36 + "' https://x.example/private"
+
+
+def calls_with_input():
+    return json.dumps({"id": 1, "fn": "builder", "tools": {"calls": [{"n": 1, "name": "Bash", "input": SECRET, "ok": True}]}}) + "\n"
+
+
+def test_a_step_that_was_stopped_by_force_has_its_tool_inputs_emptied_by_the_server_afterwards(rig):          # F-1, R11
+    reservation, tasks = started(rig)
+    ordinary = rig.t.new("ops", "A plain task")                                                              # not a step of a project: its record is never touched
+    rig.t.run_dir(tasks["a1"]).joinpath("calls.jsonl").write_text(calls_with_input())                         # the host never got to empty it
+    rig.finish(tasks["a1"], status="stopped", outcome="stopped by you", handoff=False)
+    path = rig.t.run_dir(tasks["a1"]) / "calls.jsonl"
+    assert "ghp_" in path.read_text()                                                                         # the transaction read no file and wrote none
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))
+    row = json.loads(path.read_text())
+    assert row["tools"]["calls"][0] == {"n": 1, "name": "Bash", "input": "", "ok": True} and "ghp_" not in path.read_text()
+    assert rig.t.row(ordinary.id).run_id is None                                                              # (it never even started: there is no record of it to touch)
+
+
+def test_after_a_restart_the_nodes_that_ended_recently_are_looked_at_once(rig):
+    reservation, tasks = started(rig)
+    rig.finish(tasks["a1"], status="stopped", outcome="stopped by you", handoff=False)
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))
+    path = rig.t.run_dir(tasks["a1"]) / "calls.jsonl"
+    path.write_text(calls_with_input())                                                                       # the app was killed before the host emptied it
+    conductor = rig.projects.conductor
+    conductor._sweep_recent = True                                                                            # what a new process starts with
+    rig.t.run(rig.projects.tick(now=1793786400 + 9))
+    assert "ghp_" not in path.read_text() and conductor._sweep_recent is False
+    before = path.read_bytes()
+    conductor._sweep = [tasks["a1"]]
+    rig.t.run(rig.projects.tick(now=1793786400 + 14))
+    assert path.read_bytes() == before                                                                        # nothing left to empty: the file is not rewritten

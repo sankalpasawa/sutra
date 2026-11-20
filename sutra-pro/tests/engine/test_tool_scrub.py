@@ -53,3 +53,23 @@ def test_only_the_run_of_a_project_step_is_cleaned(tmp_path):
         if expect is not None:
             assert (tmp_path / "calls.jsonl").read_bytes() == expect                               # an ordinary run: byte for byte as J2 wrote it
     assert b"ghp_" not in (tmp_path / "calls.jsonl").read_bytes()
+
+
+def test_a_file_that_cannot_be_rewritten_is_named_and_leaves_no_temp_file_behind(tmp_path, monkeypatch):          # N-12
+    from sutra_app import oslayer
+    make_run(tmp_path)
+    monkeypatch.setattr(oslayer, "replace", lambda *a, **k: (_ for _ in ()).throw(PermissionError("the file is open in another program")))        # what Windows says
+    failed = []
+    assert blank_tool_inputs(tmp_path, failed) == 0 and failed == ["calls.jsonl", "snapshot.json"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["calls.jsonl", "snapshot.json"]                    # no .tmp left in the run folder
+    assert "ghp_" in (tmp_path / "calls.jsonl").read_text()                                                   # and the file is as it was: the failure is said, not hidden
+
+
+def test_a_failed_blanking_leaves_a_trace_line_and_the_run_still_ends(tmp_path, monkeypatch):
+    from sutra_app import oslayer
+    make_run(tmp_path)
+    monkeypatch.setattr(oslayer, "replace", lambda *a, **k: (_ for _ in ()).throw(PermissionError("open")))
+    traced = []
+    host = SimpleNamespace(task=SimpleNamespace(node=object()), paths=SimpleNamespace(run_dir=tmp_path), trace=lambda kind, data=None: traced.append((kind, data)))
+    Host._blank_tool_inputs(host)
+    assert traced and traced[0][0] == "publish.error" and "calls.jsonl" in traced[0][1]["error"]
