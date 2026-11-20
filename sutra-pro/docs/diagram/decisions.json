@@ -1268,5 +1268,10 @@
   "id": "D255",
   "label": "Run cost = reported API price; unpriced calls estimated; $/credit measured",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D256",
+  "label": "P26 dollar mode: credits follow dollars, only the dollar limit asks",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

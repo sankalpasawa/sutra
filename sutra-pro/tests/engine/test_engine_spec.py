@@ -171,11 +171,11 @@ def test_task_spec_settings_need_text_values():
             task(settings=bad)
 
 
-def test_the_ten_task_keys_are_the_ones_the_orchestrator_allows():
+def test_the_eleven_task_keys_are_the_ones_the_orchestrator_allows():
     assert TASK_SETTING_KEYS == ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME",
-                                 "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS")
+                                 "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS", "J2_USD_BUDGET")
     assert all(re.fullmatch(SETTING_KEY_RE, key) for key in TASK_SETTING_KEYS)
-    assert all(ENV_NAMES[name] in TASK_SETTING_KEYS for name in ("output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"))
+    assert all(ENV_NAMES[name] in TASK_SETTING_KEYS for name in ("output", "budget", "budget_cap", "usd_budget", "fixes", "memory", "slim", "rates", "decide_for_me"))
     assert not {"J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS"} & set(ENV_NAMES.values()), "the two run template keys are task-only: not settings (D182)"
     assert not set(TASK_SETTING_KEYS) & {ENV_NAMES[name] for name in LOCKED_FIELDS}
 
@@ -202,6 +202,8 @@ J2_DEFAULTS = {
     "fixes": 0,                       # :2837 == "1"
     "budget": 100,                    # :66
     "budget_cap": None,               # :67 default 2 x budget
+    "usd_budget": 20.0,               # D255, D256: not J2's; Sutra always sets it, so P26's dollar mode is on in the app
+    "usd_cap": None,                  # D256: no cap unless set
     "max_cycles": 6,                  # :71
     "limit_add": 30,                  # :72
     "bargain_minutes": 15.0,          # :69
@@ -244,7 +246,7 @@ J2_DEFAULTS = {
 def test_engine_settings_default_to_j2s_values():
     assert EngineSettings().model_dump() == J2_DEFAULTS
     assert list(EngineSettings.model_fields) == list(J2_DEFAULTS)
-    assert len(J2_DEFAULTS) == 40
+    assert len(J2_DEFAULTS) == 42
 
 
 def test_the_flags_that_are_on_in_j2_are_on_and_the_others_off():
@@ -277,6 +279,8 @@ def test_no_setting_is_a_secret():
     ("fixes", [0, 1], [2, -1, "yes"]),
     ("budget", [1, 100, 100000], [0, -5, 100001, "many", 1.5]),
     ("budget_cap", [None, 1, 100000], [0, 100001, "x"]),
+    ("usd_budget", [1, 12.5, 20, 10_000], [0, 0.99, 10_001, "x", None, float("nan"), float("inf")]),
+    ("usd_cap", [None, 1, 99.99, 10_000], [0, 10_001, "x", float("nan")]),
     ("max_cycles", [1, 6, 50], [0, -1]),
     ("limit_add", [0, 30], [-1]),
     ("bargain_minutes", [0, 15, 0.5], [-1, float("nan"), float("inf")]),
@@ -316,14 +320,14 @@ def test_the_twelve_locked_fields():
 
 def test_editable_is_everything_else_in_field_order():
     assert EDITABLE_FIELDS == tuple(f for f in EngineSettings.model_fields if f not in LOCKED_FIELDS)
-    assert len(EDITABLE_FIELDS) == 28 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
+    assert len(EDITABLE_FIELDS) == 30 and not set(EDITABLE_FIELDS) & set(LOCKED_FIELDS)
     assert SETTINGS_SCHEMA == "engine-settings/1"
 
 
 # ---- to_env ------------------------------------------------------------------------------------------------------------
 
 J2_VARIABLES = {     # engine.md 4.4: the J2 variables that become fields
-    "output": "J2_OUTPUT", "fixes": "J2_FIXES", "budget": "J2_BUDGET", "budget_cap": "J2_BUDGET_CAP", "max_cycles": "J2_MAX_CYCLES",
+    "output": "J2_OUTPUT", "fixes": "J2_FIXES", "budget": "J2_BUDGET", "budget_cap": "J2_BUDGET_CAP", "usd_budget": "J2_USD_BUDGET", "usd_cap": "J2_USD_CAP", "max_cycles": "J2_MAX_CYCLES",
     "limit_add": "J2_LIMIT_ADD", "bargain_minutes": "J2_BARGAIN_MINUTES", "bargain_calls": "J2_BARGAIN_CALLS",
     "max_turns": "J2_MAX_TURNS", "chat_full_chars": "J2_CHAT_FULL_CHARS", "delay": "J2_DELAY", "rates": "J2_RATES",
     "slim": "J2_SLIM", "memory": "J2_MEMORY", "realization": "J2_REALIZATION", "change": "J2_CHANGE", "board": "J2_BOARD",
@@ -341,7 +345,7 @@ def test_every_field_has_its_j2_variable():
     assert ENV_NAMES == J2_VARIABLES
 
 
-NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles=3, limit_add=5, bargain_minutes=2.5, bargain_calls=2,
+NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, usd_budget=12.5, usd_cap=50.0, max_cycles=3, limit_add=5, bargain_minutes=2.5, bargain_calls=2,
                    max_turns=9, chat_full_chars=1000, delay=0.5, rates=False, slim=False, memory=False, realization=False, change=True,
                    board=True, artifact_schema=True, template_library=True, send_mode="mock", send_cap=0, milestone_emails=True,
                    test_email="me@example.com", test_slack_target="#tests", tap_min=48, chrome="/opt/chrome", force_audit_fail=2,
@@ -352,9 +356,9 @@ NON_DEFAULT = dict(output="prd", fixes=1, budget=250, budget_cap=400, max_cycles
 
 def test_to_env_of_the_defaults_leaves_out_the_empty_values():
     env = EngineSettings().to_env()
-    assert set(J2_VARIABLES.values()) - set(env) == {"J2_BUDGET_CAP", "J2_TEST_EMAIL", "J2_TEST_SLACK_TARGET", "J2_CHROME",
+    assert set(J2_VARIABLES.values()) - set(env) == {"J2_BUDGET_CAP", "J2_USD_CAP", "J2_TEST_EMAIL", "J2_TEST_SLACK_TARGET", "J2_CHROME",
                                                      "J2_FORCE_AUDIT_NOTE", "J2_FORCE_QUESTION", "J2_AGENT_TOOLS", "J2_SANDBOX"}
-    assert env == {"J2_OUTPUT": "auto", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
+    assert env == {"J2_OUTPUT": "auto", "J2_FIXES": "0", "J2_BUDGET": "100", "J2_USD_BUDGET": "20.0", "J2_MAX_CYCLES": "6", "J2_LIMIT_ADD": "30",
                    "J2_BARGAIN_MINUTES": "15.0", "J2_BARGAIN_CALLS": "8", "J2_MAX_TURNS": "30", "J2_CHAT_FULL_CHARS": "60000",
                    "J2_DELAY": "0.0", "J2_RATES": "1", "J2_SLIM": "1", "J2_MEMORY": "1", "J2_REALIZATION": "1", "J2_CHANGE": "0",
                    "J2_BOARD": "0", "J2_ARTIFACT_SCHEMA": "0", "J2_TEMPLATE_LIBRARY": "0", "J2_SEND_MODE": "dry-run",
@@ -366,7 +370,7 @@ def test_to_env_of_the_defaults_leaves_out_the_empty_values():
 def test_to_env_for_every_field():
     assert set(NON_DEFAULT) == set(EngineSettings.model_fields)
     env = EngineSettings(**NON_DEFAULT).to_env()
-    assert env == {"J2_OUTPUT": "prd", "J2_FIXES": "1", "J2_BUDGET": "250", "J2_BUDGET_CAP": "400", "J2_MAX_CYCLES": "3",
+    assert env == {"J2_OUTPUT": "prd", "J2_FIXES": "1", "J2_BUDGET": "250", "J2_BUDGET_CAP": "400", "J2_USD_BUDGET": "12.5", "J2_USD_CAP": "50.0", "J2_MAX_CYCLES": "3",
                    "J2_LIMIT_ADD": "5", "J2_BARGAIN_MINUTES": "2.5", "J2_BARGAIN_CALLS": "2", "J2_MAX_TURNS": "9",
                    "J2_CHAT_FULL_CHARS": "1000", "J2_DELAY": "0.5", "J2_RATES": "0", "J2_SLIM": "0", "J2_MEMORY": "0",
                    "J2_REALIZATION": "0", "J2_CHANGE": "1", "J2_BOARD": "1", "J2_ARTIFACT_SCHEMA": "1", "J2_TEMPLATE_LIBRARY": "1",
