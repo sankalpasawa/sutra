@@ -248,7 +248,7 @@ class TurnRunner:
                 raise AlreadyDecided(None)
             if budget is not None:      # D252: a sibling key of meta_json, as `via` and `blocks` are; read back by _budget_of
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.budget', ?) WHERE id = ?", (int(budget), posted.id))
-            if decide_for_me:           # MAN-8: the owner's switch for this request; read back by _decide_for_me_of
+            if decide_for_me and self.projects is not None:           # MAN-8: the owner's switch for this request; read back by _decide_for_me_of. Not stored with the flag off (G13)
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.decide_for_me', 1) WHERE id = ?", (posted.id,))
             return posted.id
 

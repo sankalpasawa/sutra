@@ -21,6 +21,7 @@ import asyncio
 import logging
 import sys
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
 
 import sutra_app
@@ -202,7 +203,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
 
         projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access,
                                   output_of=default_output_of(settings.data_dir), output_name=default_output_name(settings.data_dir), node_control=node_control, tasks=tasks, chats=chats,
-                                  folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
+                                  owner_decides=_owner_decides(settings.data_dir), folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
         tasks.node_sync = projector.node_sync = projects.sync_task
@@ -236,6 +237,27 @@ def refresh_function_nodes(services: Services) -> int:
             if graph.put_node(tx, GATE.check("node", node, ctx=tx.ctx)):
                 changed += 1
     return changed
+
+
+def _owner_decides(data_dir: Any) -> Callable[[Any], bool]:
+    """The owner's own Decide for me setting (the Simple view's switch, `POST /api/settings`: kept in a team's `page.json` as `next_settings.J2_DECIDE_FOR_ME`; else the engine setting, `engine.json`
+    or `J2_DECIDE_FOR_ME`): true when it is on for ANY team of the plan (D319). Read when the project is reserved; never raises."""
+    def on(depts: Any) -> bool:
+        try:
+            import os
+            from sutra_app.engine.api import ctx as page_ctx
+            from sutra_app.engine.spec import read_settings_file
+            from pathlib import Path
+            engine = read_settings_file(Path(data_dir) / "engine.json") or {}
+            fallback = bool(engine.get("decide_for_me")) or os.environ.get("J2_DECIDE_FOR_ME") == "1"
+            for dept in depts:
+                kept = page_ctx.read_page(data_dir, dept).next_settings.get("J2_DECIDE_FOR_ME")
+                if kept == "1" or (kept is None and fallback):
+                    return True
+            return False
+        except Exception:                                   # noqa: BLE001  (an unreadable setting means the owner answers)
+            return False
+    return on
 
 
 async def start_services(services: AppServices) -> AppServices:

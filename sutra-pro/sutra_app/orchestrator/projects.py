@@ -117,7 +117,7 @@ class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
                  owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None,
                  output_name: Callable[[str], str] | None = None, folder_of: Callable[[], str | None] | None = None, adapter: Any = None,
-                 elevated: Callable[[], bool] | None = None) -> None:
+                 elevated: Callable[[], bool] | None = None, owner_decides: Callable[[Sequence[str]], bool] | None = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -129,6 +129,7 @@ class ProjectService:
         self._folder_of = folder_of or (lambda: None)                              # the owner's working folder, for the system probe (MAN-15)
         self._adapter = adapter                                                     # a fake in tests; None: the adapter of this system
         self._elevated = elevated or oslayer.is_elevated
+        self._owner_decides = owner_decides or (lambda depts: False)                # the owner's own Decide for me setting of these teams (D319, G13)
         self.control = node_control
         self.tasks = tasks
         self.chats = chats                                                        # the org chat's store: where the receipt of a stopped project is written (MAN-7)
@@ -176,6 +177,7 @@ class ProjectService:
         they are answered (MAN-8) or run out (MAN-7). One transaction."""
         if len(steps) < 2:
             return None
+        decide_for_me = bool(decide_for_me) or bool(self._owner_decides([step.dept_id for step in steps]))      # one switch, one meaning: the request's OR the owner's own (D319)
         slice_credits = budget if budget is not None else DEFAULT_SLICE
         plan = Plan(
             steps=tuple(PlanStep(id=step.ref, role="worker", depends_on=tuple(step.depends_on), output=self._output_of(step.dept_id),
