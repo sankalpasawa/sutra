@@ -42,10 +42,10 @@
     "handoff.accepted": "A step handed in its work", "handoff.refused": "A step's work was not accepted",
     "scope.violation": "A step changed files that were not its own", "scope.quarantined": "A step's work was set aside", "scope.unchecked": "Sutra could not check which files this step changed",
     "review.started": "The reviewer started", "review.loop_cap": "The reviewer was not asked again", "verdict.received": "The reviewer gave its opinion", "verdict.refused": "The reviewer's opinion could not be used",
-    "tool.used": "A step used a tool", "trigger.cap_reached": "A step reached a limit", "trigger.lease_lost": "A step stopped answering",
+    "tool.used": "A step used a tool", "tool.pending": "A step's list of tools is being written", "tool.logged": "A step's list of tools was written", "trigger.cap_reached": "A step reached a limit", "trigger.lease_lost": "A step stopped answering",
     "trigger.egress_scrub": "Private words were taken out of a step's messages again and again", "trigger.project_wall": "The project ran too long", "trigger.project_usd": "The project spent more than you set"});
   // Reasons that are not plain words are not shown, or are put into words here. Everything else the server wrote in plain words is shown as it is.
-  const NO_REASON = freeze(["grant.issued", "node.spawned", "node.leased", "node.heartbeat_lost", "node.lease_extended", "plan.accepted", "node.done"]);
+  const NO_REASON = freeze(["tool.pending", "tool.logged", "grant.issued", "node.spawned", "node.leased", "node.heartbeat_lost", "node.lease_extended", "plan.accepted", "node.done"]);
   const OPINION_WORDS = freeze({approve: "approves of the work", changes: "asks for changes", reject: "does not approve of the work"});
   function reasonWords(row) {
     const action = clean(row.action);

@@ -174,14 +174,30 @@ def test_a_node_that_fails_still_leaves_what_it_did_and_an_attempt_leaves_only_i
     assert [r["target"] for r in mine] == ["Bash", "Edit"]
 
 
-def test_a_node_ended_before_the_file_could_be_read_ahead_is_read_at_its_end(rig):
+def test_a_node_ended_before_the_file_could_be_read_ahead_is_read_at_its_end_once_even_after_a_restart(rig):          # N-7
     reservation, tasks = started(rig)
     write_tools(rig, tasks["a1"], [("Grep", "search", "")])
     rig.projects.conductor.prepare_tools = lambda task_id: None                              # nothing was read ahead (a restart, or a task that ended at once)
     rig.finish(tasks["a1"], files={"out.md": "done"})
-    assert rig.audit("tool.used") == [] and len(rig.projects.conductor._owed_tools) == 1     # no file is read inside the transaction (PB-16)
+    assert rig.audit("tool.used") == [] and [r["ref"] for r in rig.audit("tool.pending")] == [tasks["a1"]]     # no file read in the transaction: a row says one is owed (kept with the transaction)
+    rig.projects.conductor._maybe_owed = False
+    rig.projects.conductor._maybe_owed = True                                                # a restart: the flag starts true
     rig.t.run(rig.projects.tick(now=1793786400 + 5))                                         # the next tick reads it outside any transaction and writes the rows
-    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and rig.projects.conductor._owed_tools == []
+    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and len(rig.audit("tool.logged")) == 1
+    rig.projects.conductor._maybe_owed = True
+    rig.t.run(rig.projects.tick(now=1793786400 + 9))                                         # asked again: paid already, nothing is written twice
+    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and len(rig.audit("tool.logged")) == 1
+
+
+def test_a_debt_written_in_a_transaction_that_rolled_back_is_not_owed(rig):
+    reservation, tasks = started(rig)
+    conductor = rig.projects.conductor
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    with pytest.raises(RuntimeError):
+        with rig.t.db.tx() as tx:
+            conductor._audit_tools(tx, node)
+            raise RuntimeError("the transaction fails")
+    assert rig.audit("tool.pending") == [] and conductor._pay_tools() == 0
 
 
 def test_many_different_tools_are_capped_and_the_rest_are_counted(rig):

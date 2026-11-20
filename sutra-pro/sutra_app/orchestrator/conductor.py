@@ -77,7 +77,7 @@ class Conductor:
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
         self._resolved_seen: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}      # (folder, scope) -> (when, scope with its links followed): `warm_scopes`
         self._folder_seen: tuple[Any, float, Any] | None = None                    # (the lookup, when it was read, the folder): see `_folder`
-        self._owed_tools: list[tuple[str, str, str, str, str]] = []               # (node, project, role, task, run) whose tool log was not read ahead: written as audit rows by the next tick, outside any transaction (PB-16)
+        self._maybe_owed = True                                                    # a `tool.pending` row may be waiting for the next tick (true at start: a restart may have left one) (PB-16, N-7)
         self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
@@ -423,8 +423,9 @@ class Conductor:
         rows = ahead[1] if ahead is not None else None
         if rows is None and task_id and self.tasks is not None:
             row = self.tasks.store.row_in(tx.conn, task_id)
-            if row is not None and row.run_id is not None:                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16)
-                self._owed_tools.append((node["id"], node["project_id"], node["role"], task_id, row.run_id))
+            if row is not None and row.run_id is not None:                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16).
+                self.store.audit(tx, actor="node", action="tool.pending", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)      # a row, so it is kept with the transaction (a rollback takes it back) and survives a restart (N-7)
+                self._maybe_owed = True
             return
         self._tool_rows(tx, node["id"], node["project_id"], node["role"], task_id, rows or [])
 
@@ -438,15 +439,24 @@ class Conductor:
                              reason=f"{left_out} more calls of other tools", ref=task_id)
 
     def _pay_tools(self) -> int:
-        """The tool rows of nodes whose log could not be read ahead (PB-16): the files are read here, outside any transaction, and the rows are written in one short one. Called by the tick."""
-        owed, self._owed_tools = self._owed_tools, []
-        if not owed:
+        """The tool rows of nodes whose log could not be read ahead (PB-16, N-7): a `tool.pending` row says one is owed; the files are read here, outside any transaction, and the rows are written
+        in one short one, with a `tool.logged` row that closes the debt, so a repeat or a restart never writes them twice. Called by the tick (and once after a restart)."""
+        pending = self.db.conn().execute(
+            "SELECT a.node_id AS node_id, a.project_id AS project_id, a.role AS role, a.ref AS task_id, t.run_id AS run_id FROM node_audit a JOIN tasks t ON t.id = a.ref "
+            "WHERE a.action = 'tool.pending' AND NOT EXISTS (SELECT 1 FROM node_audit b WHERE b.action = 'tool.logged' AND b.node_id = a.node_id AND b.ref = a.ref)").fetchall()
+        self._maybe_owed = False
+        if not pending:
             return 0
-        read = [(*item, read_log(log_path(self.settings.data_dir, item[4]))) for item in owed]
+        read = [(r["node_id"], r["project_id"], r["role"], r["task_id"], read_log(log_path(self.settings.data_dir, r["run_id"]))) for r in pending if r["run_id"]]
+        paid = 0
         with self.db.tx() as tx:
-            for node_id, project_id, role, task_id, _run, rows in read:
+            for node_id, project_id, role, task_id, rows in read:
+                if tx.conn.execute("SELECT 1 FROM node_audit WHERE action = 'tool.logged' AND node_id = ? AND ref = ?", (node_id, task_id)).fetchone() is not None:
+                    continue
                 self._tool_rows(tx, node_id, project_id, role, task_id, rows)
-        return len(read)
+                self.store.audit(tx, actor="node", action="tool.logged", project_id=project_id, node_id=node_id, role=role, decision="n/a", ref=task_id)
+                paid += 1
+        return paid
 
     @staticmethod
     def _stamp(run_dir: Any, name: str = HANDOFF_FILE) -> tuple[int, int, int] | None:
@@ -707,7 +717,7 @@ class Conductor:
         began = int(self._clock.now())
         moment = int(now) if now is not None else began
         gap = 0 if self._last_tick is None else moment - self._last_tick
-        if self._owed_tools:
+        if self._maybe_owed:
             try:
                 await run_blocking(self._pay_tools)                                     # outside any transaction of the tick's own (PB-16)
             except Exception:                                                           # noqa: BLE001
