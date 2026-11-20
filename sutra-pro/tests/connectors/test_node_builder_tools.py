@@ -114,6 +114,8 @@ def test_a_step_whose_rights_are_not_known_gets_the_narrowest_list(fake, tmp_pat
 @pytest.mark.parametrize("rights", [
     NodeRights((0, 1, 2, 3), "git_reads"),                          # tier 3 is the four git reads of the owner's folder, not a shell
     NodeRights((0, 1, 2, 3, 4), "git_reads"),                       # tier 4 is "Read GitHub, read only": it opens NO web tool (D386)
+    NodeRights((0, 1, 3, 4), "sandboxed_builder"),                  # a level that does not exist: whatever a stored grant says, there is no shell level in the code (D387, m8)
+    NodeRights((0, 1, 2, 3, 4), "shell"),
 ])
 def test_no_grant_opens_the_shell_or_the_web_for_a_builder_call(fake, tmp_path, folders, rights):
     fake.sequence("ok_plain").reply(text="built")
@@ -134,7 +136,7 @@ def test_no_grant_opens_the_shell_or_the_web_for_a_builder_call(fake, tmp_path, 
 
 def test_a_tool_the_rule_does_not_name_is_never_offered(folders):
     odd = ToolGrant(tools=("Read", "Task", "TodoWrite", "mcp__x"), allow=("Read", "Task"), cwd=folders[0], root=folders[1], usd=0.5, log_chars=10)
-    narrowed = node_tools.narrow(odd, NodeRights((0, 1, 2, 3, 4), "sandboxed_builder"))
+    narrowed = node_tools.narrow(odd, NodeRights((0, 1, 2, 3, 4), "git_reads"))
     assert narrowed.tools == ("Read",) and narrowed.allow == ("Read",)
 
 
@@ -145,11 +147,11 @@ def test_the_narrowed_grant_is_a_copy_and_the_engines_own_is_untouched(folders):
     assert (narrowed.cwd, narrowed.root, narrowed.usd, narrowed.log_chars, narrowed.sandbox) == (grant.cwd, grant.root, grant.usd, grant.log_chars, grant.sandbox)
 
 
-def test_the_words_of_the_grant_line_are_true_for_each_case():
+def test_the_words_of_the_grant_line_are_true_for_each_case_and_no_shell_level_exists_in_the_code():
+    from sutra_app.orchestrator import builder_rights
+    assert not hasattr(builder_rights, "SHELL_LEVELS") and not hasattr(builder_rights, "owner_words") and not hasattr(NodeRights(), "shell")
     assert node_tools.words(NARROWEST) == "reads; writes only in its own folder; no commands; no web"
     assert node_tools.words(NodeRights((0, 1, 4), "none")) == "reads; writes only in its own folder; no commands; no web"
-    assert node_tools.owner_words(NARROWEST) == "This step can look at the files it is given and write its own working files in a scratch space of its own. It cannot run commands or use the web."
-    assert node_tools.owner_words(NodeRights((0, 1, 4), "none")) == node_tools.owner_words(NARROWEST)
 
 
 # ---- Codex ---------------------------------------------------------------------------------------------------------------------

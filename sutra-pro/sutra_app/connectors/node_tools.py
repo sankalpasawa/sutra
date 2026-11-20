@@ -11,10 +11,10 @@ from pathlib import Path
 
 from sutra_app.engine.port import ToolGrant
 from sutra_app.orchestrator.builder_rights import (
-    NARROWEST, READ_TOOLS, SHELL_LEVELS, SHELL_TOOLS, WEB_TOOLS, WRITE_TOOLS, NodeRights, allowed_tools, owner_words, words,
+    NARROWEST, READ_TOOLS, WRITE_TOOLS, NodeRights, allowed_tools, words,
 )
 
-__all__ = ["NodeRights", "READ_TOOLS", "WRITE_TOOLS", "SHELL_TOOLS", "WEB_TOOLS", "SHELL_LEVELS", "NARROWEST", "allowed_tools", "narrow", "words", "owner_words"]
+__all__ = ["NodeRights", "READ_TOOLS", "WRITE_TOOLS", "NARROWEST", "allowed_tools", "narrow", "words"]
 
 
 def _confined(cwd: str) -> list[str]:
