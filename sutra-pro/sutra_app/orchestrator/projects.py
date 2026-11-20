@@ -565,7 +565,7 @@ class ProjectService:
         folder = self._folder_of()
         adapter = self._system_adapter()
         needs = await run_blocking(lambda: adapter.probe(Path(folder), write=level == "write")) if folder else []
-        still = any(need.item == item for need in needs)
+        still = bool(needs) if item == "unknown" else any(need.item == item for need in needs)       # the late card has no item of its own: any need the probe finds keeps it open (G17)
 
         def work() -> str:
             with self.db.tx() as tx:

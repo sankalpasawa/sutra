@@ -44,3 +44,22 @@ def test_an_ordinary_crash_is_still_retried_once(rig):
     reservation, tasks = running(rig)
     rig.finish(tasks["a1"], status="crashed", outcome="the model said something odd", handoff=False)
     assert rig.sql("SELECT attempt, state FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[:] == (2, "queued") and rig.audit("system.late_denied") == []
+
+
+def test_check_again_on_a_late_card_really_probes_and_stays_open_while_the_folder_still_refuses(rig, tmp_path):
+    from sutra_app.syspermissions import MacAdapter, Need
+
+    class Blocked(MacAdapter):
+        blocked = True
+
+        def probe(self, folder, *, write):
+            return [Need("files_folders", "write", "Desktop")] if self.blocked else []
+    rig.projects._folder_of = lambda: str(tmp_path)
+    rig.projects._adapter = adapter = Blocked(home=tmp_path)
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    snapshot = rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
+    assert len(snapshot["system_cards"]) == 1 and [r["action"] for r in rig.audit("system.still_needed")] == ["system.still_needed"]
+    adapter.blocked = False
+    snapshot = rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
+    assert snapshot["system_cards"] == [] and [r["action"] for r in rig.audit("system.cleared")] == ["system.cleared"]
