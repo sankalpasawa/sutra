@@ -32,6 +32,7 @@ TASK_TO_NODE = {"blocked": "planned", "queued": "queued", "starting": "leased", 
 HELD_STATES = ("awaiting_approval", "awaiting_system")
 LOST_LEASE = "lost its lease: no sign of life"
 APP_CLOSED = "the app was closed"
+NODE_ERROR_WHY = "following this step failed, so it was ended"
 
 
 class Conductor:
@@ -118,7 +119,50 @@ class Conductor:
     # ---- the state machine and teardown ---------------------------------------------------------------------------------------------
 
     def sync_task(self, tx: Tx, task_id: str) -> None:
-        """After any change of a node's task: the node's state from the task's status, its lease and teardown, then the project's state. Never moves a node back out of a final state."""
+        """After any change of a node's task: the node's state from the task's status, its lease and teardown, then the project's state. Never moves a node back out of a final state.
+        Contained (B1): this runs inside the transaction that records the task's change, so an exception here would undo the task's end and, at startup, stop the app. A failure is undone alone
+        (a savepoint), the node is ended `failed` with an audit row `node.error`, never retried, and the task's own change goes on."""
+        try:
+            with tx.savepoint():
+                self._sync_task(tx, task_id)
+        except Exception:                                                    # noqa: BLE001  (the state machine must never take the task's own transaction with it)
+            log.exception("the state of the node of task %s could not be followed", task_id)
+            self._fail_closed(tx, task_id)
+
+    def _fail_closed(self, tx: Tx, task_id: str) -> None:
+        """The node of `task_id` ended `failed` because following its task raised: the smallest writes that make it final, then the project's state. Fixed words, nothing from the node."""
+        try:
+            with tx.savepoint():
+                node = tx.conn.execute("SELECT * FROM agent_nodes WHERE task_id = ?", (task_id,)).fetchone()
+                if node is None or node["state"] in NODE_FINAL:
+                    return
+                now = tx.now()
+                tx.conn.execute("UPDATE agent_nodes SET state = 'failed', failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?",
+                                (NODE_ERROR_WHY, now, now, node["id"]))
+                self.store.audit(tx, actor="conductor", action="node.error", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=NODE_ERROR_WHY,
+                                 ref=task_id)
+                tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
+        except Exception:                                                    # noqa: BLE001
+            log.exception("could not end the node of task %s", task_id)
+            return
+        for step in (self._cancel_dependants_of, self._sync_project_of):
+            try:
+                with tx.savepoint():
+                    step(tx, task_id)
+            except Exception:                                                # noqa: BLE001  (the next tick looks at the project again)
+                log.exception("could not settle the project after the node of task %s", task_id)
+
+    def _cancel_dependants_of(self, tx: Tx, task_id: str) -> None:
+        node = tx.conn.execute("SELECT * FROM agent_nodes WHERE task_id = ?", (task_id,)).fetchone()
+        if node is not None and self.tasks is not None:
+            self._cancel_dependants(tx, node)
+
+    def _sync_project_of(self, tx: Tx, task_id: str) -> None:
+        node = tx.conn.execute("SELECT project_id FROM agent_nodes WHERE task_id = ?", (task_id,)).fetchone()
+        if node is not None:
+            self._sync_project(tx, node["project_id"])
+
+    def _sync_task(self, tx: Tx, task_id: str) -> None:
         node = tx.conn.execute("SELECT n.*, t.status AS tstatus, t.outcome AS toutcome FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.task_id = ?", (task_id,)).fetchone()
         if node is None:
             return
@@ -237,8 +281,12 @@ class Conductor:
         caps = json.loads(project["caps_json"] or "{}")
         retries = int(caps.get("retries") if caps.get("retries") is not None else NODE_DEFAULT_CAPS["retries"] or 1)
         if retry and project["status"] in ("running",) and node["attempt"] <= retries and self.tasks is not None and node["task_id"]:
-            self._retry(tx, node, why)
-            return
+            try:
+                with tx.savepoint():
+                    self._retry(tx, node, why)
+                return
+            except AppError:                                                 # the team is gone (archived) or the task cannot be repeated: the node ends here, cleanly (B1)
+                why = f"{why[:150]} (it could not be tried again)"
         self._teardown(tx, node, "failed", why)
         if why.startswith(LOST_LEASE) and node["attempt"] >= 2:                 # D303 e: a node that loses its lease twice stops the project and says so
             self.store.audit(tx, actor="conductor", action="trigger.lease_lost", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",

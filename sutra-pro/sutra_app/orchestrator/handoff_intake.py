@@ -52,6 +52,10 @@ def _refuse(why: str) -> HandoffRefused:
 
 
 def _clean(text: str, redact: Callable[[str], str] | None) -> str:
+    try:
+        text.encode("utf-8")                                   # a lone surrogate (\ud800) is valid JSON but cannot be written anywhere: it is refused here, not by the writer later
+    except UnicodeError:
+        raise _refuse("the hand-off has text that is not valid Unicode") from None
     return scrubbed(text, redact)
 
 
@@ -79,7 +83,11 @@ def _verify_file(root: Path, rel: str, sha: str, size: int, budget: list[int]) -
         raise _refuse("a listed file is missing") from None
     if not current.is_file():
         raise _refuse("a listed file is not a file")
-    if os.path.commonpath([os.path.realpath(current), os.path.realpath(root)]) != os.path.realpath(root):
+    try:
+        inside = os.path.commonpath([os.path.realpath(current), os.path.realpath(root)]) == os.path.realpath(root)
+    except ValueError:                                         # another drive on Windows, or a path that cannot be compared
+        inside = False
+    if not inside:
         raise _refuse("a listed file leaves the run folder")
     if info.st_size != size:
         raise _refuse("a listed file has a different size than the hand-off says")
@@ -99,7 +107,17 @@ def _verify_file(root: Path, rel: str, sha: str, size: int, budget: list[int]) -
 
 
 def read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, redact: Callable[[str], str] | None = None) -> Accepted:
-    """Read `<run>/handoff.json` and accept it or raise `HandoffRefused`. `runtime` is the node's (`engine` or `light`)."""
+    """Read `<run>/handoff.json` and accept it or raise `HandoffRefused`. `runtime` is the node's (`engine` or `light`). Total (B1): whatever the file holds, the answer is an `Accepted` or a
+    `HandoffRefused`; a nesting that is too deep, bytes that are not Unicode or a path that cannot be compared are refusals, never an exception that escapes into the projector's transaction."""
+    try:
+        return _read_handoff(run_dir, node_id, runtime, redact)
+    except HandoffRefused:
+        raise
+    except (RecursionError, ValueError, UnicodeError, TypeError, MemoryError, OverflowError):
+        raise _refuse("the hand-off could not be read as a hand-off") from None
+
+
+def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, redact: Callable[[str], str] | None) -> Accepted:
     root = Path(run_dir)
     path = root / HANDOFF_FILE
     try:
@@ -114,7 +132,7 @@ def read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, re
         raise _refuse("the hand-off is larger than the limit")
     try:
         raw = json.loads(path.read_bytes().decode("utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         raise _refuse("the hand-off is not valid JSON") from None
     if not isinstance(raw, dict) or set(raw) != _KEYS:
         raise _refuse("the hand-off does not have exactly the fields of a hand-off")
