@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 331,
+  "decisions": 341,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 331,
+ "max_decision": 341,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -520,7 +520,17 @@
     "D328",
     "D329",
     "D330",
-    "D331"
+    "D331",
+    "D332",
+    "D333",
+    "D334",
+    "D335",
+    "D336",
+    "D337",
+    "D338",
+    "D339",
+    "D340",
+    "D341"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5416,6 +5426,86 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"slots by file lock; 960 -> 72 writes\", key only."
+  },
+  {
+   "id": "D332",
+   "title": "The phase 3 follow-up is built as ruled, with limits written down",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"follow-up as built; credit = one call\", key only."
+  },
+  {
+   "id": "D333",
+   "title": "m6: iCloud Drive and volumes are skipped for the beta, built before a release",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"m6 skipped for beta, built for release\", key only."
+  },
+  {
+   "id": "D334",
+   "title": "The route to start a project and the page are accepted; a way back is added",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"202 accepted; way back before release\", key only."
+  },
+  {
+   "id": "D335",
+   "title": "No grant gate after a needs.json in v1",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no grant gate in v1: nobody can ask\", key only."
+  },
+  {
+   "id": "D336",
+   "title": "What the scope check sees, and what it does not",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"scope check = git only; says so when blind\", key only."
+  },
+  {
+   "id": "D337",
+   "title": "Leases cover the steps of projects only",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"leases among project steps only\", key only."
+  },
+  {
+   "id": "D338",
+   "title": "The reviewer is accepted; independence is the Conductor's fact",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reviewer independence from the Conductor\", key only."
+  },
+  {
+   "id": "D339",
+   "title": "The tool audit and the network: acceptable for a beta if said",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"tool audit and network: say it\", key only."
+  },
+  {
+   "id": "D340",
+   "title": "The flag-off promise holds, with two precisions",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"flag-off holds: lane filter, crash prefix\", key only."
+  },
+  {
+   "id": "D341",
+   "title": "What a flag-on beta is, and what stays true in every release",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"beta conditions; flag 0 in every release\", key only."
   }
  ],
  "packages": [

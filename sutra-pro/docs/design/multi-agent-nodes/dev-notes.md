@@ -418,3 +418,12 @@ Decided in D327. What it covers: the name, kind and a file's base name of each t
 
 ### N64. Not done in phase 4
 m6 of the phase 3 review (a conscious skip, recorded earlier); a page that lists projects; browser smoke; P4 (real call counts and minutes), P5 (the manual check on a real Mac and Windows) and the live checklist of N58 are still open and belong to the beta.
+
+
+## Architect's review of phase 4 (D332 to D341)
+
+### N65. Found in the review, not in the developer's notes
+The grant gate after a `needs.json` (D270, D315 d) was not built and was not listed: no node can ask for more in v1, so it moves to Non-goals (D335). The hand-off `files` list included `tools.jsonl` (G23, D339). The host's "Your computer did not allow it" prefix applies to ordinary runs too (G24, D340). The reviewer's independence label came from the host's guess and not from the Conductor (G25, D338). A node whose folder cannot be read by git, or whose changes are many, is not checked for scope and says nothing (G26, D336). Leases hold among the steps of projects and not against ordinary tasks of other teams (D337). N56 and N63 say the scrub "covers the prompt text": for an engine step's own prompts it only observes (byte-identical, an audit row counts shapes), so the true sentence is in D339.
+
+### N66. Beta conditions and what is not verified
+Conditions are in D341 and in the OPERATIONS note. Not verified, and so not to be called working: a real folder watch on a real project, Claude's `Edit(path/**)` rules with a real program, a real Codex step outside its scope, a real reviewer on two providers, the page in a real browser (phone width, dark and light), Windows `msvcrt` slots, Windows long and short names in the scope comparison, real model latency under the load test, the real first-start dialogs on a Mac and Windows (P5), real call counts and minutes (P4).

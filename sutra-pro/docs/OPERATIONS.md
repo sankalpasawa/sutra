@@ -195,3 +195,31 @@ in the usage ledger is flagged so the console can hide it. `SUTRA_CONNECTOR=stub
 `sutra-pro config show` lists every effective setting and where it came from. Engine settings can be changed in Settings, Engine, or with `sutra-pro config set budget 200`; a change applies to
 the **next** run of that scope (`--dept D` for one team). Locked ones (`send_mode`, `chrome`, the test switches) change only with `config set`. Secrets (the override key, the SMTP login) live in `.env`:
 `sutra-pro config init` writes a commented template with mode 600, and `--generate-override-key` fills in a fresh key. See [ENVIRONMENT.md](ENVIRONMENT.md).
+
+## 12. Multi-agent projects: turning them on, and what to check
+
+This is the beta of "projects": a request that the chat splits into two or more steps becomes one project. Several agents (steps) work on it, some at the same time, and you can stop all of them at once. It is **off** in every release: nothing here exists until you switch it on, and the app is exactly as it was with it off. Design: [design/multi-agent-nodes](design/multi-agent-nodes/architecture.md).
+
+**Turn it on (the beta app only, not the one you rely on).** The app reads its settings from its environment, so set `SUTRA_NODES_V1=1` when you start the beta app (the other three, `SUTRA_NODES_LANES`, `SUTRA_NODES_REVIEWER` and `SUTRA_NODES_SLOTS`, are separate and also start at `0`; see [ENVIRONMENT.md](ENVIRONMENT.md)). `sutra-pro nodes status` shows what is on. To turn it off, stop the projects first (`sutra-pro nodes kill`, then `sutra-pro nodes resume`) or let them finish, then start the app without the variable. A step that is still waiting stays on hold; you can stop it from the task list.
+
+**Before you try it, check these five things.**
+
+1. The working folder is a **git folder** and its work is **committed**. Then you can see exactly what a step changed and put it back. In a folder that is not a git folder, steps change it one at a time and Sutra **cannot check** which files a step changed.
+2. You have set your **dollar limit** (the monthly limit in the app). Credits are counted as one model call each when a step is tried a second time, so the dollar limit is the number that really holds. Each step is also stopped after 60 model calls or 30 minutes, and tried again at most once.
+3. Start with a small request of **two to five steps** and watch the first projects. The page of a project is `/p/<id>`; the question cards in the chat link to it.
+4. Know the two ways to stop: **Stop everything** on the project page, and `sutra-pro nodes kill` (or a file called `KILL` in the `nodes` folder of the data folder) when the page does not answer.
+5. Decide whether to switch on **Decide for me**. With it on, Sutra answers some questions for you (it allows read-only GitHub for the project and a step that changes several places of your folder). It never answers for you about your computer's permissions, about the app's own data, about a plan over 1000 credits, about what a reviewer said, or by keeping work that went outside its place.
+
+**What Sutra does for you.** It asks before a plan estimated over 400 credits starts (five default steps are about 500). It asks before a step reads GitHub, reads the app's own data (your teams, tasks and notes), or changes files in several places. It keeps steps that change the same part of your folder apart. If a step changes files that no step of the project was given, it pauses the project and asks you: keep the work, or set it aside. It puts every grant, answer and stop in a record you can read on the project page.
+
+**What it does not do, and you should know.**
+
+- **Keeping apart** works among the steps of projects. A normal task of another team can still change the same folder at the same time, as two teams can today.
+- **The check for files outside a step's place** uses git. It sees what git sees. It does not see a file that git ignores (for example a `.env`), more than 5000 changes at once, or a folder without git. When it cannot check, the project page says so; it does not stop the project.
+- **A step that wrongly changes a file inside another step's place** is not caught. A Claude step has its editing tools limited to its own place, so the program itself refuses; a Codex step has no such limit.
+- **Setting work aside** does not undo anything. The files stay in your folder. Sutra never moves or deletes them.
+- **The network.** A step may fetch pages or search the web from inside the Claude or Codex program, as an ordinary run does today. Sutra only **checks and counts** secret-like words in the prompts of the working steps (it does not change them, as with any ordinary run), so a secret that sits in your folder can reach the model program; it **removes** them from what steps hand to each other, from the planner's and reviewer's text and from the project's record. It does nothing about what a tool fetches or sends, and the run's `calls.jsonl` keeps what the tools were given. The project's record lists which tools a step used (name, kind, file name) and never what they carried.
+- **A reviewer** (`SUTRA_NODES_REVIEWER`) only gives an opinion: approve, changes or reject. You decide. It uses the other Claude or Codex program when both are signed in, and says "not independent" when it had to use the same one.
+- **If your folder is in iCloud Drive or on an external or network disk,** the check before a step starts does not look there. A refusal by your computer then shows up after the step has started, as a card with "Check again".
+
+**What is not verified yet.** Everything above was tested with stand-ins, not with a real project on a real Mac or Windows computer. Not yet seen working: a real folder check on a real project; Claude and Codex with the limits above; a real reviewer; the project page in a real browser; the first-time permission windows on a Mac and Windows; how many calls and minutes a normal step uses (the 60 and 30 are guesses); two apps sharing the Claude and Codex limit (`SUTRA_NODES_SLOTS`). If something looks wrong, press Stop everything and tell us what you saw.

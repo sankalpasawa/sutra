@@ -7,7 +7,7 @@ Paths are under `sutra-pro/`. Read [architecture.md](architecture.md) and [guard
 
 **Status (2026-11-20, phase 2).** MAN-5 to MAN-7 are built (commits 707beb82, daa39f27, f08204f6, 72a31f0f, head 72a31f0f) and reviewed by the architect against the design. Their rulings are D306 to D312. The section "Before phase 3" lists what the developer must fix in the phase 2 code first (G1 to G11 and the move-only split C0); the packages below carry what the rulings added, marked with the D number.
 
-**Status (2026-11-20, phase 4).** MAN-10 to MAN-14 are built with fakes (D326 to D331, dev-notes N59 to N64) and not yet reviewed; P6 and P7 are done; P4, P5 and P9 are open.
+**Status (2026-11-20, phase 4, reviewed by the architect).** The phase 3 follow-up (G12 to G22, P1 to P3, D324, D325) and MAN-10 to MAN-14 are built with fakes (D326 to D331, dev-notes N52 to N64), head 7b6c62a0, and were reviewed against the design: faithfully built, with the rulings D332 to D341. The section "Before the beta build" lists four small fixes (G23 to G26); "Before publish" is split into what a flag-on beta needs and what a release needs (R1 to R12, P4, P5, P8, P9). The flag stays `0` in every release and every default (D341).
 
 **Status (2026-11-20, phase 3).** The phase 2 fixes (G1 to G11, C0, the Minor items, D313, D314) are built. MAN-8 is built except its chat card (NOT complete: D317), MAN-9 is built, MAN-15 is built with fakes only (the manual check on a real Mac and Windows is still open), head 49c162d0, and all were reviewed by the architect against the design. Their rulings are D315 to D323. The section "Before phase 4" lists what the developer must fix first (G12 to G22); "Before publish" lists what must be done before any beta reaches the owner with the flag on, and before any release (P1 to P9). The packages below carry what the rulings added, marked with the D number.
 
@@ -68,9 +68,18 @@ Phase 4 starts with MAN-10. The suite must be green with the flag off after each
 - [x] **G21 (D315, MAN-8, low).** Until P1 is built the card for a step question says "If you say no, the whole project stops." (`approval_cards` words). Test: the words.
 - [x] **G22 (docs only, developer).** Make `dev-notes.md` N45 to N51 agree with the rulings written under them (the architect has added them); keep `docs/ENVIRONMENT.md` in step with G18.
 
+## Before the beta build (architect, phase 4 review; one commit each, in this order)
+
+A flag-on beta is not built until these are done. None touches a flag-off path except G24, which makes one flag-off text what it was.
+
+- [ ] **G23 (D339, MAN-14, medium).** `tools.jsonl` is handed on as a file of the step: `engine/host/handoff.py` `NOT_HANDED_ON` lacks it (found by building a hand-off in a run folder that holds one; the reviewer's prompt would list it too). Add `tools.jsonl` (and `.sutra-probe-*`-style hidden names stay skipped as they are). Test: a node run folder with `tools.jsonl` and `report.md` hands on `report.md` only; `orchestrator.tasks.RUN_FOLDER_INTERNALS` stays a subset (the existing test keeps them in step).
+- [ ] **G24 (D340 b, MAN-15, low).** `engine/host/loop.py`: the "Your computer did not allow it" prefix (`permission_outcome` in `_emit_ended` and `_conclude`) is written only when `self.task.node is not None`. Test: an ordinary run that crashes with `PermissionError` ends with exactly the outcome it had before; a node run gets the prefix.
+- [ ] **G25 (D338 a, MAN-11, medium).** The reviewer's "independent" label comes from `projects.caps_json.reviewer_independent` (set by `_review`), not from `verdict.independent`. `nodes/host.py` stops guessing `connector != "auto"`; `conductor._review_done` writes the card's `independent` from the caps; the audit row `review.started` already says it. Test: one provider only, the task's connector set to that program explicitly: the card says "not independent"; two providers: it says nothing.
+- [ ] **G26 (D336 b, MAN-10, medium).** A writer's check that could not be made says so. In `conductor._scope_violation`: a node with tier 2 whose accepted hand-off has no `changes` key (git could not say, no git, more than 5000 entries, the watch was not taken), or whose `changes` is partial (`engine/host/handoff.py` also carries the watch's `more` count when it is above 0), gets one audit row `scope.unchecked` (reason in plain words, no path) and the project page shows "Sutra could not check which files this step changed" (`project_view.js` ACTION_WORDS). It never holds the project. Test: a git-less folder writer ends `done`, audit has `scope.unchecked`; a writer with `changes: []` has none.
+
 ## Before publish (a flag-on beta for the owner, and any release)
 
-These do not block phase 4, but a beta where the owner turns the flag on, and any release, wait for all of them.
+A flag-on beta waits for G23 to G26 and for the conditions of D341; a release waits for everything below. P1 to P3, P6 and P7 are done.
 
 - [x] **P1 (D315, MAN-8).** A no to a question about one step cancels only that step. `projects.py` `_settle_answers`: a denied approval with a `node_id` and kind `tier` or `scope` cancels that node (`cancel_in`, "not approved: you said no"), its dependants follow the failure policy, the project goes on; a denied `plan_estimate`, an expiry and a stop still end the project. Test: step 3 says no to GitHub, steps 1, 2 and 4 run, the project ends `done_with_open_items`, nothing of step 3 started. Then the card words of G21 change.
 - [x] **P2 (D319, MAN-8).** Turning Decide for me on while questions are open answers them at once; turning it off applies to the next gate. The route behind the Simple view's switch (`POST /api/settings`) tells `ProjectService`; test both.
@@ -79,8 +88,21 @@ These do not block phase 4, but a beta where the owner turns the flag on, and an
 - [ ] **P5 (D322, MAN-15).** The manual check of MAN-15 on a real Mac and a real Windows computer, in the beta, with the exact card words recorded; the first real Windows measurement of this feature.
 - [x] **P6 (MAN-13, D326).** The project page (see MAN-13), the "Sutra decided for you" list, the `stop_reason` and the audit rows, `POST /api/projects` with `failure_policy`, the note for an app that is not in the usual place (D322 d).
 - [x] **P7 (MAN-12, MAN-14, D327, D331).** The load test and slots, and the tool-call audit, as in their packages.
-- [ ] **P8 (docs).** `architecture.md` section 6 and `guardrails-and-permissions.md` agree with D316 and D320 to D322 (the architect did this in the phase 3 review; keep it true).
+- [x] **P8 (docs).** `architecture.md` and `guardrails-and-permissions.md` agree with D316 and D320 to D341 (the architect did this in the phase 4 review; keep it true).
 - [ ] **P9 (release gate).** The cross-checks below, with the flag on, on the beta; `scripts/ownership-audit.sh`; the owner's own go-ahead.
+- [ ] **R1 (D333, MAN-15).** The macOS probe also looks at `~/Library/Mobile Documents` (iCloud Drive) and at a working folder under `/Volumes`, with the same temporary file and the 45 s limit. Test with fakes; the manual check is part of P5.
+- [ ] **R2 (D336 e, MAN-10).** A step that ran with no other writer alive in its time window (the `started_at` and `ended_at` of the writers) is checked against its own scope; the union is kept for steps that overlapped. Test: two sequential writers, the first writes in the second's scope: a question; two overlapping ones: no question (as built).
+- [ ] **R3 (D337, MAN-10).** Decide and do one of: a project's writer waits while a live ordinary task of a team that may write exists (and the reverse only while a project writer is live), or every word that says "other writers" says "other steps of projects" (the audit row of `scope_wide_or_missing` and the owner documents). Test for whichever.
+- [ ] **R4 (D336 d, MAN-10).** The owner's own choice, recorded: route a scoped writer to Claude when both programs are signed in, or keep the Codex limit written in the release note and OPERATIONS.
+- [ ] **R5 (D338 b, MAN-11).** A review question that names no step is not asked as "send back"; the words say the reviewer named no step. `approve` is worded as an opinion on the page and in the chat.
+- [ ] **R6 (D334 d, MAN-13).** A way back into a project: the receipt notes in the org chat (project finished, stopped) carry the "Open the project" link; `GET /api/projects?client_id=` finds the project a `POST /api/projects` started. No navigation item.
+- [ ] **R7 (P4, P5, N58, N51, N59 to N64).** The live checks in the beta, by hand, with what was seen written in the notes: real call counts and minutes (P4); the first-start dialogs on a real Mac and a real Windows computer with Claude and Codex (P5); the Claude and Codex programs accept tools with a JSON-schema call and Claude accepts the `Edit(path/**)` rules; a real folder watch on a real project; a real Codex step outside its scope; a real reviewer on two providers; the page in a real browser (phone width, dark and light, a long project); Windows `msvcrt` slots; Windows long and short names in the scope comparison; the load test again with real model latency.
+- [ ] **R8 (D332 a).** J2 reports its own credits to the server so a retry's slice uses real credits, or the release note says in plain words that a credit is counted as one model call for a retry. The owner decides which.
+- [ ] **R9 (D326 e, MAN-13).** Words and links read once by the owner in the real app: the question cards, the project page, the "app is not in the usual place" note.
+- [ ] **R10 (m13 leftovers).** `HandoffRefused` reasons that still say "hand-off" in the words the owner reads; the Windows probe for the `claude` and `codex` programs (D333).
+- [ ] **R11 (D339).** The owner decides whether `calls.jsonl` is scrubbed when a node ends; whichever is chosen, the release note repeats what the audit and the scrub do not cover.
+- [ ] **R12 (D341).** The release notes and `docs/OPERATIONS.md` section "Multi-agent projects: turning them on" are read once more against the code at the release head; the flag is `0` in every default.
+
 
 ## Order and dependencies
 
@@ -211,6 +233,7 @@ flowchart LR
 - **Files:** `sutra_app/orchestrator/tasks.py` and `waiting.py` (busy key `(dept, lane)`; `live_in`, `deliver_to_department`, `stop_live` look at lane `''`), `sutra_app/orchestrator/conductor.py` (scope lease check), `sutra_app/orchestrator/grants.py` (scope narrowing rule), `sutra_app/connectors/workdir.py`, `claude.py`, `codex.py` (`Folder.scope`), `sutra_app/engine/host/folder_watch.py` (a path list for attribution; used only by nodes), `sutra_app/orchestrator/gatekeeper.py` (`scope.violation`).
 - **Tests:** `test_lanes.py` (two nodes of one team start together with the sub-flag, not without; an ordinary task still queues behind a live ordinary task); `test_scope_leases.py` (overlap delays, disjoint runs together, no scope runs alone, no git means serial); `test_scope_violation.py` (a path nobody owns pauses the project and raises a card); `tests/connectors/test_claude_scope.py` (argv has the scoped allow rules and `.git` denied); existing workdir tests unchanged.
 - **Built (developer, phase 4):** leases for every project (D328), lanes behind the sub-flag, hand-off `changes`, scope violation question and quarantine, narrowed Claude edit tools (D329); tests `test_scope_leases.py`, `test_lanes.py`, `test_scope_violation.py`, `tests/connectors/test_claude_scope.py`. Deviation: a violation is a path no writer of the project owns (N59).
+- **Status (architect, phase 4 review): built, accepted (D336, D337).** The "runs alone" words are true among the steps of projects; P11 holds with lanes. Gaps recorded: the check sees only what git sees and is silent otherwise (G26 before the beta), it compares with the union of scopes (R2), leases do not cover an ordinary task of another team (R3), Codex has no narrowing (R4).
 - **Flag:** `SUTRA_NODES_LANES` (with the master).
 - **What stays the same:** the unique-index rule for lane `''`, `deliver_to_department`, the owner's access cap, the folder text the CLIs get when no scope is set.
 
@@ -222,6 +245,7 @@ flowchart LR
 - **Files:** `sutra_app/nodes/__main__.py`, `host.py`, `reviewer.py`, `templates/reviewer.md`; reuses `engine/events.py` `EventWriter`, `engine/host/heartbeat.py`, `engine/host/inbox.py`, `connectors/engine_port.make_port`; `sutra_app/orchestrator/runs.py` (`ProcessLauncher` picks the module by `task.node.runtime`), `sutra_app/orchestrator/conductor.py` (spawn after workers, verdict intake, loop cap, independence pick via `agent_picks`), `sutra_app/orchestrator/gatekeeper.py` (verdict rules).
 - **Tests:** `test_light_host.py` (same files and events; heartbeat; stop line ends it; `KILL` ends it); `test_reviewer_verdict.py` (enum only affects flow; text shown as plain text); `test_review_loops.py` (2 loops then a card); `test_reviewer_independence.py` (picks the other provider; says "not independent" when it cannot); `test_reviewer_readonly.py` (grant has no tier 2; argv has no edit tools); injection fixtures from MAN-2 run against it.
 - **Built (developer, phase 4):** the light host and the reviewer (D330); tests `test_light_host.py`, `test_review_loops.py`. Tested inside those files, not in the separate files named above: the verdict rules, independence and read-only grant.
+- **Status (architect, phase 4 review): built, accepted with G25 (D338).** Read-only by construction (no folder, no tool, one call), a typed verdict, the owner decides. The grant gate after a `needs.json` is not built and moves to Non-goals for v1 (D335).
 - **Flag:** `SUTRA_NODES_REVIEWER` (with the master).
 - **What stays the same:** the engine process and J2's own Audit function inside a team run; the `Independence` object; the event set.
 
@@ -232,6 +256,7 @@ flowchart LR
 - **Files:** `sutra_app/connectors/slots.py` (`flock` slot files via `oslayer.try_lock`), `sutra_app/connectors/router.py` (one acquire and release hook around the existing semaphore), `sutra_app/orchestrator/projector.py` (skip the `touch` of a heartbeat-only batch within 15 s), `tests/orchestrator/test_nodes_load.py`.
 - **Tests:** `test_slots.py` (two routers in two processes never exceed the policy; a dead process frees its slot); `test_heartbeat_coalescing.py` (offset replay is harmless); `test_nodes_load.py` (12 fake nodes for 5 minutes, `StoreBusy` count 0, event ring not starving the page; marked slow, run in the gate). If it fails: the 250 ms batch window per project, as a follow-up inside this package.
 - **Built (developer, phase 4):** `slots.py`, the router's slot hook, coalescing in the projector, the load test with numbers (D331, N61); tests `tests/connectors/test_slots.py`, `test_nodes_load.py`.
+- **Status (architect, phase 4 review): built, accepted (D331).** The numbers are of fakes on one machine; real latency and Windows slots are R7.
 - **Flag:** `SUTRA_NODES_SLOTS` (with the master) for slots; coalescing only for node tasks.
 - **What stays the same:** `max_concurrency` per router when the sub-flag is off, the touch behaviour for ordinary tasks, `quota.json`.
 
@@ -243,6 +268,7 @@ flowchart LR
 - **Files:** `sutra_app/ui/static/js/project_*.js`, the page template and route (`/p/<id>`), a link from the chat's request card; reuses the graph drawing and the `SutraEvents` intake; follows the streaming client layers (intake, store, client, view).
 - **Tests:** `tests/ui/` node tests for the store and view (pure state machine, snapshot plus `after=` catch-up, reconnect); a browser smoke in the beta (by hand); the existing UI suites unchanged.
 - **Built (developer, phase 4):** `project_store.js`, `project_view.js`, `project_page.js`, `project.html`, `sutra-project.css`, `ui.mount_project_page`, `POST /api/projects`, `GET /api/nodes/app-location` (D326); tests `project_store.test.js`, `project_view.test.js`, `project_page.test.js`, `test_project_page_route.py`, `test_api_start_project.py`. Not built: a list of projects, a browser smoke.
+- **Status (architect, phase 4 review): built, accepted (D334).** `202 {message_id, turn}`, its own mount and event stream, and the missing way back (R6) are ruled.
 - **Flag:** `SUTRA_NODES_V1`.
 - **What stays the same:** every existing page, the live chat, the graph page.
 
@@ -253,6 +279,7 @@ flowchart LR
 - **Files:** `sutra_app/connectors/router.py` (an optional `on_tool(tag, name, kind, target_basename)` hook from events the connectors already parse), `sutra_app/engine/host/loop.py` (write `tools.jsonl` in the run folder), `sutra_app/orchestrator/conductor.py` (import at teardown into `node_audit`).
 - **Tests:** `test_tool_audit.py` (names and kinds only; a path is a basename; nothing when the tag has no node); connectors tests unchanged.
 - **Built (developer, phase 4):** `connectors/tool_audit.py`, the router's `on_tool`, `engine/host/toollog.py`, the Conductor's `prepare_tools` and `tool.used` rows (D327); tests `test_tool_audit.py`, `tests/engine/test_host_tool_log.py`.
+- **Status (architect, phase 4 review): built, accepted with G23 (D339).** Names, kinds and a file's base name only. The limits (a tool's network traffic and `calls.jsonl` are not scrubbed) are in the owner's documents.
 - **Flag:** `SUTRA_NODES_V1`.
 - **What stays the same:** `tool_kinds.py`, the chat's tool lines, the connector event stream.
 

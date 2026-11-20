@@ -1653,5 +1653,55 @@
   "id": "D331",
   "label": "slots by file lock; 960 -> 72 writes",
   "anchor": null
+ },
+ {
+  "id": "D332",
+  "label": "follow-up as built; credit = one call",
+  "anchor": null
+ },
+ {
+  "id": "D333",
+  "label": "m6 skipped for beta, built for release",
+  "anchor": null
+ },
+ {
+  "id": "D334",
+  "label": "202 accepted; way back before release",
+  "anchor": null
+ },
+ {
+  "id": "D335",
+  "label": "no grant gate in v1: nobody can ask",
+  "anchor": null
+ },
+ {
+  "id": "D336",
+  "label": "scope check = git only; says so when blind",
+  "anchor": null
+ },
+ {
+  "id": "D337",
+  "label": "leases among project steps only",
+  "anchor": null
+ },
+ {
+  "id": "D338",
+  "label": "reviewer independence from the Conductor",
+  "anchor": null
+ },
+ {
+  "id": "D339",
+  "label": "tool audit and network: say it",
+  "anchor": null
+ },
+ {
+  "id": "D340",
+  "label": "flag-off holds: lane filter, crash prefix",
+  "anchor": null
+ },
+ {
+  "id": "D341",
+  "label": "beta conditions; flag 0 in every release",
+  "anchor": null
  }
 ]

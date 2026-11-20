@@ -1,7 +1,7 @@
 # Multi-agent nodes: guardrails and permissions
 
 Status: proposed, 2026-11-20. Design only. Read [architecture.md](architecture.md) first for the words (node, project, Conductor, Gatekeeper, lease, grant).
-Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303). After phase 2 (MAN-5 to MAN-7), D306 to D312: the node plan, `auto` output and the planner's reach, a gate nothing answers yet, hand-off intake rules, retry and failure rules, the sleep check and the receipt. After phase 3 (MAN-8, MAN-9, MAN-15), D315 to D323: a no is as wide as the question, the chat card, the plan gate numbers, Decide for me as built, budgets as built, caps and triggers, system permissions as built, "runs alone" is MAN-10's promise.
+Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Checked again after phase 4 against the code (D332 to D341): scope enforcement, the tool audit and the network, leases, the reviewer. Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303). After phase 2 (MAN-5 to MAN-7), D306 to D312: the node plan, `auto` output and the planner's reach, a gate nothing answers yet, hand-off intake rules, retry and failure rules, the sleep check and the receipt. After phase 3 (MAN-8, MAN-9, MAN-15), D315 to D323: a no is as wide as the question, the chat card, the plan gate numbers, Decide for me as built, budgets as built, caps and triggers, system permissions as built, "runs alone" is MAN-10's promise.
 
 ## 1. The rules in six lines
 
@@ -78,7 +78,7 @@ Rules that follow:
 | Grant part | Enforced by | Existing code |
 |---|---|---|
 | Folder none, read, edit | `CallTag.workspace` and `team_workspace`, turned into a folder by the router, capped by the owner's access | `engine/capabilities/workspace.py`, `Router.folder_for` |
-| Write scope | New: `Folder.scope`. Claude gets `Edit(<scope>/**)` allow rules and a deny for the rest; Codex gets its sandbox with `cwd` set to the scope when the scope is one folder. Backstop for both: the path check after the run. | `connectors/workdir.py` (`READ_TOOLS`, `EDIT_TOOLS`, `DOT_GIT_DENY`), `claude.py` (`--allowedTools`, `--permission-mode dontAsk`), `codex.py` (`sandbox`) |
+| Write scope | Built (D329, D336): `Folder.scope`. Claude gets `Edit(<scope>)` and `Edit(<scope>/**)` allow rules, Bash only for the four git reads, and nothing else that writes. Codex has no narrowing (not built); it relies on the path check after the run. The path check is `git status` before and after, for a run whose output delivers files; it sees what git sees and says nothing when git cannot (D336 b, G26). | `connectors/workdir.py` (`READ_TOOLS`, `EDIT_TOOLS`, `DOT_GIT_DENY`), `claude.py` (`--allowedTools`, `--permission-mode dontAsk`), `codex.py` (`sandbox`) |
 | No prompts, no surprise tools | `--restricted`, `--permission-mode dontAsk`, `--permission-prompts none`, `--tools ""` by default | `claude.py` |
 | Commands (tier 3) | `GIT_READ` and `GIT_DENY`, through folder level `inspect` | `workdir.py`, `router.py` `folder_for` |
 | Run-folder builder tools (`run_tools`, not a tier) | The engine's own rule: J2's tool grant (`ToolGrant`, in the run folder) with the CLI sandbox when `srt` is found. Described by the grant, not enforced by it (D299). | `engine/port.py` `ToolGrant`, `engine/llm.py` `tools_on`, `claude.py` `run_tools_settings` |
@@ -87,7 +87,7 @@ Rules that follow:
 
 Known limit, written down on purpose: the `sutra` read tools open the whole app database read-only (`sutra_tools.py`); they are not scoped to one project. So they are
 tier 1 "read app data" and granted only to roles that need them, and a project that holds anything the owner wants private from the planner or reviewer does not get that
-profile. Scope enforcement is also weaker on Codex than on Claude (Codex has a whole-directory sandbox, not per-path rules). That is why a writer with a multi-path scope is routed to Claude and why the path check exists.
+profile. Scope enforcement is also weaker on Codex than on Claude (Codex has a whole-directory sandbox, not per-path rules, and none is applied). The idea of routing a scoped writer to Claude was not built (D336 d); the path check after the run is the second wall for both, and it is written in the owner's documents what it cannot see.
 
 ## 5. Approval gates that ask the human
 
@@ -124,12 +124,12 @@ The rule table (fixed, in code, in `gatekeeper.py`):
 |---|---|---|
 | Plan gate, tiers 0 to 3 | **Allow**, within the grant the roles table already gives | These are the defaults. The owner's folder access still caps every grant. |
 | Plan gate, tier 4 (network: GitHub read tools) | **Allow for this project**, only the read-only tools, only through the owner's own `gh` login | The owner switched Decide for me on knowing the project may read. Read-only, no write path. |
-| Plan gate, a write scope of more than one path (a missing scope needs no answer) | **Allow;** from MAN-10 the writer is kept apart from other writers (until then nothing does, D323) | The safe version of "yes": slower, never unsafe. |
+| Plan gate, a write scope of more than one path (a missing scope needs no answer) | **Allow;** the writer is kept apart from other steps of projects (built, D328; not from an ordinary task of another team, D337) | The safe version of "yes": slower, never unsafe. |
 | Plan gate, estimate over the confirm threshold (400 by default) | **Allow once only up to `project_credits`** (1000 by default). Over it the question stays open for the owner. The ceiling is never raised. | The owner approved the ceiling up front, which is the owner's own answer. |
-| Grant gate: a node ended with `needs.json` for tier 0 to 4 | **Allow and run again, once** (the retry budget of the node) | Same as the plan gate. A second request for the same tier is refused. |
-| Grant gate: `needs.json` asks for tier 5 or 6 | **Deny.** The node ends with the reason; the project goes on by its failure policy | See the walls below. |
-| Budget gate: a node asks for more credits | **Do not raise** (P25 kept). The node stops at its slice. Unspent slices of finished nodes may move to a node that needs them, as long as the project total never goes above the ceiling | P25: a raise needs the Requester's own approval. Moving credits inside an approved total is not a raise. |
-| A scope violation (N6) | **Quarantine and go on:** the offending node is failed, its output is kept for the owner but not handed on, dependants follow the failure policy | No human to ask, so the project must not carry a bad result forward. |
+| Grant gate: a node ended with `needs.json` for tier 0 to 4 | **Not built in v1 (D335).** No node can ask for more: an engine node's hand-off may not carry `needs`, and the reviewer has a fixed grant. | Nothing produces the question. |
+| Grant gate: `needs.json` asks for tier 5 or 6 | **Not built in v1 (D335);** tier 5 and 6 are never granted to a node (D320, the walls below). | As above. |
+| Budget gate: a node asks for more credits | **Not built in v1 (D320 b, D324).** A slice is final; a node stops at its slice and nothing moves credits between nodes. A retry starts with its slice minus what the earlier attempts spent. | P25: a raise needs the Requester's own approval. |
+| A scope violation (N6, D329, D336) | **Set aside, never keep:** with Decide for me on, the step is quarantined: it is failed, its files stay in the owner's folder (Sutra moves and deletes nothing), nothing is handed on, its dependants are cancelled. With it off the owner is asked (keep, or set aside). | The rule table never keeps work that went outside its lane. |
 
 Walls Decide for me never crosses (each is also a test):
 
@@ -188,6 +188,8 @@ The check runs inside the Sutra server, because the system holds the **server's*
 | `probe(plan)` | For each folder and path the plan's grants name: try to list it (and for a write step, create and remove one small temporary file named `.sutra-probe-<id>` in the node's own scope, never in `.git`). Result per item: `ok`, `needs_permission`, `refused_before`, or `not_applicable`. The probe is what makes the Mac show its dialog **at a moment Sutra chose**, with the app in front. On Windows it shows whether Controlled folder access blocks the write. Also reads the machine facts: elevated or not, long paths on or off, app location. |
 | `explain(item)` | Plain words and numbered steps for this system, including which program to turn on. No jargon. |
 | `open_settings(item)` | Opens the exact settings page (the system's settings link for Files & Folders, Full Disk Access, or Windows Security's Ransomware protection) through the same helper the app already uses to open things. The owner does the clicking. |
+
+**As built (D322, D333).** The probe looks at Desktop, Documents and Downloads on macOS; iCloud Drive and removable or network volumes are not probed before the start (built before a release, R1): a refusal there is found by the late refusal, after the step started. The late refusal sees only an error J2 reports as a Python OSError; a tool refused inside the Claude or Codex program is an ordinary failure. The Windows probe tests Sutra's own process, not the `claude` and `codex` programs.
 
 After the owner returns to the window, Sutra checks again by itself (and the card has a "Check again" button). The result is stored. It is not trusted for long: a permission can be switched off at any time, so each project re-probes at start, and a late `Operation not permitted` or `Access is denied` from a node ends it with the reason `needs_system_permission` and the same card, not a vague "crashed".
 
@@ -287,8 +289,7 @@ reason (<= 200 chars, redacted), ref (run_id, message seq or call_ref), hash (sh
 
 Where the owner reads it: `GET /api/projects/{id}/audit`, the project page, and `<data>/projects/<id>/audit.jsonl` (mode 0600) written at close. Local only.
 
-Honest limit for v1: audit is at the node level (spawn, grant, hand-off, stop) plus the existing per-call usage rows and per-call egress rows. It does **not** list each tool call inside a
-node. Package MAN-14 adds that as names and kinds only (no inputs), through a router hook, behind the master flag.
+Built (MAN-14, D327): each node's tool calls are audit rows `tool.used` (actor `node`): the tool's name, its kind (read, edit, run, search, web, sutra, github, other), a file's base name and how many times, written when the node ends or is tried again (at most 60 rows, the rest counted in one). **Honest limit:** the audit says THAT a tool was used, never what it carried: not a command, a query, a URL or an argument (D339). Codex reports the kind only, so its rows have no tool name beyond the kind.
 
 ## 9. Prompt-injection boundary: what a node reads is data
 
@@ -318,7 +319,9 @@ frozen and byte-identical (D109, D249).
 | Anything shown on the wire (SSE, API) | `redact` as today. | Existing. |
 | The audit | names and shapes only. | Existing rule. |
 
-If a node's egress row shows a secret shape three times, the node is stopped and a card is raised (section 7).
+If a node's egress row shows a secret shape three times, the node is stopped and an audit row and one plain note say so (section 7, D321).
+
+**What the scrub does not cover (D325, D339).** For an engine step the check only observes: the prompt goes out byte-identical and an audit row counts the secret shapes, so a secret a step reads from the owner's folder reaches the model program as in an ordinary run; Sutra replaces secrets in the planner's and the reviewer's text, in what steps hand to each other and in the record. J2's own builder tools in a worker's run (`WebFetch`, `WebSearch`, `Bash`) reach the network from inside the Claude or Codex program, as they do in an ordinary run today, and what such a tool fetches or sends is not scrubbed. `calls.jsonl` in the run folder keeps tool inputs as they were (it stays on the computer and is never handed on). A project runs several steps without the owner watching each one, so the owner documents say this.
 
 ## 11. Where each guardrail lives in the existing code
 
@@ -342,8 +345,11 @@ If a node's egress row shows a secret shape three times, the node is stopped and
 
 - A compromised CLI binary or a hostile owner account. Nodes run as the owner's user; the app's fences are on top of the CLIs' own.
 - Reading outside the working folder by a tool the CLI lets through. Claude's sandbox and `blockReadsOutsideWorkingDirectories` help when `srt` is present (D245); otherwise it is the CLI's own rule.
-- Per-tool-call audit, until MAN-14.
+- What a tool carried: the audit lists the tool calls of a node as names and kinds only (D327).
+- A step that writes inside the scope of another step of the same project (the path check compares with the union of the scopes, D336), a path that git ignores, and a folder that is not a git work tree (nothing is checked there).
+- An ordinary task of another team changing the same folder while a project's step does (the leases are among the steps of projects, D337).
 - Publishing to the outside world. It is not offered (tier 6).
+- A grant gate after a `needs.json`, a raise card and a moving of credits between nodes: not built in v1 (D320, D335). Nothing in v1 can ask for more than its grant and its slice.
 - Several owners or accounts. Sutra Pro is one owner on one machine.
 - Narrowing J2's own builder tools (`Bash`, `WebSearch`, `WebFetch` in the run folder) per node. They are the engine's reach as today (D299); only an engine setting for all runs turns them off.
 - The `sutra` tool part reads the whole app database (see the known limit under section 4). A tier-4 grant does not carry it (D298), but a step that asks for it separately does.
