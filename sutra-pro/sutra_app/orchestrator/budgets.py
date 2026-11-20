@@ -1,19 +1,20 @@
 """Slices and ceilings of a project (multi-agent nodes, MAN-9; D271, D272, D294, D300): pure functions, no database.
 
     slices = make_slices([120, 80, 0], ceiling=300)        # a share of the project's credits for each step; the sum is never over the ceiling
-    moved  = move_unspent(slices, spent, 300, donor=0, taker=1, amount=20)
+    left   = slice_left(120, *chain_spend(conn, task_id))   # what a retry or a restart starts with
 
 A slice is the work credits one node's run starts with (`J2_BUDGET`) and may not go past (`J2_BUDGET_CAP`): the node cannot raise it itself (P25, D251: a raise is the Requester's own). The project's
-ceiling is the sum of the slices (`projects.budget_credits`). Unspent credits of one node may move to another inside the ceiling and never beyond it; nothing here can raise the ceiling, and Decide
-for me cannot either (D294). `egress_scrubs` counts, per node, the audit rows of `egress.jsonl` in which something was scrubbed (D303: the same node three times ends it).
+ceiling is the sum of the slices (`projects.budget_credits`). A slice is final (D320): nothing moves credits between nodes and nothing, Decide for me included, raises the ceiling (D294); a retry or a
+restart starts with its slice minus what the earlier attempts of the node spent (D324). `egress_scrubs` counts, per node, the audit rows of `egress.jsonl` in which something was scrubbed (D303: the same node three times ends it).
 """
 from __future__ import annotations
 
 import json
+import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-__all__ = ["DEFAULT_SLICE", "SCRUB_LIMIT", "make_slices", "unspent", "move_unspent", "egress_scrubs"]
+__all__ = ["DEFAULT_SLICE", "SCRUB_LIMIT", "make_slices", "slice_left", "chain_spend", "project_spend", "egress_scrubs"]
 
 DEFAULT_SLICE = 100                      # the work credits a step's run starts with when nobody said otherwise (J2_BUDGET's default; D300)
 SCRUB_LIMIT = 3                          # the same node's prompts scrubbed this many times end the node (D303)
@@ -36,21 +37,28 @@ def make_slices(wants: Sequence[int], ceiling: int | None = None) -> list[int]:
     return cut
 
 
-def unspent(slice_credits: int, spent: int) -> int:
-    return max(0, int(slice_credits) - max(0, int(spent)))
+_CHAIN = ("WITH RECURSIVE chain(id) AS (SELECT ? UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) ")
 
 
-def move_unspent(slices: Sequence[int], spent: Sequence[int], ceiling: int, donor: int, taker: int, amount: int) -> list[int]:
-    """Move `amount` credits from the unspent part of `donor`'s slice to `taker`'s. Only whole, positive amounts the donor has not spent, between two different steps, and only while the sum stays
-    inside the ceiling: anything else returns the slices unchanged. The sum never changes, so the ceiling is never raised."""
-    out = list(slices)
-    if not (0 <= donor < len(out) and 0 <= taker < len(out)) or donor == taker or isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
-        return out
-    if amount > unspent(out[donor], spent[donor] if donor < len(spent) else 0) or sum(out) > ceiling:
-        return out
-    out[donor] -= amount
-    out[taker] += amount
-    return out
+def chain_spend(conn: sqlite3.Connection, task_id: str | None) -> tuple[int, float]:
+    """(model calls, dollars) the task and every earlier attempt of the same node (its `parent_task_id` chain) spent, from the usage ledger (stub calls cost nothing and are not counted). One credit is
+    counted for each call until J2 reports its own credits to the server (D324): a retry or a restart starts with its slice minus this, never with a full fresh slice."""
+    if not task_id:
+        return 0, 0.0
+    row = conn.execute(_CHAIN + "SELECT count(*), COALESCE(SUM(usd), 0) FROM usage_ledger WHERE task_id IN (SELECT id FROM chain) AND provider != 'stub'", (task_id,)).fetchone()
+    return int(row[0]), float(row[1])
+
+
+def project_spend(conn: sqlite3.Connection, project_id: str) -> tuple[int, float]:
+    """(model calls, dollars) the whole project spent: every node's task AND the earlier attempts of each node (a retried node's first attempt cost money too, D324)."""
+    row = conn.execute("WITH RECURSIVE chain(id) AS (SELECT task_id FROM agent_nodes WHERE project_id = ? AND task_id IS NOT NULL UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id "
+                       "WHERE t.parent_task_id IS NOT NULL) SELECT count(*), COALESCE(SUM(usd), 0) FROM usage_ledger WHERE task_id IN (SELECT id FROM chain) AND provider != 'stub'", (project_id,)).fetchone()
+    return int(row[0]), float(row[1])
+
+
+def slice_left(slice_credits: int, spent_calls: int) -> int:
+    """What a new attempt of a node starts with: its slice minus what the earlier attempts spent (one credit for each call, D324); 0 when nothing is left (the node is then not tried again)."""
+    return max(0, int(slice_credits) - max(0, int(spent_calls)))
 
 
 def egress_scrubs(path: str | Path, node_ids: Sequence[str] | None = None) -> dict[str, int]:

@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
-from sutra_app.orchestrator.budgets import SCRUB_LIMIT, egress_scrubs
+from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_spend, slice_left
 from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
@@ -379,8 +379,8 @@ class Conductor:
                 with tx.savepoint():
                     self._retry(tx, node, why, action=action)
                 return
-            except AppError:                                                 # the team is gone (archived) or the task cannot be repeated: the node ends here, cleanly (B1)
-                why = f"{why[:150]} (it could not be tried again)"
+            except AppError as refused:                                      # the team is gone (archived), the task cannot be repeated or its credits are used up: the node ends here, cleanly (B1)
+                why = f"{why[:100]} ({refused.message if refused.code == 'busy' else 'it could not be tried again'})"
         self._teardown(tx, node, "failed", why)
         if why.startswith(LOST_LEASE) and node["attempt"] >= 2:                 # D303 e: a node that loses its lease twice stops the project and says so
             self.store.audit(tx, actor="conductor", action="trigger.lease_lost", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
@@ -398,6 +398,8 @@ class Conductor:
         """A new attempt of the node in the transaction that ends the old one (D305c): the node's `task_id` points at the new task, the attempt number goes up, its dependants wait for the new task,
         and the grant is the one it had (frozen). The old task stays in `tasks` as the new one's parent."""
         old_task = node["task_id"]
+        if node["slice_credits"] is not None and slice_left(node["slice_credits"], chain_spend(tx.conn, old_task)[0]) <= 0:
+            raise AppError("busy", "That step used up all its credits, so it is not tried again")         # never a full fresh slice (D324)
         new = self.tasks.retry_in(tx, old_task, force=True)
         now = tx.now()
         tx.conn.execute("UPDATE agent_nodes SET task_id = ?, attempt = attempt + 1, state = 'queued', failure_reason = '', lease_expires_at = NULL, last_beat_at = NULL, ended_at = NULL, "
@@ -510,8 +512,7 @@ class Conductor:
         else:
             limit = tx.conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()["budget_usd"]
             if limit is not None:
-                spent = tx.conn.execute("SELECT COALESCE(SUM(u.usd), 0) FROM usage_ledger u JOIN agent_nodes n ON n.task_id = u.task_id WHERE n.project_id = ? AND u.provider != 'stub'",
-                                        (project_id,)).fetchone()[0]
+                spent = project_spend(tx.conn, project_id)[1]                      # every attempt of every node counts (D324)
                 if spent > float(limit):
                     reason, action = "the project spent more than the dollars you set", "trigger.project_usd"
         if not reason:

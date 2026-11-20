@@ -214,7 +214,6 @@ RULE_TABLE: tuple[tuple[str, str, str], ...] = (
     ("scope_wide_or_missing", "allow", "a wide or missing write scope is allowed"),
     ("credits_raise", "never", "credits are never raised (P25): a raise is asked of the owner each time"),
     ("estimate_within_ceiling", "allow", "the plan's estimate is allowed once, up to the project's ceiling and no further"),
-    ("slice_move", "allow", "unspent credits of a node may move to another node, inside the ceiling"),
     ("scope_violation", "quarantine", "a node that writes outside its scope is quarantined: ended, its files kept, nothing is merged"),
     ("tier_6", "never", "publishing outside is never granted and never asked"),
     ("system_permission", "never", "a permission of the computer is the owner's: Decide for me cannot answer it (D295)"),

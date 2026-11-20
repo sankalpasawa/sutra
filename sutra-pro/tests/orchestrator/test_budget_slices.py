@@ -1,4 +1,4 @@
-"""Slices and the project ceiling (MAN-9; D271, D272, D300): the sum of the slices is never over the ceiling, unspent credits move only inside it, a node starts with its slice and cannot go past
+"""Slices and the project ceiling (MAN-9; D271, D272, D300): the sum of the slices is never over the ceiling, a retry starts with what is left, a node starts with its slice and cannot go past
 it, and Decide for me never raises it."""
 import json
 import random
@@ -6,7 +6,7 @@ import random
 import pytest
 from orchestrator.projects_rig import PRig  # noqa: F401
 
-from sutra_app.orchestrator.budgets import DEFAULT_SLICE, SCRUB_LIMIT, egress_scrubs, make_slices, move_unspent, unspent
+from sutra_app.orchestrator.budgets import DEFAULT_SLICE, SCRUB_LIMIT, chain_spend, egress_scrubs, make_slices, project_spend
 
 
 @pytest.fixture
@@ -26,14 +26,9 @@ def test_the_sum_of_the_slices_is_never_over_the_ceiling_for_any_wants():
     assert make_slices([120, 80], None) == [120, 80] and make_slices([120, 80], 500) == [120, 80] and make_slices([0, "x", None]) == [1, DEFAULT_SLICE, DEFAULT_SLICE]
 
 
-def test_unspent_credits_move_only_between_steps_only_what_is_unspent_and_never_past_the_ceiling():
-    slices, spent = [100, 100, 100], [30, 100, 0]
-    assert move_unspent(slices, spent, 300, 0, 1, 50) == [50, 150, 100] and sum(move_unspent(slices, spent, 300, 0, 1, 50)) == 300
-    assert move_unspent(slices, spent, 300, 0, 1, 71) == slices                          # more than the donor has left
-    assert move_unspent(slices, spent, 300, 1, 2, 1) == slices                           # the donor spent it all
-    assert move_unspent(slices, spent, 300, 0, 0, 10) == slices and move_unspent(slices, spent, 300, 0, 9, 10) == slices and move_unspent(slices, spent, 300, 0, 1, 0) == slices
-    assert move_unspent(slices, spent, 250, 0, 1, 10) == slices                          # the slices are over the ceiling already: nothing moves
-    assert unspent(100, 30) == 70 and unspent(100, 400) == 0
+def test_a_slice_left_is_the_slice_minus_what_earlier_attempts_spent_and_never_a_fresh_one():
+    from sutra_app.orchestrator.budgets import slice_left
+    assert slice_left(100, 0) == 100 and slice_left(100, 30) == 70 and slice_left(100, 100) == 0 and slice_left(100, 400) == 0 and slice_left(100, -5) == 100
 
 
 def test_a_project_gets_one_slice_per_node_and_the_ceiling_is_their_sum(rig):
@@ -80,3 +75,54 @@ def test_the_egress_audit_is_counted_per_node_from_the_rows_where_something_was_
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\nnot json\n", encoding="utf-8")
     assert egress_scrubs(path) == {"nd_" + "a" * 12: 2, "nd_" + "b" * 12: 1} and egress_scrubs(path, ["nd_" + "b" * 12]) == {"nd_" + "b" * 12: 1}
     assert egress_scrubs(tmp_path / "missing.jsonl") == {} and SCRUB_LIMIT == 3
+
+
+def ledger(rig, task_id, calls, usd_each=0.1, provider="claude"):
+    for _ in range(calls):
+        rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, ?, 'agent_turn', ?, ?)", 1793786400, provider, task_id, usd_each)
+
+
+def test_a_retry_starts_with_its_slice_minus_what_the_first_attempt_spent(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 100, "a2": 100})
+    rig.start()
+    rig.go(tasks["a1"])
+    ledger(rig, tasks["a1"], 30)
+    ledger(rig, tasks["a1"], 5, provider="stub")                                                    # a stub call is free
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)
+    new = rig.sql("SELECT task_id, slice_credits FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    rig.start()
+    started = {s.task_id: s for s, *_ in rig.t.launcher.started}
+    assert new["slice_credits"] == 100 and started[new["task_id"]].settings.J2_BUDGET == "70" == started[new["task_id"]].settings.J2_BUDGET_CAP
+    assert chain_spend(rig.t.db.conn(), new["task_id"]) == (30, pytest.approx(3.0))
+
+
+def test_a_node_that_used_up_its_slice_is_not_tried_again(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 20, "a2": 20})
+    rig.start()
+    rig.go(tasks["a1"])
+    ledger(rig, tasks["a1"], 25)
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert node["state"] == "failed" and node["attempt"] == 1 and "used up all its credits" in node["failure_reason"]
+
+
+def test_the_dollar_total_and_the_snapshot_count_every_attempt_of_every_node(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    rig.go(tasks["a1"])
+    ledger(rig, tasks["a1"], 2, usd_each=0.4)
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)
+    new = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]
+    ledger(rig, new, 1, usd_each=0.1)
+    assert project_spend(rig.t.db.conn(), reservation.project_id) == (3, pytest.approx(0.9))
+    assert rig.projects.snapshot(reservation.project_id)["spend"] == {"calls": 3, "usd": pytest.approx(0.9)}
+
+
+def test_the_ceiling_is_real_through_reserve_the_slices_never_pass_it_and_it_is_the_sum(rig):
+    from sutra_app.orchestrator.projects import ProjectStep
+    wants = [ProjectStep(f"a{i}", "web", estimate_credits=900) for i in range(1, 3)]
+    reservation = rig.projects.reserve("req-big", "t", wants, decide_for_me=True)                  # 1800 over the cap of 1000: the owner would have to say yes; Decide for me may not
+    assert rig.project(reservation.project_id)["budget_credits"] == 1800 and rig.project(reservation.project_id)["status"] == "awaiting_approval"
+    plain = rig.projects.reserve("req-4", "t", [ProjectStep(f"a{i}", "web") for i in range(1, 5)])
+    slices = [n["slice_credits"] for n in rig.sql("SELECT slice_credits FROM agent_nodes WHERE project_id = ?", plain.project_id)]
+    assert slices == [100] * 4 and rig.project(plain.project_id)["budget_credits"] == sum(slices) <= 1000

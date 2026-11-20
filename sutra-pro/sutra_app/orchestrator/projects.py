@@ -32,7 +32,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
-from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices
+from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices, project_spend
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -209,7 +209,9 @@ class ProjectService:
         caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0),
                               "depends_on": list(step.depends_on)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
         wants = [budget if budget is not None else (step.estimate_credits or DEFAULT_SLICE) for step in steps]            # the owner's number wins over the planner's guess (D252)
-        slices = make_slices(wants)                                              # each step's share (MAN-9); the project's ceiling is their sum, written as `budget_credits`
+        cap = int(caps.get("project_credits") or 0) or None
+        ceiling = None if budget is not None or any(g.kind == "estimate" for g in evaluation.gates) else (min(sum(wants), cap) if cap else None)         # the owner's own number, or the estimate the owner approves, is the ceiling; else the cap
+        slices = make_slices(wants, ceiling)                                      # each step's share (MAN-9, D324); the project's ceiling is their sum, written as `budget_credits`
         caps["owner_budget"] = budget                                            # the owner's own number for each run (D252), None when they gave none
         status = "failed" if not evaluation.ok else "awaiting_approval" if evaluation.gates else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
@@ -731,14 +733,12 @@ class ProjectService:
         nodes = [self._node_out(r) for r in conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? ORDER BY created_at, rowid", (project_id,))]
         edges = [{"from": dep, "to": node.id, "kind": "depends_on"} for node in nodes for dep in node.depends_on]
         edges += [{"from": earlier, "to": later, "kind": "conflict"} for earlier, later in self._conflict_edges(project, nodes)]
-        marks = ",".join("?" * max(1, len([n for n in nodes if n.task_id])))
-        task_ids = [n.task_id for n in nodes if n.task_id] or [""]
-        spend = conn.execute(f"SELECT count(*) AS calls, sum(usd) AS usd FROM usage_ledger WHERE task_id IN ({marks}) AND provider != 'stub'", task_ids).fetchone()
+        calls, usd = project_spend(conn, project_id)                              # every attempt of every node, not only the current task (D324)
         approvals = [{"id": a.id, "tier": a.tier, "node_id": a.node_id, "status": a.status, "request": dict(a.request), "expires_at": iso_z(a.expires_at)}
                      for a in self.store.approvals(project_id, status="open")]
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
-                "spend": {"calls": spend["calls"], "usd": round(spend["usd"], 6) if spend["usd"] is not None else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
+                "spend": {"calls": calls, "usd": round(usd, 6) if calls else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
                 "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
 
     @staticmethod
