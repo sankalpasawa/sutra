@@ -81,12 +81,13 @@ def test_decide_for_me_sets_the_work_aside_at_once_audited_as_its_rule_and_never
     assert "decided_by rule:decide_for_me" in decided["reason"] and decided["decision"] == "deny" and rig.project(reservation.project_id)["paused"] == 0
 
 
-def test_a_writer_that_owns_the_whole_folder_makes_every_path_owned(rig):
-    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("site/",)})                  # a2 has no scope: the whole folder
+def test_a_neighbour_with_no_scope_cannot_run_with_it_so_a_step_that_ran_alone_answers_for_its_own_scope(rig):          # R2 (was: a writer with no scope makes every path owned)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], scope={"a1": ("site/",)})          # a2 has no scope: the whole folder, so the lease keeps it behind a1
     rig.start()
     rig.go(tasks["a1"])
+    assert rig.t.status(tasks["a2"]) == "queued"
     finish_with(rig, tasks["a1"], ["anywhere/x.txt"])
-    assert node(rig, "a1")["state"] == "done" and rig.audit("scope.violation") == []
+    assert node(rig, "a1")["state"] == "awaiting_approval" and [r["action"] for r in rig.audit("scope.violation")] == ["scope.violation"]
 
 
 def test_the_host_builds_the_changes_list_from_its_own_folder_watch_and_skips_the_probe_file(tmp_path):
@@ -112,3 +113,54 @@ def test_continue_cannot_lift_the_hold_and_a_step_that_follows_a_held_one_never_
     [asked] = rig.store.approvals(pid, status="open")
     rig.t.run(rig.projects.answer(pid, asked.id, "allow_once"))
     assert node(rig, "a1")["state"] == "done" and rig.t.status(tasks["a3"]) in ("queued", "starting", "running")
+
+
+def test_a_step_that_ran_alone_is_checked_against_its_own_scope_not_its_neighbours(rig):                       # R2
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], scope={"a1": ("site/",), "a2": ("docs/",)})
+    rig.start()
+    rig.go(tasks["a1"])                                                                                    # a2 waits for a1: a1 ran alone
+    finish_with(rig, tasks["a1"], ["site/index.html", "docs/readme.md"])                                      # docs/ is a2's part, but a1 had no part in it
+    assert node(rig, "a1")["state"] == "awaiting_approval"
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    assert asked.request["kind"] == "scope_violation" and asked.request["paths"] == ["docs/readme.md"]
+
+
+def test_every_changed_path_up_to_the_cap_is_checked_not_only_the_first_hundred(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], scope={"a1": ("site/",), "a2": ("docs/",)})
+    rig.start()
+    rig.go(tasks["a1"])
+    every = [f"site/f{i}.txt" for i in range(150)] + ["zzz/evil.sh"]                                          # the 151st path is the bad one; the hand-off names only the first 100
+    rig.finish(tasks["a1"], override={"changes": every[:100], "changes_more": 51}, files={"changes.json": json.dumps({"schema": "changes/1", "files": every})})
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    assert asked.request["paths"] == ["zzz/evil.sh"] and node(rig, "a1")["state"] == "awaiting_approval" and rig.audit("scope.unchecked") == []
+
+
+def test_a_list_cut_at_a_hundred_with_no_whole_list_says_the_rest_were_not_checked(rig):                        # G26
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], scope={"a1": ("site/",), "a2": ("docs/",)})
+    rig.start()
+    rig.go(tasks["a1"])
+    finish_with(rig, tasks["a1"], [f"site/f{i}.txt" for i in range(100)])
+    rig.sql("SELECT 1")
+    assert node(rig, "a1")["state"] == "done"                                                              # no question is asked for what could not be seen
+
+
+def test_a_writer_whose_changes_could_not_be_read_ends_done_and_the_audit_says_it_was_not_checked(rig):          # G26
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], scope={"a1": ("site/",), "a2": ("docs/",)})
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], files={"out.md": "done"})                                                      # no deliverable.json: git could not say
+    assert node(rig, "a1")["state"] == "done" and rig.sql("SELECT count(*) FROM approvals").fetchone()[0] == 0
+    [row] = rig.audit("scope.unchecked")
+    assert "git could not say" in row["reason"] and row["node_id"] == node(rig, "a1")["id"] and "/" not in row["reason"].replace("and/or", "")
+    rig.start()
+    rig.go(tasks["a2"])
+    finish_with(rig, tasks["a2"], [])                                                                      # a true "nothing changed" is not "unchecked"
+    assert len(rig.audit("scope.unchecked")) == 1
+
+
+def test_a_step_with_no_scope_of_its_own_is_said_to_be_unchecked(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], scope={"a2": ("docs/",)})
+    rig.start()
+    rig.go(tasks["a1"])
+    finish_with(rig, tasks["a1"], ["anywhere/x.txt"])
+    assert node(rig, "a1")["state"] == "done" and "not given its own part" in rig.audit("scope.unchecked")[0]["reason"]

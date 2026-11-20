@@ -177,13 +177,16 @@ class FolderWatch:
             return None
         return cls(folder, exe, before, bool(getattr(grant, "edit", False)))
 
-    def finish(self, edit_now: bool) -> Optional[dict]:
+    def finish(self, edit_now: bool, full: bool = False) -> Optional[dict]:
         """`{"files": [{path, status}], "more": n}` (at most LISTED_MAX files named), or None: the owner allowed no change at either end, or git cannot say
-        now. An empty list is a true answer: git looked and nothing changed."""
+        now. An empty list is a true answer: git looked and nothing changed. With `full` (a node of a project, MAN-10) the answer also has `all`: every changed path, up to MAX_ENTRIES."""
         if not (self.edit_at_start or edit_now):
             return None
         after = snapshot(self.exe, self.folder, GIT_END_TIMEOUT_S)
         if after is None:
             return None
         rows = changes_between(self.before, after)
-        return {"files": rows[:LISTED_MAX], "more": max(0, len(rows) - LISTED_MAX)}
+        found = {"files": rows[:LISTED_MAX], "more": max(0, len(rows) - LISTED_MAX)}
+        if full:
+            found["all"] = [row["path"] for row in rows[:MAX_ENTRIES]]
+        return found

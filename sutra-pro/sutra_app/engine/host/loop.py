@@ -51,6 +51,7 @@ from ..spec import (
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 from .toollog import TOOLS_FILE, ToolLog
+from .handoff import CHANGES_FILE
 
 __all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
            "EXIT_OK", "EXIT_BAD_TASK", "EXIT_START_FAILED", "EXIT_INTERNAL", "EXIT_TERM"]
@@ -717,8 +718,12 @@ class Host:
                                       "label": clip(f"{out.get('label') or ''} {out.get('noun') or ''}".strip(), 80)}
             if self.folder_watch is not None:
                 grant = self._owner_grant()
-                changes = self.folder_watch.finish(bool(getattr(grant, "edit", False)))
+                node = getattr(self.task, "node", None) is not None
+                changes = self.folder_watch.finish(bool(getattr(grant, "edit", False)), full=node)
                 if changes is not None:
+                    every = changes.pop("all", None)
+                    if every is not None:                                             # a node's whole list, up to 5000 paths, for the server's scope check (the hand-off names the first 100)
+                        _atomic_write(self.paths.run_dir / CHANGES_FILE, json.dumps({"schema": "changes/1", "files": every}, ensure_ascii=False) + "\n")
                     record["changes"] = changes
                     self.trace("folder_watch.finished", {"files": len(changes["files"]), "more": changes["more"]})
             _atomic_write(self.paths.run_dir / "deliverable.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")

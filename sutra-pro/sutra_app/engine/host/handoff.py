@@ -30,6 +30,7 @@ from sutra_app.library.types import clip
 __all__ = ["build", "write", "HANDOFF_FILE", "ACCEPTED_FILE", "SCHEMA_V", "MAX_FILES", "MAX_SUMMARY", "MAX_CLAIMS", "MAX_CLAIM", "MAX_CHANGES", "MAX_BYTES", "NOT_HANDED_ON"]
 
 HANDOFF_FILE = "handoff.json"
+CHANGES_FILE = "changes.json"                  # the host's whole list of changed paths of the owner's folder (up to 5000), for the server's scope check; never handed on
 ACCEPTED_FILE = "handoff.accepted.json"          # written by the SERVER after it checked and scrubbed the hand-off: the one file of a node's run that dependants are given
 SCHEMA_V = 1
 MAX_FILES = 200
@@ -41,7 +42,8 @@ MAX_BYTES = 64 * 1024                            # the largest hand-off file the
 # the run folder's own plumbing and the hand-off files themselves are never part of what is handed on; `orchestrator.tasks.RUN_FOLDER_INTERNALS` is a subset (a test keeps them in step)
 NOT_HANDED_ON = frozenset({
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log", "run.stderr.log", "choices.json", "agent_live.json",
-    "deliverable.json", HANDOFF_FILE, ACCEPTED_FILE, "verdict.json", "needs.json", "chat.jsonl", "calls.jsonl", "summary.json", "status.json", "node_context.json",
+    "deliverable.json", HANDOFF_FILE, ACCEPTED_FILE, CHANGES_FILE, "verdict.json", "needs.json", "chat.jsonl", "calls.jsonl", "summary.json", "status.json", "node_context.json", "tools.jsonl",   # G23: the tool log is the host's own
+
 })
 
 
@@ -72,26 +74,31 @@ def build(run_dir: str | os.PathLike[str], node_id: str, status: str, outcome: s
         files.append({"path": entry.name, "sha256": sha, "bytes": size})
     document: dict[str, Any] = {"v": SCHEMA_V, "node_id": node_id, "status": status if status in ("done", "done_with_open_items") else "blocked",
                                 "summary": " ".join(str(outcome or "").split())[:MAX_SUMMARY] or "The run ended.", "files": files, "claims": [], "needs": []}
-    changes = _changes_of(root)
+    changes, more = _changes_of(root)
     if changes is not None:                                       # what the host's own folder watch saw change in the owner's folder (MAN-10), never what an agent said
         document["changes"] = changes
+        if more:
+            document["changes_more"] = more                       # how many more paths there are than the ones named: the server says so when it could not check them all (G26)
     return document
 
 
-def _changes_of(root: Path) -> list[str] | None:
-    """The paths of the owner's folder that changed during the run, from `deliverable.json` (written by the host's folder watch), at most `MAX_CHANGES`; None when git could not say. The probe file of the
-    system check (`.sutra-probe-*`) is never a change (D322 a)."""
+def _changes_of(root: Path) -> tuple[list[str] | None, int]:
+    """`(paths, more)`: the paths of the owner's folder that changed during the run, from `deliverable.json` (written by the host's folder watch), at most `MAX_CHANGES` named, and how many more there
+    are; `(None, 0)` when git could not say. The probe file of the system check (`.sutra-probe-*`) is never a change (D322 a)."""
     try:
         record = json.loads((root / "deliverable.json").read_text(encoding="utf-8"))
         rows = record["changes"]["files"]
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
+        more = record["changes"].get("more", 0)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None, 0
+    more = more if isinstance(more, int) and not isinstance(more, bool) and more > 0 else 0
     out: list[str] = []
     for row in rows if isinstance(rows, list) else []:
         path = row.get("path") if isinstance(row, dict) else None
         if isinstance(path, str) and path and len(path) <= 400 and not any(part.startswith(".sutra-probe-") for part in path.split("/")):
             out.append(path)
-    return out[:MAX_CHANGES]
+    more += max(0, len(out) - MAX_CHANGES)
+    return out[:MAX_CHANGES], more
 
 
 def write(run_dir: str | os.PathLike[str], document: dict[str, Any]) -> Path:

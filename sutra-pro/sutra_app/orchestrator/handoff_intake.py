@@ -26,14 +26,14 @@ from typing import Any
 
 from sutra_app import oslayer
 from sutra_app.connectors.egress import scrubbed
-from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CHANGES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
+from sutra_app.engine.host.handoff import ACCEPTED_FILE, CHANGES_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CHANGES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
 from sutra_app.orchestrator.grants import is_plain_name
 
 __all__ = ["read_handoff", "write_accepted", "Accepted", "HandoffRefused", "DATA_NOTE", "MAX_HASHED_BYTES"]
 
 MAX_HASHED_BYTES = 64 * 1024 * 1024        # the files of ONE hand-off share this many bytes of hashing; past it a file is checked for its size only and counted `unchecked` (G9, D309: reading it all would stall the writer)
 _KEYS = {"v", "node_id", "status", "summary", "files", "claims", "needs"}
-_OPTIONAL = {"changes"}                     # a list of paths of the owner's folder the host saw change (MAN-10)
+_OPTIONAL = {"changes", "changes_more"}                     # a list of paths of the owner's folder the host saw change (MAN-10)
 _FILE_KEYS = {"path", "sha256", "bytes"}
 _STATUS = ("done", "done_with_open_items", "blocked")
 _HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -49,6 +49,7 @@ class Accepted:
     document: dict[str, Any]
     checked: int                 # files whose sha256 was recomputed
     unchecked: int               # files too large to recompute (their size was checked)
+    changes_all: list[str] | None = None      # every path the host's folder watch saw change in the owner's folder (up to 5000), read from the host's own `changes.json`; None when the file is not there (MAN-10)
 
 
 def _refuse(why: str) -> HandoffRefused:
@@ -155,6 +156,9 @@ def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, r
     changes = raw.get("changes")
     if "changes" in raw and (not isinstance(changes, list) or len(changes) > MAX_CHANGES or not all(isinstance(c, str) for c in changes)):
         raise _refuse("the list of changed files is longer than the limit")
+    more = raw.get("changes_more")
+    if "changes_more" in raw and (isinstance(more, bool) or not isinstance(more, int) or more < 0 or more > 1_000_000):
+        raise _refuse("the count of more changed files is not a number")
     if not isinstance(files, list) or len(files) > MAX_FILES:
         raise _refuse("the file list is longer than the limit")
     if not isinstance(claims, list) or len(claims) > MAX_CLAIMS or not all(isinstance(c, str) and len(c) <= MAX_CLAIM for c in claims):
@@ -183,7 +187,24 @@ def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, r
     document = {"v": SCHEMA_V, "node_id": node_id, "status": raw["status"], "summary": _clean(summary, redact), "files": clean_files, "claims": [_clean(c, redact) for c in claims], "needs": []}
     if changes is not None:
         document["changes"] = [_clean("".join(ch for ch in c[:400] if ord(ch) >= 32), redact) for c in changes]
-    return Accepted(document, checked, unchecked)
+        if more:
+            document["changes_more"] = more
+    return Accepted(document, checked, unchecked, _read_changes(root))
+
+
+def _read_changes(root: Path) -> list[str] | None:
+    """The host's whole list of changed paths (`changes.json`), at most 5000 of at most 400 characters, or None when it is not there or not a list of text. Nothing here refuses a hand-off: a missing
+    or damaged list only means the check can name fewer paths."""
+    path = root / CHANGES_FILE
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 2_500_000:
+            return None
+        found = json.loads(path.read_bytes().decode("utf-8")).get("files")
+    except (OSError, ValueError, RecursionError, AttributeError):
+        return None
+    if not isinstance(found, list) or len(found) > 5000 or not all(isinstance(c, str) for c in found):
+        return None
+    return ["".join(ch for ch in c[:400] if ord(ch) >= 32) for c in found if c and not any(part.startswith(".sutra-probe-") for part in c.split("/"))]
 
 
 def write_accepted(run_dir: str | os.PathLike[str], accepted: Accepted) -> Path:

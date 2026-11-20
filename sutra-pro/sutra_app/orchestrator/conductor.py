@@ -404,22 +404,65 @@ class Conductor:
                          reason=f"{len(accepted.document['files'])} file(s), message {posted.seq}", ref=str(posted.seq))
         self._teardown(tx, node, "done", "")
 
-    def _scope_violation(self, tx: Tx, node: sqlite3.Row, accepted: Accepted, task_id: str) -> bool:
-        """MAN-10 (D303): a path the node's run changed in the owner's folder that NO writer of the project owns (the union of the scopes of its writers; a writer with no scope owns the whole
-        folder, so nothing can be outside) is a scope violation. The owner is asked (a card): keep the work or set it aside; Decide for me sets it aside (`gatekeeper.on_scope_violation`: the node is
-        quarantined, its files kept, nothing is given on). While the question is open the node waits (`awaiting_approval`) and the project starts nothing new. Returns True when the hand-off must not
-        go on now (held or set aside), False when there is nothing outside or the owner allowed it."""
-        changes = accepted.document.get("changes") or []
-        if not changes:
+    def _unchecked(self, tx: Tx, node: sqlite3.Row, task_id: str, why: str) -> None:
+        """G26 (D336 b): a writer's check that could not be made says so, once for each run of the step: an audit row `scope.unchecked` with the reason in plain words and no path. It never holds anything."""
+        if tx.conn.execute("SELECT 1 FROM node_audit WHERE node_id = ? AND action = 'scope.unchecked' AND ref = ?", (node["id"], task_id)).fetchone() is None:
+            self.store.audit(tx, actor="conductor", action="scope.unchecked", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=task_id)
+
+    def _ran_alone(self, tx: Tx, node: sqlite3.Row, task_id: str) -> bool:
+        """True when no other step that may write was alive while this one ran (R2, D336 e): another writer counts when its task is still going, or its window overlaps this one's. Windows are the
+        tasks' own `started_at` and `ended_at` (whole seconds): a step that began in the very second another ended did not overlap it. Writers of other projects count too (leases are global)."""
+        mine = tx.conn.execute("SELECT started_at, ended_at, created_at FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if mine is None:
             return False
+        begin = mine["started_at"] if mine["started_at"] is not None else mine["created_at"]
+        end = mine["ended_at"] if mine["ended_at"] is not None else tx.now()
+        for other in tx.conn.execute(
+                "SELECT n.id, n.project_id, n.plan_ref, n.grants_json, n.writes_json, t.started_at AS s, t.ended_at AS e FROM agent_nodes n JOIN tasks t ON t.id = n.task_id "
+                "WHERE n.id <> ? AND n.role = 'worker' AND t.started_at IS NOT NULL", (node["id"],)).fetchall():
+            if self._lease_of(tx.conn, other) is None:
+                continue
+            if other["e"] is None or (other["e"] > begin and other["s"] < end):
+                return False
+        return True
+
+    def _outside_paths(self, tx: Tx, node: sqlite3.Row, accepted: Accepted, task_id: str) -> list[str]:
+        """The paths this step changed that it had no part in (MAN-10, D336): from the host's whole list (`changes.json`, up to 5000), else the first 100 the hand-off names. A step that ran alone is
+        checked against ITS OWN scope; steps that overlapped in time are checked against the union of the project's writers' scopes (the watch cannot say which of two parallel writers wrote a path).
+        When the check cannot be made (no list at all, a partial list, a step or a neighbour with no scope) an audit row says so and nothing is held."""
+        mine = self._lease_of(tx.conn, node)
+        document = accepted.document
+        paths = accepted.changes_all if accepted.changes_all is not None else document.get("changes")
+        if paths is None:
+            if mine is not None:
+                self._unchecked(tx, node, task_id, "git could not say which files this step changed (this is not a git folder, there were too many changes, or git did not answer), so they were not checked")
+            return []
+        if accepted.changes_all is None and int(document.get("changes_more") or 0) > 0 and mine is not None:
+            self._unchecked(tx, node, task_id, f"only the first {len(paths)} changed files were named, so the other {int(document['changes_more'])} were not checked")
+        if not paths:
+            return []
+        if mine is not None and not mine:
+            self._unchecked(tx, node, task_id, "this step was not given its own part of your folder, so nothing could be outside it")
+            return []
+        if mine is not None and self._ran_alone(tx, node, task_id):
+            return [path for path in paths if not _covers_path(mine, path)]
         owned: list[tuple[str, ...]] = []
         for row in tx.conn.execute("SELECT plan_ref, grants_json, writes_json, project_id FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (node["project_id"],)).fetchall():
-            lease = self.service.conductor._lease_of(tx.conn, row)
+            lease = self._lease_of(tx.conn, row)
             if lease is not None:
                 owned.append(lease)
-        if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing is outside
-            return False
-        outside = [path for path in changes if not any(_covers_path(scope, path) for scope in owned)]
+        if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing can be said to be outside
+            if mine is not None:
+                self._unchecked(tx, node, task_id, "another step may change the whole folder, so one step's files cannot be told from another's")
+            return []
+        return [path for path in paths if not any(_covers_path(scope, path) for scope in owned)]
+
+    def _scope_violation(self, tx: Tx, node: sqlite3.Row, accepted: Accepted, task_id: str) -> bool:
+        """MAN-10 (D303, D336): a path the node's run changed in the owner's folder that it had no part in (its own scope when it ran alone, else the union of the scopes of the project's writers) is a
+        scope violation. The owner is asked (a card): keep the work or set it aside; Decide for me sets it aside (`gatekeeper.on_scope_violation`: the node is
+        quarantined, its files kept, nothing is given on). While the question is open the node waits (`awaiting_approval`) and the project starts nothing new. Returns True when the hand-off must not
+        go on now (held or set aside), False when there is nothing outside or the owner allowed it."""
+        outside = self._outside_paths(tx, node, accepted, task_id)
         if not outside:
             return False
         key = f"violation:{node['id']}:{node['attempt']}"
