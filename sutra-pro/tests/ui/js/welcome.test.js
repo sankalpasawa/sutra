@@ -15,7 +15,7 @@ const FACTS = {
   models: [READY, CODEX_OUT],
   data: {dir: "/data/sutra-pro", db_bytes: 12.5 * 1024 * 1024, free_bytes: 40 * 1024 ** 3, backup: "sutra-pro backup"},
   egress: {scrub: true, api_key_refused: true, only_your_cli: true},
-  autonomy: {budget: 30, send_mode: "dry-run", asks: true},
+  autonomy: {budget: 30, usd_budget: 20, send_mode: "dry-run", asks: true},
 };
 const clone = v => JSON.parse(JSON.stringify(v));
 
@@ -29,7 +29,9 @@ test("the four facts are there, numbered, each with a reading", () => {
   assert.match(html, /12\.5 MB/);
   assert.match(html, /40\.0 GB is free/);
   assert.match(html, /<code>sutra-pro backup<\/code>/);
-  assert.match(html, /budget of 30 work credits/);
+  assert.match(html, /inside a budget of \$20 \(API price\) for each run/);      // D257: dollars, never credits
+  assert.doesNotMatch(html, /credit/i);
+  assert.match(welcomeHtml({...FACTS, autonomy: {usd_budget: 12.5, send_mode: "dry-run"}}), /budget of \$12\.50 \(API price\)/);
   assert.match(html, /drafts only: nothing is sent/);
 });
 

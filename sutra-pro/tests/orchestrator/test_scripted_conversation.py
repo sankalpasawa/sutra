@@ -494,3 +494,32 @@ def test_a_budget_goes_only_with_a_new_request_in_the_org_chat(convo):
     assert response.status_code == 422 and "org chat" in response.text, response.text
     response = convo.post(ORG, "Yes", choice={"message_id": 1, "option": "yes"}, budget=50)
     assert response.status_code == 422 and "org chat" in response.text, response.text
+
+
+# ============================================ D257: the home screen's budget in dollars (API price) ===========================
+
+def test_home_usd_budget(convo):
+    answered(convo)
+    mid = convo.say("Also write a menu page.", decide(change="reuse", reuse=("web",), assignments=[draft("a1", "web", title="Menu page")]),
+                    usd_budget=12.5)
+    assert convo.one("SELECT json_extract(meta_json, '$.usd_budget') FROM chat_messages WHERE id = ?", mid) == 12.5
+    task = convo.one("SELECT id FROM tasks WHERE request_id = ?", f"req-{mid}")
+    assert json.loads(convo.one("SELECT settings_json FROM tasks WHERE id = ?", task)) == {"J2_USD_BUDGET": "12.5"}
+    convo.until("the run to start", lambda: (convo.run_dir(task) / "task.json").is_file())
+    assert json.loads((convo.run_dir(task) / "task.json").read_text())["settings"]["J2_USD_BUDGET"] == "12.5"
+
+
+@pytest.mark.parametrize("usd", [0, 0.5, 10001, 12.345, "x", True, [20]])
+def test_a_usd_budget_outside_1_to_10000_dollars_is_422_and_stores_nothing(convo, usd):
+    before = convo.one("SELECT count(*) FROM chat_messages")
+    response = convo.post(ORG, "A website for my cafe", usd_budget=usd)
+    assert response.status_code == 422 and response.json()["error"]["code"] == "validation", response.text
+    assert convo.one("SELECT count(*) FROM chat_messages") == before
+
+
+def test_a_usd_budget_goes_only_with_a_new_request_in_the_org_chat(convo):
+    asked(convo)
+    response = convo.post(convo.session_of("web"), "Sweet Bean", usd_budget=20)
+    assert response.status_code == 422 and "org chat" in response.text, response.text
+    response = convo.post(ORG, "Yes", choice={"message_id": 1, "option": "yes"}, usd_budget=20)
+    assert response.status_code == 422 and "org chat" in response.text, response.text

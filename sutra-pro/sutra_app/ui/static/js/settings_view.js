@@ -85,6 +85,8 @@
     fixes: ["Fix pass", "Let a run make a second pass to repair what the checks refused"],
     budget: ["Budget", "Work credits one run may spend"],
     budget_cap: ["Budget cap", "The most a run may spend; empty means no cap"],
+    usd_budget: ["Budget (API price, $)", "What one run may use before the team stops and asks you. API price, estimated: runs use your Claude subscription; nobody is billed this amount."],
+    usd_cap: ["Budget cap (API price, $)", "The most a run may be raised to; empty means no cap"],
     max_cycles: ["Most cycles", "How many build and check rounds one run may take"],
     limit_add: ["Credits added on a raised limit", "What a raised limit adds to the budget"],
     bargain_minutes: ["Bargaining time (minutes)", "How long the functions may bargain over a conflict"],
@@ -125,8 +127,9 @@
   const OUTPUT_AUTO = "Let the team decide";
   const NAME_SHAPE = /^[a-z][a-z0-9_]{1,40}$/;       // J2's own shape of a type name: what the page accepts when the engine has not listed its types
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
-  const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout", "reviewer_wait"]); // JSON cannot tell 15.0 from 15, so the float fields are named
-  const NULLABLE = freeze(["budget_cap"]);             // empty means "not set" (null)
+  const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout", "reviewer_wait", "usd_budget", "usd_cap"]); // JSON cannot tell 15.0 from 15, so the float fields are named
+  const NULLABLE = freeze(["budget_cap", "usd_cap"]);  // empty means "not set" (null)
+  const HIDDEN = freeze(["budget", "budget_cap", "limit_add"]);      // D257: the credit fields stay valid when stored, but the budget is set in dollars
   // Sub-groups of the Engine group (J2 sync 6, D177 and D179): the fields that sit together under a heading, after the rest. Layout only: a field named here
   // that the engine does not list is not drawn, and a field of the engine that is named nowhere stays in the main list.
   const SUBGROUPS = freeze([
@@ -144,7 +147,8 @@
 
   const textOf = field => (hasOwn(FIELD_TEXT, field) ? FIELD_TEXT[field] : [field.replace(/_/g, " "), ""]);
 
-  // The kind of control a field gets, from its default: toggle (boolean), flag (0/1), choice (a closed list), int, float, nullint (int or empty), text.
+  // The kind of control a field gets, from its default: toggle (boolean), flag (0/1), choice (a closed list), int, float, nullint (int or empty),
+  // nullfloat (a number or empty), text.
   const isChoice = field => field === "output" || hasOwn(CHOICES, field);
 
   // The values a choice field offers: a closed list, or for `output` "auto" and every type the engine says can be pinned (`output_types` of the settings
@@ -171,7 +175,7 @@
   function kindOf(field, defaults) {
     if (isChoice(field)) return "choice";
     if (FLAGS01.includes(field)) return "flag";
-    if (NULLABLE.includes(field)) return "nullint";
+    if (NULLABLE.includes(field)) return FLOATS.includes(field) ? "nullfloat" : "nullint";
     const v = isObj(defaults) ? defaults[field] : undefined;
     if (typeof v === "boolean") return "toggle";
     if (typeof v === "number") return FLOATS.includes(field) ? "float" : "int";
@@ -203,8 +207,9 @@
         return finite(n) && (kind === "float" || Number.isInteger(n)) ? {ok: true, value: n} : {ok: false};
       }
       case "nullint":
+      case "nullfloat":
         if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) return {ok: true, value: null};
-        return parseValue("int", raw, field, settings);
+        return parseValue(kind === "nullfloat" ? "float" : "int", raw, field, settings);
       default:
         return typeof raw === "string" ? {ok: true, value: raw} : {ok: false};
     }
@@ -259,7 +264,7 @@
       if (!hasOwn(form, field)) return;
       const kind = kindOf(field, defaults);
       if (!parseValue(kind, form[field], field, settings).ok) {
-        problems[field] = kind === "int" || kind === "nullint" ? "Write a whole number." : (kind === "float" ? "Write a number." : "This value is not valid.");
+        problems[field] = kind === "int" || kind === "nullint" ? "Write a whole number." : (kind === "float" || kind === "nullfloat" ? "Write a number." : "This value is not valid.");
       }
     });
     return problems;
@@ -298,7 +303,10 @@
       return '<input type="number" step="1" inputmode="numeric"' + common + ' value="' + (value === null || value === undefined ? "" : esc(value)) + '"' +
         (kind === "nullint" ? ' placeholder="not set"' : "") + ">";
     }
-    if (kind === "float") return '<input type="number" step="any" inputmode="decimal"' + common + ' value="' + esc(value === undefined || value === null ? "" : value) + '">';
+    if (kind === "float" || kind === "nullfloat") {
+      return '<input type="number" step="any" inputmode="decimal"' + common + ' value="' + esc(value === undefined || value === null ? "" : value) + '"' +
+        (kind === "nullfloat" ? ' placeholder="not set"' : "") + ">";
+    }
     return '<input type="text" maxlength="500"' + common + ' value="' + esc(value === undefined || value === null ? "" : value) + '">';
   }
 
@@ -359,7 +367,7 @@
       return head + '<p class="setnote">' + NOTE_NEXT_RUN + '</p><p class="setempty">The engine settings are not loaded yet.</p></section>';
     }
     const scoped = clean(o.scope) !== "";
-    const editable = listOf(settings.editable);
+    const editable = listOf(settings.editable).filter(f => !HIDDEN.includes(f));
     const locked = listOf(settings.locked);
     return head + '<p class="setnote">' + NOTE_NEXT_RUN + (scoped ? " These values are for this team only." : " These values are for every team.") + "</p>" +
       scopeSelect(o.scope, o.departments) +

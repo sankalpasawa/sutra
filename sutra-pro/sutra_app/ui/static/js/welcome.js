@@ -83,7 +83,9 @@
 
   function autonomyFact(a) {
     const x = isObj(a) ? a : {};
-    const budget = Number.isFinite(x.budget) ? "inside a budget of " + x.budget + " work credits for each run" : "inside a budget for each run";
+    // D257: the budget is in dollars (API price); the credits stay the engine's own bookkeeping
+    const usd = Number.isFinite(x.usd_budget) && x.usd_budget > 0 ? "$" + (Number.isInteger(x.usd_budget) ? x.usd_budget : x.usd_budget.toFixed(2)) : "";
+    const budget = usd ? "inside a budget of " + usd + " (API price) for each run" : "inside a budget for each run";
     const mail = x.send_mode === "live" ? "Emails a team writes are sent for real (you can change that in Settings, Engine)."
       : (x.send_mode === "dry-run" ? "Emails a team writes are drafts only: nothing is sent." : "");
     return "<p>Teams plan and work by themselves " + esc(budget) + ". When one needs a decision or hits a limit it asks you in the " +

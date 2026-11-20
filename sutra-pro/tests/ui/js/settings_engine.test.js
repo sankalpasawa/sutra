@@ -23,6 +23,9 @@ const FOR_ALL = (() => {
   return all;
 })();
 const DEPARTMENTS = [{id: "web", name: "Web"}, {id: "content", name: "Content"}];
+// D257: the budget is set in dollars; the credit fields stay valid when stored but get no row
+const HIDDEN = ["budget", "budget_cap", "limit_add"];
+const SHOWN = FOR_ALL.editable.filter(f => !HIDDEN.includes(f));
 
 // The markup of one field's row: from its opening tag to the next row, so a test can look at one field.
 function rows(html) {
@@ -54,7 +57,7 @@ test("the line about the next run is there before the settings have loaded", () 
 test("every editable field has a control and no locked field has one", () => {
   const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
   const found = rows(html);
-  FOR_ALL.editable.forEach(field => {
+  SHOWN.forEach(field => {
     assert.equal(found[field].includes('data-locked="false"'), true, field);
     assert.ok(inputOf(found[field]), `${field} has a control`);
   });
@@ -62,7 +65,21 @@ test("every editable field has a control and no locked field has one", () => {
     assert.equal(found[field].includes('data-locked="true"'), true, field);
     assert.equal(/<(input|select|textarea)\b/.test(found[field]), false, `${field} is read-only`);
   });
-  assert.equal(Object.keys(found).length, FOR_ALL.editable.length + FOR_ALL.locked.length);
+  assert.equal(Object.keys(found).length, SHOWN.length + FOR_ALL.locked.length);
+  HIDDEN.forEach(field => assert.equal(found[field], undefined, field + " has no row"));
+});
+
+test("the budget is in dollars (API price) with the not-billed hint, and no credit field is shown (D257)", () => {
+  const html = engineHtml(FOR_ALL, {scope: ""});
+  const found = rows(html);
+  assert.match(found.usd_budget, /<label class="setlabel" for="setf-usd_budget">Budget \(API price, \$\)<\/label>/);
+  assert.match(found.usd_budget, /API price, estimated: runs use your Claude subscription; nobody is billed this amount\./);
+  assert.match(inputOf(found.usd_budget)[0], /type="number" step="any"/);
+  assert.match(inputOf(found.usd_budget)[0], /value="20"/);
+  assert.match(found.usd_cap, /Budget cap \(API price, \$\)/);
+  assert.doesNotMatch(html, /credit/i);
+  assert.deepEqual(engineBody(FOR_ALL, {usd_budget: "12.5", usd_cap: ""}), {set: {usd_budget: 12.5}, unset: []});
+  assert.deepEqual(engineBody(FOR_ALL, {usd_cap: "60.5"}), {set: {usd_cap: 60.5}, unset: []});
 });
 
 test("a boolean setting is a toggle that shows the effective value", () => {
@@ -84,18 +101,19 @@ test("fixes is a toggle too, although it travels as 0 or 1", () => {
 
 test("a numeric setting is a number field holding the effective value; whole numbers step by 1 and the others by any", () => {
   const found = rows(engineHtml(FOR_TEAM, {scope: "web"}));
-  assert.match(inputOf(found.budget)[0], /type="number"/);
-  assert.match(inputOf(found.budget)[0], /value="120"/);                      // from the all-teams file
-  assert.match(inputOf(found.budget)[0], /step="1"/);
+  assert.match(inputOf(found.max_cycles)[0], /type="number"/);
+  assert.match(inputOf(found.max_cycles)[0], /step="1"/);
   assert.match(inputOf(found.max_cycles)[0], /value="4"/);                    // from the team's file
+  assert.match(inputOf(found.usd_budget)[0], /step="any"/);                   // D257: dollars to the cent
   assert.match(inputOf(found.delay)[0], /step="any"/);
   assert.match(inputOf(found.bargain_minutes)[0], /step="any"/);
 });
 
-test("budget_cap, which is not set by default, is an empty number field", () => {
+test("usd_cap, which is not set by default, is an empty number field (D257: budget_cap is hidden)", () => {
   const found = rows(engineHtml(FOR_ALL, {}));
-  assert.match(inputOf(found.budget_cap)[0], /type="number"/);
-  assert.match(inputOf(found.budget_cap)[0], /value=""/);
+  assert.match(inputOf(found.usd_cap)[0], /type="number" step="any"/);
+  assert.match(inputOf(found.usd_cap)[0], /value=""/);
+  assert.match(inputOf(found.usd_cap)[0], /placeholder="not set"/);
 });
 
 test("the kind of build is a choice among the types the engine lists (output_types), and the team decides by default", () => {
@@ -146,7 +164,7 @@ test("the template library flag says what the catalog's By run list shows while 
 test("the reuse switches and the reviewer pair are five more rows: four toggles and one number, under their own headings", () => {
   const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
   const found = rows(html);
-  assert.equal(Object.keys(found).length, 37, "27 editable rows and 10 locked ones");
+  assert.equal(Object.keys(found).length, 36, "26 editable rows (29 less the three hidden credit ones, D257) and 10 locked ones");
   ["run_templates", "auto_reuse", "artifact_library", "reviewer"].forEach(f => assert.match(inputOf(found[f])[0], /type="checkbox"/, f));
   assert.match(inputOf(found.reviewer_wait)[0], /type="number" step="any"/);
   assert.match(inputOf(found.reviewer_wait)[0], /value="120"/);
@@ -201,12 +219,16 @@ test("the working-folder switch for agents is a choice between auto and off", ()
 });
 
 test("a row says which layer set its value", () => {
-  const found = rows(engineHtml(FOR_TEAM, {scope: "web"}));
+  const answer = clone(FOR_TEAM);
+  answer.global = Object.assign({}, answer.global, {usd_budget: 15});
+  answer.effective = Object.assign({}, answer.effective, {usd_budget: 15});
+  const found = rows(engineHtml(answer, {scope: "web"}));
   assert.match(found.max_cycles, /data-source="team"/);
   assert.match(found.max_cycles, /set for this team/);
-  assert.match(found.budget, /data-source="all"/);
-  assert.match(found.budget, /set for all teams/);
-  assert.match(found.limit_add, /data-source="default"/);
+  assert.match(found.usd_budget, /data-source="all"/);
+  assert.match(found.usd_budget, /set for all teams/);
+  assert.match(inputOf(found.usd_budget)[0], /value="15"/);                  // from the all-teams file
+  assert.match(found.max_turns, /data-source="default"/);
 });
 
 test("every locked field is read-only, shows its value and says where engine.json is", () => {
@@ -250,21 +272,21 @@ test("a team name is written as text, never as markup", () => {
 });
 
 test("a refused value is named beside its field, and a general sentence stands at the top", () => {
-  const html = engineHtml(FOR_ALL, {errors: {budget: "budget must be a whole number of at least 1", "": "Not saved."}});
+  const html = engineHtml(FOR_ALL, {errors: {usd_budget: "usd_budget must be dollars from 1 to 10000", "": "Not saved."}});
   const found = rows(html);
-  assert.match(found.budget, /<span class="seterr" role="alert">budget must be a whole number of at least 1<\/span>/);
+  assert.match(found.usd_budget, /<span class="seterr" role="alert">usd_budget must be dollars from 1 to 10000<\/span>/);
   assert.equal(found.max_cycles.includes("seterr"), false);
   assert.match(html, /<p class="seterr setgen" role="alert">Not saved\.<\/p>/);
 });
 
 test("what the owner typed stays in the fields beside a refusal", () => {
-  const html = engineHtml(FOR_ALL, {values: {budget: "0", rates: false, output: "prd", fixes: true}, errors: {budget: "no"}});
+  const html = engineHtml(FOR_ALL, {values: {usd_budget: "0", rates: false, output: "prd", fixes: true}, errors: {usd_budget: "no"}});
   const found = rows(html);
-  assert.match(inputOf(found.budget)[0], /value="0"/);
+  assert.match(inputOf(found.usd_budget)[0], /value="0"/);
   assert.equal(/\bchecked\b/.test(inputOf(found.rates)[0]), false);        // the default is on; the owner turned it off
   assert.equal(/\bchecked\b/.test(inputOf(found.fixes)[0]), true);
   assert.match(found.output, /<option value="prd" selected>/);
-  assert.match(inputOf(rows(engineHtml(FOR_ALL, {})).budget)[0], /value="120"/);   // without values the server's own are shown
+  assert.match(inputOf(rows(engineHtml(FOR_ALL, {})).usd_budget)[0], /value="20"/);   // without values the server's own are shown
 });
 
 test("the Save button, the saved line and the busy state", () => {

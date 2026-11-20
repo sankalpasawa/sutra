@@ -470,6 +470,15 @@ class ChatPost(Value):
     # D252: the home screen's "Budget (work credits)" for a new request in the org chat; None: the team's own budget. The limits are
     # J2_BUDGET's (TaskSettings, EngineSettings.budget).
     budget: Annotated[int, Field(ge=1, le=100_000)] | None = None
+    # D257: the home screen's dollar budget (API price) for a new request; None: the team's own. The limits are EngineSettings.usd_budget's.
+    usd_budget: Annotated[float, Field(ge=1, le=10_000, allow_inf_nan=False)] | None = None
+
+    @field_validator("usd_budget")
+    @classmethod
+    def _to_the_cent(cls, value: float | None) -> float | None:
+        if value is not None and round(value, 2) != value:
+            raise ValueError("dollars, at most two decimals")
+        return value
 
 
 class Accepted(Value):

@@ -610,3 +610,30 @@ def test_the_route_limits_are_the_budget_settings_and_the_task_setting_takes_wha
     for bad in ("0", "100001"):
         with pytest.raises(ValueError):
             TaskSettings(J2_BUDGET=bad)
+
+
+# ---- D257: the Budget chip's dollars (API price) are this delivery's J2_USD_BUDGET ----------------------------------------------------
+@pytest.mark.parametrize("usd, want", [(20, "20"), (12.5, "12.5"), ("12.50", "12.5"), (1, "1"), (10000, "10000"), ("7", "7")])
+def test_say_usd_budget(api, usd, want):
+    got = api.client.post("/api/say?dept=web", json={"text": "a cafe site", "usd_budget": usd}, headers=TOKEN)
+    assert (got.status_code, got.json()) == (200, {"ok": True})
+    assert api.svc.deliveries[-1]["settings"] == {"J2_USD_BUDGET": want}
+    assert api.page().next_settings == {}, "the page keeps nothing of it: the next request starts from the team's own budget"
+
+
+@pytest.mark.parametrize("usd", [0, 0.99, 10001, 12.345, "12.345", "abc", "1e3", True, [20], {"n": 1}])
+def test_say_usd_budget_outside_1_to_10000_dollars_is_400_and_delivers_nothing(api, usd):
+    got = api.client.post("/api/say?dept=web", json={"text": "a cafe site", "usd_budget": usd}, headers=TOKEN)
+    assert (got.status_code, got.json()) == (400, {"error": "usd_budget must be dollars from 1 to 10000, at most two decimals"})
+    assert api.svc.deliveries == []
+
+
+def test_the_usd_route_limits_are_the_usd_budget_settings_and_the_task_setting_takes_them():
+    from sutra_app.engine.spec import EngineSettings
+    from sutra_app.orchestrator.models import TaskSettings
+    field = {k: getattr(m, k) for m in EngineSettings.model_fields["usd_budget"].metadata for k in ("ge", "le") if hasattr(m, k)}
+    assert field == {"ge": 1, "le": 10_000}
+    assert TaskSettings(J2_USD_BUDGET="12.5").J2_USD_BUDGET == "12.5" and TaskSettings(J2_USD_BUDGET="10000").J2_USD_BUDGET == "10000"
+    for bad in ("0", "0.5", "10001", "12.345", "abc"):
+        with pytest.raises(ValueError):
+            TaskSettings(J2_USD_BUDGET=bad)

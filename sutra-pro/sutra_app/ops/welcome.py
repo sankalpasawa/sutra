@@ -97,10 +97,10 @@ def _autonomy(services: Any) -> dict[str, Any]:
         from sutra_app.engine.spec import EngineSettings, read_settings_file
         file = read_settings_file(services.settings.data_dir / "engine.json") or {}
         effective = EngineSettings.layered(os.environ, file, None, {})
-        return {"budget": int(effective.budget), "send_mode": str(effective.send_mode), "asks": True}
+        return {"budget": int(effective.budget), "usd_budget": float(effective.usd_budget), "send_mode": str(effective.send_mode), "asks": True}
     except Exception:                                                     # noqa: BLE001
         log.warning("the welcome could not read the engine settings", exc_info=True)
-        return {"budget": None, "send_mode": None, "asks": True}
+        return {"budget": None, "usd_budget": None, "send_mode": None, "asks": True}
 
 
 def facts_of(app: Any, services: Any) -> dict[str, Any]:

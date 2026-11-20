@@ -670,7 +670,7 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 37 and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169); sync 6 (D177, D179): run_templates, auto_reuse, artifact_library, reviewer, reviewer_wait
+    assert len(settings["defaults"]) == 39 and settings["defaults"]["usd_budget"] == 20.0 and settings["defaults"]["usd_cap"] is None and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169); sync 6 (D177, D179): run_templates, auto_reuse, artifact_library, reviewer, reviewer_wait
     flags = {f: settings["defaults"][f] for f in ("run_templates", "auto_reuse", "artifact_library", "reviewer", "reviewer_wait")}
     assert flags == {"run_templates": False, "auto_reuse": False, "artifact_library": False, "reviewer": True, "reviewer_wait": 120.0}
     types = settings["output_types"]                                                  # D166: the pages' choices; the names are data

@@ -51,6 +51,7 @@ def test_a_new_data_folder_has_not_seen_the_card_and_offline_says_the_stub_answe
     assert data["dir"] == str(tmp_path / "data") and data["db_bytes"] > 0 and data["free_bytes"] > 0 and data["backup"] == "sutra-pro backup"
     assert body["facts"]["egress"] == {"scrub": True, "api_key_refused": True, "only_your_cli": True, "auto_update": {"on": True, "desktop": False}}
     assert body["facts"]["autonomy"]["asks"] is True and isinstance(body["facts"]["autonomy"]["budget"], int)
+    assert body["facts"]["autonomy"]["usd_budget"] == 20.0      # D257
 
 
 def test_a_doctor_failure_becomes_a_fix_line_and_a_ready_model_has_none(tmp_path, monkeypatch):

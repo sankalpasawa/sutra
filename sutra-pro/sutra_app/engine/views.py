@@ -26,6 +26,7 @@ import base64
 import contextlib
 import html
 import json
+import math
 import os
 import re
 import tempfile
@@ -77,7 +78,8 @@ class Commands(Protocol):
     """What the four POSTs that act do to the run (the two clears only touch memory files, which the views do themselves). The
     handler validates; this object acts."""
 
-    def say(self, text: str, template: Optional[str] = None, workflows: Optional[str] = None, budget: Optional[str] = None) -> bool: ...      # False: busy (409)
+    def say(self, text: str, template: Optional[str] = None, workflows: Optional[str] = None, budget: Optional[str] = None,
+            usd_budget: Optional[str] = None) -> bool: ...      # False: busy (409)
     #   template and workflows: a run template and its workflows (J2 sync 6, D182), passed only when the body has a template; budget: the start
     #   page's Budget field as J2_BUDGET text (D251), passed only when the body has one
     def set_output(self, out: Any) -> Tuple[bool, str]: ...    # (accepted, the output type now)
@@ -757,6 +759,22 @@ def _say_budget(body: dict) -> Tuple[Optional[str], Optional[str]]:
     return str(raw), None
 
 
+def _say_usd_budget(body: dict) -> Tuple[Optional[str], Optional[str]]:
+    """(the J2_USD_BUDGET text, the violation) of a `POST /api/say` body's `usd_budget` (D257): the team page's Budget chip, in dollars (API
+    price). Absent or empty is None (the team's own budget applies). A number (or its digits) of dollars with at most two decimals, within
+    `EngineSettings.usd_budget`'s limits; the violation is the 400's text."""
+    raw = body.get("usd_budget")
+    if raw is None or raw == "":
+        return None, None
+    limits = {k: getattr(m, k) for m in EngineSettings.model_fields["usd_budget"].metadata for k in ("ge", "le") if hasattr(m, k)}
+    low, high = limits["ge"], limits["le"]
+    if isinstance(raw, str) and re.fullmatch(r"[0-9]{1,5}(\.[0-9]{1,2})?", raw.strip()):
+        raw = float(raw.strip())
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not math.isfinite(raw) or round(raw, 2) != raw or not low <= raw <= high:
+        return None, f"usd_budget must be dollars from {low} to {high}, at most two decimals"
+    return f"{raw:g}", None
+
+
 def _say_template(body: dict) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """(template, workflows, the violation) of a `POST /api/say` body (J2 sync 6, D182). `template` is a run template id; `workflows` is `all`,
     a comma list of workflow keys or a list of keys, and comes back as `all` or one comma list. An absent or empty value is None; `workflows`
@@ -791,11 +809,13 @@ def say(ctx: RunCtx, body: dict) -> Reply:
         return _json({"error": "empty"}, 400)
     template, workflows, violation = _say_template(body)
     budget, too = _say_budget(body)
-    if violation or too:
-        return _json({"error": violation or too}, 400)
+    usd, usd_wrong = _say_usd_budget(body)
+    if violation or too or usd_wrong:
+        return _json({"error": violation or too or usd_wrong}, 400)
     if ctx.commands is None:
         return _no_commands()
-    extra = {**({"template": template, "workflows": workflows} if template else {}), **({"budget": budget} if budget else {})}
+    extra = {**({"template": template, "workflows": workflows} if template else {}), **({"budget": budget} if budget else {}),
+             **({"usd_budget": usd} if usd else {})}
     ok = bool(ctx.commands.say(text, **extra))
     return _json({"ok": ok}, 200 if ok else 409)
 

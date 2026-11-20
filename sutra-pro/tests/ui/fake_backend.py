@@ -115,7 +115,7 @@ OUTPUT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")      # J2's own shape of 
 def output_names(es: dict) -> tuple[str, ...]:
     """What the fake's engine accepts as `output`: `auto` and every type of the fixture's `output_types` that can be pinned, in its order."""
     return ("auto", *(t["name"] for t in es.get("output_types", []) if t.get("pin")))
-ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
+ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1, "usd_budget": 1, "usd_cap": 1}
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
 PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # the purposes the fake's story has calls for: what `usage.by_purpose` of an agent's row names (D145, D159)
@@ -706,7 +706,11 @@ class FakeState:
         if field in ENGINE_ENUMS:
             return None if value in ENGINE_ENUMS[field] and not isinstance(value, bool) else (
                 "invalid_value", f"{field} must be one of {', '.join(map(str, ENGINE_ENUMS[field]))}")
-        if field == "budget_cap" and value is None:
+        if field in ("budget_cap", "usd_cap") and value is None:
+            return None
+        if field in ("usd_budget", "usd_cap"):      # D257: dollars (API price), $1 to $10,000 as EngineSettings has them
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 10_000:
+                return ("invalid_value", f"{field} must be dollars from 1 to 10000")
             return None
         if isinstance(default, bool):
             return None if isinstance(value, bool) else ("invalid_value", f"{field} must be true or false")
@@ -2107,7 +2111,7 @@ WELCOME_FACTS = {
                {"name": "codex", "state": "not_ready", "why": "0.5.2: not signed in", "fix": "run `codex login`"}],
     "data": {"dir": "/data/sutra-pro", "db_bytes": 1_310_720, "free_bytes": 42_949_672_960, "backup": "sutra-pro backup"},
     "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True, "auto_update": {"on": True, "desktop": True}},
-    "autonomy": {"budget": 30, "send_mode": "dry-run", "asks": True},
+    "autonomy": {"budget": 30, "usd_budget": 20.0, "send_mode": "dry-run", "asks": True},
 }
 UPDATE_SETTING = {"auto": True, "chosen": False, "default": True, "desktop": True, "offline": False, "last": None}
 UPDATE_STATES = ("up_to_date", "available", "error", "downloading", "ready", "failed", "tell_only", "installing")
