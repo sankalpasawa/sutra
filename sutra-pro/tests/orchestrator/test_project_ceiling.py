@@ -103,3 +103,22 @@ def test_the_time_a_project_was_paused_is_not_counted(rig):
     rig.sql("INSERT INTO node_audit(at, project_id, actor, action, decision) VALUES (?, ?, 'owner', 'project.paused', 'n/a')", BASE - 7000, reservation.project_id)
     rig.sql("INSERT INTO node_audit(at, project_id, actor, action, decision) VALUES (?, ?, 'owner', 'project.resumed', 'n/a')", BASE - 1000, reservation.project_id)      # ... of which 6000 s were paused
     assert tick(rig, 10)["stopped"] == []
+
+
+def test_the_egress_file_is_read_before_the_write_transaction_and_the_row_is_written_once_even_when_the_stop_fails(rig, settings, monkeypatch):
+    from sutra_app.orchestrator import conductor
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    path = settings.data_dir / "connectors" / "egress.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    node_id = rig.node_of(tasks["a1"])["id"]
+    path.write_text("\n".join(json.dumps({"node": node_id, "shapes": {"api-key": 1}}) for _ in range(3)) + "\n", encoding="utf-8")
+    depths, real = [], conductor.egress_scrubs
+    monkeypatch.setattr(conductor, "egress_scrubs", lambda *a, **k: (depths.append(getattr(rig.t.db._local, "depth", 0)), real(*a, **k))[1])
+    async def failing(task_id, outcome="x", **kw):
+        raise RuntimeError("the ladder did not work")
+    monkeypatch.setattr(rig.t.service, "stop_node", failing)
+    for seconds in (10, 12, 14):
+        tick(rig, seconds)
+    assert depths == [0, 0, 0]                                                                        # never inside a transaction
+    assert [r["action"] for r in rig.audit("trigger.egress_scrub")] == ["trigger.egress_scrub"] and len(notes(rig, reservation.project_id, "scrub")) == 1

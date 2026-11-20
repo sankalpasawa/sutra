@@ -89,8 +89,8 @@ def test_a_tick_whose_own_stops_took_long_is_not_read_as_a_sleep_but_a_real_gap_
     conductor = rig.projects.conductor
     real = conductor._tick_sync
 
-    def slow(now, gap):
-        done = real(now, gap)
+    def slow(now, gap, *rest):
+        done = real(now, gap, *rest)
         clock.advance(50)                                                    # the stop ladders of this tick took 50 s
         return done
     tick(rig, 10)

@@ -370,3 +370,14 @@ def test_names_that_look_ordinary_are_still_accepted_after_the_windows_rules():
                 normalize_scope([entry])
         else:
             assert normalize_scope([entry]), entry
+
+
+def test_the_superscript_device_names_are_refused_and_scopes_compare_without_case(  # m7
+        ):
+    from sutra_app.orchestrator.grants import GrantError, normalize_scope, scopes_overlap
+    for bad in ("site/COM¹", "LPT².txt", "com³", "a/lpt¹/b"):
+        with pytest.raises(GrantError):
+            normalize_scope([bad])
+    assert normalize_scope(["Site/Pricing"]) == ("Site/Pricing",)
+    assert scopes_overlap(("Site/",), ("site/pricing",)) is True and scopes_overlap(("Site/a",), ("site/b",)) is False and scopes_overlap(("DOCS",), ("docs/readme.md",)) is True
+    assert normalize_scope(["Site", "site/pricing"]) == ("Site",)                                  # a spelling of a path covered by another is dropped

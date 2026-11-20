@@ -429,7 +429,8 @@ class Conductor:
 
     async def _tick(self, moment: int, gap: int) -> dict[str, list[str]]:
         import asyncio
-        did = await run_blocking(self._tick_sync, moment, gap)
+        scrubs = await run_blocking(egress_scrubs, self.settings.data_dir / "connectors" / "egress.jsonl")       # read BEFORE the write transaction opens: up to 2 MB is parsed (m8)
+        did = await run_blocking(self._tick_sync, moment, gap, scrubs)
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s", by="system") for task_id in did["expire"]), return_exceptions=True)
         stuck, self._stop_tasks = self._stop_tasks, []
@@ -444,7 +445,7 @@ class Conductor:
             await self.stop(project_id, by="system", reason=reason)
         return {"expired": did["expire"], "refused": [p for p, _ in did["refuse"]], "stopped": [p for p, _ in pending], "extended": did["extended"]}
 
-    def _tick_sync(self, now: int, gap: int) -> dict[str, Any]:
+    def _tick_sync(self, now: int, gap: int, scrubs: dict[str, int] | None = None) -> dict[str, Any]:
         expire: list[str] = []
         scrub: list[str] = []
         extended: list[str] = []
@@ -474,7 +475,7 @@ class Conductor:
                     continue
                 if self._project_limit(tx, project["id"], now, project["created_at"], caps_of(project)):
                     continue
-                self._scrubbed_nodes(tx, project["id"], scrub)
+                self._scrubbed_nodes(tx, project["id"], scrub, scrubs or {})
                 self._fail_without_grant(tx, project["id"])
                 for stuck in tx.conn.execute("SELECT n.task_id AS task_id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state = 'expired' "
                                              "AND t.status IN ('starting','running','waiting_user')", (project["id"],)).fetchall():
@@ -534,20 +535,21 @@ class Conductor:
                 began = None
         return total + (max(0, now - began) if began is not None else 0)
 
-    def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str]) -> None:
+    def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str], counts: dict[str, int]) -> None:
         """D303: a node whose prompts were scrubbed `SCRUB_LIMIT` times (rows of `egress.jsonl` that name it and found something) is ended: audit `trigger.egress_scrub`, a plain note, its task
         through the stop ladder at the end of the tick. Counted from the node's own rows, so a repeat is the same node and never another."""
         live = tx.conn.execute("SELECT n.id AS id, n.role AS role, n.task_id AS task_id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? "
                                "AND n.state IN ('leased','running') AND t.status IN ('starting','running','waiting_user')", (project_id,)).fetchall()
         if not live:
             return
-        counts = egress_scrubs(self.settings.data_dir / "connectors" / "egress.jsonl", [row["id"] for row in live])
         for row in live:
             if counts.get(row["id"], 0) >= SCRUB_LIMIT:
+                scrub.append(row["task_id"])                                         # asked again every tick until the process is gone
+                if tx.conn.execute("SELECT 1 FROM node_audit WHERE node_id = ? AND action = 'trigger.egress_scrub'", (row["id"],)).fetchone() is not None:
+                    continue                                                         # the row and the note are written once
                 self.store.audit(tx, actor="conductor", action="trigger.egress_scrub", project_id=project_id, node_id=row["id"], role=row["role"], decision="deny",
                                  reason=f"its prompts were scrubbed {counts[row['id']]} times", ref=row["task_id"])
                 self._note(tx, project_id, "A step was stopped because its prompts held secrets again and again.", f"project:{project_id}#scrub:{row['id']}")
-                scrub.append(row["task_id"])
 
     def _fail_without_grant(self, tx: Tx, project_id: str) -> None:
         """G3 (D310, D302): a node whose task waits and whose grant is missing, unreadable, too wide for its role or not its own is held by the gate for ever, and the project would hang. The tick fails it:

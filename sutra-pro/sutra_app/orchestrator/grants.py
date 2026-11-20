@@ -91,7 +91,8 @@ ROLE_TABLE: Mapping[str, RoleRule] = {
 
 _GLOB = re.compile(r"[*?\[\]{}]")
 _SHORT_NAME = re.compile(r"~[0-9]")                                  # a Windows 8.3 short name: GIT~1 is .git
-_DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10)), "CONIN$", "CONOUT$", "CLOCK$"})
+_DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10)), "CONIN$", "CONOUT$", "CLOCK$",
+                           "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3"})          # Windows also treats the superscript digits as devices (m7)
 _DRIVE = re.compile(r"^[A-Za-z]:")
 
 
@@ -142,8 +143,9 @@ def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
 
 def _covers(parent: str, child: str) -> bool:
     """`child` is `parent` or lies below it."""
-    base = parent.rstrip("/")
-    return child.rstrip("/") == base or child.startswith(base + "/")
+    base = parent.rstrip("/").casefold()                    # Windows and the default macOS file system do not tell `Site` from `site`: two writers on those spellings overlap (m7)
+    other = child.rstrip("/").casefold()
+    return other == base or other.startswith(base + "/")
 
 
 def scopes_overlap(first: tuple[str, ...], second: tuple[str, ...]) -> bool:
