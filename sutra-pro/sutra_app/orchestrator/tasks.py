@@ -1082,7 +1082,7 @@ class TaskService:
 
     def retry_in(self, tx: Tx, task_id: str, *, force: bool = False) -> TaskRow:
         """The retry of `retry`, inside the caller's transaction: a new queued task with the same words, team, scope and settings, `parent_task_id` = the old task, the earlier attempts' brief in
-        its framing and its attempt number. `force` (the project service, for a node: MAN-7) also allows an old task that ended `done`, because the node's hand-off was refused."""
+        its framing and its attempt number. `force` (the project service, for a node: MAN-7) also allows an old task that ended `done`, because the node's hand-off was refused, and keeps the old task's `depends_on`."""
         old = self.store.row_in(tx.conn, task_id)
         if old is None:
             raise NotFound("that task")
@@ -1095,9 +1095,9 @@ class TaskService:
         base = earlier[0]["framing"].strip()
         framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
         return self._insert(
-            tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
+            tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=old.depends_on if force else (),
             follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
-            attempt=number)
+            attempt=number)         # a node's retry (`force`) keeps what the node waited for, so the new attempt is given the same upstream (G4, D310); the owner's own retry stays as it was
 
     # ---- reads the engine plug-in needs ---------------------------------------------------------------------------------------
 

@@ -221,3 +221,24 @@ def test_a_broken_grant_under_stop_all_stops_the_project(rig):
     rig.go(tasks["a2"])
     done = tick(rig, 10)
     assert done["stopped"] == [reservation.project_id] and rig.project(reservation.project_id)["status"] == "stopped"
+
+
+# ---- a retry keeps what the node waited for (G4, D310) ------------------------------------------------------------------------------
+
+def test_the_retry_of_a_node_keeps_its_upstream_and_a_node_that_waits_for_it_waits_for_the_new_attempt(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"]), ("a3", "ops", ["a2"])])
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], files={"out.md": "result"})
+    rig.start()
+    rig.go(tasks["a2"])
+    rig.finish(tasks["a2"], status="crashed", outcome="it crashed", handoff=False)               # the node's single retry is made in the same transaction
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a2'").fetchone()
+    new = node["task_id"]
+    assert node["attempt"] == 2 and new != tasks["a2"] and json.loads(rig.sql("SELECT depends_on FROM tasks WHERE id = ?", new).fetchone()[0]) == [tasks["a1"]]
+    assert rig.t.status(new) in ("queued", "starting")
+    assert json.loads(rig.sql("SELECT depends_on FROM tasks WHERE id = ?", tasks["a3"]).fetchone()[0]) == [new] and rig.t.status(tasks["a3"]) == "blocked"
+    rig.start()
+    spec = [s for s, *_ in rig.t.launcher.started if s.task_id == new][0]
+    assert [u.run_id for u in spec.upstream] == [rig.t.row(tasks["a1"]).run_id] and "handoff.accepted.json" in spec.upstream[0].files
+
