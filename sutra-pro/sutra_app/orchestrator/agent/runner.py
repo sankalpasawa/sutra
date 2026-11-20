@@ -338,7 +338,7 @@ class TurnRunner:
                     done = await self._carry_out(mid, request, plan)
                 except CallCancelledError:                                  # the owner's Stop (node stop, project stop, kill all) ended the planner's running call: no plan is adopted (D301)
                     self._release_planner(request)
-                    await self._finish_error(mid, line("failed"))
+                    await self._finish_error(mid, line("stopped"))              # a stop, not "something went wrong" (G7, D308)
                     return
                 except ConnectorFailure as exc:
                     await self._connector_down(mid, exc)
@@ -452,6 +452,7 @@ class TurnRunner:
         drafts = dependency_order(plan.drafts)
         task_ids: list[str] = []
         failure: str | None = None
+        waits = ""
         if drafts:
             self._phase(mid, "handing_off")
             change_id = applied.result.id if applied is not None else None
@@ -462,6 +463,8 @@ class TurnRunner:
                     if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
                         raise AppError("validation", reservation.why or "the plan was refused")
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
+                if reservation is not None and reservation.waits is not None:          # the project waits for the owner's OK on its estimate: say so (D308)
+                    waits = line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1]))
             except AppError as exc:
                 failure = exc.message
             if task_ids:
@@ -469,7 +472,7 @@ class TurnRunner:
                     await self.tasks.start_ready()
                 except Exception:                                           # noqa: BLE001  (a task that cannot start is that task's problem)
                     log.exception("start_ready failed after request %s", request.request_id)
-        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure)
+        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure, waits)
         self._phase(mid, "done")
         await self._call_hook(self.hooks.on_done, mid)
 
@@ -529,7 +532,7 @@ class TurnRunner:
             try:
                 plan = await self.agent.resume(request, decision)
             except CallCancelledError:                                    # the owner's Stop ended the planner's running call: no plan is adopted (D301)
-                await self._finish_error(mid, line("failed"))
+                await self._finish_error(mid, line("stopped"))
                 return result
             except ConnectorFailure as exc:
                 await self._connector_down(mid, exc)
@@ -603,9 +606,11 @@ class TurnRunner:
         return list(made.values())
 
     def _write_outcome(self, mid: int, plan: Plan, applied: _Applied | None, drafts: Sequence[AssignmentDraft], task_ids: Sequence[str],
-                       failure: str | None) -> None:
-        """T8: the template line, the chart card and a task card per task; the request is `ok`."""
+                       failure: str | None, waits: str = "") -> None:
+        """T8: the template line, the chart card and a task card per task; the request is `ok`. `waits`: the sentence of a project that waits for the owner's OK (D308)."""
         sentences = self._sentences(plan, applied, drafts)
+        if waits:
+            sentences = sentences + [waits]
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]
         cards: list[dict] = []

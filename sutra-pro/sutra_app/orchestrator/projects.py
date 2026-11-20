@@ -63,6 +63,8 @@ class Reservation:
     why: str = ""
     nodes: dict[str, str] = field(default_factory=dict)
     planner_node_id: str = ""
+    title: str = ""
+    waits: tuple[int, int] | None = None                      # (the estimate, the limit it is over) while the project waits for the owner's OK on its estimate (D308); None otherwise
 
 
 def default_output_of(data_dir: Any) -> Callable[[str], Any]:
@@ -154,7 +156,7 @@ class ProjectService:
             if tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone() is not None:
                 found = tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone()
                 nodes = {r["plan_ref"]: r["id"] for r in tx.conn.execute("SELECT id, plan_ref FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (found["id"],))}
-                return Reservation(found["id"], True, "", nodes)                       # a request planned again (stale chart) finds its project
+                return Reservation(found["id"], True, "", nodes, waits=self._waits_of(tx, found["id"]))        # a request planned again (stale chart) finds its project
             return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id)
 
     def _reserve(self, tx: Tx, request_id: str, title: str, steps: Sequence[ProjectStep], plan: Plan, evaluation: Evaluation, budget: int | None, decide_for_me: bool,
@@ -196,15 +198,30 @@ class ProjectService:
                     self.store.audit(tx, actor="gatekeeper", action="grant.denied", project_id=project_id, node_id=node_id, role="worker", tier=denial.tier, decision="deny",
                                      reason=denial.why, target=step.dept_id)
         expires = now + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400)
+        total = sum(max(0, int(step.estimate_credits or 0)) for step in plan.steps)
         for gate in evaluation.gates:                                                  # the questions are rows; the cards and the answers are MAN-8
             tier = gate.tier if gate.tier is not None else 5
+            detail = {"credits": total, "limit": int(plan.confirm_credits or 0)} if gate.kind == "estimate" else {}
             asked = self.store.open_approval(tx, project_id=project_id, node_id=node_ids.get(gate.step_id or "", ""), tier=tier, expires_at=expires,
-                                             request={"kind": gate.kind, "why": gate.why})
+                                             request={"kind": gate.kind, "why": gate.why, **detail})
             self.store.audit(tx, actor="gatekeeper", action="gate.asked", project_id=project_id, node_id=node_ids.get(gate.step_id or "", None), tier=tier, decision="ask",
                              reason=gate.why, ref=asked.id)
         self.store.audit(tx, actor="gatekeeper", action="plan.accepted", project_id=project_id, decision="allow", reason=f"{len(steps)} steps, {len(evaluation.gates)} question(s)")
         tx.emit("project.created", {"project_id": project_id, "status": status})
-        return Reservation(project_id, True, "", node_ids, planner_node_id)
+        waits = (total, int(plan.confirm_credits or 0)) if any(gate.kind == "estimate" for gate in evaluation.gates) else None
+        return Reservation(project_id, True, "", node_ids, planner_node_id, title=" ".join(title.split())[:200], waits=waits)
+
+    @staticmethod
+    def _waits_of(tx: Tx, project_id: str) -> tuple[int, int] | None:
+        """(the estimate, the limit) of a project that still waits for its estimate question, from the stored question; None when no such question is open."""
+        for row in tx.conn.execute("SELECT request_json FROM approvals WHERE project_id = ? AND status = 'open' ORDER BY created_at, id", (project_id,)):
+            try:
+                asked = json.loads(row["request_json"])
+                if asked.get("kind") == "estimate":
+                    return (int(asked["credits"]), int(asked["limit"]))
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+        return None
 
     def link_task(self, tx: Tx, reservation: Reservation, step_ref: str, task_id: str) -> None:
         """In the transaction that makes the task: tie the node of `step_ref` to it. From then on the task is a node (the gate sees it)."""

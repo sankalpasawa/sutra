@@ -59,7 +59,7 @@ def test_a_stop_during_the_assignment_stage_of_a_resumed_request_ends_the_call_a
     say_yes(client, services, connector, card, stopped_by_the_owner)
     assert rows(services, "SELECT * FROM tasks") == [] and rows(services, "SELECT * FROM projects") == []
     last = rows(services, "SELECT state, text FROM chat_messages WHERE role = 'agent' ORDER BY id DESC LIMIT 1")[0]
-    assert last["state"] == "ok" and line("failed") in last["text"] and not services.projects._planners and not services.runner.busy
+    assert last["state"] == "ok" and line("stopped") in last["text"] and "went wrong" not in last["text"] and not services.projects._planners and not services.runner.busy
 
 
 def test_a_stop_during_a_fresh_planning_call_ends_it_as_a_stop_not_as_a_connector_failure(world):
@@ -71,4 +71,4 @@ def test_a_stop_during_a_fresh_planning_call_ends_it_as_a_stop_not_as_a_connecto
         raise CallCancelledError("the turn was stopped")
     talk(client, services, connector, "A page and a quote", stopped_by_the_owner)
     last = rows(services, "SELECT text FROM chat_messages WHERE role = 'agent' ORDER BY id DESC LIMIT 1")[0]
-    assert "can't reach" not in last["text"] and rows(services, "SELECT * FROM tasks") == [] and not services.projects._planners
+    assert last["text"] == line("stopped") and "can't reach" not in last["text"] and rows(services, "SELECT * FROM tasks") == [] and not services.projects._planners

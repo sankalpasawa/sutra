@@ -167,3 +167,35 @@ def test_the_projects_routes_need_no_token_to_read_and_a_token_to_stop(world):
     assert client.get(f"/api/projects/{project_id}").status_code == 200 and client.get("/api/projects/prj_" + "0" * 12).status_code == 404
     assert client.post(f"/api/projects/{project_id}/stop", json={}).status_code == 401
     assert client.post(f"/api/projects/{project_id}/pause", json={"resume": True}, headers=HEADERS).status_code in (200, 409)
+
+
+def test_a_plan_over_the_confirm_threshold_makes_a_project_that_waits_and_the_reply_says_so(tmp_path, monkeypatch):
+    """G7 (D308): over the confirm threshold the project is held; the owner is told in plain words, once; nothing starts. The chat agent plans at most five steps (5 x 100 = 500 is not over the
+    default 500; estimates come with MAN-8), so the threshold is lowered here."""
+    from sutra_app.config import NODE_DEFAULT_CAPS
+    from sutra_app.orchestrator.agent.planner import NODE_LINES, line
+    monkeypatch.setattr("sutra_app.orchestrator.projects.NODE_DEFAULT_CAPS", {**NODE_DEFAULT_CAPS, "confirm_credits": 300})
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
+        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
+        project = rows(services, "SELECT * FROM projects")[0]
+        assert project["status"] == "awaiting_approval" and len(rows(services, "SELECT * FROM tasks")) == 5 and all(r["status"] != "running" for r in rows(services, "SELECT status FROM tasks"))
+        said = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE role = 'agent' ORDER BY id")]
+        waits = line("project_waits", title="Step 1", credits="500", limit="300")
+        assert any(waits in text for text in said) and sum(text.count("waits for your OK") for text in said) == 1
+        assert "project_waits" in NODE_LINES
+
+
+def test_the_two_new_lines_are_not_in_the_flag_off_set_and_are_never_said_with_the_flag_off(tmp_path, monkeypatch):
+    from sutra_app.config import NODE_DEFAULT_CAPS
+    monkeypatch.setattr("sutra_app.orchestrator.projects.NODE_DEFAULT_CAPS", {**NODE_DEFAULT_CAPS, "confirm_credits": 300})
+    from sutra_app.orchestrator.agent import planner
+    assert "stopped" not in planner.LINES and "project_waits" not in planner.LINES and planner.matches_template(planner.line("stopped"))
+    app, connector = make_app(tmp_path)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
+        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
+        assert rows(services, "SELECT * FROM projects") == [] and not any("waits for your OK" in r["text"] for r in rows(services, "SELECT text FROM chat_messages"))
