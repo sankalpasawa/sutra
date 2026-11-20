@@ -1336,7 +1336,7 @@
       st.ccMode = "team";
       paintBar();
       paintComposer();
-      if (chatRefs.box.disabled) return false;      // closed for another reason (the team is working): the words are not forced in
+      if (chatRefs.box.disabled) { c.say("The message box is closed right now, so the draft was not written. Try again when it opens."); return false; }          // closed for another reason (the team is working): the owner is told, the words are not forced in
       root.ChatComposer.fillBox(chatRefs.box, words);
       return true;
     }

@@ -554,7 +554,7 @@
     const words = c.draft(draft);                   // leaves Ask first: the box may have been closed only because no model can answer an Ask
     renderBar();
     renderComposer();
-    if (box.disabled) return false;                 // closed for another reason: the words are not forced in
+    if (box.disabled) { c.say("The message box is closed right now, so the draft was not written. Try again when it opens."); return false; }          // closed for another reason: the owner is told, the words are not forced in
     root.ChatComposer.fillBox(box, words);
     return true;
   }

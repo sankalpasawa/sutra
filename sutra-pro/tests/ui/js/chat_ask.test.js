@@ -365,3 +365,23 @@ test("other cards are drawn as they were", () => {
   assert.match(task, /^<div class="ncard ready c-task"/);
   assert.doesNotMatch(task, /answer|ask-to-work/);
 });
+
+test("say() puts a sentence in the note under the box, which the bar draws, so a draft that could not be written is not silent", () => {
+  const r = rig({mode: "direct"});
+  r.c.enableAsk(true);
+  r.c.setAsk("ask");
+  r.c.draft("Based on this, please ");                                                     // the page leaves Ask first, then finds the box closed
+  r.c.say("The message box is closed right now, so the draft was not written. Try again when it opens.");
+  assert.equal(r.c.state().note, "The message box is closed right now, so the draft was not written. Try again when it opens.");
+  assert.match(bar(r.c.state(), {ask: true}), /<p class="ccnote" role="status">The message box is closed right now, so the draft was not written\. Try again when it opens\.<\/p>/);
+  assert.equal(r.calls.length, 0);                                                          // and nothing was posted
+  r.c.say("");
+  assert.equal(r.c.state().note, "");
+});
+
+test("without Ask the team bar never draws a note, as it never did", () => {
+  const r = rig({mode: "team"});
+  r.c.say("a note");
+  assert.doesNotMatch(bar(r.c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}}), /ccnote/);
+  assert.doesNotMatch(bar(r.c.state(), {ask: false}), /ccnote/);
+});

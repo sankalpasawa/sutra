@@ -58,6 +58,7 @@
          enableAsk(on)                 the page says whether Ask exists (the pill's `ask`); off puts a chat that was asking back in Do. Until it is on, nothing below exists
          setAsk("ask" | "do")          the switch; false when Ask is not on
          state.ask                     "ask" | "do" (not enumerable: the state of a page without Ask has exactly the keys it always had)
+         say(words)                    put a sentence in the note under the box
          draft(text)                   "Turn this into work": leaves Ask, points Send at the team, and returns the text (at most MAX_MESSAGE characters) for the page to put in the
                                        box. It never sends anything: the owner edits it and presses Send
      fillBox(box, text)                put a draft in a message box: the words, the caret at the end, the box focused, an `input` event so the page saves and resizes it
@@ -192,7 +193,8 @@
     const toggle = asking || o.toggle === false ? "" : '<div class="ccmode" role="group" aria-label="Where this message goes">' +
       '<button type="button" class="ccmode-opt' + (mode === "team" ? " on" : "") + '" data-act="composer-mode" data-mode="team" aria-pressed="' + (mode === "team") + '">' + esc(team) + "</button>" +
       '<button type="button" class="ccmode-opt' + (mode === "direct" ? " on" : "") + '" data-act="composer-mode" data-mode="direct" aria-pressed="' + (mode === "direct") + '">' + esc(direct) + "</button></div>";
-    if (mode !== "direct") return askSwitch + toggle;
+    // the team's route has no note of its own; with Ask available the page can say something there (a draft that could not be written), and only then
+    if (mode !== "direct") return askSwitch + toggle + (askOn && clean(s.note) !== "" ? '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>" : "");
     const CS = searchOf();
     const limit = CS ? CS.limitsNote() : "";
     const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' +
@@ -359,6 +361,12 @@
       state.note = "";
       changed();
       return true;
+    }
+
+    // A sentence under the box (the same place as every other note of the composer): what the page wants the owner to know and that no other part of the composer says.
+    function say(words) {
+      state.note = clean(words);
+      changed();
     }
 
     // "Turn this into work": the owner leaves Ask and Send points at the team again (Plan with Sutra / Tell the team). The text is only RETURNED: the page puts it in the
@@ -751,7 +759,7 @@
       return pending;
     }
 
-    return {state: () => state, setMode, enableAsk, setAsk, draft, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
+    return {state: () => state, setMode, enableAsk, setAsk, draft, say, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
       live: () => live !== null, frame: raw => { if (live) live.frame(raw); }, reconnect: () => (live && project().active ? live.reconnect() : Promise.resolve(false)), setPolling: on => { if (live) live.setPolling(on); },
       offer: rows => (live ? live.offer(rows) : (Array.isArray(rows) ? rows : [])), liveView: () => (live ? live.view() : null), pendingLine: messages => (live ? pendingLine(messages) : null),
       close: () => { if (live) live.close(); }};
