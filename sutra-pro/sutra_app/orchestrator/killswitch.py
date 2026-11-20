@@ -27,6 +27,8 @@ import asyncio
 import json
 import logging
 import os
+import secrets
+import stat
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -37,7 +39,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 
-__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD"]
+__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
@@ -45,6 +47,7 @@ PAUSE_FILE = "PAUSE"
 LEVELS = ("none", "pause", "kill")
 WATCH_S = 2.0                                  # how often the server looks for a file made by hand
 REASON_MAX = 200
+NOTE_MAX_BYTES = 4096                          # how much of a switch file is read to show its words
 LIVE_TASK_STATUSES = ("starting", "running", "waiting_user")
 OPEN_TASK_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 KILL_OUTCOME = "stopped by the kill switch"
@@ -103,11 +106,17 @@ class KillSwitch:
         """What the file says (who, why, when), or None when it is not there. A file made by hand, empty or not JSON, says nothing: `{}`."""
         if not self._present(name):
             return None
+        path = self.directory / name
         try:
-            found = json.loads((self.directory / name).read_text(encoding="utf-8"))
+            if not stat.S_ISREG(os.lstat(path).st_mode):         # a folder, a link or a pipe says nothing (and a pipe must never be opened: the read would wait for ever)
+                return {}
+            with open(path, "rb") as handle:
+                found = json.loads(handle.read(NOTE_MAX_BYTES).decode("utf-8", "replace"))      # at most 4 KB: a file made by hand can be any size
         except (OSError, ValueError):
             return {}
-        return {key: found[key] for key in ("by", "reason", "at") if isinstance(found, dict) and isinstance(found.get(key), str)}
+        if not isinstance(found, dict):
+            return {}
+        return {key: " ".join(found[key].split())[:REASON_MAX] for key in ("by", "reason", "at") if isinstance(found.get(key), str)}
 
     def status(self) -> dict[str, Any]:
         """`{level, kill, pause}`: each of the two is None or what its file says."""
@@ -130,13 +139,20 @@ class KillSwitch:
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         target = self.directory / (KILL_FILE if level == "kill" else PAUSE_FILE)
         body = json.dumps({"v": 1, "by": str(by)[:40], "reason": scrubbed(" ".join(str(reason).split()))[:REASON_MAX], "at": iso_z(self._clock.now())}, ensure_ascii=False) + "\n"
-        temp = self.directory / f".{target.name}.{os.getpid()}.tmp"
-        fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_TRUNC, 0o600)
+        temp = self.directory / f".{target.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"      # a name nobody else has: O_EXCL never meets a file left by a crash or by another writer
+        fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
-            os.write(fd, body.encode("utf-8"))
-        finally:
-            os.close(fd)
-        os.replace(temp, target)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(body.encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())                                                       # on disk before it counts, as `task.json` is written
+            oslayer.replace(temp, target)
+        except BaseException:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            raise
 
     def clear(self, *, kill: bool = True, pause: bool = True) -> list[str]:
         """Remove the files asked for; returns the names that were there. A folder or link at the name is removed as the owner would (a link itself, not what it points at)."""
@@ -147,13 +163,26 @@ class KillSwitch:
             path = self.directory / name
             try:
                 if path.is_dir() and not path.is_symlink():
-                    path.rmdir()
+                    path.rmdir()                      # an empty folder only: what is inside a folder the owner made is never deleted by this
                 else:
                     path.unlink()
                 removed.append(name)
             except FileNotFoundError:
                 continue
+            except OSError as exc:                    # a folder that is not empty, a file nobody may remove: it stays, and `held()` still says so
+                log.warning("the %s file of the node switch could not be removed (%s)", name, type(exc).__name__)
         return removed
+
+
+class KillResult(int):
+    """What `kill_all` returns: the number of nodes it stopped (so it compares and adds as a number), and whether the KILL file was written."""
+
+    file_written: bool
+
+    def __new__(cls, stopped: int, file_written: bool = True) -> "KillResult":
+        found = super().__new__(cls, stopped)
+        found.file_written = file_written
+        return found
 
 
 class NodeControl:
@@ -235,13 +264,22 @@ class NodeControl:
         await run_blocking(lambda: self._audit("pause", reason=reason or "paused", count=len(waiting), actor="owner" if by == "owner" else "system"))
         return len(waiting)
 
-    async def kill_all(self, *, by: str = "owner", reason: str = "") -> int:
-        """Put the KILL file there and run the stop ladder for every live node. Returns how many nodes it stopped. No new node starts until the file is removed."""
-        await run_blocking(lambda: self.switch.set("kill", by=by, reason=reason))
-        self._enforced = await run_blocking(self.switch.stamp)
+    async def kill_all(self, *, by: str = "owner", reason: str = "") -> "KillResult":
+        """Put the KILL file there and run the stop ladder for every live node (all together). Returns how many nodes it stopped, as a number that also says `file_written`. No new node
+        starts until the file is removed. It never fails open: if the file cannot be written (a read-only or full disk, a folder in the way) the ladders still run, the audit row says so
+        and the caller is told (`file_written` is False), so the owner knows nothing holds the next start back."""
+        written = True
+        try:
+            await run_blocking(lambda: self.switch.set("kill", by=by, reason=reason))
+        except OSError as exc:
+            written = False
+            log.error("the KILL file could not be written (%s): the agents are stopped anyway", type(exc).__name__)
+        if written:
+            self._enforced = await run_blocking(self._marker)
         stopped = await self._stop_live(KILL_OUTCOME)
-        await run_blocking(lambda: self._audit("kill", reason=reason or "kill all", count=stopped, actor="owner" if by == "owner" else "system"))
-        return stopped
+        note = (reason or "kill all") + ("" if written else "; the KILL file could not be written")
+        await run_blocking(lambda: self._audit("kill", reason=note, count=stopped, actor="owner" if by == "owner" else "system"))
+        return KillResult(stopped, written)
 
     async def resume(self, *, by: str = "owner") -> bool:
         """Remove both files. True when there was something to remove; what waited then starts."""
@@ -275,19 +313,31 @@ class NodeControl:
 
     # ---- the watcher ---------------------------------------------------------------------------------------------------------------
 
+    def _marker(self) -> Any:
+        """Which KILL file this is, for the audit's once-only rule: its stamp, or a fixed word for a file that cannot be looked at."""
+        return self.switch.stamp() or ("unreadable",)
+
     async def enforce(self) -> int:
-        """If a KILL file is there that this server has not dealt with yet (the owner made it by hand), run the ladder for every live node and audit it once. Returns how many it stopped.
-        Costs one `lstat` when there is no file."""
-        stamp = await run_blocking(self.switch.stamp)
-        if stamp is None:
+        """While a KILL file is there, run the stop ladder for every live node, on EVERY call: a node that started after the file appeared (a start that was under way, a retry) is
+        stopped at the next tick, so nothing keeps running behind a kill (M1). Only the audit row `kill` is once per file (by its stamp). Returns how many it stopped. Costs one `lstat`
+        when there is no file, and one query while there is."""
+        if not await run_blocking(lambda: self.switch.killed):
             self._enforced = None
             return 0
-        if stamp == self._enforced:
-            return 0
-        self._enforced = stamp
+        marker = await run_blocking(self._marker)
+        first = marker != self._enforced
+        self._enforced = marker
         stopped = await self._stop_live(KILL_OUTCOME)
-        await run_blocking(lambda: self._audit("kill", reason="the KILL file was found", count=stopped, actor="system"))
+        if first:
+            await run_blocking(lambda: self._audit("kill", reason="the KILL file was found", count=stopped, actor="system"))
         return stopped
+
+    def spawn_guard(self, conn: Any, row: Any) -> str:
+        """`TaskService.spawn_guard`, asked just before a process is started and just after: the outcome sentence when this task is a node and the KILL file is there, else "". A start
+        that was decided before the kill (the task is `starting` already) is abandoned here, or stopped right after it began (M1)."""
+        if not self.switch.killed:
+            return ""
+        return KILL_OUTCOME if conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None else ""
 
     def start_watching(self, interval: float = WATCH_S) -> None:
         """Look for a KILL file made by hand every `interval` seconds, on the running loop. Idempotent."""

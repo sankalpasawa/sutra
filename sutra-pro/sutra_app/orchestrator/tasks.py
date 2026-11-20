@@ -449,6 +449,8 @@ class TaskService:
         # asked about ONE task after `start_gate`, in the same transaction: a waiting sentence, or "" to let it start (multi-agent nodes, D257; set only while SUTRA_NODES_V1 is on).
         # MAN-4 uses it for the kill switch and pause; the Conductor's task gate (MAN-5) takes its place and keeps that rule.
         self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
+        # asked just before and just after a process is started: an outcome sentence ends the start (a kill that came in between); "" lets it go on (MAN-4, M1)
+        self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -717,6 +719,15 @@ class TaskService:
         return names[:200]
 
     async def _launch(self, task_id: str, spec: RunSpec, run_dir: Path) -> None:
+        """Start the process of a task that is `starting`. A stop or a kill that came after the task was marked `starting` and before the process existed must not be lost (a stop
+        of a task with no pid has nothing to signal): so the task and the node switch are looked at again just before the start (a task that is no longer `starting` is not started; a
+        node under a kill is ended as stopped) and just after it (a process that began for a task that ended meanwhile is stopped at once; a node under a kill goes through the ladder)."""
+        refused = await run_blocking(self._launch_refused, task_id, False)
+        if refused == "gone":
+            return
+        if refused:
+            await run_blocking(self.projector.mark_ended, task_id, "stopped", refused)
+            return
         try:
             pid = await self.launcher.start(spec, run_dir)
         except Exception as exc:                          # noqa: BLE001  (a spawn failure ends this task only)
@@ -725,8 +736,32 @@ class TaskService:
             await run_blocking(self.projector.mark_ended, task_id, "crashed", f"could not start: {said}", "start_failed")
             return
         alive = await run_blocking(self._store_pid, task_id, pid)
-        if alive and self.watcher is not None:
+        if not alive:                                     # the task ended while its process was starting: nothing may be left running
+            await self.launcher.stop(run_dir, pid)
+            return
+        if self.watcher is not None:
             self.watcher.watch(task_id)
+        late = await run_blocking(self._launch_refused, task_id, True)
+        if late and late != "gone":
+            await self._stop_from_launch(task_id, run_dir, pid, late)
+
+    async def _stop_from_launch(self, task_id: str, run_dir: Path, pid: int, outcome: str) -> None:
+        """The stop ladder for a task whose process has only just begun, called from inside the start loop. `_stop` cannot be used here: it drains through the watcher, whose
+        `after_drain` is `start_ready`, and the start loop holds that lock (it would wait for itself). The same steps without that."""
+        await run_blocking(self._mark_stop, task_id, "app")
+        await self.launcher.stop(run_dir, pid)
+        await run_blocking(self.projector.drain, task_id)
+        await run_blocking(self.projector.mark_ended, task_id, "stopped", outcome)
+        if self.watcher is not None:
+            self.watcher.unwatch(task_id)
+
+    def _launch_refused(self, task_id: str, started: bool) -> str:
+        """"" to go on, `gone` when the task is not `starting` any more (before the start) or not live (after it), else the outcome sentence of a guard (the kill switch)."""
+        conn = self.db.conn()
+        row = self.store.row_in(conn, task_id)
+        if row is None or (row.status != "starting" if not started else not row.live):
+            return "gone"
+        return self.spawn_guard(conn, row) if self.spawn_guard is not None else ""
 
     def _store_pid(self, task_id: str, pid: int) -> bool:
         with self.db.tx() as tx:

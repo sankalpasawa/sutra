@@ -105,7 +105,7 @@ def test_pause_kill_and_resume_move_the_switch_and_report_what_they_did(on):
     assert client.post("/api/nodes/pause-all", json={"reason": "lunch"}, headers=headers).json() == {"affected": 0}
     status = client.get("/api/nodes/status").json()
     assert status["level"] == "pause" and status["pause"]["reason"] == "lunch" and status["pause"]["by"] == "owner" and status["kill"] is None
-    assert client.post("/api/nodes/kill-all", json={}, headers=headers).json() == {"affected": 0}
+    assert client.post("/api/nodes/kill-all", json={}, headers=headers).json() == {"affected": 0, "file_written": True}
     assert client.get("/api/nodes/status").json()["level"] == "kill" and (switch.directory / KILL_FILE).exists()
     assert client.post("/api/nodes/resume", json={}, headers=headers).json() == {"resumed": True}
     assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None}
@@ -121,7 +121,7 @@ def test_kill_all_stops_the_live_nodes_and_says_how_many(on):
         t.write_events(task.id, ev("run.started", pid=t.row(task.id).pid, schema="events/1", mock=True, seed="none"))
         t.drain(task.id)
     node = seed_node(t, a.id, 1)
-    assert client.post("/api/nodes/kill-all", json={"reason": "stop it"}, headers=headers).json() == {"affected": 1}
+    assert client.post("/api/nodes/kill-all", json={"reason": "stop it"}, headers=headers).json() == {"affected": 1, "file_written": True}
     assert (t.status(a.id), t.status(b.id)) == ("stopped", "running")                  # b is an ordinary task
     assert client.post(f"/api/nodes/{node}/stop", json={}, headers=headers).json() == {"stopped": False}      # already over: not an error
 
@@ -160,3 +160,15 @@ def test_a_secret_in_a_reason_never_reaches_a_response_or_the_audit(on):
     secret = "sk-ABCDEFGHIJKLMNOP1234"
     client.post("/api/nodes/pause-all", json={"reason": f"my key {secret}"}, headers=headers)
     assert secret not in client.get("/api/nodes/status").text and secret not in json.dumps(NodeStore(t.db).audit_rows())
+
+
+def test_kill_all_says_when_the_file_could_not_be_written_and_stops_the_nodes_anyway(on, monkeypatch):
+    t, client, switch, headers = on
+    task = t.new("web", "one")
+    t.run(t.service.start_ready())
+    t.write_events(task.id, ev("run.started", pid=t.row(task.id).pid, schema="events/1", mock=True, seed="none"))
+    t.drain(task.id)
+    seed_node(t, task.id, 1)
+    monkeypatch.setattr(KillSwitch, "set", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("read-only disk")))
+    assert client.post("/api/nodes/kill-all", json={}, headers=headers).json() == {"affected": 1, "file_written": False}
+    assert t.status(task.id) == "stopped" and switch.level() == "none"

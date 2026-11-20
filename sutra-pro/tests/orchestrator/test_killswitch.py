@@ -131,6 +131,7 @@ class Rig:
 
         self.control = NodeControl(self.switch, tasks=tenv.service, db=tenv.db, store=self.store, clock=tenv.clock, kick=kick)
         tenv.service.task_gate = self.control.gate                                     # what the wiring does while SUTRA_NODES_V1 is on
+        tenv.service.spawn_guard = self.control.spawn_guard
 
     def audit(self):
         return [(r["action"], r["actor"], r["node_id"]) for r in self.store.audit_rows(limit=500)]
@@ -290,10 +291,13 @@ def test_the_watcher_runs_the_ladder_once_for_a_file_made_by_hand_and_again_for_
     t.write_events(c.id, ev("run.started", pid=t.row(c.id).pid, schema="events/1", mock=True, seed="none"))
     t.drain(c.id)
     seed_node(t, c.id, 3)
+    assert t.run(rig.control.enforce()) == 1 and t.status(c.id) == "stopped"          # the SAME file: a node that is live behind it is stopped at the next tick (M1)
+    assert [row[0] for row in rig.audit()].count("kill") == 1                         # and the kill is audited once
     (rig.switch.directory / KILL_FILE).unlink()
+    assert t.run(rig.control.enforce()) == 0
     (rig.switch.directory / KILL_FILE).touch()
-    os.utime(rig.switch.directory / KILL_FILE, ns=(1, 1))                            # a different file, so a different stamp
-    assert t.run(rig.control.enforce()) == 1
+    os.utime(rig.switch.directory / KILL_FILE, ns=(1, 1))                            # a different file, so a different stamp: audited again
+    assert t.run(rig.control.enforce()) == 0 and [row[0] for row in rig.audit()].count("kill") == 2
 
 
 def test_the_watcher_loop_notices_a_file_and_ends_cleanly(rig):
@@ -421,3 +425,166 @@ def test_a_node_that_will_not_stop_is_logged_and_the_rest_still_end_together(rig
     with caplog.at_level(logging.ERROR, logger="sutra_app.orchestrator.killswitch"):
         assert t.run(rig.control.kill_all()) == 1
     assert "could not stop node" in caplog.text and t.status(b.id) == "stopped"
+
+
+# ---- a kill must not leave a node running: the start that was under way (M1) ------------------------------------------------------------
+
+def fresh_rig(tenv_obj):
+    return Rig(tenv_obj)
+
+
+def test_a_kill_that_comes_after_the_task_is_marked_starting_and_before_its_process_is_not_lost(rig, monkeypatch):
+    """The window: `_prepare_next` has committed `starting` and made the run folder; the owner kills; only then would the process start. It must not start."""
+    t = rig.t
+    task = t.new("web", "node")
+    node = seed_node(t, task.id, 1)
+    real = t.service._prepare_next
+
+    def kill_in_the_window(*a, **k):
+        prepared = real(*a, **k)
+        if prepared is not None:
+            rig.switch.set("kill", reason="in the window")
+        return prepared
+
+    monkeypatch.setattr(t.service, "_prepare_next", kill_in_the_window)
+    t.run(t.service.start_ready())
+    assert t.launcher.started == [] and t.status(task.id) == "stopped" and t.row(task.id).outcome == KILL_OUTCOME
+
+
+def test_a_kill_that_comes_while_the_process_is_starting_stops_that_process(rig):
+    t = rig.t
+    task = t.new("web", "node")
+    seed_node(t, task.id, 1)
+    real_start = t.launcher.start
+
+    async def start_then_kill(spec, run_dir):
+        pid = await real_start(spec, run_dir)
+        rig.switch.set("kill", reason="while it starts")                              # the file appears right after the process began, before the server stored its pid
+        return pid
+
+    t.launcher.start = start_then_kill
+    t.run(t.service.start_ready())
+    assert t.status(task.id) == "stopped" and t.launcher.stopped == [t.row(task.id).pid]      # the outcome is the run's own words: the engine ends a stopped run the same way for every stop
+
+
+def test_stopping_a_node_that_is_still_starting_with_no_pid_leaves_no_process_running(rig):
+    """The owner's stop arrives while the task is `starting` and has no pid: nothing to signal then, so the process that begins right after must be stopped by the launch itself."""
+    import asyncio
+    t = rig.t
+    task = t.new("web", "node")
+    node = seed_node(t, task.id, 1)
+    real_start = t.launcher.start
+    stops = []
+
+    async def stop_first(spec, run_dir):
+        assert t.row(task.id).status == "starting" and t.row(task.id).pid is None
+        stops.append(asyncio.get_running_loop().create_task(rig.control.stop_node(node)))      # another request: it waits for the start loop's lock after it has ended the task
+        for _ in range(60):
+            await asyncio.sleep(0.01)
+            if t.status(task.id) == "stopped":
+                break
+        return await real_start(spec, run_dir)
+
+    async def go():
+        await t.service.start_ready()
+        return [await s for s in stops]
+
+    t.launcher.start = stop_first
+    assert t.run(go()) == [True]
+    assert t.status(task.id) == "stopped" and len(t.launcher.started) == 1
+    pid = next(iter(t.launcher._dirs))
+    assert not t.launcher.alive(pid) and pid in t.launcher.stopped                    # the process that began after the stop was ended at once
+
+
+def test_an_ordinary_task_is_never_ended_by_the_launch_guard(rig):
+    t = rig.t
+    plain = t.new("web", "plain")
+    rig.switch.set("kill")
+    assert t.run(t.service.start_ready()) == [plain.id] and t.status(plain.id) in ("starting", "running")
+
+
+def test_the_launch_guard_asks_only_when_a_kill_file_is_there(rig):
+    t = rig.t
+    task = t.new("web", "node")
+    seed_node(t, task.id, 1)
+    conn = t.db.conn()
+    assert rig.control.spawn_guard(conn, t.row(task.id)) == ""
+    rig.switch.set("pause")
+    assert rig.control.spawn_guard(conn, t.row(task.id)) == ""                         # a pause only holds what has not started
+    rig.switch.set("kill")
+    assert rig.control.spawn_guard(conn, t.row(task.id)) == KILL_OUTCOME
+
+
+# ---- the kill file must not fail open (M2) ------------------------------------------------------------------------------------------
+
+def test_kill_all_with_a_file_that_cannot_be_written_still_stops_everything_and_says_so(rig, monkeypatch, caplog):
+    import logging
+    t = rig.t
+    a, b, na, nb = two_live_nodes(rig)
+    monkeypatch.setattr(rig.switch, "set", lambda *x, **k: (_ for _ in ()).throw(OSError("no space left on device")))
+    with caplog.at_level(logging.ERROR, logger="sutra_app.orchestrator.killswitch"):
+        result = t.run(rig.control.kill_all(reason="disk is full"))
+    assert result == 2 and result.file_written is False
+    assert (t.status(a.id), t.status(b.id)) == ("stopped", "stopped") and "could not be written" in caplog.text
+    row = rig.store.audit_rows()[-1]
+    assert row["action"] == "kill" and "could not be written" in row["reason"] and "disk is full" in row["reason"]
+
+
+def test_the_kill_file_is_written_with_a_unique_temp_name_synced_and_cleaned_up_on_failure(switch, monkeypatch):
+    seen = []
+    real_open = os.open
+
+    def spy(path, flags, *a, **k):
+        seen.append((str(path), flags))
+        return real_open(path, flags, *a, **k)
+
+    monkeypatch.setattr(os, "open", spy)
+    synced = []
+    monkeypatch.setattr(os, "fsync", lambda fd: synced.append(fd))
+    switch.set("kill", reason="x")
+    switch.set("kill", reason="y")
+    temps = [p for p, f in seen if p.endswith(".tmp")]
+    assert len(temps) == 2 and len(set(temps)) == 2 and all(f & os.O_EXCL for p, f in seen if p.endswith(".tmp")) and len(synced) == 2
+    monkeypatch.setattr(os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("disk")))
+    with pytest.raises(OSError):
+        switch.set("pause")
+    assert sorted(p.name for p in switch.directory.iterdir()) == [KILL_FILE] and not switch.paused                  # no temp file left, no half file
+
+
+def test_a_stale_temp_file_of_the_same_kind_does_not_block_the_next_write(switch):
+    switch.directory.mkdir(parents=True)
+    (switch.directory / f".{KILL_FILE}.1.tmp").write_text("left by a crash")
+    switch.set("kill", reason="again")
+    assert switch.killed and switch.status()["kill"]["reason"] == "again"
+
+
+# ---- reading and removing a file made by hand (m6) ----------------------------------------------------------------------------------
+
+def test_a_huge_hand_made_kill_file_is_read_only_up_to_4_kb_and_its_words_are_clipped(switch):
+    switch.directory.mkdir(parents=True)
+    body = json.dumps({"by": "me", "reason": "r" * 5000, "at": "2026-11-20T10:00:00Z"})
+    (switch.directory / KILL_FILE).write_text(body + " " * 10_000)
+    note = switch.status()["kill"]
+    assert note == {} or all(len(v) <= 200 for v in note.values())                                                  # the first 4 KB cut the JSON: it says nothing, and cost nothing
+    (switch.directory / KILL_FILE).write_text(json.dumps({"by": "me" * 300, "reason": "line\none  two", "at": "x" * 500, "extra": "ignored"}))
+    assert switch.status()["kill"] == {"by": ("me" * 300)[:200], "reason": "line one two", "at": "x" * 200}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a pipe")
+def test_a_pipe_named_kill_is_never_opened(switch):
+    switch.directory.mkdir(parents=True)
+    os.mkfifo(switch.directory / KILL_FILE)
+    assert switch.killed and switch.status()["kill"] == {}                                                          # no hang
+    assert switch.clear() == [KILL_FILE]
+
+
+def test_clear_is_safe_when_kill_is_a_folder_with_something_in_it(switch, caplog):
+    import logging
+    switch.directory.mkdir(parents=True)
+    (switch.directory / KILL_FILE).mkdir()
+    (switch.directory / KILL_FILE / "keep.txt").write_text("the owner's own file")
+    with caplog.at_level(logging.WARNING, logger="sutra_app.orchestrator.killswitch"):
+        assert switch.clear() == []
+    assert (switch.directory / KILL_FILE / "keep.txt").read_text() == "the owner's own file" and switch.killed and "could not be removed" in caplog.text
+    (switch.directory / PAUSE_FILE).touch()
+    assert switch.clear() == [PAUSE_FILE] and switch.killed                                                           # the pause went, the kill stays and still holds

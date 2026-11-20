@@ -2,7 +2,8 @@
 
     GET  /api/nodes/status        -> {level none|pause|kill, kill, pause}      (what the two files say; no token, like every read)
     POST /api/nodes/pause-all     {reason?}  -> {affected: n}                  n = nodes that now wait to start; the ones that run finish
-    POST /api/nodes/kill-all      {reason?}  -> {affected: n}                  n = nodes stopped through the stop ladder; no new node starts until resumed
+    POST /api/nodes/kill-all      {reason?}  -> {affected: n, file_written: bool}   n = nodes stopped through the stop ladder (all together); file_written is false when
+                                                                              the KILL file could not be written (the nodes are stopped anyway); no new node starts until resumed
     POST /api/nodes/resume        {}         -> {resumed: bool}                removes both files; what waited starts
     POST /api/nodes/{id}/stop     {}         -> {stopped: bool}                that node's task through the stop ladder; 404 for a node that does not exist
 
@@ -63,7 +64,8 @@ def build_router() -> APIRouter:
 
     @router.post("/kill-all", summary="Stop every agent through the stop ladder; none starts until you resume", dependencies=[Depends(require_token)])
     async def kill_all(request: Request, body: ReasonBody) -> RedactedJSONResponse:
-        return _json(request, {"affected": await _control(request).kill_all(by="owner", reason=body.reason)})
+        result = await _control(request).kill_all(by="owner", reason=body.reason)
+        return _json(request, {"affected": int(result), "file_written": result.file_written})
 
     @router.post("/resume", summary="Remove the pause and the kill switch", dependencies=[Depends(require_token)])
     async def resume(request: Request, body: EmptyBody) -> RedactedJSONResponse:

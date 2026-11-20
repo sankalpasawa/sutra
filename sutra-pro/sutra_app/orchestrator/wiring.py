@@ -192,6 +192,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         node_control = NodeControl(KillSwitch(settings.nodes_dir, clock=clock), tasks=tasks, db=db, store=NodeStore(db, ids=ids, redact=redactor), clock=clock,
                                    kick=tasks.start_ready)
         tasks.task_gate = node_control.gate
+        tasks.spawn_guard = node_control.spawn_guard
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
     return AppServices(
