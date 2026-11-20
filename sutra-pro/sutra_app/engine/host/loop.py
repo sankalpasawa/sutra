@@ -51,6 +51,7 @@ from ..spec import (
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
 from .toollog import ToolLog, log_path
+from .toolscrub import blank_tool_inputs
 from .handoff import CHANGES_FILE
 
 __all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
@@ -205,6 +206,15 @@ class Host:
             self._emit_ended("crashed", clip(f"Crashed: {type(exc).__name__}: {exc}", 2000), "internal")           # exactly what an ordinary run always wrote (G24)
         return EXIT_INTERNAL
 
+    def _blank_tool_inputs(self) -> None:
+        """For a run that is a node of a project only: the inputs of the tool calls in `calls.jsonl` and `snapshot.json` are emptied (names and results stay). Never fails the end of a run."""
+        if getattr(getattr(self, "task", None), "node", None) is None or self.paths is None:
+            return
+        try:
+            blank_tool_inputs(self.paths.run_dir)
+        except Exception as exc:  # noqa: BLE001
+            self.trace("publish.error", {"where": "tool inputs", "error": clip(f"{type(exc).__name__}: {exc}", 300)})
+
     def _permission_said(self, what: Any) -> Optional[str]:
         """The "Your computer did not allow it" prefix, only for a run that is a node of a project (G24, D340 b): an ordinary run's crash text is what it always was, byte for byte."""
         return permission_outcome(what) if getattr(getattr(self, "task", None), "node", None) is not None else None
@@ -217,6 +227,7 @@ class Host:
         if self.writer is None:
             return
         self._write_deliverable()                   # before the last line: the server reads the file when it applies run.ended
+        self._blank_tool_inputs()                   # a node's tool inputs are not kept in its record (R11, D345)
         try:
             self.writer.emit(run_ended_event(status=status, outcome=outcome, code=code))
         except (EventError, OSError) as exc:
