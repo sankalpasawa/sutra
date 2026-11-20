@@ -210,3 +210,20 @@ def test_the_list_is_filtered_and_paged_by_the_database_and_its_limit_is_a_page(
     assert [i["title"] for i in work.items(limit=3)] and len(work.items(limit=3)) == 3 and len(work.items(limit=3, offset=3)) == 3 and len(work.items(limit=3, offset=6)) == 1
     assert len(work.items(q="100% real")) == 7 and work.items(q="100%x") == [] and len(work.items(q="menu_v2")) == 7 and work.items(q="menu_v3") == []        # % and _ are letters, not patterns
     assert len(work.items(q="NOTE number 3")) == 1
+
+
+def test_home_gets_a_row_for_a_page_only_while_its_switch_is_on_and_with_both_off_it_is_the_file_as_it_was(tmp_path):          # architect ruling (DV-2b)
+    import re
+    bodies = {}
+    for name, flags in (("off", {}), ("work", {"work_v1": True}), ("recipes", {"recipes_v1": True}), ("both", {"work_v1": True, "recipes_v1": True})):
+        app, _c = make_app(tmp_path / name, **flags)
+        with TestClient(app, base_url=BASE) as client:
+            bodies[name] = client.get("/").text
+    row = lambda ident: re.search(rf'\n    <a class="railteam" href="/[a-z]+" id="{ident}">.*?</a>', bodies["both"])                    # noqa: E731
+    assert "/work" not in bodies["off"] and "/recipes" not in bodies["off"]
+    assert 'id="gowork"' in bodies["work"] and 'id="gorecipes"' not in bodies["work"] and 'id="gorecipes"' in bodies["recipes"] and 'id="gowork"' not in bodies["recipes"]
+    stripped = bodies["both"]
+    for ident in ("gowork", "gorecipes"):
+        stripped = stripped.replace(row(ident).group(0), "")
+    assert stripped == bodies["off"]                                                                                           # take the two rows away and the page is byte for byte the flag-off page
+    assert '<span class="rtname">Work</span>' in bodies["both"] and '<span class="rtname">Recipes</span>' in bodies["both"]

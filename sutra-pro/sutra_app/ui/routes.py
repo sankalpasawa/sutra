@@ -254,11 +254,13 @@ def _unavailable(name: str) -> Response:
     )
 
 
-def _serve(cache: "_PageCache", pages: Path, name: str, boot: BootContext) -> Response:
-    """One page file, filled with its boot block, under the policy built from that file."""
+def _serve(cache: "_PageCache", pages: Path, name: str, boot: BootContext, patch: Callable[[str], str] | None = None) -> Response:
+    """One page file, filled with its boot block, under the policy built from that file. `patch` may change the filled page (only the links of Home, below); it never adds a script."""
     try:
         page = cache.get(pages / name)
         html = render_page(page.html, boot)
+        if patch is not None:
+            html = patch(html)
     except (OSError, UnicodeDecodeError, BootMarkerError) as exc:
         log.error("page %s cannot be served: %s", name, exc)
         return _unavailable(name)
@@ -280,6 +282,19 @@ def build_project_router(*, token: str, version: str, project: Callable[[str], b
     router = APIRouter()
     router.add_api_route("/p/{project_id}", project_page, methods=["GET", "HEAD"], response_model=None, include_in_schema=False, name="ui_project")
     return router
+
+
+_CONSOLE_LINK_END = '<span class="rtstat">cost, Atom log, health</span></a>'
+
+
+def add_home_links(html: str, links: list[tuple[str, str, str, str]]) -> str:
+    """Home's "Logs & debug" group with one more row for each of `links` `(id, href, name, note)`, put in at serve time (the desktop window has no address bar, so a page that exists must be reachable). Only
+    called with links: with both switches off Home is served exactly as the file says. Nothing is added when the anchor of the console row is not found."""
+    if html.count(_CONSOLE_LINK_END) != 1:
+        return html
+    rows = "".join(f'\n    <a class="railteam" href="{html_lib.escape(href)}" id="{html_lib.escape(ident)}"><span class="rtname">{html_lib.escape(name)}</span><span class="rtstat">{html_lib.escape(note)}</span></a>'
+                   for ident, href, name, note in links)
+    return html.replace(_CONSOLE_LINK_END, _CONSOLE_LINK_END + rows, 1)
 
 
 def build_simple_page_router(*, token: str, version: str, page: str, path: str, name: str, pages_dir: Path = PAGES_DIR) -> APIRouter:
@@ -311,8 +326,8 @@ def build_router(
     pages = Path(pages_dir)
     cache = _PageCache()
 
-    def serve(name: str, boot: BootContext) -> Response:
-        return _serve(cache, pages, name, boot)
+    def serve(name: str, boot: BootContext, patch: Callable[[str], str] | None = None) -> Response:
+        return _serve(cache, pages, name, boot, patch)
 
     def known_dept(raw: str) -> str | None:
         """`raw` when it passes the id rule and `Services.department` knows it, else None."""
@@ -327,7 +342,8 @@ def build_router(
         dept = known_dept(asked[0]) if len(asked) == 1 else None
         if dept is not None:
             return _redirect(f"/d/{dept}/", _without_dept(request.url.query))
-        return serve(HOME_PAGE, BootContext(page="home", token=token, version=version))
+        links = getattr(request.app.state, "home_links", None)                          # the Work and Recipes entries: present only while their switches are on (DV-2b, DV-3b)
+        return serve(HOME_PAGE, BootContext(page="home", token=token, version=version), patch=(lambda html: add_home_links(html, links)) if links else None)
 
     def dept_slash(dept: str, request: Request) -> Response:
         return _redirect(f"/d/{quote(dept, safe=':')}/", request.url.query)

@@ -59,9 +59,11 @@ def mount_project_page(app: FastAPI, services) -> bool:
     return True
 
 
-def _mount_simple(app: FastAPI, services, mark: str, page: str, path: str, name: str) -> bool:
+def _mount_simple(app: FastAPI, services, mark: str, page: str, path: str, name: str, entry: tuple[str, str, str, str] | None = None) -> bool:
     if getattr(app.state, mark, False):
         return False
+    if entry is not None:                                                  # Home gets a row for the page, at serve time, only because the page is mounted (DV-2b, DV-3b)
+        app.state.home_links = [*getattr(app.state, "home_links", []), entry]
     app.include_router(build_simple_page_router(token=services.settings.token, version=services.version, page=page, path=path, name=name, pages_dir=PAGES_DIR))
     setattr(app.state, mark, True)
     return True
@@ -69,9 +71,9 @@ def _mount_simple(app: FastAPI, services, mark: str, page: str, path: str, name:
 
 def mount_work_page(app: FastAPI, services) -> bool:
     """Add the Work page `/work` (Devin parity DV-2). The orchestrator calls it only while SUTRA_WORK_V1 is on. Reads `settings.token` and `version`. A second call adds nothing."""
-    return _mount_simple(app, services, "sutra_ui_work_mounted", "work.html", "/work", "ui_work")
+    return _mount_simple(app, services, "sutra_ui_work_mounted", "work.html", "/work", "ui_work", ("gowork", "/work", "Work", "everything Sutra did, tags, how it went"))
 
 
 def mount_recipes_page(app: FastAPI, services) -> bool:
     """Add the Recipes page `/recipes` (Devin parity DV-3). Only while SUTRA_RECIPES_V1 is on."""
-    return _mount_simple(app, services, "sutra_ui_recipes_mounted", "recipes.html", "/recipes", "ui_recipes")
+    return _mount_simple(app, services, "sutra_ui_recipes_mounted", "recipes.html", "/recipes", "ui_recipes", ("gorecipes", "/recipes", "Recipes", "ways of working you can start again"))
