@@ -81,3 +81,31 @@ def test_the_unique_index_still_forbids_two_live_ordinary_tasks_of_one_team(lane
     rig.sql("UPDATE tasks SET status = 'running' WHERE id = ?", a.id)
     with pytest.raises(sqlite3.IntegrityError):
         rig.sql("UPDATE tasks SET status = 'running' WHERE id = ?", b.id)
+
+
+def test_a_retry_keeps_the_lane_of_its_step_and_still_runs_beside_the_other_step_of_the_team(lanes_on):          # PB-5
+    rig = lanes_on
+    reservation, tasks = rig.request([("a1", "legal", []), ("a2", "legal", [])])
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.go(tasks["a2"])
+    lane_of_a1 = rig.sql("SELECT lane FROM tasks WHERE id = ?", tasks["a1"]).fetchone()[0]
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)                         # a1 is tried again while a2 is still working
+    new = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]
+    assert new != tasks["a1"] and rig.sql("SELECT lane FROM tasks WHERE id = ?", new).fetchone()[0] == lane_of_a1 != ""
+    rig.start()
+    assert new in started(rig)                                                                             # not queued behind a2: it is a step in its own lane
+
+
+def test_the_reviewer_is_in_the_lane_of_the_first_step_it_checks(db, settings, clock, events):
+    rig = PRig(db, settings, clock, events, max_runs=6, max_live=12, nodes_lanes=True, nodes_reviewer=True)
+    rig.projects._folder_of = lambda: None
+    rig.projects._providers_fn = lambda: ["claude", "codex"]
+    reservation, tasks = rig.request([("a1", "legal", []), ("a2", "web", [])])
+    rig.start()
+    for ref in ("a1", "a2"):
+        rig.go(tasks[ref])
+        rig.finish(tasks[ref])
+    reviewer = rig.sql("SELECT task_id FROM agent_nodes WHERE role = 'reviewer'").fetchone()
+    lane = rig.sql("SELECT lane FROM tasks WHERE id = ?", tasks["a1"]).fetchone()[0]
+    assert lane != "" and rig.sql("SELECT lane FROM tasks WHERE id = ?", reviewer[0]).fetchone()[0] == lane

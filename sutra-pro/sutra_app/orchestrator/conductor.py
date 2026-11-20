@@ -584,6 +584,7 @@ class Conductor:
         if node["slice_credits"] is not None and slice_left(node["slice_credits"], chain_spend(tx.conn, old_task)[0]) <= 0:
             raise AppError("busy", "That step used up all its credits, so it is not tried again")         # never a full fresh slice (D324)
         new = self.tasks.retry_in(tx, old_task, force=True)
+        tx.conn.execute("UPDATE tasks SET lane = (SELECT lane FROM tasks WHERE id = ?) WHERE id = ?", (old_task, new.id))      # a step keeps its lane for every attempt: a retry, a restart, a send-back (PB-5)
         self._audit_tools(tx, node)                                                 # what the attempt that ended did, before the node points at the new task (MAN-14)
         now = tx.now()
         tx.conn.execute("UPDATE agent_nodes SET task_id = ?, attempt = attempt + 1, state = 'queued', failure_reason = '', lease_expires_at = NULL, last_beat_at = NULL, ended_at = NULL, "
@@ -772,6 +773,7 @@ class Conductor:
             task = self.tasks.create(tx, dept_id=first["dept_id"], text=f"Check the work of: {title}", title="Review", depends_on=[r["task_id"] for r in done], request=project["request_id"])
         except AppError:                                                     # the team is gone: no review, the project ends as it would have
             return False
+        tx.conn.execute("UPDATE tasks SET lane = (SELECT lane FROM tasks WHERE id = ?) WHERE id = ?", (done[0]["task_id"], task.id))     # the reviewer is in the lane of the first step it checks (PB-5)
         tx.conn.execute("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, plan_ref, depends_on, state, grants_json, writes_json, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (node_id, project_id, task.id, "reviewer", "light", "review", json.dumps([r["id"] for r in done]), "planned", json.dumps(grant.to_json(), sort_keys=True), "[]", tx.now()))
         pick, independent = self._reviewer_connector(tx, [r["task_id"] for r in done])
