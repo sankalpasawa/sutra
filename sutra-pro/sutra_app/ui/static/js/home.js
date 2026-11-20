@@ -817,8 +817,8 @@
     const el = $("fdattn");
     if (!fd || !el) return;
     const active = doc.activeElement;
-    if (active && el.contains(active) && active.matches && active.matches("textarea[data-msg]") && active.value.trim() !== "" &&
-      !S.front.answering[active.dataset.msg] && !hasOwn(S.answers, active.dataset.msg)) { S.front.held = true; return; }
+    const msg = active && el.contains(active) && active.matches ? answerTyped(active) : undefined;
+    if (msg !== undefined && !S.front.answering[msg] && !hasOwn(S.answers, msg)) { S.front.held = true; return; }
     S.front.held = false;
     const st = {needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, loaded: S.needsLoaded, answering: S.front.answering,
       errors: S.front.errors, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0, moreDone: S.front.moreDone};
@@ -826,6 +826,14 @@
     const done = fd.finishedHtml(st);
     ctx.paint($("fddone"), done);
     $("fddone").hidden = done === "";
+  }
+
+  // The message a focused box is typing an answer to: a half-typed answer, or a dollar raise changed from its suggested amount (R1-6). Else undefined.
+  function answerTyped(box) {
+    if (box.matches("textarea[data-msg]")) return box.value.trim() !== "" ? box.dataset.msg : undefined;
+    if (!box.matches(".bchipraisein") || box.value === box.defaultValue) return undefined;
+    const send = box.closest(".fdcard") && box.closest(".fdcard").querySelector("[data-act=fd-raise]");
+    return send ? send.dataset.msg : undefined;
   }
 
   // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).

@@ -718,7 +718,7 @@ body { --accent: var(--s-accent); --vio: var(--s-accent); }
 .bchip .bchippill:hover,.bchip .bchippill[aria-expanded="true"]{border-color:var(--s-accent)}
 .bchipcaret{font-size:11px;color:var(--s-muted)}
 .bchip :focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}
-.bchippop{position:absolute;right:0;bottom:calc(100% + 8px);z-index:40;width:max-content;max-width:min(400px,calc(100vw - 32px));box-sizing:border-box;padding:14px 16px;
+.bchippop{position:absolute;right:0;top:calc(100% + 8px);z-index:40;width:max-content;max-width:min(400px,calc(100vw - 34px));box-sizing:border-box;padding:14px 16px;
   border-radius:14px;border:1px solid var(--line);background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 2px var(--s-ring),0 16px 36px -16px var(--s-shadow);text-align:left}
 .bchippop[hidden]{display:none}
 .bchiptitle{margin:0 0 10px;font:600 15px/1.2 var(--s-display);color:var(--s-ink)}

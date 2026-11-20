@@ -156,14 +156,14 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
     browser.wait_for("document.getElementById('fdbox').value === ''")
 
 
-# D257: the Budget chip is a pill beside Go and a popover that floats above it. What the layout must keep, open or closed: the row's height, the
-# hint on its one line, and the popover inside the window and above the pill.
+# D257: the Budget chip is a pill beside Go and a popover that opens below it (R1-8: above, it covered the text box). What the layout must keep,
+# open or closed: the row's height, the hint on its one line, and the popover inside the window and below the pill.
 LAYOUT_JS = """((row, hint) => {
   const r = document.querySelector(row), h = document.querySelector(hint), pill = r.querySelector('.bchippill'), pop = r.querySelector('.bchippop');
   const box = e => e.getBoundingClientRect(), fs = parseFloat(getComputedStyle(h).fontSize);
   const shown = !!pop && !pop.hidden && getComputedStyle(pop).display !== 'none';
   return {row: box(r).height, hintOneLine: box(h).height < 1.8 * fs, pill: pill.textContent.trim().replace(/\\s+/g, ' '), expanded: pill.getAttribute('aria-expanded'),
-          shown, position: pop ? getComputedStyle(pop).position : '', above: shown ? box(pop).bottom <= box(pill).top : null,
+          shown, position: pop ? getComputedStyle(pop).position : '', below: shown ? box(pop).top >= box(pill).bottom : null,
           inside: shown ? box(pop).left >= 0 && box(pop).top >= 0 && box(pop).right <= innerWidth : null,
           focus: document.activeElement ? (document.activeElement.className + '|' + (document.activeElement.dataset.usd || document.activeElement.dataset.custom || '')) : ''};
 })(%s, %s)"""
@@ -182,7 +182,7 @@ def check_open_and_closed(browser, screens_dir, page, row, hint):
     opened = chip_layout(browser, row, hint)
     assert opened["expanded"] == "true" and opened["shown"] is True and opened["position"] == "absolute", opened
     assert opened["row"] == closed["row"] and opened["hintOneLine"] is True, (closed, opened)          # the popover floats: nothing under it moves
-    assert opened["above"] is True and opened["inside"] is True, opened
+    assert opened["below"] is True and opened["inside"] is True, opened
     assert opened["focus"] == "bchippick|20", opened                                                   # focus moves in, to the default
     words = browser.js(f"document.querySelector({q(row + ' .bchippop')}).innerText").split("\n")
     assert [w.strip() for w in words if w.strip()][0] == "Run budget"
@@ -205,6 +205,18 @@ def test_home_chip_is_a_pill_and_a_popover_that_never_moves_the_footer(browser, 
     browser.click(".fdtitle")                                                         # a click outside closes it
     assert chip_layout(browser, ".fdcfoot", ".fdtry")["shown"] is False
     assert browser.console_errors == []
+
+
+@browser_only
+def test_home_chip_popover_stays_on_a_phone_screen(browser, fake):
+    """R1-8: at 390 px the open popover sits below the pill and inside the screen (its left edge was at -1 px), with no sideways scroll."""
+    browser.set_size(390, 844)
+    load(browser, fake, stage="1")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill') !== null")
+    browser.click("#fdbudget .bchippill")
+    opened = chip_layout(browser, ".fdcfoot", ".fdtry")
+    assert opened["shown"] is True and opened["below"] is True and opened["inside"] is True, opened
+    assert browser.js("document.documentElement.scrollWidth <= window.innerWidth + 1")
 
 
 @browser_only
@@ -301,6 +313,25 @@ def test_needs_you_raise_input(browser, fake):
     browser.wait_for("Object.values(HomePage.state().answers).includes('Add $25 and keep going')")
     sent = posts(fake, f"/api/chats/{DEPT_SESSION}/messages")
     assert [r["body"] for r in sent] == [{"text": "Add $25 and keep going"}]
+
+
+@browser_only
+def test_needs_you_raise_input_survives_a_repaint(browser, fake):
+    """R1-6: a typed raise not yet sent is held like a half-typed answer: the per-minute repaint (or any event) neither replaces it with the
+    suggested amount nor takes the focus away."""
+    load(browser, fake)
+    browser.wait_for("document.querySelector('#fdattn .fdcard') !== null")
+    browser.js("""(() => { const S = HomePage.state(); S.needs = [{message_id: 77, session_id: "%s", kind: "question", dept_id: "web", dept_name: "Web",
+      text: "@Requester The site isn't finished yet.\\nThis run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.\\n   Option 1: Add $10 and keep going: more. Or type your own amount [adds $10]\\n   Option 2: Finish as it is",
+      options: [], asked_at: "2026-11-12T10:00:00Z", waiting_s: 30, stale: false}]; HomePage.renderFront(); })()""" % DEPT_SESSION)
+    browser.wait_for("document.querySelector('#fdattn .bchipraisein') !== null")
+    browser.js("(() => { const i = document.querySelector('#fdattn .bchipraisein'); i.focus(); i.value = '$25'; })()")
+    browser.js("(() => { const S = HomePage.state(); S.needsAt = Date.now() - 3600 * 1000; HomePage.renderFront(); })()")
+    assert browser.js("document.querySelector('#fdattn .bchipraisein').value") == "$25"
+    assert browser.js("document.activeElement === document.querySelector('#fdattn .bchipraisein')") is True
+    browser.js("document.querySelector('#fdattn .bchipraisein').blur()")      # left as suggested: the repaint goes on as before
+    browser.js("(() => { const i = document.querySelector('#fdattn .bchipraisein'); i.focus(); i.value = '$10'; HomePage.renderFront(); })()")
+    assert browser.js("HomePage.state().front.held") is False
 
 
 @browser_only
