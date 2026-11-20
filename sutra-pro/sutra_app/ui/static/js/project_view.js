@@ -72,10 +72,12 @@
     const status = word(STATUS_WORDS, p.status, "Working");
     const final = FINAL.indexOf(p.status) >= 0;
     const paused = p.paused === true && !final;
+    const held = paused && arr(isObj(snap) ? snap.cards : []).some(c => isObj(c) && c.kind === "scope_violation");          // a question about files nobody owns holds it: Continue would be refused (N-3)
     const buttons = final ? "" :
-      '<button type="button" data-act="project-pause" data-resume="' + (paused ? "1" : "0") + '">' + (paused ? "Continue" : "Pause") + "</button>" +
+      (held ? "" : '<button type="button" data-act="project-pause" data-resume="' + (paused ? "1" : "0") + '">' + (paused ? "Continue" : "Pause") + "</button>") +
       '<button type="button" class="pbad" data-act="project-stop">Stop everything</button>';
     return '<h1 class="ptitle">' + esc(clean(p.title) || "A project") + '</h1><p class="pstatus" data-status="' + esc(clean(p.status)) + '">' + esc(status) + (paused ? " (paused)" : "") + "</p>" +
+      (held ? '<p class="cnote" role="status">It is held until you answer the question below about files. It goes on when you do.</p>' : "") +
       (p.failure_policy ? '<p class="cnote">' + esc(word(POLICY_WORDS, p.failure_policy, "")) + (p.decide_for_me ? ". Sutra answers the questions it may for you." : ".") + "</p>" : "") +
       '<div class="pbtns">' + buttons + "</div>";
   }

@@ -173,3 +173,14 @@ test("the reviewer's verdict is shown as its opinion, never as an approval", () 
   assert.match(html, /gave its opinion: asks for changes\. Thin\./);
   assert.equal(/approved/i.test(html), false);
 });
+
+test("while a question about files holds the project there is no Continue, and the page says why", () => {          // N-3
+  const held = snap({project: Object.assign(snap().project, {paused: true}), cards: [{kind: "scope_violation", approval_id: "ap_0123456789ab", question: "Keep its work?", options: ["allow_once", "deny"], item: ""}]});
+  const html = View.header(held);
+  assert.equal(html.includes("project-pause"), false);
+  assert.match(html, /It is held until you answer the question below about files\. It goes on when you do\./);
+  assert.match(html, /data-act="project-stop"/, "Stop everything is still there");
+  const ordinary = View.header(snap({project: Object.assign(snap().project, {paused: true})}));
+  assert.match(ordinary, /data-resume="1">Continue</);
+  assert.equal(ordinary.includes("held until"), false);
+});
