@@ -374,9 +374,9 @@ class Conductor:
         import asyncio
         did = await run_blocking(self._tick_sync, moment, gap)
         if did["expire"]:
-            await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s") for task_id in did["expire"]), return_exceptions=True)
+            await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s", by="system") for task_id in did["expire"]), return_exceptions=True)
         for project_id, reason in did["refuse"]:
-            await self._stop_nodes(project_id, reason)                              # the database part of the refusal was done in the tick's own transaction
+            await self._stop_nodes(project_id, reason, "system")                     # the database part of the refusal was done in the tick's own transaction
         pending, self._pending = self._pending, []
         for project_id, reason in pending:
             await self.stop(project_id, by="system", reason=reason)
@@ -456,7 +456,7 @@ class Conductor:
             with self.db.tx() as tx:
                 return self._refuse_in(tx, project_id, reason)
         ended = await run_blocking(settle)
-        ended += await self._stop_nodes(project_id, reason)
+        ended += await self._stop_nodes(project_id, reason, "system")
         return ended
 
     def _refuse_in(self, tx: Tx, project_id: str, reason: str) -> int:
@@ -565,7 +565,7 @@ class Conductor:
         await run_blocking(self._mark_stopped, project_id, reason, by)
         if found["request_id"]:
             await run_blocking(self.stop_planners, found["request_id"])
-        return await self._stop_nodes(project_id, reason)
+        return await self._stop_nodes(project_id, reason, by)
 
     def begin_kill(self, reason: str) -> list[str]:
         """The kill switch ends every project that has a live or waiting node (D303 d). First step: they become `stopped` (so the gate holds everything and a node that ends is not counted as a
@@ -577,7 +577,7 @@ class Conductor:
 
     async def finish_kill(self, project_ids: Sequence[str], reason: str) -> int:
         """Last step of a kill: the queued and blocked nodes of those projects are cancelled, so nothing starts by itself after resume (D303 d). Returns how many it cancelled."""
-        return sum([await self._stop_nodes(project_id, reason) for project_id in project_ids])
+        return sum([await self._stop_nodes(project_id, reason, "system") for project_id in project_ids])
 
     def _projects_with_open_nodes(self) -> list[str]:
         rows = self.db.conn().execute(
@@ -598,8 +598,8 @@ class Conductor:
                 self.store.audit(tx, actor=actor, action="project.stopped", project_id=project_id, decision="n/a", reason=reason)
                 tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
 
-    async def _stop_nodes(self, project_id: str, outcome: str) -> int:
-        """The live nodes of the project through the ladder, all together; the ones that have not started are cancelled."""
+    async def _stop_nodes(self, project_id: str, outcome: str, by: str = "owner") -> int:
+        """The live nodes of the project through the ladder, all together; the ones that have not started are cancelled. `by`: who asked (Minor 2): only the owner's own stop is recorded as theirs."""
         import asyncio
         rows = await run_blocking(lambda: self.db.conn().execute(
             "SELECT n.id AS id, n.task_id AS task_id, t.status AS status FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? "
@@ -607,7 +607,7 @@ class Conductor:
 
         async def one(row: sqlite3.Row) -> int:
             try:
-                return 1 if await self.tasks.stop_node(row["task_id"], outcome) else 0
+                return 1 if await self.tasks.stop_node(row["task_id"], outcome, by="owner" if by == "owner" else "system") else 0
             except Exception:                         # noqa: BLE001  (one that will not stop must not keep the others)
                 log.exception("could not stop node %s", row["id"])
                 return 0

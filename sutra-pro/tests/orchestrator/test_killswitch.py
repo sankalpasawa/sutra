@@ -325,10 +325,10 @@ def test_one_node_that_will_not_stop_does_not_keep_the_others_running(rig, monke
     a, b, na, nb = two_live_nodes(rig)
     real = t.service.stop_node
 
-    async def flaky(task_id, outcome="stopped by you"):
+    async def flaky(task_id, outcome="stopped by you", **kw):
         if task_id == a.id:
             raise RuntimeError("it will not stop")
-        return await real(task_id, outcome)
+        return await real(task_id, outcome, **kw)
 
     monkeypatch.setattr(t.service, "stop_node", flaky)
     assert t.run(rig.control.kill_all()) == 1 and t.status(b.id) == "stopped" and rig.switch.level() == "kill"
@@ -416,10 +416,10 @@ def test_a_node_that_will_not_stop_is_logged_and_the_rest_still_end_together(rig
     a, b, na, nb = two_live_nodes(rig)
     real = t.service.stop_node
 
-    async def flaky(task_id, outcome="stopped by you"):
+    async def flaky(task_id, outcome="stopped by you", **kw):
         if task_id == a.id:
             raise RuntimeError("it will not stop")
-        return await real(task_id, outcome)
+        return await real(task_id, outcome, **kw)
 
     monkeypatch.setattr(t.service, "stop_node", flaky)
     with caplog.at_level(logging.ERROR, logger="sutra_app.orchestrator.killswitch"):

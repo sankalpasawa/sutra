@@ -246,7 +246,7 @@ class NodeControl:
             return await self.projects.stop_planner_node(node_id)
         if found is None or found["status"] not in OPEN_TASK_STATUSES:
             return False
-        stopped = await self.tasks.stop_node(found["task_id"], "stopped by you")
+        stopped = await self.tasks.stop_node(found["task_id"], "stopped by you", by="owner" if by == "owner" else "system")
         if stopped:
             await run_blocking(self._mark, node_id, "cancelled", "stopped by you")
             await run_blocking(lambda: self._audit("node.stopped", reason="stopped by you", node=found, actor="owner" if by == "owner" else "system"))
@@ -318,7 +318,7 @@ class NodeControl:
 
         async def one(node: dict[str, Any]) -> int:
             try:
-                if not await self.tasks.stop_node(node["task_id"], outcome):
+                if not await self.tasks.stop_node(node["task_id"], outcome, by="system"):
                     return 0
                 await run_blocking(self._mark, node["id"], "cancelled", outcome)
                 await run_blocking(lambda: self._audit("node.stopped", reason=outcome, node=node, actor="system"))

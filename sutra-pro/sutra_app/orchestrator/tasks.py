@@ -1019,7 +1019,7 @@ class TaskService:
             self.node_sync(tx, row.id)
 
     def _mark_stop(self, task_id: str, by: str) -> None:
-        """Remember who asked a live task to stop, "owner" or "app", in the reserved settings key `_stopped_by` (the first one to ask
+        """Remember who asked a live task to stop, "owner", "app" or "system", in the reserved settings key `_stopped_by` (the first one to ask
         wins). The engine ends a stopped run with the same words for both, and the Heads up lane must never list the owner's own stop
         (headsup.py)."""
         with self.db.tx() as tx:
@@ -1032,20 +1032,21 @@ class TaskService:
             stored[STOP_KEY] = by
             self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
 
-    async def stop_node(self, task_id: str, outcome: str = "stopped by you") -> bool:
+    async def stop_node(self, task_id: str, outcome: str = "stopped by you", *, by: str = "owner") -> bool:
         """Stop the task of a node of a multi-agent project through the ordinary ladder (`_stop`: a live task through the launcher's stop ladder, a queued or blocked one cancelled).
-        False, touching nothing, when the task is over already or there is none. `outcome` is what the owner reads as the end ("stopped by you", "stopped by the kill switch")."""
+        False, touching nothing, when the task is over already or there is none. `outcome` is what the owner reads as the end ("stopped by you", "stopped by the kill switch"). `by` is who asked: "owner", or "system" for a lease that ran
+        out, a kill, a project the app stopped: the Heads up lane lists a system stop and never the owner's own (Minor 2)."""
         row = await run_blocking(self.store.find_row, task_id)
         if row is None or row.terminal:
             return False
-        await self._stop(task_id, outcome)
+        await self._stop(task_id, outcome, by=by)
         return True
 
     async def stop(self, task_id: str) -> TaskOut:
         """Stop a task ('stopped by you'): a live task through the ladder, a queued or blocked one is cancelled; a finished one is 409."""
         return await self._stop(task_id, "stopped by you")
 
-    async def _stop(self, task_id: str, outcome: str) -> TaskOut:
+    async def _stop(self, task_id: str, outcome: str, by: str = "owner") -> TaskOut:
         row = await run_blocking(self.store.row, task_id)
         if row.terminal:
             raise Busy("That task has already ended")
@@ -1056,7 +1057,7 @@ class TaskService:
                     self.graph.aggregate(tx)
                 return self.store.get(task_id)
             return await run_blocking(cancel)
-        await run_blocking(self._mark_stop, task_id, "owner")
+        await run_blocking(self._mark_stop, task_id, by)
         run_dir = await run_blocking(self.store.run_dir_of, row)
         await self.launcher.stop(run_dir, row.pid)
         if self.watcher is not None:

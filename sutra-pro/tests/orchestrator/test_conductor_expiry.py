@@ -242,3 +242,35 @@ def test_the_retry_of_a_node_keeps_its_upstream_and_a_node_that_waits_for_it_wai
     spec = [s for s, *_ in rig.t.launcher.started if s.task_id == new][0]
     assert [u.run_id for u in spec.upstream] == [rig.t.row(tasks["a1"]).run_id] and "handoff.accepted.json" in spec.upstream[0].files
 
+
+
+# ---- who stopped it (Minor 2) -------------------------------------------------------------------------------------------------------
+
+def stopped_by(rig, task_id):
+    return json.loads(rig.sql("SELECT settings_json FROM tasks WHERE id = ?", task_id).fetchone()[0]).get("_stopped_by")
+
+
+def test_only_the_owners_own_stops_are_recorded_as_theirs(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", []), ("a3", "ops", []), ("a4", "hr", [])])
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.max_parallel', 5) WHERE id = ?", reservation.project_id)
+    rig.start()
+    for task_id in tasks.values():
+        if rig.t.status(task_id) == "starting":
+            rig.go(task_id)
+    rig.sql("UPDATE tasks SET last_event_at = ? WHERE id <> ?", BASE + 95, tasks["a1"])                  # only a1 is silent
+    assert tick(rig, 100)["expired"] == [tasks["a1"]] and stopped_by(rig, tasks["a1"]) == "system"       # a lease that ran out
+    assert rig.t.run(rig.control.stop_node(rig.node_of(tasks["a2"])["id"])) is True and stopped_by(rig, tasks["a2"]) == "owner"       # the owner's own node stop
+    rig.t.run(rig.projects.stop(reservation.project_id, by="system", reason="a step failed and this project stops at the first failure"))
+    assert stopped_by(rig, tasks["a3"]) == "system" and stopped_by(rig, tasks["a4"]) == "system"       # a stop the app decided
+
+
+def test_a_kill_is_recorded_as_a_system_stop(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    assert rig.t.run(rig.control.kill_all(by="owner", reason="stopped by the kill switch")) == 2
+    assert {stopped_by(rig, t) for t in tasks.values()} == {"system"}                                   # the kill switch is not the owner's stop of a node
+
+
+def test_the_owners_own_project_stop_is_recorded_as_theirs(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.t.run(rig.projects.stop(reservation.project_id))
+    assert {stopped_by(rig, t) for t in tasks.values()} == {"owner"}
