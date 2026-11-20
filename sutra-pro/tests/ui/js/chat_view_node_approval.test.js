@@ -66,3 +66,21 @@ test("a note that ends with a project's address links to the project, and every 
   assert.equal(ChatView.transcript(SESSION, [note("a plain note")]), ChatView.transcript(SESSION, [note("a plain note")]));
   assert.equal(ChatView.transcript(SESSION, [note("Merged into Web")]).includes("Merged into Web</div>"), true);                       // the flag-off note is the text and nothing else
 });
+
+const reply = text => ({id: 2, session_id: "cs_x", role: "agent", who: "sutra", kind: "text", text, card: null, pause: null, answered_by: null, task_id: null, state: "ok", at: "2026-11-04T10:00:00Z"});
+const taskCard = over => Object.assign({type: "task", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "running"}, over || {});
+
+test("a reply that ends with a project's address links to the project, any other reply is as it was (D382)", () => {
+  const html = ChatView.transcript(SESSION, [reply("I gave this to the Web team. You can follow it here: /p/" + PROJECT)]);
+  assert.ok(html.includes('You can follow it here: <a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  for (const same of ["I gave this to the Web team.", "see /p/prj_zz", "/p/" + PROJECT + "abc"]) {
+    assert.equal(ChatView.transcript(SESSION, [reply(same)]).includes('class="plink"'), false, same);
+  }
+});
+
+test("the card of a step of a project links to the project, the card of an ordinary task is unchanged (D382)", () => {
+  assert.ok(ChatView.card(taskCard({project_id: PROJECT})).includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  const plain = ChatView.card(taskCard());
+  assert.equal(plain.includes("plink"), false);
+  assert.equal(ChatView.card(taskCard({project_id: '"><script>'})).includes("<script"), false);
+});

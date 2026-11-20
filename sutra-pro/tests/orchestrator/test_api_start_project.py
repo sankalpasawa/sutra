@@ -1,5 +1,6 @@
 """`POST /api/projects` and `GET /api/nodes/app-location` (MAN-13, D326): off is 404 before anything, a write needs the token, the body is closed, the request goes to the org chat as the owner's
 line, `failure_policy` is kept for the project it becomes (default `stop_branch`; only this route sets `stop_all`), a repeated `client_id` starts nothing, and the app-location words are plain."""
+import json
 import time
 
 from fastapi.testclient import TestClient
@@ -116,3 +117,52 @@ def test_a_note_about_a_project_ends_with_its_address_and_a_finished_project_say
         assert asyncio_stop.status_code == 200
         notes = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE session_id = ? AND kind = 'note' AND text LIKE ?", ORG, "%/p/%")]
         assert all(text.endswith(f"/p/{project}") for text in notes)
+
+
+# ---- the reply ends with the project's address, whichever way the line came in (D382) -------------------------------------------------
+
+def _reply_and_cards(services):
+    replies = rows(services, "SELECT text FROM chat_messages WHERE session_id = ? AND role = 'agent' AND kind = 'text' ORDER BY id", ORG)
+    cards = [json.loads(r["card_json"]) for r in rows(services, "SELECT card_json FROM chat_messages WHERE session_id = ? AND kind = 'card'", ORG)]
+    return [r["text"] for r in replies], [c for c in cards if c.get("type") == "task"]
+
+
+def _project_id(services):
+    return rows(services, "SELECT id FROM projects")[0]["id"]
+
+
+def test_a_request_sent_with_post_projects_gets_a_reply_that_ends_with_the_project_address_and_cards_that_link_to_it(tmp_path):
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        assert client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS).status_code == 202
+        wait_idle(services)
+        texts, tasks = _reply_and_cards(services)
+        address = f"/p/{_project_id(services)}"
+        assert texts[-1].endswith(f"You can follow it here: {address}") and sum("/p/" in t for t in texts) == 1
+        assert len(tasks) == 2 and all(card["project_id"] == _project_id(services) for card in tasks)
+
+
+def test_a_request_typed_in_the_org_chat_gets_the_same_address(tmp_path):
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post(f"/api/chats/{ORG}/messages", json={"text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        texts, tasks = _reply_and_cards(services)
+        assert texts[-1].endswith(f"/p/{_project_id(services)}") and all(card["project_id"] == _project_id(services) for card in tasks)
+
+
+def test_without_the_flag_the_reply_and_the_task_cards_are_what_they_were(tmp_path):
+    app, connector = make_app(tmp_path)
+    connector.push(decide(change="reuse", reuse=("web",), why="one"), assignments(draft("a1", "web", title="Page")))
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post(f"/api/chats/{ORG}/messages", json={"text": "A page"}, headers=HEADERS)
+        wait_idle(services)
+        texts, tasks = _reply_and_cards(services)
+        assert all("/p/" not in text for text in texts) and all("project_id" not in card for card in tasks)
+        for card in rows(services, "SELECT card_json FROM chat_messages WHERE kind = 'card'"):
+            assert "project_id" not in card["card_json"]

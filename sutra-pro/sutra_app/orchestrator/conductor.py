@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS
-from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_spend, slice_left
+from sutra_app.orchestrator.budgets import SCRUB_LIMIT, chain_spend, egress_scrubs, project_cost, slice_left
 from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.grants import fold, scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
@@ -56,6 +56,9 @@ def _covers_path(scope: tuple[str, ...], path: str) -> bool:
 
 
 FOLDER_TTL_S = 2.0
+
+
+MONTH_REASON = "Your monthly limit was reached, so the project stopped."          # D381: the one sentence for a project that ran into the owner's monthly dollar limit
 
 
 def plain_refusal(text: Any) -> str:
@@ -224,7 +227,11 @@ class Conductor:
 
     def warm_scopes(self) -> None:
         """Called by the scheduler BEFORE it opens the start transaction (`TaskService.before_prepare`): the links of every unfinished step's scope are followed here, so the gate and the scope check
-        inside the transaction only read the answer. Never raises."""
+        inside the transaction only read the answer. Also reads the owner's monthly dollar limit (D381). Never raises."""
+        try:
+            self.service.warm_limit()
+        except Exception:                                                       # noqa: BLE001
+            log.exception("could not read the monthly limit ahead of time")
         try:
             folder = self._folder()
             if not folder:
@@ -764,6 +771,10 @@ class Conductor:
     async def _tick(self, moment: int, gap: int) -> dict[str, list[str]]:
         import asyncio
         scrubs = await run_blocking(egress_scrubs, self.settings.data_dir / "connectors" / "egress.jsonl")       # read BEFORE the write transaction opens: up to 2 MB is parsed (m8)
+        try:
+            await run_blocking(self.service.warm_limit)                                      # the owner's monthly limit, read before the transaction too (D381)
+        except Exception:                                                                    # noqa: BLE001
+            log.exception("could not read the monthly limit")
         did = await run_blocking(self._tick_sync, moment, gap, scrubs)
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s", by="system") for task_id in did["expire"]), return_exceptions=True)
@@ -856,16 +867,23 @@ class Conductor:
         if began is not None and now - int(began) - self._paused_seconds(tx, project_id, now, int(began)) > wall:
             reason, action = f"the project ran longer than {wall // 60} minutes", "trigger.project_wall"
         else:
+            month_left = self.service.month_left(tx.conn, now)                    # D381: the owner's monthly allowance is the project's own limit as well, between two ticks and for every step
             limit = tx.conn.execute("SELECT budget_usd FROM projects WHERE id = ?", (project_id,)).fetchone()["budget_usd"]
-            if limit is not None:
-                spent = project_spend(tx.conn, project_id)[1]                      # every attempt of every node counts (D324)
+            if month_left is not None and month_left <= 0:
+                reason, action = MONTH_REASON, "trigger.project_month"
+            elif limit is not None:
+                spent = project_cost(tx.conn, project_id)[0]                       # every attempt of every node counts (D324), and the planner's own calls (D383)
                 if spent > float(limit):
-                    reason, action = "the project spent more than the dollars you set", "trigger.project_usd"
+                    reason, action = (MONTH_REASON, "trigger.project_month") if caps.get("usd_from_month") else ("the project spent more than the dollars you set", "trigger.project_usd")
         if not reason:
             return False
         self.store.audit(tx, actor="conductor", action=action, project_id=project_id, decision="deny", reason=reason)
-        self._note(tx, project_id, f"I stopped it: {reason}.", f"project:{project_id}#limit")
-        self._pending.append((project_id, f"stopped: {reason}"))
+        if action == "trigger.project_month":
+            self._note(tx, project_id, reason, f"project:{project_id}#limit")           # already a whole plain sentence
+            self._pending.append((project_id, reason))
+        else:
+            self._note(tx, project_id, f"I stopped it: {reason}.", f"project:{project_id}#limit")
+            self._pending.append((project_id, f"stopped: {reason}"))
         return True
 
     @staticmethod

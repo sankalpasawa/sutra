@@ -450,6 +450,7 @@ class TaskService:
         # asked about ONE task after `start_gate`, in the same transaction: a waiting sentence, or "" to let it start (multi-agent nodes, D257; set only while SUTRA_NODES_V1 is on).
         # MAN-4 uses it for the kill switch and pause; the Conductor's task gate (MAN-5) takes its place and keeps that rule.
         self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
+        self.node_usd_left: Callable[[sqlite3.Connection, str, float], float | None] | None = None      # the dollars a step that starts now may still spend (D381); None with SUTRA_NODES_V1 off
         self.before_prepare: Callable[[], None] | None = None          # the project service's look at the links of the steps' scopes, run BEFORE the start transaction (N-6); None with SUTRA_NODES_V1 off
         # asked just before and just after a process is started: an outcome sentence ends the start (a kill that came in between); "" lets it go on (MAN-4, M1)
         self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
@@ -733,6 +734,10 @@ class TaskService:
                 from sutra_app.orchestrator.budgets import chain_spend, slice_left
                 left = max(1, slice_left(int(sliced["slice_credits"]), chain_spend(conn, row.parent_task_id)[0]))      # a retry or a restart: the slice minus what earlier attempts spent (D324)
                 settings = {**settings, "J2_BUDGET": str(left), "J2_BUDGET_CAP": str(left)}      # start with it and never go past it (P25: no raise without the Requester)
+        if node is not None and self.node_usd_left is not None:             # D381: a step is never given more dollars than the project and the owner's month have left; its meter stops it between calls
+            left = self.node_usd_left(conn, node.project_id, float(self.clock.now()))
+            if left is not None and (node.caps.usd is None or left < node.caps.usd):
+                node = node.model_copy(update={"caps": node.caps.model_copy(update={"usd": max(0.01, round(left, 6))})})
         if node is not None and node.runtime == "light":                                 # the reviewer uses a program that did not build the work, when there is one (MAN-11)
             picked = json.loads((conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node.project_id,)).fetchone() or {"caps_json": "{}"})["caps_json"] or "{}").get("reviewer_connector")
             if picked in ("claude", "codex") and connector != "stub":

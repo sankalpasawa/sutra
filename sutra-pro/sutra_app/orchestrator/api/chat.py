@@ -86,7 +86,7 @@ def build_router() -> APIRouter:
     async def get_heads_up(request: Request) -> RedactedJSONResponse:
         services = services_of(request)
         now = services.clock.now()
-        return respond(request, await run_blocking(lambda: HeadsUp(services.db).items(now)))
+        return respond(request, await run_blocking(lambda: HeadsUp(services.db, nodes=getattr(services, "projects", None) is not None).items(now)))
 
     return router
 

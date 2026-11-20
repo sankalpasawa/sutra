@@ -52,9 +52,9 @@ test("a permission of the computer lists its steps, what it holds up, and Check 
 
 test("the graph has a box for each step but not the planner, a line for each edge and a dashed one for a shared file", () => {
   const html = View.graphHtml(snap({nodes: snap().nodes.concat([{id: "nd_p", role: "planner", state: "done"}])}));
-  assert.equal((html.match(/class="pnode"/g) || []).length, 3);
-  assert.equal((html.match(/class="pedge"/g) || []).length, 1);
-  assert.equal((html.match(/class="pedge pconflict"/g) || []).length, 1);
+  assert.equal((html.match(/class="pnode"/g) || []).length, 6, "three boxes in each of the two drawings (left to right, top to bottom)");
+  assert.equal((html.match(/class="pedge"/g) || []).length, 2);
+  assert.equal((html.match(/class="pedge pconflict"/g) || []).length, 2);
   assert.match(html, /Step a1/);
   assert.match(html, /A dashed line means two steps use the same files, so one waits for the other\./);
   assert.match(html, /role="img" aria-label="3 steps and the order they run in"/);
@@ -143,12 +143,15 @@ test("every audit action the server writes has words, so the page never prints a
   for (const name of fs.readdirSync(dir).filter(f => f.endsWith(".py"))) {
     const text = fs.readFileSync(path.join(dir, name), "utf8");
     for (const m of text.matchAll(/action="([a-z_]+\.[a-z_]+)"/g)) found.add(m[1]);
+    for (const m of text.matchAll(/\b_audit\("([a-z_.]+)"/g)) found.add(m[1]);                         // the kill switch's own rows: node.stopped, pause, kill, resume (D383)
+    for (const m of text.matchAll(/action="(trigger\.[a-z_]+)"|"(trigger\.project_[a-z]+)"/g)) found.add(m[1] || m[2]);
   }
   const missing = [...found].filter(a => !Object.prototype.hasOwnProperty.call(View.ACTION_WORDS, a));
   assert.deepEqual(missing, []);
   const html = View.auditHtml([...found].map((action, i) => ({seq: i + 1, at: "2026-11-20T10:00:00Z", action, reason: "x"})).concat([{seq: 999, action: "never.heard.of", reason: ""}]));
   const text = html.replace(/<[^>]*>/g, " ");
   assert.equal(/\b[a-z_]+\.[a-z_]+\b/.test(text), false, text);                                         // no dotted machine name on the page
+  for (const action of ["node.stopped", "kill", "pause", "resume", "trigger.project_month"]) assert.ok(found.has(action), action + " is one the server writes");
   assert.match(text, /Something happened/);
 });
 
@@ -163,7 +166,7 @@ test("reasons that are not plain words are put into words or left out", () => {
   assert.equal(r("handoff.accepted", "1 file(s), message 2"), "1 file");
   assert.equal(r("project.ended", "done_with_open_items"), "Done, but some steps did not finish");
   assert.equal(r("verdict.received", "changes"), "asks for changes");
-  assert.equal(r("tool.used", "read a.txt, 2 times"), "read a.txt, 2 times");
+  assert.equal(r("tool.used", "read a.txt, 2 times"), "", "a tool row says it all in its heading");
   assert.equal(r("scope.unchecked", "git could not say which files this step changed"), "git could not say which files this step changed");
 });
 
@@ -183,4 +186,87 @@ test("while a question about files holds the project there is no Continue, and t
   const ordinary = View.header(snap({project: Object.assign(snap().project, {paused: true})}));
   assert.match(ordinary, /data-resume="1">Continue</);
   assert.equal(ordinary.includes("held until"), false);
+});
+
+// ---- the words and the shape of the page after the first real run (D383) -------------------------------------------------------------------
+
+const titled = (id, ref, title, state, over = {}) => node(id, ref, state, Object.assign({title}, over));
+
+test("a step is named by its title, and by Step a1 only when it has none", () => {
+  const s = snap({nodes: [titled("nd_a", "a1", "List what each file is for", "done"), titled("nd_b", "a2", "", "running", {depends_on: ["nd_a"]}), titled("nd_c", "a3", "a3", "planned")], edges: [{from: "nd_a", to: "nd_b", kind: "depends_on"}]});
+  const steps = View.stepsHtml(s);
+  assert.match(steps, /<b>List what each file is for<\/b>/);
+  assert.match(steps, /<b>Step a2<\/b>/);
+  assert.match(steps, /<b>Step a3<\/b>/, "a title that is only the plan's own label is not a title");
+  assert.match(steps, /Starts after: List what each file is for/);
+  assert.match(View.graphHtml(s), /<title>List what each file is for<\/title>/);
+  assert.equal(/Step a1/.test(steps + View.graphHtml(s)), false);
+});
+
+test("the picture is drawn twice and fits a phone: one left to right and one top to bottom, each scaled by its viewBox", () => {
+  const html = View.graphHtml(snap());
+  assert.equal((html.match(/<svg /g) || []).length, 2);
+  assert.match(html, /<svg class="pflow-h" role="img"/);
+  assert.match(html, /<svg class="pflow-v" aria-hidden="true"/, "the copy is hidden from a screen reader");
+  const vertical = /class="pflow-v"[^>]*viewBox="0 0 (\d+) (\d+)"/.exec(html);
+  assert.ok(Number(vertical[1]) <= 150, "a chain of steps is one box wide when it is stacked");
+  const css = require("node:fs").readFileSync(path.join(JS, "../css/sutra-project.css"), "utf8");
+  assert.match(css, /@media \(max-width: 640px\)[\s\S]*\.pgraph \.pflow-h \{ display: none/);
+  assert.match(css, /\.pgraph svg \{[^}]*max-width: 100%/);
+});
+
+test("a stop is said as the owner knows it: you, or the kill switch, never the engine's own words", () => {
+  const stopped = why => snap({project: Object.assign(snap().project, {status: "stopped", stop_reason: why}), nodes: [node("nd_a", "a1", "done"), node("nd_b", "a2", "cancelled", {failure_reason: "Stopped: stopped on request"})]});
+  const kill = stopped("stopped by the kill switch");
+  assert.match(View.whyHtml(kill), /Why:<\/b> The kill switch was used\./);
+  assert.match(View.stepsHtml(kill), /<span class="pwhy">The kill switch was used\.<\/span>/);
+  assert.equal(/stopped on request/i.test(View.whyHtml(kill) + View.stepsHtml(kill) + View.auditHtml([{seq: 1, action: "node.cancelled", reason: "Stopped: stopped on request"}], kill.project)), false);
+  const you = stopped("stopped by you");
+  assert.match(View.whyHtml(you), /You stopped it\./);
+  assert.match(View.stepsHtml(you), /You stopped it\./);
+  assert.match(View.whyHtml(stopped("Your monthly limit was reached, so the project stopped.")), /Your monthly limit was reached, so the project stopped\./);
+  assert.match(View.whyHtml(stopped("stopped: the project ran longer than 120 minutes")), /Why:<\/b> The project ran longer than 120 minutes\./);
+  assert.match(View.stepsHtml(snap({project: Object.assign(snap().project, {status: "running"}), nodes: [node("nd_a", "a1", "cancelled", {failure_reason: "Stopped: stopped on request"})]})), /It was stopped before it finished\./);
+});
+
+test("the audit says what happened in plain words: no 'Something happened', no 'a step used a tool: run'", () => {
+  const rows = [{seq: 1, at: "2026-11-20T10:00:00Z", action: "project.stopped", reason: "stopped by the kill switch"}, {seq: 2, action: "node.stopped", reason: "stopped by the kill switch"},
+    {seq: 3, action: "kill", reason: "watchdog abort (1 node(s))"}, {seq: 4, action: "kill", reason: "the KILL file was found (0 node(s))"}, {seq: 5, action: "tool.used", reason: "run, 7 times"},
+    {seq: 6, action: "tool.used", reason: "read README.md, 2 times"}, {seq: 7, action: "tool.used", reason: "search, 2 times"}, {seq: 8, action: "tool.used", reason: "edit project.md, 1 time"},
+    {seq: 9, action: "tool.used", reason: "web, 3 times"}];
+  const text = View.auditHtml(rows, {status: "stopped", stop_reason: "stopped by the kill switch"}).replace(/<[^>]*>/g, " ");
+  assert.equal(/Something happened|watchdog|KILL file|node\(s\)|stopped by the kill switch/.test(text), false, text);
+  assert.match(text, /A step ran commands 7 times/);
+  assert.match(text, /A step read README\.md, 2 times/);
+  assert.match(text, /A step searched, 2 times/);
+  assert.match(text, /A step changed project\.md, once/);
+  assert.match(text, /A step used the web 3 times/);
+  assert.match(text, /The kill switch was used/);
+  assert.match(text, /A step was stopped[\s\S]*The kill switch was used/);
+  assert.match(text, /written down when the step ends/, "the tool lines say they carry the time the step ended");
+  assert.equal(/written down when the step ends/.test(View.auditHtml([{seq: 1, action: "project.created", reason: ""}], null)), false);
+});
+
+test("what the steps said is a plain line about what they produced, never the engine's own words", () => {
+  const body = {v: 1, node_id: "nd_a", status: "done", summary: "Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.",
+    files: [{path: "artifacts.json", sha256: "x", bytes: 1}, {path: "report.md", sha256: "x", bytes: 1}, {path: "project.md", sha256: "x", bytes: 1}, {path: "workflows.json", sha256: "x", bytes: 1}], claims: [], needs: []};
+  const html = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap());
+  const text = html.replace(/<[^>]*>/g, " ");
+  assert.match(text, /Step a1\s+handed in its work\. It made report\.md, project\.md\./);
+  assert.equal(/rubric|done-when|necessary condition|artifacts\.json|workflows\.json/.test(text), false, text);
+  const open = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: Object.assign({}, body, {status: "done_with_open_items", files: [], changes: ["a.py", "b.py"]})}], snap());
+  assert.match(open.replace(/<[^>]*>/g, " "), /handed in its work, with some things left open\. It changed 2 files in your folder: a\.py, b\.py\./);
+  const many = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: Object.assign({}, body, {files: ["a", "b", "c", "d", "e", "f"].map(n => ({path: n + ".md"}))})}], snap());
+  assert.match(many, /It made a\.md, b\.md, c\.md, d\.md and 2 more\./);
+  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {summary: "every rubric item passes"}}], snap()), /\(handed in its work\)/, "an engine sentence on its own is left out");
+  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {summary: "Looks fine to me."}}], snap()), /Looks fine to me\./, "a person's sentence is shown");
+});
+
+test("the cost says it is about, includes the planning, and counts the calls that have no price", () => {
+  const html = View.spendHtml(snap({spend: {calls: 23, usd: 0.97, unpriced: 2}}));
+  assert.match(html, /about \$0\.97/);
+  assert.match(html, /include the planning of the project; 2 calls have no price, so it may be a little more\./);
+  assert.match(View.spendHtml(snap({spend: {calls: 23, usd: 0.97, unpriced: 1}})), /1 call has no price/);
+  assert.equal(/no price/.test(View.spendHtml(snap({spend: {calls: 23, usd: 0.97, unpriced: 0}}))), false);
+  assert.equal(/estimate/.test(View.spendHtml(snap({spend: {calls: 1, usd: null}}))), false);
 });

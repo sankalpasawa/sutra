@@ -33,8 +33,9 @@ def test_with_the_flag_on_the_controls_are_built_the_gate_is_installed_and_the_r
     services = app.state.services
     assert services.node_control is not None and services.projects is not None and services.tasks.task_gate == services.projects.gate
     assert services.node_control.projects is services.projects and services.runner.projects is services.projects and services.tasks.node_sync == services.projects.sync_task == services.projector.node_sync
+    assert services.tasks.node_usd_left == services.projects.usd_left and services.projects._monthly_limit == services.limits.monthly_limit      # D381: the month's limit reaches the projects and each step's cap
     with TestClient(app, base_url=BASE) as client:
-        assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None}
+        assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None, "settings": {"SUTRA_NODES_V1": True, "SUTRA_NODES_LANES": False, "SUTRA_NODES_REVIEWER": False, "SUTRA_NODES_SLOTS": False}}
         assert client.post("/api/nodes/pause-all", json={"reason": "x"}, headers=HEADERS).json() == {"affected": 0}
         assert client.get("/api/nodes/status").json()["level"] == "pause"
         assert services.node_control._watcher is not None and not services.node_control._watcher.done()

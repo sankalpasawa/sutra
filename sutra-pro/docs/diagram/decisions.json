@@ -1783,5 +1783,35 @@
   "id": "D367",
   "label": "hidden text refused in recipes and tags",
   "anchor": null
+ },
+ {
+  "id": "D380",
+  "label": "step tools = grant: reads, own-folder writes, no shell, no web",
+  "anchor": null
+ },
+ {
+  "id": "D381",
+  "label": "month limit stops project + caps each step",
+  "anchor": null
+ },
+ {
+  "id": "D382",
+  "label": "project reply + step cards link to /p/id",
+  "anchor": null
+ },
+ {
+  "id": "D383",
+  "label": "page: plain words, ledger cost, phone graph",
+  "anchor": null
+ },
+ {
+  "id": "D384",
+  "label": "nodes status: shell vs app; resume audited",
+  "anchor": null
+ },
+ {
+  "id": "D385",
+  "label": "checklist fixed; run 1 unseen listed",
+  "anchor": null
  }
 ]

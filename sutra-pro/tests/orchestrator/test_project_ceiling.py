@@ -5,6 +5,8 @@ import json
 import pytest
 from orchestrator.projects_rig import PRig  # noqa: F401
 
+from sutra_app.orchestrator.conductor import MONTH_REASON
+
 BASE = 1793786400
 NODE_A = "nd_"
 
@@ -187,3 +189,101 @@ def test_a_project_is_not_stopped_at_once_by_the_wall_limit_because_the_app_was_
     done = rig.t.run(rig.projects.tick(now=now))
     assert done["stopped"] == [] and rig.project(pid)["status"] == "running"                                    # without the row the first tick would say "ran longer than 120 minutes"
     assert rig.audit("trigger.project_wall") == []
+
+
+# ---- the owner's monthly dollar limit is the project's limit too (D381) -----------------------------------------------------------------
+
+MONTH_SENTENCE = MONTH_REASON
+assert MONTH_SENTENCE == "Your monthly limit was reached, so the project stopped."
+
+
+def spend(rig, usd, task_id=None, provider="claude"):
+    rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) VALUES (?, ?, 'agent_turn', ?, ?)", BASE + 3, provider, task_id, usd)
+
+
+def month_limit(rig, usd):
+    rig.limits.update(monthly_usd=usd, now=BASE)
+    rig.projects._limit_seen = (-1e9, None)                                                 # the 2 s memory of the file: forget it so this test's change is seen at once
+
+
+def test_a_project_gets_what_is_left_of_the_monthly_limit_when_it_starts(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 0.5)                                                                          # an ordinary task already spent 0.5 this month
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    project = rig.project(reservation.project_id)
+    assert project["budget_usd"] == 2.5 and json.loads(project["caps_json"])["usd_from_month"] is True
+
+
+def test_without_a_monthly_limit_a_project_has_no_dollar_limit_of_its_own(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    assert rig.project(reservation.project_id)["budget_usd"] is None and "usd_from_month" not in json.loads(rig.project(reservation.project_id)["caps_json"])
+    rig.start()
+    node = json.loads((rig.t.run_dir(tasks["a1"]) / "task.json").read_text())["node"]
+    assert node["caps"]["usd"] is None
+    spend(rig, 50.0, tasks["a1"])
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    assert tick(rig, 10)["stopped"] == []
+
+
+def test_a_step_starts_with_a_dollar_cap_of_what_the_project_and_the_month_have_left(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 0.4)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.start()
+    node = json.loads((rig.t.run_dir(tasks["a1"]) / "task.json").read_text())["node"]
+    assert node["caps"]["usd"] == 2.6, "the step's own meter stops it between calls at what the month has left"
+    rig.go(tasks["a1"])
+    spend(rig, 1.0, tasks["a1"])                                                              # step one spent a dollar
+    rig.finish(tasks["a1"])
+    rig.start()
+    second = json.loads((rig.t.run_dir(tasks["a2"]) / "task.json").read_text())["node"]
+    assert second["caps"]["usd"] == 1.6, "and the next step gets what is left after that"
+
+
+def test_when_the_monthly_limit_is_reached_a_running_step_is_stopped_with_one_plain_sentence(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    assert tick(rig, 10)["stopped"] == []
+    spend(rig, 2.9, tasks["a1"])                                                              # the running step spent 2.9 of the 3.0
+    assert tick(rig, 12)["stopped"] == []
+    spend(rig, 0.2, None)                                                                     # a planner call or an ordinary task takes the month past its limit
+    done = tick(rig, 15)
+    assert done["stopped"] == [reservation.project_id]
+    project = rig.project(reservation.project_id)
+    assert project["status"] == "stopped" and project["stop_reason"] == MONTH_SENTENCE
+    assert rig.t.status(tasks["a1"]) == "stopped" and rig.node_states(tasks)["a2"] == "cancelled"
+    assert [r["action"] for r in rig.audit("trigger.project_month")] == ["trigger.project_month"] and rig.audit("trigger.project_usd") == []
+    texts = [r["text"] for r in notes(rig, reservation.project_id, "limit")]
+    assert len(texts) == 1 and MONTH_SENTENCE in texts[0] and "I stopped it" not in texts[0]
+    assert tick(rig, 20)["stopped"] == []                                                     # nothing is done twice
+
+
+def test_a_project_that_spent_past_its_starting_allowance_is_stopped_with_the_same_sentence(rig):
+    month_limit(rig, 3.0)
+    spend(rig, 1.0)
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    month_limit(rig, 100.0)                                                                   # the owner raised the month meanwhile: the project still keeps to what it was given at its start
+    spend(rig, 2.1, tasks["a1"])                                                              # more than the 2.0 it was given
+    assert tick(rig, 10)["stopped"] == [reservation.project_id]
+    assert rig.project(reservation.project_id)["stop_reason"] == MONTH_SENTENCE
+
+
+def test_the_owners_own_lower_dollars_keep_their_own_words(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE projects SET budget_usd = 0.5, caps_json = ? WHERE id = ?", json.dumps({**json.loads(rig.project(reservation.project_id)["caps_json"]), "usd_from_month": False}), reservation.project_id)
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 5)
+    spend(rig, 0.6, tasks["a1"])
+    assert tick(rig, 10)["stopped"] == [reservation.project_id]
+    assert rig.project(reservation.project_id)["stop_reason"].startswith("stopped: the project spent more than the dollars you set") and rig.audit("trigger.project_month") == []
+
+
+def test_an_ordinary_task_keeps_todays_rule_it_waits_and_nothing_stops_it(rig):
+    """The start gate (`Limits.gate`) is unchanged: past the limit a NEW task waits; the project rules above never reach a task that is not a step."""
+    month_limit(rig, 1.0)
+    spend(rig, 1.5)
+    waiting = rig.limits.gate(rig.t.db.conn(), BASE + 10, "web")
+    assert waiting.startswith("This month's spending limit is used up") or "used up" in waiting
+    assert tick(rig, 10)["stopped"] == []                                                       # no project exists: nothing is stopped

@@ -92,7 +92,9 @@ def build_router() -> APIRouter:
 
     @router.get("/api/nodes/status", summary="The kill switch and pause, as the two files say")
     async def status(request: Request) -> RedactedJSONResponse:
-        return _json(request, _control(request).switch.status())
+        settings = request.app.state.services.settings
+        return _json(request, {**_control(request).switch.status(), "settings": {"SUTRA_NODES_V1": True, "SUTRA_NODES_LANES": bool(settings.nodes_lanes), "SUTRA_NODES_REVIEWER": bool(settings.nodes_reviewer),
+                                                                               "SUTRA_NODES_SLOTS": bool(settings.nodes_slots)}})     # what THIS running app was started with (the command line reads it: its own shell may differ, D384)
 
     @router.post("/api/nodes/pause-all", summary="No new agent starts; the ones that run finish", dependencies=[Depends(require_token)])
     async def pause_all(request: Request, body: ReasonBody) -> RedactedJSONResponse:

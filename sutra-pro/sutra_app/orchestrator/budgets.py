@@ -14,7 +14,7 @@ import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 
-__all__ = ["DEFAULT_SLICE", "SCRUB_LIMIT", "make_slices", "slice_left", "chain_spend", "project_spend", "egress_scrubs"]
+__all__ = ["DEFAULT_SLICE", "SCRUB_LIMIT", "make_slices", "slice_left", "chain_spend", "project_spend", "project_cost", "egress_scrubs"]
 
 DEFAULT_SLICE = 100                      # the work credits a step's run starts with when nobody said otherwise (J2_BUDGET's default; D300)
 SCRUB_LIMIT = 3                          # the same node's prompts scrubbed this many times end the node (D303)
@@ -54,6 +54,17 @@ def project_spend(conn: sqlite3.Connection, project_id: str) -> tuple[int, float
     row = conn.execute("WITH RECURSIVE chain(id) AS (SELECT task_id FROM agent_nodes WHERE project_id = ? AND task_id IS NOT NULL UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id "
                        "WHERE t.parent_task_id IS NOT NULL) SELECT count(*), COALESCE(SUM(usd), 0) FROM usage_ledger WHERE task_id IN (SELECT id FROM chain) AND provider != 'stub'", (project_id,)).fetchone()
     return int(row[0]), float(row[1])
+
+
+def project_cost(conn: sqlite3.Connection, project_id: str) -> tuple[float, int]:
+    """(dollars, calls with no dollar figure) of the whole project as the usage ledger holds them (D383): every step's task and its earlier attempts, the reviewer, AND the calls the project's planner made
+    (a row of the org chat whose detail names one of the project's nodes). A call with no dollar figure (Codex, a call that failed before it reported one) is counted apart, so the page can say "about". Stub calls
+    cost nothing and are not counted."""
+    row = conn.execute(
+        "WITH RECURSIVE chain(id) AS (SELECT task_id FROM agent_nodes WHERE project_id = ?1 AND task_id IS NOT NULL UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
+        "SELECT COALESCE(SUM(usd), 0), COALESCE(SUM(usd IS NULL), 0) FROM usage_ledger WHERE provider != 'stub' AND (task_id IN (SELECT id FROM chain) OR "
+        "(task_id IS NULL AND CASE WHEN json_valid(detail_json) THEN json_extract(detail_json, '$.agent_node') END IN (SELECT id FROM agent_nodes WHERE project_id = ?1)))", (project_id,)).fetchone()
+    return float(row[0]), int(row[1])
 
 
 def slice_left(slice_credits: int, spent_calls: int) -> int:

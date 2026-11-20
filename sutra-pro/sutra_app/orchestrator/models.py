@@ -273,6 +273,15 @@ class TaskCard(Value):
     dept_name: Name
     title: Name
     status: TaskStatus
+    project_id: ProjectId | None = None     # the project this task is a step of (nodes on): the card links to its page (D382); left out of the wire shape when there is none
+
+    @model_serializer(mode="wrap")
+    def _project_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A card of an ordinary task keeps the wire shape it always had: no `project_id` key."""
+        data = handler(self)
+        if data.get("project_id") is None:
+            data.pop("project_id", None)
+        return data
 
 
 class ApprovalCard(Value):
@@ -679,6 +688,8 @@ class NodeBlock(Value):
     # call). `none` for a node whose grant holds none.
     tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"
     slots: bool = False                       # SUTRA_NODES_SLOTS is on: the run takes a machine-wide slot for each model program it starts (MAN-12)
+    tiers: list[int] = []                     # D380: the tiers of the frozen grant and its commands level: the host takes the builder tools of this node's calls down to them
+    commands: str = "none"
 
 
 class ProjectOut(Value):
@@ -725,6 +736,7 @@ class NodeOut(Value):
     role: NodeRole
     runtime: NodeRuntime
     plan_ref: Annotated[str, StringConstraints(max_length=200)] = ""
+    title: Annotated[str, StringConstraints(max_length=200)] = ""          # the step's own title (its task's), so the page names a step by what it does (D383)
     depends_on: Annotated[list[AgentNodeId], Field(max_length=50)] = []
     state: AgentNodeState
     attempt: Annotated[int, Field(ge=1, le=10)] = 1

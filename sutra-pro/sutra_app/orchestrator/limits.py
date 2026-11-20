@@ -315,6 +315,14 @@ class Limits:
             self.store.save(LimitsFile(monthly_usd=found.monthly_usd, guard=GuardSetting(enabled=found.guard.enabled, continued=marks)))
         return self.state(moment)
 
+    def monthly_limit(self) -> float | None:
+        """The owner's monthly dollar limit now (None when there is none). Reads the small limits file; never raises (a broken file is no limit, as in the gate)."""
+        try:
+            return self.store.load().monthly_usd or None
+        except Exception:                                                  # noqa: BLE001
+            log.exception("the monthly limit could not be read")
+            return None
+
     def pinned_of(self, conn: sqlite3.Connection, dept_id: str) -> tuple[str, ...] | None:
         """The provider a team's chat is pinned to (the pill, ABS-8), as a one-item tuple; None when it follows the policy."""
         found = conn.execute("SELECT s.pinned FROM graph_nodes g JOIN chat_sessions s ON s.id = g.chat_session_id WHERE g.id = ?", (dept_id,)).fetchone()

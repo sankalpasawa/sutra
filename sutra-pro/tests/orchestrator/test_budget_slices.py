@@ -115,7 +115,7 @@ def test_the_dollar_total_and_the_snapshot_count_every_attempt_of_every_node(rig
     new = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]
     ledger(rig, new, 1, usd_each=0.1)
     assert project_spend(rig.t.db.conn(), reservation.project_id) == (3, pytest.approx(0.9))
-    assert rig.projects.snapshot(reservation.project_id)["spend"] == {"calls": 3, "usd": pytest.approx(0.9)}
+    assert rig.projects.snapshot(reservation.project_id)["spend"] == {"calls": 3, "usd": pytest.approx(0.9), "unpriced": 0}
 
 
 def test_the_ceiling_is_what_the_owner_agreed_to_the_estimate_they_are_asked_about_or_the_sum_of_the_default_slices(rig):          # PA-2

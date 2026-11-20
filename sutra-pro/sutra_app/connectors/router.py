@@ -43,6 +43,7 @@ from .errors import (
 )
 from .health import API_KEY_REFUSED, HealthBook, HealthState
 from .jsonio import parse_reply
+from .node_tools import NARROWEST, NodeRights, narrow as narrow_tools
 from .models import (
     AskRequest, ConnectorEvent, JsonRequest, JsonResult, M, Message, Pick, Provider, Quota, RouteContext, SESSION_ID_PATTERN,
     SessionSpec, SessionState, TurnResult,
@@ -361,6 +362,7 @@ class Router:
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
         self.on_tool: Optional[Callable[[Any, str, str, str], None]] = None   # MAN-14: `(tag, name, kind, base_name)` for each tool call of a call whose tag names a node; set by the node's host
+        self.node_rights: Optional[NodeRights] = None          # D380: what a step's frozen grant lets its builder tools be; set by the factory for a node's host, None = the narrowest
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
@@ -857,14 +859,22 @@ class Router:
         return watch
 
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
+    def tools_for(self, tag: Any, grant: Any) -> Any:
+        """The builder tools grant a call is planned with (D380). A call with no builder tools, or whose tag names no node, is returned as it came (the very same object): an ordinary run keeps
+        J2's whole list. A call of a step of a project is taken down to what that step's frozen grant allows; with no rights known it is the narrowest list."""
+        if grant is None or not getattr(tag, "node_id", ""):
+            return grant
+        return narrow_tools(grant, self.node_rights or NARROWEST)
+
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None, *, tools: Sequence[str] = ()) -> CompletionResult:
         """`CompletionRequest` in, `CompletionResult` out (connectors 3.10). With a `json_schema` only the native step runs and the
         reply text comes back as it is; the router never repairs here, so every call the engine pays for is a call it sees."""
+        run_tools = self.tools_for(req.tag, req.run_tools)
         ask = AskRequest(
             system=req.system, user=req.user, ctx=RouteContext(tag=req.tag, allowance=req.allowance or Allowance()),
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
-            scripted=req.scripted, run_tools=req.run_tools, tools=tuple(tools) if req.run_tools is None else ())
+            scripted=req.scripted, run_tools=run_tools, tools=tuple(tools) if req.run_tools is None else ())
         try:
             turn, state = self._ask(ask, on_progress)
         finally:
