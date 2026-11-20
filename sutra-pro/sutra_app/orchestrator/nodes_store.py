@@ -32,9 +32,14 @@ from sutra_app.orchestrator.ids import IdFactory, iso_z
 from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "NodeBlockError", "node_block_of", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
+# D296 (a closed laptop is a refusal), designed now and built in MAN-7 and MAN-8: the words a node is cancelled with, and the audit actions, so that every package uses the same ones.
+GATE_REFUSED_SLEEP = "the computer went to sleep before you answered"
+GATE_REFUSED_CLOSED = "Sutra was closed before you answered"
+GATE_REFUSED_ACTION = "gate.refused"          # one row per open gate of the project, reason = one of the two sentences above, decision = deny, actor = system
+PROJECT_STOPPED_ACTION = "project.stopped"    # one row when the project is stopped because of it
 AUDIT_ACTORS = ("conductor", "gatekeeper", "node", "owner", "system")
 AUDIT_DECISIONS = ("allow", "deny", "ask", "asked_allow", "asked_deny", "n/a")
 APPROVAL_DECISIONS = {"allow_once": "allowed_once", "allow_project": "allowed_project", "deny": "denied"}      # the owner's words and the status each one stores
@@ -132,6 +137,19 @@ class NodeStore:
             "INSERT INTO node_audit(at, project_id, node_id, role, actor, action, tier, target, decision, reason, ref, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (tx.now(), project_id, node_id, role, actor, action, tier, self._text(target), decision, self._text(reason), self._text(ref), hash))
         return int(cursor.lastrowid)
+
+    def clean(self, text: str) -> str:
+        """One line of at most 200 characters with the app's secrets and the credential shapes replaced: what an audit text becomes (a few words for a file or a card use it too)."""
+        return self._text(text)
+
+    def mark_ended(self, tx: Tx, node_id: str, state: str, why: str) -> bool:
+        """Put a node that has not ended into a final state (`cancelled`, `failed` or `done`) with a reason of at most 200 characters, and stamp when. False, changing nothing, when the node
+        does not exist or is final already. (The projector's full state machine arrives with the projects, MAN-5; this is the one move the owner's stop needs.)"""
+        if state not in ("done", "failed", "cancelled"):
+            raise ValueError("a node ends as done, failed or cancelled")
+        cursor = tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, ended_at = ? WHERE id = ? AND state NOT IN ('done','failed','cancelled')",
+                                 (state, self._text(why), tx.now(), node_id))
+        return cursor.rowcount > 0
 
     def audit_rows(self, *, project_id: str | None = None, node_id: str | None = None, after: int = 0, limit: int = 100) -> list[dict[str, Any]]:
         """The rows in `seq` order, those above `after`, at most `limit` (1 to 500). Times are ISO text."""

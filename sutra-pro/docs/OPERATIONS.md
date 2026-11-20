@@ -17,6 +17,7 @@ sutra-pro restore FILE        # put a backup back
 sutra-pro prune               # remove the bulky evidence of old finished runs
 sutra-pro export chart        # the org chart and its change log as JSON
 sutra-pro import-old-chats    # bring the old Sutra app's chats in (a dry run unless --apply)
+sutra-pro nodes status        # the switch for multi-agent nodes (pause, kill) and the SUTRA_NODES_* settings
 ```
 
 `python -m sutra_app` is the same program as `sutra-pro`. In a checkout, `scripts/run.sh` and `scripts/stop.sh` do the same with the checkout's own virtualenv.
@@ -36,6 +37,10 @@ sutra-pro import-old-chats    # bring the old Sutra app's chats in (a dry run un
 | `sutra-pro restore FILE` | `--data-dir D`, `--json` | the server must be stopped |
 | `sutra-pro prune` | `--data-dir D`, `--json`, `--older-than AGE`, `--dry-run`, `--yes` | a dry run unless `--yes` |
 | `sutra-pro import-old-chats` | `--data-dir D`, `--json`, `--source DIR`, `--apply` | read only on the old folder; a dry run unless `--apply`; the server must be stopped |
+| `sutra-pro nodes status` | `--data-dir D`, `--json` | the switch (none, pause or kill), its two files in `<data>/nodes` and the four `SUTRA_NODES_*` settings; changes nothing |
+| `sutra-pro nodes pause` | `--data-dir D`, `--json`, `--reason TEXT` | puts the `PAUSE` file there: no new agent starts, the ones that run finish |
+| `sutra-pro nodes kill` | `--data-dir D`, `--json`, `--reason TEXT` | puts the `KILL` file there: a running Sutra (with `SUTRA_NODES_V1=1`) stops every agent through its stop ladder within a few seconds, and none starts until you resume; you can also create the file by hand |
+| `sutra-pro nodes resume` | `--data-dir D`, `--json` | removes both files |
 | `sutra-pro export chart` | `--data-dir D`, `--json`, `--out FILE` | `--out -` is standard output |
 | `sutra-pro export team DEPT` | `--data-dir D`, `--json`, `--out DIR` | a team's last finished run |
 | `sutra-pro export usage` | `--data-dir D`, `--json`, `--csv`, `--out FILE` | every usage row |

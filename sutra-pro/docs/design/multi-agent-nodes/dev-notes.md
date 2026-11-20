@@ -135,3 +135,40 @@ architect: is a planner Stop that waits for the current call (at most the call's
 ### N20. `SUTRA_NODE_ID` is documented in ENVIRONMENT.md
 
 `scripts/check_docs.py` fails on a `SUTRA_*` name in the source with no row. It is a name Sutra sets for a node's run; the server's own value of it is never passed on.
+
+## MAN-4. Kill switch and pause
+
+Built: `orchestrator/killswitch.py` (`KillSwitch`: the two files; `NodeControl`: stop a node, pause, kill, resume, and the watcher), `orchestrator/api/projects.py` (the node routes),
+`ops/nodes.py` (`sutra-pro nodes status|pause|kill|resume`), `TaskService.stop_node`, and the wiring (built only while `SUTRA_NODES_V1=1`). The ladder is the existing one: `stop_node` calls
+`_stop`, which calls `launcher.stop`; nothing else signals a process. The tests drive it with `FakeLauncher` and the real `TaskService`.
+
+### N21. The `task_gate` hook is pulled forward from MAN-5
+
+"File present means no spawn" has to be true in MAN-4, and the only place a node's task is started is `TaskService._prepare_next`. So it has the optional `task_gate(conn, now, row)` that the
+build plan puts in MAN-5, asked after `start_gate` in the same transaction. MAN-4 installs `NodeControl.gate` there (the files first, the table only when a file holds something back; an
+ordinary task is never held). MAN-5's Conductor gate replaces the callable and must keep the rule. Flag off: the hook is None and the scheduler is byte for byte as it was.
+
+### N22. Routes and commands beyond the design's list
+
+The design lists `pause-all`, `kill-all` and `nodes/{id}/stop`. Added: `GET /api/nodes/status` (the page needs to show the switch) and `POST /api/nodes/resume` (the design says "until the file is
+removed" but gives the owner no button for it). `affected` means "nodes that now wait to start" for pause-all and "nodes stopped" for kill-all. Node stop answers `{stopped: false}` for a node whose
+task is over and 404 only for an id that does not exist. All of them answer 404 `not_found` while the flag is off, before the token is looked at.
+
+### N23. Who acts on a KILL file made by hand
+
+The Conductor's tick does not exist yet (MAN-5, MAN-7), so `NodeControl` has a small watcher of its own (one `lstat` every 2 s, started with the app, only with the flag on) and acts once at
+start for a file that was left there. It deals with each file once (by its size and time stamp). When the Conductor arrives its tick should call `enforce()` and this loop can go. The command
+line only writes and removes the files: a launch token is never on disk, so it cannot call the server, and the file is the one thing the server watches anyway. With the flag off nothing
+looks at the files and the command says so.
+
+### N24. A stopped node's state is `cancelled`, the project is not touched
+
+`NodeStore.mark_ended` moves a node to `cancelled` with the reason ("stopped by you", "stopped by the kill switch"). The projector's real state machine and the project state
+(`stopped`) are MAN-5. Dependants of a stopped task are cancelled by the existing `settle_blocked` rule, as for any task that ended badly. A kill leaves queued nodes queued (they wait with the
+sentence "Stopped: the kill switch is on ...") and they start by themselves after `resume`.
+
+### N25. D296 names, fixed now
+
+Nothing is detected yet (MAN-7). The words and audit names are constants in `nodes_store.py` so MAN-7, MAN-8 and MAN-15 share them: node `cancelled` with the reason "the computer went to sleep
+before you answered" or "Sutra was closed before you answered"; one audit row `gate.refused` per open gate (actor `system`, decision `deny`), and `project.stopped` when the project stops because of it.
+Both fit the existing audit table and its 200 character limit.

@@ -117,3 +117,11 @@ def test_the_rows_read_back_in_order_by_project_node_after_and_limit(store):
 def test_a_text_that_is_not_a_string_is_a_value_error_not_a_stored_object(store):
     with pytest.raises(ValueError):
         write(store, target={"path": "x"})
+
+
+def test_the_names_for_a_closed_laptop_are_in_place_and_fit_the_audit(store):
+    from sutra_app.orchestrator import nodes_store as ns
+    assert ns.GATE_REFUSED_SLEEP == "the computer went to sleep before you answered" and ns.GATE_REFUSED_CLOSED == "Sutra was closed before you answered"
+    write(store, actor="system", action=ns.GATE_REFUSED_ACTION, decision="deny", reason=ns.GATE_REFUSED_SLEEP)
+    write(store, actor="system", action=ns.PROJECT_STOPPED_ACTION, decision="n/a", reason=ns.GATE_REFUSED_CLOSED)
+    assert [(r["action"], r["decision"], r["reason"]) for r in rows(store)] == [("gate.refused", "deny", ns.GATE_REFUSED_SLEEP), ("project.stopped", "n/a", ns.GATE_REFUSED_CLOSED)]

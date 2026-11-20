@@ -446,6 +446,9 @@ class TaskService:
         # limits.py (gap routines-limits): called as gate(conn, now, dept_id) for a queued task that may otherwise start; a non-empty answer
         # is the words it keeps waiting with. Only starts are gated: a run in flight is never touched.
         self.start_gate: Callable[[sqlite3.Connection, int, str], str] | None = None
+        # asked about ONE task after `start_gate`, in the same transaction: a waiting sentence, or "" to let it start (multi-agent nodes, D257; set only while SUTRA_NODES_V1 is on).
+        # MAN-4 uses it for the kill switch and pause; the Conductor's task gate (MAN-5) takes its place and keeps that rule.
+        self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -635,6 +638,8 @@ class TaskService:
                                       max_runs=self.settings.max_runs, max_live=self.settings.max_live)
                 if not waiting and self.start_gate is not None:                                                  # the spending limit, the plan window
                     waiting = self.start_gate(tx.conn, tx.now(), row.dept_id)
+                if not waiting and self.task_gate is not None:
+                    waiting = self.task_gate(tx.conn, tx.now(), row)
                 if waiting:
                     self.taskgraph.sync(tx, row, waiting=waiting, announce=False)
                     continue
@@ -974,6 +979,15 @@ class TaskService:
                 return
             stored[STOP_KEY] = by
             self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
+
+    async def stop_node(self, task_id: str, outcome: str = "stopped by you") -> bool:
+        """Stop the task of a node of a multi-agent project through the ordinary ladder (`_stop`: a live task through the launcher's stop ladder, a queued or blocked one cancelled).
+        False, touching nothing, when the task is over already or there is none. `outcome` is what the owner reads as the end ("stopped by you", "stopped by the kill switch")."""
+        row = await run_blocking(self.store.find_row, task_id)
+        if row is None or row.terminal:
+            return False
+        await self._stop(task_id, outcome)
+        return True
 
     async def stop(self, task_id: str) -> TaskOut:
         """Stop a task ('stopped by you'): a live task through the ladder, a queued or blocked one is cancelled; a finished one is 409."""

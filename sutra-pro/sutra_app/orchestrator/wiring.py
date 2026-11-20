@@ -48,7 +48,9 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
+from sutra_app.orchestrator.killswitch import KillSwitch, NodeControl
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
+from sutra_app.orchestrator.nodes_store import NodeStore
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
@@ -77,6 +79,7 @@ class AppServices(Services):
     chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
+    node_control: Any = None           # `killswitch.NodeControl`: the kill switch, pause and node stop; built only while SUTRA_NODES_V1 is on (MAN-4)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
     agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
     send_setting: Any = None           # what the engine's POST /api/settings calls: a setting as an inbox line to the team's live run (J2 sync 4)
@@ -184,6 +187,11 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
+    node_control = None
+    if settings.nodes_v1:                                  # multi-agent nodes, D254: with the flag off nothing of it is built, watched or gated
+        node_control = NodeControl(KillSwitch(settings.nodes_dir, clock=clock), tasks=tasks, db=db, store=NodeStore(db, ids=ids, redact=redactor), clock=clock,
+                                   kick=tasks.start_ready)
+        tasks.task_gate = node_control.gate
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
     return AppServices(
@@ -192,7 +200,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting)
+        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting, node_control=node_control)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
@@ -241,6 +249,9 @@ async def start_services(services: AppServices) -> AppServices:
     services.interrupted = await run_blocking(services.runner.recover)         # an owner line the last run accepted and never answered becomes an error with Retry
     if services.recurring is not None:                      # the one catch-up for the time the app was away, before the first start_ready
         await services.recurring.start()
+    if services.node_control is not None:                   # a KILL file the owner made by hand is acted on within two seconds, and one that was there at the start before anything starts
+        await services.node_control.enforce()
+        services.node_control.start_watching()
     await services.tasks.start_ready()
     services.started = True
     services.stopped = False
@@ -269,6 +280,8 @@ async def stop_services(services: AppServices) -> None:
         return
     services.stopped = True
     services.started = False
+    if services.node_control is not None:
+        await _quietly("node switch watcher", services.node_control.stop_watching, services)
     if services.recurring is not None:                      # first: no schedule may make a task while the rest closes
         await _quietly("scheduler", services.recurring.stop, services)
     await _quietly("turn runner", services.runner.close, services)
