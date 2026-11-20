@@ -77,6 +77,7 @@ test("the budget is in dollars (API price) with the not-billed hint, and no cred
   assert.match(inputOf(found.usd_budget)[0], /type="number" step="any"/);
   assert.match(inputOf(found.usd_budget)[0], /value="20"/);
   assert.match(found.usd_cap, /Budget cap \(API price, \$\)/);
+  assert.match(found.usd_cap, /A cap below the budget leaves no room to raise it/);      // R1-12: a cap under the budget is allowed (a run's own chip may pass it), so the hint says what it does
   assert.doesNotMatch(html, /credit/i);
   assert.deepEqual(engineBody(FOR_ALL, {usd_budget: "12.5", usd_cap: ""}), {set: {usd_budget: 12.5}, unset: []});
   assert.deepEqual(engineBody(FOR_ALL, {usd_cap: "60.5"}), {set: {usd_cap: 60.5}, unset: []});

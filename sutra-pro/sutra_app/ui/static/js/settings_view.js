@@ -86,7 +86,7 @@
     budget: ["Budget", "Work credits one run may spend"],
     budget_cap: ["Budget cap", "The most a run may spend; empty means no cap"],
     usd_budget: ["Budget (API price, $)", "What one run may use before the team stops and asks you. API price, estimated: runs use your Claude subscription; nobody is billed this amount."],
-    usd_cap: ["Budget cap (API price, $)", "The most a run may be raised to; empty means no cap"],
+    usd_cap: ["Budget cap (API price, $)", "The most a run may be raised to; empty means no cap. A cap below the budget leaves no room to raise it"],
     max_cycles: ["Most cycles", "How many build and check rounds one run may take"],
     limit_add: ["Credits added on a raised limit", "What a raised limit adds to the budget"],
     bargain_minutes: ["Bargaining time (minutes)", "How long the functions may bargain over a conflict"],
