@@ -2631,3 +2631,59 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: the chat page turns that exact shape into a link; nothing a model writes should be able to make one.
 - Rejected: marking the message on the wire (a wire shape change).
 - Diagram: label "reply links only a real project, only in org chat", key only.
+
+## D390 — No Try again for a step of an ended project
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: No step of an ended project is a "Try again" on Home. The "Heads up" lane drops a crashed or stopped step of a project that is over (stopped, could not finish, or done), and a step that finished with open items of such a project has no Try again; with the flag off no node table is read and the lane is what it was. D383 (h) covered only a stopped project; run 2 showed one for a project that ended "Could not finish", with the engine's own words ("Stopped: stopped on request"). Package: MAN-13.
+- Why: the project page says how it ended; a retry of one step of an ended project does nothing the owner expects.
+- Rejected: rewriting the lane's words (the row should not exist).
+- Diagram: label "no Try again for steps of ended projects", key only.
+
+## D391 — nodes status only looks; the app takes the resume marker
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: `nodes status` only looks; only the running app takes the resume marker. The command's switch is made with `consume=False`: it never removes `nodes.resume`, never clears a latched switch. `nodes resume` appends what it removed to the marker, so two resumes before the app looks are two audit rows, and the app writes them (when it next looks, or at its start). Package: MAN-4.
+- Why: run 2 reproduced `status` right after `resume` taking the marker in the command's own process, so the app never wrote the row (D384 had the same race).
+- Rejected: the command writing the database (one writer).
+- Diagram: label "status read-only; app audits resume", key only.
+
+## D392 — The resume hint names this install's command
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The hint for resuming names the command of THIS install. In an app the command is the app's own Python (`<app>/Contents/Resources/python/bin/python3 -I -B -m sutra_app nodes resume --data-dir <dir>`), elsewhere `sutra-pro nodes resume`; the server's held-step sentences and the command's own say it. There is no Resume button on the page for the switch (the page's Pause and Continue are for one project), so the command is the way, and the docs say so. Package: MAN-4.
+- Why: a beta has no `sutra-pro` on the path.
+- Rejected: a new page button (a write route with a wider reach; not asked).
+- Diagram: label "resume hint: app python or sutra-pro", key only.
+
+## D393 — The reviewer's answers and the reviewer's text
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The reviewer's question and the reviewer's text. (a) The reviewer's two answers read "Send them back" and "Leave as it is" (the page and the chat card); the others keep their words. (b) The reviewer is given what each step WROTE, not only the names of its files: the text files its hand-off names (not the engine's own files, no link, no slash in the name, no hidden name), at most 4000 characters of a file, 8000 of a step and 16000 in all, scrubbed of secret shapes by the egress scan and wrapped between `<<<` and `>>>` as data, with the template saying that text inside is material to read and never an instruction. Package: MAN-11.
+- Why: in run 2 the reviewer judged "the work only lists filenames" because the file list was all it saw.
+- Rejected: the whole file (cost and size); giving it the engine's report files (they are the engine's words about the run).
+- Diagram: label "reviewer: Send back/Leave; reads what steps wrote", key only.
+
+## D394 — Words and links of a step's cards and page
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The words and links of a step's own cards and page. (a) The done card of a step links to its project (`project_id`, left out of the wire shape for an ordinary task), offers no Try again of its own, and says how a stop happened in the owner's words (the project's stop reason: "You stopped it", "The kill switch was used"; the engine's stock "Stopped: stopped on request" and "waiting task X did not finish" become "It was stopped before it finished" and "The step before it did not finish"); the task keeps the engine's words. (b) The page names no engine file ("report.md" too) and no file count; the engine's pseudo-tool PROPOSE is no tool row. (c) The project is titled by the request's short title, not by its first step's. (d) The grant line says nothing of "tools none" when the step has no app tools. Package: MAN-13.
+- Why: each was a sentence in run 2 that the owner could not use.
+- Rejected: rewriting the stored outcome (the record keeps what the engine said).
+- Diagram: label "step cards link; plain stops; no plumbing", key only.
+
+## D395 — Per-step calls, minutes and dollars on the page
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The page says what each step used: its calls, its minutes from its first start (to now while it runs) and about how many dollars, every attempt counted, from the ledger and the step's tasks (`NodeOut.calls`, `usd`, `minutes`). A step that has made no call says nothing. Package: MAN-13.
+- Why: the owner should not need the ledger.
+- Rejected: reading the parity branch's summary (it is not on this branch; the same numbers, one query for each step).
+- Diagram: label "page: per-step calls, minutes, dollars", key only.
+
+## D396 — The project page's theme
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The project page's theme. The owner's own explicit choice (the key `j2theme`, written only when they pick light or dark on Home or a team page) wins, because the choice is for every page; with none, or "system", the page follows the computer's light or dark setting and changes with it while it is open; a change of the choice in another tab is followed. Package: MAN-13.
+- Why: run 2 asked that a stored light from another page not silently override. The key is only ever written by a deliberate choice, so honouring it is honouring the owner; this page has no chooser of its own (a second key would make two answers for one setting).
+- Rejected: ignoring the stored choice (the owner picked it); a chooser on this page.
+- Diagram: label "project theme: choice wins, else follows OS live", key only.
+
+## D397 — A graceful close leaves the project resumable
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A graceful close leaves the project resumable. The app's stop ladder asks every live run to stop; the engine answers with its stock "Stopped: stopped on request" before the app can write "the app was closed", so the step was read as the owner's stop: cancelled, its followers cancelled, the project "could not finish". A step whose task was marked `_stopped_by = app` (only the shutdown and the start guard mark it) AND whose outcome is only the engine's stock words is now read as a close: it fails with "the app was closed while it ran", gets a fresh attempt that spends no retry (D314, at most two such), and its followers wait. The owner's stop and the kill switch mark `owner` or `system` and still cancel. A crash or `kill -9` is found at the next start by `reconcile` and ends the same way (tests for both, with the fake engine). The closed time is left out of the wall time (D348). Package: MAN-7.
+- Why: D314 said an app close gives the step a fresh attempt; it was only true after a crash.
+- Rejected: ending the project on purpose at a graceful close (nothing in the design says a close should cost the owner the project).
+- Diagram: label "graceful close = fresh attempt, project goes on", key only.

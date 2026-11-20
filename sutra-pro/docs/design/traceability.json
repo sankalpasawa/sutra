@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 359,
+  "decisions": 367,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 389,
+ "max_decision": 397,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -548,7 +548,15 @@
     "D386",
     "D387",
     "D388",
-    "D389"
+    "D389",
+    "D390",
+    "D391",
+    "D392",
+    "D393",
+    "D394",
+    "D395",
+    "D396",
+    "D397"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5694,6 +5702,79 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"reply links only a real project, only in org chat\", key only."
+  },
+  {
+   "id": "D390",
+   "title": "No Try again for a step of an ended project",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no Try again for steps of ended projects\", key only."
+  },
+  {
+   "id": "D391",
+   "title": "nodes status only looks; the app takes the resume marker",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"status read-only; app audits resume\", key only."
+  },
+  {
+   "id": "D392",
+   "title": "The resume hint names this install's command",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"resume hint: app python or sutra-pro\", key only."
+  },
+  {
+   "id": "D393",
+   "title": "The reviewer's answers and the reviewer's text",
+   "packages": [
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"reviewer: Send back/Leave; reads what steps wrote\", key only."
+  },
+  {
+   "id": "D394",
+   "title": "Words and links of a step's cards and page",
+   "packages": [
+    "ORCH-1",
+    "ORCH-6",
+    "ORCH-7",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"step cards link; plain stops; no plumbing\", key only."
+  },
+  {
+   "id": "D395",
+   "title": "Per-step calls, minutes and dollars on the page",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"page: per-step calls, minutes, dollars\", key only."
+  },
+  {
+   "id": "D396",
+   "title": "The project page's theme",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"project theme: choice wins, else follows OS live\", key only."
+  },
+  {
+   "id": "D397",
+   "title": "A graceful close leaves the project resumable",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"graceful close = fresh attempt, project goes on\", key only."
   }
  ],
  "packages": [

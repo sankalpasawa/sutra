@@ -90,3 +90,13 @@ What run 1 showed, so the next run starts from facts and not from the first draf
 - **Times of the tool rows (D383).** A step's `tool.used` rows are written when the step ends, so they carry the time it ended; the page says so.
 - **Counts that look different (D385).** `nodes/tools/<run id>.jsonl` has one line per **tool call**; `calls.jsonl` has one line per **model call**, written when the call **ends**. A model call makes many tool calls (28 log lines against 11 calls), and a step killed in the middle has a call that never ended, so it can have 18 log lines and 0 lines in `calls.jsonl`. Neither is wrong; do not reconcile them.
 - **Run 1 did not see:** both steps done and the project ended; a question card; a Mac window; the Stop button on the page; slots; a chat message during a step. They are still open for runs 2 and 3.
+
+## Corrections after run 2 (2026-11-20, build `037750c2`, real Claude, reviewer on Codex)
+
+Seen: the narrowed tool list was accepted by the real program and the step wrote its files in its own folder; no `Bash` or web row; both steps finished and the project ended; the reviewer ran; Stop everything about 2 seconds; kill and SIGTERM left no program behind; the folder was untouched; peak spend $3.49 (keep the watchdog: the limit is a promise Sutra now keeps, but one call can still pass it by a little, D387). Found and fixed afterwards (D390 to D397). For the next run:
+
+- **Resume.** `nodes status` only looks; `nodes resume` is the command in C4 (an app has no `sutra-pro`). There is no Resume button on the page for the switch.
+- **SIGTERM mid-step (D397).** The project must NOT end: after the next start the step has a fresh attempt (`node.restarted`), the project is still working, the closed time is left out. Check it in the real app; it was proved only with the fake engine.
+- **The reviewer (D393).** Its question says "Send them back" / "Leave as it is"; its verdict should now be about what the step wrote. Read the verdict against the step's own text.
+- **Splitting.** Use the wording that worked: "Do two separate read-only jobs ... Run them as two steps, one after the other" (N79).
+- **What the page shows (D394, D395).** Each step says its calls, minutes and about how many dollars; no plumbing file is named; the project is titled by the request.
