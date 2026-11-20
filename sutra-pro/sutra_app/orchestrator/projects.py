@@ -33,7 +33,9 @@ from sutra_app.connectors.cancel import CancelToken
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.gatekeeper import Evaluation, Plan, PlanStep, evaluate
+from sutra_app.engine.host.handoff import ACCEPTED_FILE
 from sutra_app.orchestrator.grants import Grant
+from sutra_app.orchestrator.handoff_intake import HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
 from sutra_app.orchestrator.models import NodeOut, ProjectOut
 from sutra_app.orchestrator.nodes_store import NodeStore
@@ -275,12 +277,40 @@ class ProjectService:
         elif want == "running":
             tx.conn.execute("UPDATE agent_nodes SET state = 'running', lease_expires_at = ?, last_beat_at = ? WHERE id = ?", (now + lease_s, now, node["id"]))
             self.store.audit(tx, actor="conductor", action="node.spawned", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", ref=task_id)
+        elif want == "done" and node["role"] == "worker" and self.tasks is not None:
+            self._hand_off(tx, node, task_id)                              # the hand-off is read, checked, scrubbed and stored; only then is the node done (MAN-6)
         elif want in NODE_FINAL:
             self._teardown(tx, node, want, (node["toutcome"] or "")[:200] if want != "done" else "")
         else:
             tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE id = ?", (want, node["id"]))
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": want})
         self._sync_project(tx, node["project_id"])
+
+    def _hand_off(self, tx: Tx, node: sqlite3.Row, task_id: str) -> None:
+        """The Conductor's intake (D263, D281; MAN-6): the node's task ended well, so its `handoff.json` is read and checked (`handoff_intake`), scrubbed, stored as a message of the project
+        (`handoff:<node>:<attempt>`, once) and written as `handoff.accepted.json`, the one file dependants are given. A missing, malformed, too big or untrue hand-off ends the node `failed` with
+        the rule that broke, and an audit row `handoff.refused`; the node's own files stay for the owner (retry is MAN-7)."""
+        tx.conn.execute("UPDATE agent_nodes SET state = 'handing_off' WHERE id = ?", (node["id"],))
+        row = self.tasks.store.row_in(tx.conn, task_id)
+        try:
+            run_dir = self.tasks.store.run_dir_of(row)
+            accepted = read_handoff(run_dir, node["id"], node["runtime"], self.store.redact)
+            write_accepted(run_dir, accepted)
+            posted = self.store.post(tx, project_id=node["project_id"], kind="handoff", src_ref=f"handoff:{node['id']}:{node['attempt']}", body=accepted.document,
+                                     from_node=node["id"], to_node="project", file=ACCEPTED_FILE)
+        except HandoffRefused as refused:
+            self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=str(refused),
+                             ref=task_id)
+            self._teardown(tx, node, "failed", f"hand-off refused: {refused}")
+            return
+        except OSError:
+            self.store.audit(tx, actor="conductor", action="handoff.refused", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
+                             reason="the hand-off could not be stored", ref=task_id)
+            self._teardown(tx, node, "failed", "hand-off refused: it could not be stored")
+            return
+        self.store.audit(tx, actor="conductor", action="handoff.accepted", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="allow",
+                         reason=f"{len(accepted.document['files'])} file(s), message {posted.seq}", ref=str(posted.seq))
+        self._teardown(tx, node, "done", "")
 
     @staticmethod
     def _beat(tx: Tx, node: sqlite3.Row) -> None:
@@ -292,7 +322,18 @@ class ProjectService:
         now = tx.now()
         tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?", (state, why[:200], now, now, node["id"]))
         self.store.audit(tx, actor="conductor", action=f"node.{state}", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=node["task_id"] or "")
+        if state == "failed" and self.tasks is not None:
+            self._cancel_dependants(tx, node)
 
+    def _cancel_dependants(self, tx: Tx, node: sqlite3.Row) -> None:
+        """A node that failed after its task ended well (a refused hand-off) must not let its dependants start: they are cancelled, as the dependants of a task that ended badly are (failure policy
+        `stop_branch`, D278). A task that ended badly does this through `settle_blocked` already; this is the same rule for the failure the task layer cannot see."""
+        found = tx.conn.execute("SELECT n.task_id AS task_id FROM agent_nodes n, json_each(n.depends_on) j WHERE j.value = ? AND n.task_id IS NOT NULL AND n.state NOT IN ('done','failed','cancelled')",
+                                (node["id"],)).fetchall()
+        for row in found:
+            task = self.tasks.store.row_in(tx.conn, row["task_id"])
+            if task is not None and task.status in ("blocked", "queued"):
+                self.tasks.cancel_in(tx, task.id, "cancelled: a step it needed did not finish")
     def _sync_project(self, tx: Tx, project_id: str) -> None:
         """The project's state from its nodes (D278: a project with a failed or cancelled node never ends `done`). `running` while any node is live or waiting to start."""
         project = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
@@ -301,7 +342,10 @@ class ProjectService:
         states = [r["state"] for r in tx.conn.execute("SELECT state FROM agent_nodes WHERE project_id = ? AND role <> 'planner'", (project_id,))]
         if not states or any(state not in NODE_FINAL for state in states):
             return
-        if all(state == "done" for state in states):
+        open_items = tx.conn.execute("SELECT count(*) FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND t.status = 'done_with_open_items'", (project_id,)).fetchone()[0]
+        if all(state == "done" for state in states) and open_items:
+            end, why = "done_with_open_items", "some steps ended with open items"
+        elif all(state == "done" for state in states):
             end, why = "done", ""
         elif any(state == "done" for state in states):
             end, why = "done_with_open_items", "some steps did not finish"

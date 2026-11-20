@@ -58,7 +58,7 @@ def test_the_lease_is_taken_when_the_node_starts_beats_with_the_run_and_is_relea
     node = rig.node_of(tasks["a1"])
     assert node["state"] == "done" and node["lease_expires_at"] is None and node["torn_down_at"] is not None and node["ended_at"] is not None
     actions = [r["action"] for r in rig.audit() if r["node_id"] == node["id"]]
-    assert actions == ["grant.issued", "node.leased", "node.spawned", "node.done"]
+    assert actions == ["grant.issued", "node.leased", "node.spawned", "handoff.accepted", "node.done"]
 
 
 def test_a_failed_node_cancels_only_its_dependants_and_the_project_never_ends_done(rig):
@@ -203,3 +203,65 @@ def test_pause_does_not_stop_a_planner(rig):
 def test_the_node_stop_of_a_planner_node_ends_its_call(rig):
     node, token = rig.projects.planner_for("req-1")
     assert rig.t.run(rig.control.stop_node(node)) is True and token.requested
+
+
+# ---- the hand-off decides when a node is done (MAN-6) -------------------------------------------------------------------------------
+
+def test_a_node_whose_run_ended_well_but_left_no_hand_off_is_failed_with_the_reason_and_its_dependant_is_cancelled(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], handoff=False)
+    node = rig.node_of(tasks["a1"])
+    assert node["state"] == "failed" and node["failure_reason"] == "hand-off refused: the node left no hand-off" and node["torn_down_at"] is not None
+    assert rig.node_of(tasks["a2"])["state"] == "cancelled" and rig.project(reservation.project_id)["status"] == "failed"
+    refused = rig.audit("handoff.refused")
+    assert len(refused) == 1 and refused[0]["decision"] == "deny" and refused[0]["actor"] == "conductor" and rig.sql("SELECT count(*) FROM node_messages").fetchone()[0] == 0
+
+
+def test_a_hand_off_that_does_not_match_its_files_fails_the_node_and_keeps_the_files(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], files={"out.md": "result"}, override={"files": [{"path": "out.md", "sha256": "0" * 64, "bytes": 6}]})
+    assert "checksum" in rig.node_of(tasks["a1"])["failure_reason"] and (rig.t.run_dir(tasks["a1"]) / "out.md").is_file() and (rig.t.run_dir(tasks["a1"]) / "handoff.json").is_file()
+
+
+def test_a_run_that_ended_with_open_items_hands_off_and_the_project_says_so(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    for ref in ("a1", "a2"):
+        rig.go(tasks[ref])
+    rig.finish(tasks["a1"], "done_with_open_items", "Partly done")
+    rig.finish(tasks["a2"])
+    assert rig.node_states(tasks) == {"a1": "done", "a2": "done"} and rig.project(reservation.project_id)["status"] == "done_with_open_items"
+    assert [json.loads(m.body)["status"] for m in rig.store.messages(reservation.project_id)] == ["done_with_open_items", "done"]
+
+
+def test_the_messages_route_reads_in_order_with_after_and_404s_for_an_unknown_project(db, settings, clock, events):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sutra_app.orchestrator.api import projects as api
+    from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
+    from sutra_app.orchestrator.redact import Redactor
+    from sutra_app.orchestrator.services import Services
+    rig = PRig(db, settings, clock, events, max_runs=5, max_live=10)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    for ref in ("a1", "a2"):
+        rig.go(tasks[ref])
+        rig.finish(tasks[ref])
+    app = FastAPI()
+    services = Services(settings=rig.t.settings, version="t", db=db, redact=Redactor(None, environ={}))
+    services.projects, services.node_control = rig.projects, rig.control
+    app.state.services = services
+    install_error_handlers(app, redacted_response_class(Redactor(None, environ={})))
+    app.include_router(api.build_router())
+    client = TestClient(app, base_url="http://127.0.0.1:8780")
+    base = f"/api/projects/{reservation.project_id}"
+    got = client.get(base + "/messages").json()
+    assert [m["seq"] for m in got] == [1, 2] and got[0]["kind"] == "handoff" and got[0]["body"]["status"] == "done" and got[0]["v"] == 1
+    assert [m["seq"] for m in client.get(base + "/messages", params={"after": 1}).json()] == [2] and client.get(base + "/messages", params={"after": 2}).json() == []
+    assert client.get("/api/projects/prj_" + "0" * 12 + "/messages").status_code == 404
+    audit = client.get(base + "/audit").json()
+    assert {"handoff.accepted", "grant.issued"} <= {row["action"] for row in audit}

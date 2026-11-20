@@ -8,6 +8,8 @@
     POST /api/nodes/{id}/stop     {}         -> {stopped: bool}                that node's task through the stop ladder; 404 for a node that does not exist
 
     GET  /api/projects            ?status=&limit=&offset=  -> ProjectOut[]                  (MAN-5: the projects, newest first)
+    GET  /api/projects/{id}/messages ?after=&limit=         -> node-message/1[] in seq order (MAN-6; 1, 2, 3 ... per project with no gap, D297)
+    GET  /api/projects/{id}/audit    ?after=&limit=         -> the audit rows of the project
     GET  /api/projects/{id}       -> snapshot: project, nodes, edges, caps, spend, open approvals, last_message_seq
     POST /api/projects/{id}/stop  {}                       -> {stopped: n}                  the project is stopped, its agents go through the stop ladder together
     POST /api/projects/{id}/pause {resume?: bool}          -> ProjectOut
@@ -99,6 +101,19 @@ def build_router() -> APIRouter:
     @router.get("/api/projects/{project_id}", summary="One project: its nodes, edges, caps, spend and open questions")
     async def get_project(request: Request, project_id: str) -> RedactedJSONResponse:
         return _json(request, await run_blocking(_projects(request).snapshot, project_id))
+
+    @router.get("/api/projects/{project_id}/messages", summary="The messages of a project after `after`, in order (1, 2, 3 ... with no gap)")
+    async def project_messages(request: Request, project_id: str, after: int = 0, limit: int = 100) -> RedactedJSONResponse:
+        service = _projects(request)
+        await run_blocking(service.get, project_id)                                  # 404 for a project that does not exist
+        found = await run_blocking(lambda: service.store.messages(project_id, after=after, limit=limit))
+        return _json(request, [message.as_dict() for message in found])
+
+    @router.get("/api/projects/{project_id}/audit", summary="The audit rows of a project after `after`")
+    async def project_audit(request: Request, project_id: str, after: int = 0, limit: int = 100) -> RedactedJSONResponse:
+        service = _projects(request)
+        await run_blocking(service.get, project_id)
+        return _json(request, await run_blocking(lambda: service.store.audit_rows(project_id=project_id, after=after, limit=limit)))
 
     @router.post("/api/projects/{project_id}/stop", summary="Stop a project: its agents through the stop ladder, nothing starts by itself afterwards", dependencies=[Depends(require_token)])
     async def stop_project(request: Request, project_id: str, body: EmptyBody) -> RedactedJSONResponse:

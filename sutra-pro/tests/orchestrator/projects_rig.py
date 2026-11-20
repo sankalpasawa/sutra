@@ -58,8 +58,19 @@ class PRig:
         t.write_events(task_id, ev("run.started", pid=t.row(task_id).pid, schema="events/1", mock=True, seed="none"))
         t.drain(task_id)
 
-    def finish(self, task_id, status="done", outcome="Done"):
+    def finish(self, task_id, status="done", outcome="Done", *, handoff=True, files=None, override=None):
+        """The run ends. A node's run that ended well leaves its hand-off first (the host's `handoff` step); `handoff=False` leaves none, `files` puts files in the run folder, `override`
+        replaces fields of the hand-off (to make a bad one)."""
+        from sutra_app.engine.host import handoff as handoff_file
         t = self.t
+        run_dir = t.run_dir(task_id)
+        for name, body in (files or {}).items():
+            (run_dir / name).write_bytes(body if isinstance(body, bytes) else body.encode())
+        node = self.node_of(task_id)
+        if handoff and status in ("done", "done_with_open_items") and node is not None:
+            document = handoff_file.build(run_dir, node["id"], status, outcome)
+            document.update(override or {})
+            handoff_file.write(run_dir, document)
         t.write_events(task_id, ev("run.ended", status=status, outcome=outcome))
         t.drain(task_id)
 

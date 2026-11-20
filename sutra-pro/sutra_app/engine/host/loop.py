@@ -824,6 +824,7 @@ class Host:
         self._join_reviewer()                      # D179: the run folder must be stable before anything collects, publishes or closes the writer
         self.publisher.stop()
         from . import finish
+        self.ended_status, self.ended_outcome = status, outcome        # what the `handoff` step of a node's run says (MAN-6)
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
         try:

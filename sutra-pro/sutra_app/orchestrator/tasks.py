@@ -78,6 +78,7 @@ GOOD_END = ("done", "done_with_open_items")
 BAD_END = ("stopped", "crashed", "cancelled")
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
+    "handoff.json",                         # a node's own hand-off is never offered to a dependant: only what the server checked and scrubbed (`handoff.accepted.json`, MAN-6)
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log",
     "run.stderr.log", "choices.json", "node_context.json", "deliverable.json",
 })
@@ -1002,6 +1003,13 @@ class TaskService:
         self._moved(tx, row)
         self.store.settle_blocked(tx, lambda moved: self._moved(tx, moved))
         return row
+
+    def cancel_in(self, tx: Tx, task_id: str, outcome: str) -> TaskRow:
+        """Cancel a blocked or queued task inside the caller's transaction (the project service, when a step a node needed did not finish)."""
+        row = self.store.row_in(tx.conn, task_id)
+        if row is None or row.status not in ("blocked", "queued"):
+            raise Busy("That task is not waiting")
+        return self._cancel(tx, task_id, outcome)
 
     def _moved(self, tx: Tx, row: TaskRow) -> None:
         """A task changed state here: its step node, and (with nodes on) its agent node."""

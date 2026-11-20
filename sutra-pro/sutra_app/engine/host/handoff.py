@@ -38,7 +38,7 @@ MAX_BYTES = 64 * 1024                            # the largest hand-off file the
 # the run folder's own plumbing and the hand-off files themselves are never part of what is handed on; `orchestrator.tasks.RUN_FOLDER_INTERNALS` is a subset (a test keeps them in step)
 NOT_HANDED_ON = frozenset({
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log", "run.stderr.log", "choices.json", "agent_live.json",
-    "deliverable.json", HANDOFF_FILE, ACCEPTED_FILE, "verdict.json", "needs.json", "chat.jsonl", "calls.jsonl", "summary.json", "status.json",
+    "deliverable.json", HANDOFF_FILE, ACCEPTED_FILE, "verdict.json", "needs.json", "chat.jsonl", "calls.jsonl", "summary.json", "status.json", "node_context.json",
 })
 
 

@@ -17,6 +17,7 @@ question that was answered is `AlreadyDecided`. An open approval ends after `exp
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -32,7 +33,7 @@ from sutra_app.orchestrator.ids import IdFactory, iso_z
 from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "ApprovalExpired", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "PostedMessage", "MESSAGE_KINDS", "MESSAGE_BODY_MAX", "ApprovalExpired", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
 # D296 (a closed laptop is a refusal), designed now and built in MAN-7 and MAN-8: the words a node is cancelled with, and the audit actions, so that every package uses the same ones.
@@ -82,6 +83,35 @@ def node_block_of(conn: sqlite3.Connection, task_id: str) -> NodeBlock | None:
         if isinstance(exc, NodeBlockError):
             raise
         raise NodeBlockError("the node has no usable grant") from None
+
+
+MESSAGE_KINDS = ("handoff", "verdict", "gate_request", "gate_decision", "control", "status")
+MESSAGE_BODY_MAX = 16 * 1024                       # a body over this is stored as a reference to a file with its sha256 (architecture 4.1)
+
+
+@dataclass(frozen=True)
+class PostedMessage:
+    """One row of `node_messages`. `duplicate` is True when this call found the message that was there already."""
+
+    project_id: str
+    seq: int
+    from_node: str
+    to_node: str
+    kind: str
+    src_ref: str
+    body: str
+    body_sha256: str
+    at: int
+    duplicate: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        """The wire shape (`node-message/1`): the body as JSON when it is JSON, else as text."""
+        try:
+            body: Any = json.loads(self.body)
+        except ValueError:
+            body = self.body
+        return {"v": 1, "project_id": self.project_id, "seq": self.seq, "at": iso_z(self.at), "from": {"node_id": self.from_node}, "to": {"node_id": self.to_node}, "kind": self.kind,
+                "src_ref": self.src_ref, "body": body, "body_sha256": self.body_sha256}
 
 
 @dataclass(frozen=True)
@@ -144,6 +174,61 @@ class NodeStore:
             "INSERT INTO node_audit(at, project_id, node_id, role, actor, action, tier, target, decision, reason, ref, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",         # never INSERT OR REPLACE on an append-only table: a replace deletes the old row without a trigger (m1)
             (tx.now(), project_id, node_id, role, actor, action, tier, self._text(target), decision, self._text(reason), self._text(ref), hash))
         return int(cursor.lastrowid)
+
+    # ---- messages (D264, D297) --------------------------------------------------------------------------------------------------
+
+    def post(self, tx: Tx, *, project_id: str, kind: str, src_ref: str, body: Any, from_node: str = "", to_node: str = "", file: str | None = None) -> PostedMessage:
+        """Store one message of a project and return it with its `seq` (D297). ALL of this happens in the caller's one write transaction: look for `(project_id, src_ref)` first and, if the
+        message is there, return that row and take no number (a repeat is stored once, `duplicate=True`); else take `MAX(seq) + 1` for the project and insert. So at every committed state the
+        `seq` values of one project are exactly 1 to n: the key forbids a repeat, the server is the only writer and a write is `BEGIN IMMEDIATE`, the number is taken and used in the same
+        transaction (a rollback gives it back), a repeated source takes none, the triggers forbid update and delete, and the event is published after COMMIT. The body (JSON text, or
+        anything JSON-able) has every string scrubbed of the app's secrets and the credential shapes first; a body over 16 KB is stored as a reference `{file, sha256, bytes}` to `file` (the
+        caller's file of the full text). `kind` is one of the table's; the insert is `ON CONFLICT DO NOTHING`, never a replace."""
+        if kind not in MESSAGE_KINDS:
+            raise ValueError("a message kind is " + ", ".join(MESSAGE_KINDS))
+        if not isinstance(src_ref, str) or not 1 <= len(src_ref) <= 200:
+            raise ValueError("a message has a source reference of 1 to 200 characters")
+        found = tx.conn.execute("SELECT * FROM node_messages WHERE project_id = ? AND src_ref = ?", (project_id, src_ref)).fetchone()
+        if found is not None:
+            return self._message(found, duplicate=True)
+        text = body if isinstance(body, str) else json.dumps(self._scrub_json(body), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        text = scrubbed(text, self.redact)
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        raw = text.encode("utf-8")
+        if len(raw) > MESSAGE_BODY_MAX:
+            text = json.dumps({"file": file or "", "sha256": digest, "bytes": len(raw)}, separators=(",", ":"))
+        seq = int(tx.conn.execute("SELECT COALESCE(MAX(seq), 0) + 1 FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0])
+        cursor = tx.conn.execute(
+            "INSERT INTO node_messages(project_id, seq, from_node, to_node, kind, src_ref, body, body_sha256, at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+            (project_id, seq, from_node, to_node, kind, src_ref, text, digest, tx.now()))
+        if cursor.rowcount == 0:                                   # cannot happen inside one write transaction; if it ever does, it is the same message: return it
+            return self._message(tx.conn.execute("SELECT * FROM node_messages WHERE project_id = ? AND src_ref = ?", (project_id, src_ref)).fetchone(), duplicate=True)
+        tx.emit("project.message", {"project_id": project_id, "seq": seq, "kind": kind})
+        return self._message(tx.conn.execute("SELECT * FROM node_messages WHERE project_id = ? AND seq = ?", (project_id, seq)).fetchone())
+
+    def messages(self, project_id: str, *, after: int = 0, limit: int = 100) -> list[PostedMessage]:
+        """The messages of a project after `after`, in `seq` order (1 to 500 of them): what the page's catch-up reads. The first one is `after + 1` unless a message was lost."""
+        found = self.db.conn().execute("SELECT * FROM node_messages WHERE project_id = ? AND seq > ? ORDER BY seq LIMIT ?",
+                                       (project_id, max(0, int(after)), max(1, min(int(limit), 500)))).fetchall()
+        return [self._message(row) for row in found]
+
+    def last_seq(self, project_id: str) -> int:
+        return int(self.db.conn().execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0])
+
+    def _scrub_json(self, value: Any) -> Any:
+        """The value with every string (and key) scrubbed, on the data before it is written as JSON, so a secret that JSON would escape is still found."""
+        if isinstance(value, str):
+            return scrubbed(value, self.redact)
+        if isinstance(value, Mapping):
+            return {(scrubbed(k, self.redact) if isinstance(k, str) else k): self._scrub_json(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [self._scrub_json(v) for v in value]
+        return value
+
+    @staticmethod
+    def _message(row: sqlite3.Row, *, duplicate: bool = False) -> "PostedMessage":
+        return PostedMessage(project_id=row["project_id"], seq=int(row["seq"]), from_node=row["from_node"], to_node=row["to_node"], kind=row["kind"], src_ref=row["src_ref"],
+                             body=row["body"], body_sha256=row["body_sha256"], at=int(row["at"]), duplicate=duplicate)
 
     def clean(self, text: str) -> str:
         """One line of at most 200 characters with the app's secrets and the credential shapes replaced: what an audit text becomes (a few words for a file or a card use it too)."""

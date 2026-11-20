@@ -78,7 +78,7 @@ def test_a_run_that_did_not_end_well_gets_no_step_and_no_trace_line(status):
 
 
 def test_the_default_steps_are_agent_views_then_catalog_and_the_good_endings_are_the_two_that_finished_the_work():
-    assert [name for name, _ in finish.STEPS] == ["agent_views", "catalog"]
+    assert [name for name, _ in finish.STEPS] == ["agent_views", "catalog"] and [name for name, _ in finish.NODE_STEPS] == ["handoff"]
     assert finish.ENDED_WELL == ("done", "done_with_open_items") and finish.STEP_SECONDS == 10.0 and finish.TRACE_TYPE == "finish.step"
 
 

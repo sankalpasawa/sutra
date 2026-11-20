@@ -6,12 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 from orchestrator.projects_rig import PRig  # noqa: F401
 from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
-from orchestrator.test_scripted_conversation import ORG, TOKEN, later_script
+from orchestrator.test_scripted_conversation import ORG, TOKEN
 
 from sutra_app.config import Settings
 from sutra_app.main import create_app
 from sutra_app.orchestrator.projects import ProjectStep
-from sutra_app.orchestrator.testing.fake_engine import FakeLauncher
+from sutra_app.orchestrator.testing.fake_engine import FakeLauncher, node_script
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 
 BASE = "http://127.0.0.1:8780"
@@ -21,7 +21,7 @@ HEADERS = {"X-Sutra-Token": TOKEN}
 def make_app(tmp_path, **flags):
     settings = Settings.load({}, data_dir=tmp_path / "data", token=TOKEN, env_file=tmp_path / "none.env", engine="fake", watch_ms=20, max_runs=4, max_live=8, **flags)
     connector = ScriptedConnector()
-    return create_app(settings, connector=connector, launcher=FakeLauncher(later_script)), connector
+    return create_app(settings, connector=connector, launcher=FakeLauncher(node_script)), connector
 
 
 def four_steps():
@@ -93,7 +93,7 @@ def test_the_tasks_run_through_the_ordinary_scheduler_and_the_project_ends_done(
     assert {r["state"] for r in rows(services, "SELECT state FROM agent_nodes WHERE role = 'worker'")} == {"done"}
     snapshot = client.get(f"/api/projects/{rows(services, 'SELECT id FROM projects')[0]['id']}").json()
     assert snapshot["project"]["status"] == "done" and len(snapshot["nodes"]) == 5 and len([e for e in snapshot["edges"] if e["kind"] == "depends_on"]) == 3
-    assert snapshot["last_message_seq"] == 0 and snapshot["approvals"] == []
+    assert snapshot["last_message_seq"] == 4 and snapshot["approvals"] == []                 # one hand-off message per node
     assert [p["status"] for p in client.get("/api/projects").json()] == ["done"]
 
 
