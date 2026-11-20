@@ -93,6 +93,23 @@ def test_a_path_that_is_absolute_has_dot_dot_or_is_not_plain_is_refused(tmp_path
     refused(root, "plain relative path")
 
 
+@pytest.mark.parametrize("bad", ["out.md.", "dir /x", "site/GIT~1/x", "NUL", "con.txt", "site/aux", "COM1.log", "x/a:stream", "dir./x", "LPT9"])
+def test_a_path_with_a_name_that_another_file_system_reads_as_something_else_is_refused_like_a_write_scope_does(tmp_path, bad):
+    """Minor 5: the files of a hand-off follow the Windows name rules of `normalize_scope`."""
+    from sutra_app.orchestrator.grants import GrantError, normalize_scope
+    with pytest.raises(GrantError):
+        normalize_scope([bad])
+    root = folder(tmp_path)
+    put(root, good(root, files=[{"path": bad, "sha256": "0" * 64, "bytes": 0}]))
+    refused(root, "another file system")
+
+
+def test_ordinary_names_with_dots_dashes_and_brackets_still_pass(tmp_path):
+    root = folder(tmp_path, {"v1.2-index-final (1).html": "<p>", "report_[draft].md": "x", "notes.tar.gz": "z"})
+    put(root, good(root))
+    assert len(read_handoff(root, NODE, "engine").document["files"]) == 3
+
+
 def test_an_entry_must_have_exactly_a_path_a_checksum_and_a_size(tmp_path):
     root = folder(tmp_path)
     for entry in ({"path": "out.md"}, {"path": "out.md", "sha256": "0" * 64, "bytes": 1, "x": 1}, "out.md", None):

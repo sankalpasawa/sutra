@@ -31,7 +31,7 @@ from sutra_app.orchestrator.models import NodeCaps
 
 __all__ = [
     "ROLES", "TIER_NAMES", "GRANTABLE_TIERS", "APPROVABLE_TIERS", "FOLDER_LEVELS", "OWNER_ACCESS", "TOOL_PROFILES", "COMMAND_LEVELS", "RUN_TOOLS", "ROLE_TABLE", "RoleRule",
-    "Grant", "GrantError", "StepRequest", "Ask", "Denial", "Resolution", "intersect", "resolve", "output_level_of", "normalize_scope", "scopes_overlap", "scope_width",
+    "Grant", "GrantError", "StepRequest", "Ask", "Denial", "Resolution", "intersect", "resolve", "output_level_of", "normalize_scope", "is_plain_name", "scopes_overlap", "scope_width",
     "MAX_SCOPE_ENTRIES",
 ]
 
@@ -95,6 +95,12 @@ _DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in rang
 _DRIVE = re.compile(r"^[A-Za-z]:")
 
 
+def is_plain_name(part: str) -> bool:
+    """False for a file or folder name that another file system reads as something else (M4, Minor 5): one that ends in a dot or a space, holds a colon (a drive or a data stream), is a ~1 short
+    name or a Windows device name. One rule for a write scope and for the files of a hand-off."""
+    return not (not part or part[-1] in ". " or ":" in part or _SHORT_NAME.search(part) or part.split(".", 1)[0].upper() in _DEVICE_NAMES)
+
+
 def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
     """A write scope as a sorted tuple of plain relative paths, or `()` for the whole folder.
 
@@ -124,7 +130,7 @@ def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
         if any(part.lower() == ".git" for part in parts):
             raise GrantError("the .git folder is never part of a write scope")
         for part in parts:                                         # names that another file system reads as something else (M4): the real check later compares resolved real paths
-            if part[-1] in ". " or ":" in part or _SHORT_NAME.search(part) or part.split(".", 1)[0].upper() in _DEVICE_NAMES:
+            if not is_plain_name(part):
                 raise GrantError("a write scope names plain files and folders: no name that ends in a dot or a space, holds a colon or a ~1 short name, or is a Windows device name")
         if not parts:
             return ()                                              # the folder itself: the whole folder

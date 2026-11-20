@@ -27,6 +27,7 @@ from typing import Any
 from sutra_app import oslayer
 from sutra_app.connectors.egress import scrubbed
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
+from sutra_app.orchestrator.grants import is_plain_name
 
 __all__ = ["read_handoff", "write_accepted", "Accepted", "HandoffRefused", "DATA_NOTE", "MAX_HASHED_BYTES"]
 
@@ -69,6 +70,8 @@ def _check_path(raw: Any) -> str:
     pure = PurePosixPath(raw)
     if pure.is_absolute() or ".." in pure.parts or any(part in ("", ".") for part in raw.split("/")):
         raise _refuse("a file path is not a plain relative path")
+    if not all(is_plain_name(part) for part in pure.parts):               # the same names a write scope refuses (Minor 5): a Windows device, a ~1 short name, a trailing dot or space, a colon
+        raise _refuse("a file path has a name that another file system reads as something else")
     return raw
 
 
