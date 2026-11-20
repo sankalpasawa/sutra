@@ -43,7 +43,7 @@ from sutra_app.orchestrator.direct_turns import CardEnding, Ending, ref_of
 from sutra_app.orchestrator.errors import AppError, validation_error
 from sutra_app.orchestrator.models import AnswerCard, AnswerSource
 
-__all__ = ["AskRoute", "AskTurn", "begin", "requested", "retry_mode", "ask_on", "MODES", "MODE_KEY", "MODE_WORDS", "ASK_MAX_CALLS", "ASK_MAX_USD", "ASK_TIMEOUT_S"]
+__all__ = ["AskRoute", "AskTurn", "begin", "requested", "retry_mode", "failure_words", "LIMIT_WORDS", "ask_on", "MODES", "MODE_KEY", "MODE_WORDS", "ASK_MAX_CALLS", "ASK_MAX_USD", "ASK_TIMEOUT_S"]
 
 log = logging.getLogger(__name__)
 MODES = ("ask", "do")
@@ -101,6 +101,15 @@ def requested(request: Request) -> str | None:
     if not isinstance(found, str) or found not in MODES:
         raise validation_error([violation("mode", "enum", MODE_WORDS)], MODE_WORDS)
     return found
+
+
+LIMIT_WORDS = "Sutra stopped this answer: it reached the limit for one question (2 tries, about $0.25 or 2 minutes). Ask again, or ask something smaller."
+
+
+def failure_words(exc: BaseException) -> str:
+    """The sentence for the owner when an Ask turn is stopped by its own limits, instead of the connector's developer words ("the envelope allows ..."); "" for any other failure."""
+    from sutra_app.connectors.errors import EnvelopeExceededError
+    return LIMIT_WORDS if isinstance(exc, EnvelopeExceededError) else ""
 
 
 def retry_mode(stored: str | None, named: str | None) -> str | None:

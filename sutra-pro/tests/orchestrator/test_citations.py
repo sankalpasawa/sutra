@@ -119,10 +119,10 @@ def test_a_quote_too_short_to_prove_anything_is_not_used_and_one_too_long_is_ref
     ("src/deep/note.md", 4, 4, "the file has only 3 lines"),
     ("empty.txt", 1, 1, "the file has only 0 lines"),
     ("blob.bin", 1, 1, "the file is not text"),
-    ("src/app.py", 0, 2, "the lines are not a valid range"),
-    ("src/app.py", 5, 2, "the lines are not a valid range"),
+    ("src/app.py", 0, 2, "those lines are not a valid range"),
+    ("src/app.py", 5, 2, "those lines are not a valid range"),
     ("src/app.py", 1, 10_000_001, "that line number is too big"),
-    ("src/app.py", 1, 401, "the range is wider than 400 lines, too wide to be a source"),
+    ("src/app.py", 1, 401, "that is more than 400 lines, too many to be one source"),
 ])
 def test_a_citation_that_does_not_hold_says_why_in_words(folder, path, start, end, reason):
     got = one(folder, path, start, end)
@@ -174,9 +174,9 @@ def test_the_outside_file_is_real_so_the_refusals_above_mean_something(folder, t
 def test_an_absolute_path_is_kept_only_when_it_is_inside_the_folder(folder, tmp_path):
     inside = os.path.join(folder, "src", "app.py")
     assert one(folder, inside, 1, 2).label == CHECKED
-    assert one(folder, str(tmp_path / "outside.txt"), 1, 1).reason == "the path is not inside the folder"
+    assert one(folder, str(tmp_path / "outside.txt"), 1, 1).reason == "that path is not inside your folder"
     assert one(folder, os.path.join(folder, "src", "..", "..", "outside.txt"), 1, 1).label == MISSING
-    assert one(folder, os.path.join(folder, "src", "..", "README.md"), 1, 1).reason == "the path goes up out of the folder"     # `..` is refused even when it comes back
+    assert one(folder, os.path.join(folder, "src", "..", "README.md"), 1, 1).reason == "that path goes outside your folder"     # `..` is refused even when it comes back
     assert one(folder, folder, 1, 1).label == MISSING                                    # the folder itself is not a file
 
 
@@ -186,8 +186,8 @@ def test_a_link_out_of_the_folder_is_outside_but_a_link_inside_is_fine(folder, t
     os.symlink(str(tmp_path), os.path.join(folder, "link-to-parent"))
     os.symlink(os.path.join(folder, "src", "app.py"), os.path.join(folder, "link-inside.py"))
     os.symlink(os.path.join(folder, "nowhere"), os.path.join(folder, "dangling"))
-    assert one(folder, "link-to-outside.txt", 1, 1).reason == "the path leads outside the folder"
-    assert one(folder, "link-to-parent/outside.txt", 1, 1).reason == "the path leads outside the folder"           # a folder link that leads out
+    assert one(folder, "link-to-outside.txt", 1, 1).reason == "that path leads outside your folder"
+    assert one(folder, "link-to-parent/outside.txt", 1, 1).reason == "that path leads outside your folder"           # a folder link that leads out
     assert one(folder, "link-to-parent/proj/src/app.py", 1, 1).label == CHECKED                                   # out and back in: it ends inside
     assert one(folder, "link-inside.py", 1, 2).label == CHECKED
     assert one(folder, "dangling", 1, 1).reason == "there is no such file"
@@ -206,7 +206,7 @@ def test_the_spelling_check_alone_names_the_reason_and_gives_the_parts():
     assert clean_relative("src/./deep//note.md") == (["src", "deep", "note.md"], "")
     assert clean_relative("Makefile") == (["Makefile"], "")
     assert clean_relative(".gitignore") == ([".gitignore"], "")
-    assert clean_relative("a/../b") == (None, "the path goes up out of the folder")
+    assert clean_relative("a/../b") == (None, "that path goes outside your folder")
     assert clean_relative("a\\b")[0] is None and clean_relative("C:x")[0] is None and clean_relative("~/x")[0] is None
     assert clean_relative(None)[0] is None                                              # type: ignore[arg-type]
 
@@ -250,7 +250,7 @@ def test_a_windows_spelling_is_refused_before_the_file_system_is_asked(path):
 def test_an_absolute_path_is_compared_with_the_folder_as_text_first(path):
     with no_file_system():
         got = check_mark(Mark(path, 1, 1), "/some/folder")
-    assert got.label == MISSING and got.reason in ("the path is not inside the folder", "the path goes up out of the folder", "the path is not written as a path inside the folder (use / and no drive letter)")
+    assert got.label == MISSING and got.reason in ("that path is not inside your folder", "that path goes outside your folder", "that is not a path inside your folder")
 
 
 def test_the_pure_parts_say_the_same_for_every_ntpath_absolute_spelling(monkeypatch):
@@ -370,7 +370,7 @@ def test_marks_past_the_limit_are_counted_not_checked(folder):
 
 def test_a_check_that_runs_out_of_time_says_so_and_never_claims_a_source(folder):
     report = check_answer("[src/app.py:1-2] [README.md:1]", folder, budget_s=0.0)
-    assert [(s.label, s.reason) for s in report.sources] == [(MISSING, "ran out of time while checking")] * 2
+    assert [(s.label, s.reason) for s in report.sources] == [(MISSING, "there was not enough time to check it")] * 2
 
 
 def test_an_unreadable_file_is_a_reason_not_an_error(folder, monkeypatch):

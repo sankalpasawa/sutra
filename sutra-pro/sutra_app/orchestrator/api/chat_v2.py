@@ -420,6 +420,8 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
             endings = stopped(user_message_id, shown, attempt)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+            if ask is not None and ask_mode.failure_words(exc):      # DV-1: the limit of an Ask, in plain words
+                message = ask_mode.failure_words(exc)
             if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
                 message += " Ask for a shorter answer, or say \"continue\"."
             endings = failed(user_message_id, shown, message, attempt)
@@ -566,7 +568,9 @@ def _last_turn(services: Any, sid: str) -> dict[str, Any]:
     return out
 
 
-def _failure_text(exc: BaseException) -> str:
+def _failure_text(exc: BaseException, ask: "ask_mode.AskTurn | None" = None) -> str:
+    if ask is not None and ask_mode.failure_words(exc):               # DV-1: the limit of an Ask, in plain words
+        return ask_mode.failure_words(exc)
     message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
     if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
         message += " Ask for a shorter answer, or say \"continue\"."
@@ -608,13 +612,13 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             if isinstance(exc, CallCancelledError):
                 endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             else:
-                endings = failed(user_message_id, shown, _failure_text(exc), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
+                endings = failed(user_message_id, shown, _failure_text(exc, ask), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
             reply = ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0
             if isinstance(exc, CallCancelledError):
                 live.stopped(reply)
             else:
-                live.failed(_failure_text(exc), getattr(exc, "code", "failed") if isinstance(exc, ConnectorError) else "failed", reply)
+                live.failed(_failure_text(exc, ask), getattr(exc, "code", "failed") if isinstance(exc, ConnectorError) else "failed", reply)
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:

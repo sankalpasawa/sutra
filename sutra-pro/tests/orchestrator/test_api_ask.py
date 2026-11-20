@@ -226,7 +226,7 @@ def test_after_the_answer_one_card_lists_every_source_with_a_label_made_by_code(
     assert [(s["path"], s["start"], s["end"], s["label"]) for s in body["sources"]] == [
         ("src/app.py", 3, 4, GOOD), ("src/app.py", 5, 5, GOOD), ("src/config.py", 1, 9, BAD), ("src/app.py", 4, 4, BAD), ("../outside.txt", 1, 1, BAD)]
     assert [s.get("how") for s in body["sources"]] == ["lines", "quote", None, None, None]
-    assert [s.get("reason") for s in body["sources"]][2:] == ["there is no such file", "the quoted words are not on those lines", "the path goes up out of the folder"]
+    assert [s.get("reason") for s in body["sources"]][2:] == ["there is no such file", "the quoted words are not on those lines", "that path goes outside your folder"]
     assert (body["checked"], body["missing"], body["more"]) == (2, 3, 0)
     listed = client.get(f"/api/chats/{sid}/messages").json()["messages"]
     assert listed[-1]["card"] == body and listed[-1]["kind"] == "card" and "text" in listed[-1]          # the wire shape the page reads
@@ -248,7 +248,7 @@ def test_an_answer_whose_every_source_is_wrong_is_reported_as_nothing_found(ask)
     assert say(client, sid, mode="ask").status_code == 202 and finish(chats, sid, 3)
     card = card_of(chats.messages(sid)[2])
     assert [s["label"] for s in card["sources"]] == [BAD] * 3 and (card["checked"], card["missing"]) == (0, 3)
-    assert [s["reason"] for s in card["sources"]] == ["there is no such file", "the file has only 5 lines", "the path is not inside the folder"]
+    assert [s["reason"] for s in card["sources"]] == ["there is no such file", "the file has only 5 lines", "that path is not inside your folder"]
 
 
 def test_with_no_working_folder_every_source_says_so_and_the_turn_still_runs(live):
@@ -542,3 +542,29 @@ def test_the_ask_setup_reads_the_folder_off_the_event_loop(ask, monkeypatch):
     assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line}, headers=H).status_code == 202 and finish(chats, sid, 4)
     assert len(seen["begin"]) == 2 and len(seen["loop"]) == 2
     assert set(seen["begin"]).isdisjoint(seen["loop"])
+
+
+def test_an_ask_stopped_by_its_own_limit_says_so_in_plain_words_and_a_plain_chat_keeps_the_connectors_words(ask):
+    """Review m7: "the envelope allows no more calls, money or time" is a developer's sentence and must not reach the owner from the chat box."""
+    from sutra_app.connectors.errors import EnvelopeExceededError
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    services.chat_port = Port(started(), EnvelopeExceededError("limit", detail={"limit": "max_usd"}))
+    assert say(client, sid, mode="ask").status_code == 202 and finish(chats, sid, 2)
+    error = chats.messages(sid)[1]
+    assert error.kind == "error" and error.text == ask_mode.LIMIT_WORDS
+    assert "envelope" not in error.text and "$0.25" in error.text and "2 minutes" in error.text
+    services.chat_port = Port(started(), EnvelopeExceededError("limit", detail={"limit": "max_usd"}))
+    assert say(client, sid, "plain").status_code == 202 and finish(chats, sid, 4)
+    assert chats.messages(sid)[3].text == "the envelope allows no more calls, money or time"        # the chat as it was
+
+
+def test_no_reason_on_a_card_uses_a_developers_word():
+    from sutra_app.orchestrator import citations as c
+    reasons = set()
+    for path in ("", "a\\b", "C:x", "//h/s", "~x", "..", "src/../x", "con", "x ", "a*b", "x" * 400, "/etc/passwd"):
+        reasons.add(c.check_mark(c.Mark(path or "p", 1, 1), "/some/folder").reason)
+    reasons.add(c.check_mark(c.Mark("a.py", 1, 900), "/some/folder").reason)
+    reasons.add(c.check_mark(c.Mark("a.py", 0, 1), "/some/folder").reason)
+    for reason in reasons:
+        assert reason and len(reason) <= 70 and not any(w in reason for w in ("envelope", "realpath", "spelling", "regex", "device name", "path inside the folder (use"))

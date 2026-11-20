@@ -130,17 +130,17 @@ def spelling_problem(path: str) -> str:
     (`\\\\host\\share`, `//host/share`), a device path (`\\\\.\\pipe\\x`), a drive (`C:x`), an alternate stream (`file:stream`) or a backslash can never reach `realpath`, `stat` or `open`
     (on Windows the file system would connect to the host or open the pipe just to answer). The same text is refused on every machine, so a test on one machine says what all do."""
     if not isinstance(path, str) or not path.strip():
-        return "the path is empty"
+        return "there is no path"
     if len(path) > MAX_PATH_CHARS:
-        return "the path is too long"
+        return "that path is too long"
     if any(ord(c) < 32 or ord(c) == 127 for c in path):
-        return "the path has a character a path cannot have"
+        return "that path has a character that cannot be in a file name"
     if "\\" in path or ":" in path or path.startswith("//"):
-        return "the path is not written as a path inside the folder (use / and no drive letter)"
+        return "that is not a path inside your folder"
     if path.startswith("~"):
-        return "the path starts with ~, which is not inside the folder"
+        return "that path starts with ~, which is not inside your folder"
     if any(c in _NOT_A_PATH for c in path):
-        return "the path has a character a path cannot have"
+        return "that path has a character that cannot be in a file name"
     return ""
 
 
@@ -152,14 +152,14 @@ def clean_relative(path: str) -> tuple[list[str] | None, str]:
         return None, bad
     parts = [p for p in path.split("/") if p not in ("", ".")]
     if not parts:
-        return None, "the path is empty"
+        return None, "there is no path"
     for part in parts:
         if part == "..":
-            return None, "the path goes up out of the folder"
+            return None, "that path goes outside your folder"
         if part != part.rstrip(" .") or part != part.lstrip(" "):
-            return None, "a part of the path ends or starts with a space or a dot, which is not a plain name"
+            return None, "a name in that path is not a plain file or folder name"
         if _DEVICE.match(part.split(".", 1)[0]):
-            return None, "a part of the path is a reserved device name, not a file"
+            return None, "a name in that path is reserved by Windows, so it is not a file"
     return parts, ""
 
 
@@ -202,11 +202,11 @@ def _check(mark: Mark, folder: str) -> Source:
     if not isinstance(folder, str) or not folder:
         return _no(mark, "no working folder is set")
     if mark.start < 1 or mark.end < mark.start:
-        return _no(mark, "the lines are not a valid range")
+        return _no(mark, "those lines are not a valid range")
     if mark.end > MAX_LINE_NUMBER:
         return _no(mark, "that line number is too big")
     if mark.end - mark.start + 1 > MAX_SPAN:
-        return _no(mark, f"the range is wider than {MAX_SPAN} lines, too wide to be a source")
+        return _no(mark, f"that is more than {MAX_SPAN} lines, too many to be one source")
     path = mark.path
     bad = spelling_problem(path)                             # FIRST, and from the text alone: nothing below touches the file system for a path that fails it
     if bad:
@@ -214,10 +214,10 @@ def _check(mark: Mark, folder: str) -> Source:
     parts: list[str] | None
     if path.startswith("/"):
         if ".." in path.split("/"):
-            return _no(mark, "the path goes up out of the folder")
+            return _no(mark, "that path goes outside your folder")
         parts = absolute_parts(path, folder)                 # compared with the folder as text; the file system is asked only for a path that starts with it
         if parts is None:
-            return _no(mark, "the path is not inside the folder")
+            return _no(mark, "that path is not inside your folder")
         reason = ""
     else:
         parts, reason = clean_relative(path)
@@ -229,7 +229,7 @@ def _check(mark: Mark, folder: str) -> Source:
     root = os.path.realpath(folder)
     real = os.path.realpath(os.path.join(root, *checked_parts))
     if not _inside(real, root) or os.path.normcase(real) == os.path.normcase(root):
-        return _no(mark, "the path leads outside the folder")
+        return _no(mark, "that path leads outside your folder")
     try:
         # one descriptor for the type check and the read; a pipe or a device cannot make the open wait, and a link at the last step is refused
         fd = os.open(real, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
@@ -258,7 +258,7 @@ def _read_and_check(mark: Mark, handle, size: int) -> Source:
     if mark.quote is not None:
         squeezed = _squeeze(mark.quote)
         if len(squeezed) > MAX_QUOTE:
-            return _no(mark, f"the quoted words are longer than {MAX_QUOTE} characters; quote a shorter piece")
+            return _no(mark, f"the quoted words are longer than {MAX_QUOTE} characters; a shorter quote would do")
         quote = squeezed if len(squeezed) >= MIN_QUOTE else None
     lines: list[str] = []
     count = 0
@@ -311,6 +311,6 @@ def check_answer(answer: str, folder: str, *, budget_s: float = BUDGET_S, marks:
     deadline = time.monotonic() + max(0.0, budget_s)
     out: list[Source] = []
     for mark in shown:
-        out.append(_no(mark, "ran out of time while checking") if time.monotonic() > deadline else check_mark(mark, folder))
+        out.append(_no(mark, "there was not enough time to check it") if time.monotonic() > deadline else check_mark(mark, folder))
     checked = sum(1 for s in out if s.label == CHECKED)
     return Report(sources=tuple(out), checked=checked, missing=len(out) - checked, more=more)
