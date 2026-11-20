@@ -38,7 +38,8 @@ APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
 NEEDS_SYSTEM_PERMISSION = "needs_system_permission"           # why a node ended when the computer refused a file (MAN-15)
-CAP_REACHED = "stopped: this step reached its"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
+CAP_PHRASES = ("used up its model calls", "used up its dollars", "ran out of time")      # what the engine host writes (`llm.CAP_WORDS`)
+CAP_REACHED = "stopped: this step "                       # + "used up its model calls" / "used up its dollars" / "ran out of time"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
 
 
 def caps_of(project: Any) -> dict[str, Any]:
@@ -197,7 +198,7 @@ class Conductor:
         if want == "failed" and state not in NODE_FINAL and is_permission_failure(outcome):
             self._late_permission(tx, node, outcome)
             return
-        if want in ("cancelled", "failed") and outcome.startswith(CAP_REACHED):
+        if want in ("cancelled", "failed") and outcome.startswith(CAP_REACHED) and any(phrase in outcome for phrase in CAP_PHRASES):
             self.store.audit(tx, actor="conductor", action="trigger.cap_reached", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=outcome[:200],
                              ref=task_id)
             self._note(tx, node["project_id"], f"A step stopped: {outcome[len('stopped: '):]}. It was not tried again.", f"project:{node['project_id']}#cap:{node['id']}")

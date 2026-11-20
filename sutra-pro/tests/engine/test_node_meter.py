@@ -100,3 +100,27 @@ def test_configure_without_a_meter_clears_the_one_before():
     ask()
     ask()
     assert len(port.requests) == 2 and port.requests[1].allowance is None
+
+
+def test_two_threads_cannot_both_take_the_last_call():
+    import threading
+    meter = NodeMeter(max_calls=500)
+    taken, refused, lock = [], [], threading.Lock()
+
+    def work():
+        for _ in range(200):
+            try:
+                meter.begin()
+                with lock:
+                    taken.append(1)
+            except NodeCapReached:
+                with lock:
+                    refused.append(1)
+    threads = [threading.Thread(target=work) for _ in range(8)]
+    [th.start() for th in threads]
+    [th.join() for th in threads]
+    assert len(taken) == 500 and len(refused) == 1100 and meter.calls == 500
+
+
+def test_the_words_of_a_cap_are_plain():
+    assert llm.CAP_WORDS == {"calls": "used up its model calls", "usd": "used up its dollars", "wall": "ran out of time"}

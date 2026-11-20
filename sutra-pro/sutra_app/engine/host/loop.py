@@ -837,8 +837,9 @@ class Host:
         self.publisher.stop()
         from . import finish
         reached = getattr(getattr(self, "meter", None), "reached", None)
-        if reached and status != "stopped":                            # the node used up its allowance: the run's outcome says which one, in plain words (MAN-9)
-            outcome = f"stopped: this step reached its {reached} cap"
+        if reached and status != "stopped":                            # the node used up its allowance: it FAILED, whatever J2 would have called the run (D321 a); the outcome says which one in plain words
+            status = "crashed"
+            outcome = f"stopped: this step {llm.CAP_WORDS.get(reached, 'reached a limit')}"
         self.ended_status, self.ended_outcome = status, outcome        # what the `handoff` step of a node's run says (MAN-6)
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()

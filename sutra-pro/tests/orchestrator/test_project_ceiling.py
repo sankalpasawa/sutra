@@ -57,9 +57,9 @@ def test_a_project_that_spent_more_dollars_than_the_owner_set_is_stopped(rig):
 
 def test_a_node_that_reached_its_cap_is_failed_without_a_retry_with_a_row_and_a_note(rig):
     reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
-    rig.finish(tasks["a1"], status="crashed", outcome="stopped: this step reached its calls cap", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="stopped: this step used up its model calls", handoff=False)
     node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
-    assert node["state"] == "failed" and node["attempt"] == 1 and "calls cap" in node["failure_reason"]            # the one retry would hit the same cap
+    assert node["state"] == "failed" and node["attempt"] == 1 and "model calls" in node["failure_reason"]            # the one retry would hit the same cap
     assert [r["action"] for r in rig.audit("trigger.cap_reached")] == ["trigger.cap_reached"] and len(notes(rig, reservation.project_id, "cap")) == 1 and rig.audit("node.retry") == []
 
 

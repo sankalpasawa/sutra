@@ -116,7 +116,9 @@ def ended_of(run_dir):
 def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(j2, make_run_dir):
     run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET, node={**NODE, "caps": {"calls": 1, "usd": None, "wall_s": 1800}})
     Running(run_dir, "--mock").wait()
-    assert ended_of(run_dir)["outcome"] == "stopped: this step reached its calls cap"
+    ended = ended_of(run_dir)
+    assert ended["outcome"] == "stopped: this step used up its model calls" and ended["status"] == "crashed"          # never `done`, whatever J2 made of the failed call (D321 a)
+    assert not (run_dir / "handoff.json").exists()                                                                  # a failed run hands nothing on
 
 
 def test_a_run_without_a_node_is_not_metered(j2, make_run_dir):

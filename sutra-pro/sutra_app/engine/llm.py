@@ -52,7 +52,7 @@ from .port import (
 __all__ = [
     "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
-    "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS", "NodeMeter", "NodeCapReached",
+    "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS", "NodeMeter", "NodeCapReached", "CAP_WORDS",
 ]
 
 MOCK_ENV = ("SUTRA_MOCK", "SUTRA_OFFLINE", "STUDIO_MOCK")     # any of them set to "1" means mock mode (D36)
@@ -194,6 +194,9 @@ def _as_tag(tag: Any) -> CallTag:
     raise TypeError("a tag is a CallTag or a mapping of its fields")
 
 
+CAP_WORDS = {"calls": "used up its model calls", "usd": "used up its dollars", "wall": "ran out of time"}      # what a node that reached a cap says, in plain words
+
+
 class NodeCapReached(ModelError):
     """A node of a multi-agent project used up what its grant lets it spend: `which` is `calls`, `usd` or `wall`. A `ModelError`, so J2's own failure paths end the run; the host then says why
     in the run's outcome (MAN-9). Never retryable: the next call would be refused too."""
@@ -202,7 +205,7 @@ class NodeCapReached(ModelError):
     retryable = False
 
     def __init__(self, which: str) -> None:
-        super().__init__(f"this step reached its {which} cap")
+        super().__init__(f"this step {CAP_WORDS[which]}")
         self.which = which
 
 
@@ -232,12 +235,27 @@ class NodeMeter:
 
     def allowance(self) -> Allowance:
         with self._lock:
-            return Allowance(max_calls=None if self.max_calls is None else max(0, self.max_calls - self.calls), max_usd=None if self.max_usd is None else max(0.0, self.max_usd - self.usd),
-                             deadline=self._deadline())
+            return self._allowance()
+
+    def _allowance(self) -> Allowance:
+        return Allowance(max_calls=None if self.max_calls is None else max(0, self.max_calls - self.calls), max_usd=None if self.max_usd is None else max(0.0, self.max_usd - self.usd),
+                         deadline=self._deadline())
+
+    def begin(self) -> Allowance:
+        """Check the caps AND count the call in one step under the lock (two threads cannot both take the last call), and give what this one request may still spend."""
+        with self._lock:
+            which = ("calls" if self.max_calls is not None and self.calls >= self.max_calls else "usd" if self.max_usd is not None and self.usd >= self.max_usd
+                     else "wall" if self._deadline() is not None and self._clock() >= self._deadline() else None)
+            if which is not None:
+                self.reached = self.reached or which
+                raise NodeCapReached(which)
+            allowance = self._allowance()
+            self.calls += 1
+            return allowance
 
     def charge(self, usd: Optional[float]) -> None:
+        """Add what a finished call cost (the call itself was counted by `begin`)."""
         with self._lock:
-            self.calls += 1
             self.usd += float(usd or 0.0)
 
 
@@ -370,16 +388,13 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
         tag = tag.model_copy(update={"atom": _BOUND_ATOM})
     tag = _hooked_tag(tag)
     meter = _METER
-    if meter is not None:
-        meter.check()                     # a node past its calls, dollars or time makes no call (raises `NodeCapReached`)
+    allowance = meter.begin() if meter is not None else None       # a node past its calls, dollars or time makes no call (raises `NodeCapReached`); the call is counted here, under a lock
     request = CompletionRequest(system=system, user=user, max_tokens=max_tokens, effort=effort, json_mode=json_mode,
-                                images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=meter.allowance() if meter is not None else None,
+                                images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=allowance,
                                 scripted=mock, run_tools=grant)
     try:
         result = port.complete(request, _hooked_progress(tag, on_progress))
     except ModelError as exc:
-        if meter is not None:
-            meter.charge(None)
         if exc.code == "timeout":
             raise CallTimeout(str(exc)) from exc
         raise
