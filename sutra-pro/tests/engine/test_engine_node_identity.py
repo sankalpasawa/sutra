@@ -103,3 +103,22 @@ def test_the_node_fields_appear_in_a_tag_dump_only_with_their_empty_defaults_for
     for bad in ({"node_id": "nd_1"}, {"node_id": "x" * 15}, {"node_role": "boss"}, {"node_role": "Worker"}):
         with pytest.raises(ValidationError):
             CallTag(**bad)
+
+
+# ---- the node meter (MAN-9) -----------------------------------------------------------------------------------------------------------
+
+def ended_of(run_dir):
+    import json as _json
+    lines = [_json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [event for event in lines if event.get("t") == "run.ended"][-1]
+
+
+def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(make_run_dir):
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET, node={**NODE, "caps": {"calls": 1, "usd": None, "wall_s": 1800}})
+    Running(run_dir, "--mock").wait()
+    assert ended_of(run_dir)["outcome"] == "stopped: this step reached its calls cap"
+
+
+def test_a_run_without_a_node_is_not_metered(make_run_dir):
+    plain = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    assert Running(plain, "--mock").wait() == 0 and "reached its" not in ended_of(plain)["outcome"]

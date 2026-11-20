@@ -122,6 +122,7 @@ class Host:
         self.settings: Optional[EngineSettings] = None
         self.mock = False
         self.port = None
+        self.meter = None                    # the node meter (MAN-9), made when the port is
         self.sink: Optional[EventUsageSink] = None
         self.hooks = None
         self.publisher = None
@@ -372,8 +373,17 @@ class Host:
             raise
         except ModelError as exc:
             raise StartFailed(f"{type(exc).__name__}: {exc}", EXIT_START_FAILED, chat=True) from None
-        llm.configure(self.port, mock=self.mock, base_tag=self._base_tag())
+        self.meter = self._node_meter()
+        llm.configure(self.port, mock=self.mock, base_tag=self._base_tag(), meter=self.meter)
         llm.bind_atom(overhead)                  # a call made before the first turn carries the run overhead key
+
+    def _node_meter(self) -> Optional["llm.NodeMeter"]:
+        """The meter of a node of a multi-agent project (MAN-9, D272): its calls, dollars and wall time from the `node` block's caps, cumulative for the whole process. None for every run that is
+        not a node: such a run sends the allowance it always sent (none)."""
+        node = getattr(self.task, "node", None)
+        if node is None:
+            return None
+        return llm.NodeMeter(max_calls=node.caps.calls, max_usd=node.caps.usd, wall_s=node.caps.wall_s)
 
     def _base_tag(self) -> CallTag:
         """The tag every call of this process starts from. A run that is a node of a multi-agent project (the optional `node` block of `task.json`, D283) also says which node and
@@ -826,6 +836,9 @@ class Host:
         self._join_reviewer()                      # D179: the run folder must be stable before anything collects, publishes or closes the writer
         self.publisher.stop()
         from . import finish
+        reached = getattr(getattr(self, "meter", None), "reached", None)
+        if reached and status != "stopped":                            # the node used up its allowance: the run's outcome says which one, in plain words (MAN-9)
+            outcome = f"stopped: this step reached its {reached} cap"
         self.ended_status, self.ended_outcome = status, outcome        # what the `handoff` step of a node's run says (MAN-6)
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
