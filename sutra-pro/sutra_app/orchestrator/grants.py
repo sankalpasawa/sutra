@@ -90,7 +90,8 @@ ROLE_TABLE: Mapping[str, RoleRule] = {
 
 # ---- write scopes -----------------------------------------------------------------------------------------------------------------
 
-_GLOB = re.compile(r"[*?\[\]{}()!]")           # a wild-card, or a character a permission rule of the model program reads as part of its own syntax (PB-17)
+_GLOB = re.compile(r"[*?\[\]{}]")                 # a wild-card
+_RULE_SYNTAX = re.compile(r"[()!]")             # characters a permission rule of the model program reads as part of its own syntax (PB-17)
 _SHORT_NAME = re.compile(r"~[0-9]")                                  # a Windows 8.3 short name: GIT~1 is .git
 _DEVICE_NAMES = frozenset({"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10)), "CONIN$", "CONOUT$", "CLOCK$",
                            "COM\u00b9", "COM\u00b2", "COM\u00b3", "LPT\u00b9", "LPT\u00b2", "LPT\u00b3"})          # Windows also treats the superscript digits as devices (m7)
@@ -126,6 +127,8 @@ def normalize_scope(entries: Iterable[Any]) -> tuple[str, ...]:
             raise GrantError("a write scope names paths below the working folder, not absolute ones")
         if _GLOB.search(text):
             raise GrantError("a write scope names exact paths, with no wild-card")
+        if _RULE_SYNTAX.search(text):                              # N-5: said as it is, not as a wild-card the owner never wrote
+            raise GrantError("a place with a bracket or an exclamation mark in its name cannot be limited to; name its parent folder instead")
         parts = [part for part in text.split("/") if part not in ("", ".")]
         if ".." in parts:
             raise GrantError("a write scope cannot leave the working folder")

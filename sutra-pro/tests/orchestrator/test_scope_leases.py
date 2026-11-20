@@ -96,8 +96,12 @@ def test_scopes_that_differ_only_in_how_an_accent_is_written_are_the_same_place(
     nfc, nfd = "café/", "café/menu"
     assert scopes_overlap(normalize_scope([nfc]), normalize_scope([nfd])) and normalize_scope([nfc, "café/"]) == (nfc,)            # one place, once
     for bad in ("!notes", "a(b)", "site/(draft)", "x)"):
-        with pytest.raises(GrantError):
+        with pytest.raises(GrantError) as refused:
             normalize_scope([bad])
+        assert "bracket or an exclamation mark" in str(refused.value) and "parent folder" in str(refused.value) and "wild-card" not in str(refused.value)
+    with pytest.raises(GrantError) as star:
+        normalize_scope(["site/*"])
+    assert "no wild-card" in str(star.value)
 
 
 def test_a_link_inside_the_folder_leads_to_the_place_it_points_at_and_one_that_leaves_the_folder_is_the_whole_folder(tmp_path):
