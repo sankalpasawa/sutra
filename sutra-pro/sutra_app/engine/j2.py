@@ -93,6 +93,45 @@ BARGAIN_MINUTES = float(os.getenv("J2_BARGAIN_MINUTES", "15"))   # J2.c bargain:
 BARGAIN_CALLS = int(os.getenv("J2_BARGAIN_CALLS", "8"))          # ...and its spend, in AI calls (4 hops x 2 sides)
 MAX_CYCLES = int(os.getenv("J2_MAX_CYCLES", "6"))   # plan -> build -> audit loops before Identity asks the Requester
 LIMIT_ADD = int(os.getenv("J2_LIMIT_ADD", "30"))    # budget the "keep working" option adds when the budget ran out
+# P26 (D255, D256): dollar mode, on only when J2_USD_BUDGET is set: a run's limit is dollars (API price), credits stay internal
+USD_BUDGET = float(os.environ["J2_USD_BUDGET"]) if os.getenv("J2_USD_BUDGET") else None
+USD_CAP = float(os.environ["J2_USD_CAP"]) if os.getenv("J2_USD_CAP") else None      # the most a run may be raised to; unset: no cap
+USD_PER_CREDIT = 0.0187          # D255: measured on the beta's runs (median dollars per work credit)
+USD_PER_MTOK_FALLBACK = 3.18     # D255: dollars per million tokens for a call with no price before any priced call in the run
+USD_RAISE_SHARE = 0.5            # the suggested raise without a stated need: half the run's limit
+BIG_RAISE = 5                    # a typed raise above this many times the limit is asked back
+
+
+def call_tokens(rec):
+    """P26: a calls.jsonl row's tokens (input + output), or its characters / 4 when the call has no token count (mock mode)."""
+    t = rec.get("tokens") or {}
+    if t:
+        return (t.get("input") or 0) + (t.get("output") or 0)
+    c = rec.get("chars") or {}
+    return ((c.get("prompt") or 0) + (c.get("reply") or 0)) / 4
+
+
+def call_usd(rec, run_rate):
+    """P26 (D255): (dollars, estimated) for one calls.jsonl row: the usd it reported (or its rate card's), else its tokens times
+    `run_rate` (this run's dollars per token from its priced calls), else times USD_PER_MTOK_FALLBACK."""
+    if rec.get("usd") is not None:
+        return float(rec["usd"]), False
+    return call_tokens(rec) * (run_rate if run_rate else USD_PER_MTOK_FALLBACK / 1_000_000), True
+
+
+def fmt_usd(x):
+    """P26: "$20", "$20.40", "$1.25"; a positive amount below a cent shows as "$0.01"."""
+    c = max(round(x, 2), 0.01) if x > 0 else 0.0
+    return f"${c:,.0f}" if c == int(c) else f"${c:,.2f}"
+
+
+_USD = re.compile(r"\$\s*(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:dollars?|usd)\b", re.I)
+
+
+def parse_usd(text):
+    """P26: the dollar amount in an answer ("Add $10 and keep going", "$12.50", "add 10 dollars"), else None ("add 30")."""
+    m = _USD.search(text or "")
+    return float((m[1] or m[2]).replace(",", "")) if m else None
 MEMORY_FILE = os.getenv("J2_MEMORY_FILE") or os.path.join(HERE, "memory", "lessons.jsonl")
 MAX_LESSONS = 5            # lessons Adaptation reads at J2.b
 PLAYBOOK_FILE = os.getenv("J2_PLAYBOOK_FILE") or os.path.join(HERE, "memory", "playbooks.jsonl")
@@ -3566,6 +3605,9 @@ class J2Run:
         self.goal, self.stamped, self.request = None, False, ""
         self.spent, self.cycle, self.calls, self.step = 0, 0, 0, 0
         self.budget, self.raises = BUDGET, []
+        # P26 (D256): the run's cost in dollar mode: used, its limit, the Requester's raises, calls estimated (by provider)
+        self.usd_used, self.usd_limit, self.usd_raises = 0.0, USD_BUDGET or 0.0, []
+        self.usd_estimated_calls, self.usd_estimated_by, self.usd_priced, self.usd_priced_tokens = 0, {}, 0.0, 0
         self.idle_cycles, self.cycle_registered = 0, True
         self.status, self.thinking, self.error, self.done = "idle", None, None, False
         self.feedback = None
@@ -4489,6 +4531,32 @@ class J2Run:
         out.append(["task", task[:280] + ("…" if len(task) > 280 else "")])
         return out
 
+    def _count_usd(self, rec):
+        """P26 (D255): in dollar mode, add this call's API price to the run's cost: what it reported, or an estimate at this
+        run's own rate (its priced calls' dollars per token), else at USD_PER_MTOK_FALLBACK. The row keeps what was counted."""
+        if not USD_BUDGET:
+            return
+        usd, estimated = call_usd(rec, self.usd_priced / self.usd_priced_tokens if self.usd_priced_tokens else None)
+        if estimated:
+            self.usd_estimated_calls += 1
+            who = rec.get("provider") or "mock"
+            self.usd_estimated_by[who] = self.usd_estimated_by.get(who, 0) + 1
+            rec["usd_estimated"] = True
+        else:
+            self.usd_priced += usd
+            self.usd_priced_tokens += call_tokens(rec)
+        self.usd_used += usd
+        rec["usd_counted"] = round(usd, 6)
+
+    def _usd_metrics(self):
+        """P26: the summary's `budget.usd` in dollar mode: used, limit, approved (the start, then each raise) and calls estimated."""
+        if not USD_BUDGET:
+            return {}
+        start = self.usd_raises[0]["from"] if self.usd_raises else self.usd_limit
+        return {"usd": {"used": round(self.usd_used, 4), "limit": self.usd_limit,
+                        "approved": [start, *(r["to"] - r["from"] for r in self.usd_raises)],
+                        "estimated_calls": self.usd_estimated_calls}}
+
     def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
         meta = dict(llm.LAST_META)
         art = None
@@ -4515,6 +4583,7 @@ class J2Run:
                **({"usd": meta["usd"]} if meta.get("usd") is not None else {}),      # what the CLI says it cost
                **({"tools": tools} if tools else {}),
                **({"artifact_schema": art} if art else {})}
+        self._count_usd(rec)      # P26 (D255): before the row is written, so calls.jsonl says what was counted
         self.call_log.append(rec)
         self.pending_calls.setdefault(fn, []).append(rec["id"])
         os.makedirs(self.dir, exist_ok=True)
@@ -12329,7 +12398,7 @@ class J2Run:
                 "mock": llm.MOCK, "cycles": self.cycle, "ai_calls": self.calls,
                 "minutes": round((time.time() - self.started) / 60, 1) if self.started else 0,
                 "budget": {"total": self.budget, "start": BUDGET, "cap": BUDGET_CAP, "raises": self.raises,
-                           "spent": self.spent, "rate_card": bool(RATES)},
+                           "spent": self.spent, "rate_card": bool(RATES), **self._usd_metrics()},      # P26
                 "site_versions": len(self.sites), "site_bytes": len(self.sites[-1].encode("utf-8")) if self.sites else 0,
                 "agents": agents,
                 "negotiation": {"proposals": sum(1 for m in self.chat if m["who"] == "adaptation" and m.get("proposal")),

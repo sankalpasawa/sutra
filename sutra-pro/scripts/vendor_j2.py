@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P25" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P26" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -1207,6 +1207,92 @@ MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity
                          f"{own_number(room)}" if add else
                          f"Keep going: {more}")
 '''),
+    # ---- P26 (D255, D256): dollar mode, on only when J2_USD_BUDGET is set. Part 1: each logged AI call adds its API price (the usd
+    # it reported, or an estimate from its tokens) to the run's cost; no behaviour changes
+    Edit('P26', "j2.py", r'''LIMIT_ADD = int(os.getenv("J2_LIMIT_ADD", "30"))    # budget the "keep working" option adds when the budget ran out
+''', r'''LIMIT_ADD = int(os.getenv("J2_LIMIT_ADD", "30"))    # budget the "keep working" option adds when the budget ran out
+# P26 (D255, D256): dollar mode, on only when J2_USD_BUDGET is set: a run's limit is dollars (API price), credits stay internal
+USD_BUDGET = float(os.environ["J2_USD_BUDGET"]) if os.getenv("J2_USD_BUDGET") else None
+USD_CAP = float(os.environ["J2_USD_CAP"]) if os.getenv("J2_USD_CAP") else None      # the most a run may be raised to; unset: no cap
+USD_PER_CREDIT = 0.0187          # D255: measured on the beta's runs (median dollars per work credit)
+USD_PER_MTOK_FALLBACK = 3.18     # D255: dollars per million tokens for a call with no price before any priced call in the run
+USD_RAISE_SHARE = 0.5            # the suggested raise without a stated need: half the run's limit
+BIG_RAISE = 5                    # a typed raise above this many times the limit is asked back
+
+
+def call_tokens(rec):
+    """P26: a calls.jsonl row's tokens (input + output), or its characters / 4 when the call has no token count (mock mode)."""
+    t = rec.get("tokens") or {}
+    if t:
+        return (t.get("input") or 0) + (t.get("output") or 0)
+    c = rec.get("chars") or {}
+    return ((c.get("prompt") or 0) + (c.get("reply") or 0)) / 4
+
+
+def call_usd(rec, run_rate):
+    """P26 (D255): (dollars, estimated) for one calls.jsonl row: the usd it reported (or its rate card's), else its tokens times
+    `run_rate` (this run's dollars per token from its priced calls), else times USD_PER_MTOK_FALLBACK."""
+    if rec.get("usd") is not None:
+        return float(rec["usd"]), False
+    return call_tokens(rec) * (run_rate if run_rate else USD_PER_MTOK_FALLBACK / 1_000_000), True
+
+
+def fmt_usd(x):
+    """P26: "$20", "$20.40", "$1.25"; a positive amount below a cent shows as "$0.01"."""
+    c = max(round(x, 2), 0.01) if x > 0 else 0.0
+    return f"${c:,.0f}" if c == int(c) else f"${c:,.2f}"
+
+
+_USD = re.compile(r"\$\s*(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:dollars?|usd)\b", re.I)
+
+
+def parse_usd(text):
+    """P26: the dollar amount in an answer ("Add $10 and keep going", "$12.50", "add 10 dollars"), else None ("add 30")."""
+    m = _USD.search(text or "")
+    return float((m[1] or m[2]).replace(",", "")) if m else None
+'''),
+    Edit('P26', "j2.py", r'''        self.budget, self.raises = BUDGET, []
+''', r'''        self.budget, self.raises = BUDGET, []
+        # P26 (D256): the run's cost in dollar mode: used, its limit, the Requester's raises, calls estimated (by provider)
+        self.usd_used, self.usd_limit, self.usd_raises = 0.0, USD_BUDGET or 0.0, []
+        self.usd_estimated_calls, self.usd_estimated_by, self.usd_priced, self.usd_priced_tokens = 0, {}, 0.0, 0
+'''),
+    Edit('P26', "j2.py", r'''    def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
+''', r'''    def _count_usd(self, rec):
+        """P26 (D255): in dollar mode, add this call's API price to the run's cost: what it reported, or an estimate at this
+        run's own rate (its priced calls' dollars per token), else at USD_PER_MTOK_FALLBACK. The row keeps what was counted."""
+        if not USD_BUDGET:
+            return
+        usd, estimated = call_usd(rec, self.usd_priced / self.usd_priced_tokens if self.usd_priced_tokens else None)
+        if estimated:
+            self.usd_estimated_calls += 1
+            who = rec.get("provider") or "mock"
+            self.usd_estimated_by[who] = self.usd_estimated_by.get(who, 0) + 1
+            rec["usd_estimated"] = True
+        else:
+            self.usd_priced += usd
+            self.usd_priced_tokens += call_tokens(rec)
+        self.usd_used += usd
+        rec["usd_counted"] = round(usd, 6)
+
+    def _usd_metrics(self):
+        """P26: the summary's `budget.usd` in dollar mode: used, limit, approved (the start, then each raise) and calls estimated."""
+        if not USD_BUDGET:
+            return {}
+        start = self.usd_raises[0]["from"] if self.usd_raises else self.usd_limit
+        return {"usd": {"used": round(self.usd_used, 4), "limit": self.usd_limit,
+                        "approved": [start, *(r["to"] - r["from"] for r in self.usd_raises)],
+                        "estimated_calls": self.usd_estimated_calls}}
+
+    def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
+'''),
+    Edit('P26', "j2.py", r'''        self.call_log.append(rec)
+''', r'''        self._count_usd(rec)      # P26 (D255): before the row is written, so calls.jsonl says what was counted
+        self.call_log.append(rec)
+'''),
+    Edit('P26', "j2.py", r'''"spent": self.spent, "rate_card": bool(RATES)},
+''', r'''"spent": self.spent, "rate_card": bool(RATES), **self._usd_metrics()},      # P26
+'''),
 )
 
 OTHER_EDITS = (
@@ -1434,6 +1520,7 @@ PATCH_NOTES = {
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
     "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
+    "P26": "(D255, D256; part 1: counting only, no behaviour change) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`); `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`); `fmt_usd` and `parse_usd` for amounts",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1619,7 +1706,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
         "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D255, D256) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

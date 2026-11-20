@@ -1650,3 +1650,55 @@ def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_
     run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                   "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
     assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)
+
+
+# ---- P26 (D255, D256): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
+def test_p26_call_usd_takes_the_reported_price_or_estimates_from_tokens(j2):
+    assert j2.call_usd({"usd": 0.12, "tokens": {"input": 1000, "output": 10}}, None) == (0.12, False)      # reported
+    assert j2.call_usd({"usd": 0.0, "tokens": {"input": 9, "output": 1}}, 1.0) == (0.0, False)             # a rate card's (or a free) price
+    usd, est = j2.call_usd({"usd": None, "tokens": {"input": 900_000, "output": 100_000}}, 4e-6)            # at the run's own rate
+    assert est is True and usd == pytest.approx(4.0)
+    usd, est = j2.call_usd({"tokens": {"input": 900_000, "output": 100_000}}, None)                         # no priced call yet: fallback
+    assert est is True and usd == pytest.approx(j2.USD_PER_MTOK_FALLBACK) and j2.USD_PER_MTOK_FALLBACK == 3.18
+    usd, est = j2.call_usd({"tokens": None, "chars": {"prompt": 3_000_000, "reply": 1_000_000}}, None)        # mock: characters / 4
+    assert est is True and usd == pytest.approx(3.18)
+
+
+@pytest.mark.parametrize("x, text", [(20, "$20"), (20.4, "$20.40"), (1.25, "$1.25"), (0.004, "$0.01"), (0, "$0"), (10000, "$10,000")])
+def test_p26_fmt_usd(j2, x, text):
+    assert j2.fmt_usd(x) == text
+
+
+@pytest.mark.parametrize("text, amount", [("Add $10 and keep going", 10.0), ("$12.50", 12.5), ("add 10 dollars", 10.0), ("Add $ 1,000 please", 1000.0),
+                                          ("add 30", None), ("Option 1", None), ("", None)])
+def test_p26_parse_usd(j2, text, amount):
+    assert j2.parse_usd(text) == amount
+
+
+def logged(run, j2, meta):
+    from sutra_app.engine import llm
+    llm.LAST_META.clear()
+    llm.LAST_META.update(meta)
+    return run._log_call("identity", "", "s" * 400, "u" * 400, "r" * 200, {}, 0.1)
+
+
+def test_p26_cost_is_summed_from_reported_usd_and_unpriced_calls_are_estimated(tmp_path):
+    with fresh_j2(tmp_path, J2_USD_BUDGET="20") as j2:
+        assert (j2.USD_BUDGET, j2.USD_CAP) == (20.0, None)
+        run = j2.J2Run(run_dir=tmp_path / "runs" / "j2-20261104-100001-7f3a")
+        assert (run.usd_used, run.usd_limit, run.usd_raises, run.usd_estimated_calls) == (0.0, 20.0, [], 0)
+        logged(run, j2, {"provider": "claude", "usd": 0.5, "input_tokens": 90_000, "output_tokens": 10_000})
+        assert run.usd_used == pytest.approx(0.5) and run.usd_estimated_calls == 0
+        rec = logged(run, j2, {"provider": "codex", "input_tokens": 18_000, "output_tokens": 2_000})          # no price: the run's $5 per million
+        assert rec["usd_estimated"] is True and rec["usd_counted"] == pytest.approx(0.1)
+        assert run.usd_used == pytest.approx(0.6) and run.usd_estimated_calls == 1 and run.usd_estimated_by == {"codex": 1}
+        rows = [json.loads(line) for line in Path(run.dir, "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert [r.get("usd_counted") for r in rows] == [0.5, pytest.approx(0.1)] and rows[1]["usd_estimated"] is True
+        assert run._usd_metrics() == {"usd": {"used": 0.6, "limit": 20.0, "approved": [20.0], "estimated_calls": 1}}
+
+
+def test_p26_off_without_env_is_unchanged(j2, make_run):
+    assert j2.USD_BUDGET is None
+    run = make_run()
+    rec = logged(run, j2, {"provider": "claude", "usd": 0.5, "input_tokens": 90_000, "output_tokens": 10_000})
+    assert "usd_counted" not in rec and "usd_estimated" not in rec and run.usd_used == 0.0 and run._usd_metrics() == {}
