@@ -216,7 +216,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting, node_control=node_control, projects=projects)
+        limits=limits, agent_chat=agent_chat, send_setting=_send_setting(tasks, projects), node_control=node_control, projects=projects)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
@@ -237,6 +237,25 @@ def refresh_function_nodes(services: Services) -> int:
             if graph.put_node(tx, GATE.check("node", node, ctx=tx.ctx)):
                 changed += 1
     return changed
+
+
+def _send_setting(tasks: Any, projects: Any) -> Callable[[str, dict], Any]:
+    """What the engine's `POST /api/settings` calls: the setting goes to the team's live run as before; and when the owner turns Decide for me ON, the open questions of the team's projects are
+    answered at once (P2, D319). Turning it off changes nothing for a question already asked."""
+    if projects is None:
+        return tasks.send_setting
+
+    def send(dept_id: str, setting: dict) -> Any:
+        sent = tasks.send_setting(dept_id, setting)
+        if setting.get("decide_for_me") is True:
+            try:
+                if projects.owner_turned_on(dept_id):
+                    import asyncio
+                    asyncio.get_running_loop().create_task(tasks.start_ready())
+            except Exception:                               # noqa: BLE001  (a setting must still be kept when the projects cannot be reached)
+                log.exception("could not apply Decide for me to the open questions")
+        return sent
+    return send
 
 
 def _owner_decides(data_dir: Any) -> Callable[[Any], bool]:

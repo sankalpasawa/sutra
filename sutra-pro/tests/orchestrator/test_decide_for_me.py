@@ -113,3 +113,27 @@ def test_without_the_switch_nothing_is_decided_for_the_owner(tmp_path):
             time.sleep(0.02)
         assert rows(services, "SELECT * FROM projects")[0]["decide_for_me"] == 0 and rows(services, "SELECT status FROM approvals")[0]["status"] == "open"
         assert all("J2_DECIDE_FOR_ME" not in json.loads(r["settings_json"] or "{}") for r in rows(services, "SELECT settings_json FROM tasks")) and NO_REQUESTS
+
+
+# ---- turning it on later (P2, D319) -----------------------------------------------------------------------------------------------------
+
+def test_turning_decide_for_me_on_answers_the_open_questions_at_once_and_the_project_starts(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)})
+    assert rig.project(reservation.project_id)["status"] == "awaiting_approval" and rig.start() == []
+    assert rig.projects.owner_turned_on("sales") == 1
+    assert rig.project(reservation.project_id)["status"] == "running" and rig.store.approvals(reservation.project_id, status="open") == []
+    assert [a.decided_by for a in rig.store.approvals(reservation.project_id)] == [DECIDE_FOR_ME] and len(rig.start()) == 2
+    assert rig.audit("project.decide_for_me") and rig.projects.owner_turned_on("sales") == 0                          # a project that is on already is not touched again
+
+
+def test_turning_it_on_does_not_answer_what_the_table_may_not_and_turning_it_off_changes_nothing(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], estimates={"a1": 900, "a2": 900})           # over the project ceiling
+    assert rig.projects.owner_turned_on("web") == 1
+    assert rig.project(reservation.project_id)["status"] == "awaiting_approval" and len(rig.store.approvals(reservation.project_id, status="open")) == 1
+    other, more = rig.request([("b1", "dev", []), ("b2", "legal", [])], request_id="req-2", needs={"b2": ("github",)}, decide_for_me=True)
+    assert rig.project(other.project_id)["decide_for_me"] == 1                                                         # off later: this one stays as it was made
+
+
+def test_a_project_of_another_team_is_not_touched(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a2": ("github",)})
+    assert rig.projects.owner_turned_on("ops") == 0 and rig.project(reservation.project_id)["status"] == "awaiting_approval"

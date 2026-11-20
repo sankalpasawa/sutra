@@ -350,6 +350,23 @@ class ProjectService:
 
     # ---- Decide for me, and the answer path (MAN-8, D294, D306, D308) --------------------------------------------------------------
 
+    def owner_turned_on(self, dept_id: str) -> int:
+        """The owner turned Decide for me on for a team (the Simple view's switch, D319, P2): every project of that team that still has open questions is switched to Decide for me and the
+        rule table answers what it may at once (the same table, audited the same way). Turning it OFF changes nothing here: it applies to the next project (a question already answered stays
+        answered). Returns how many projects it switched."""
+        switched = 0
+        with self.db.tx() as tx:
+            for row in tx.conn.execute("SELECT id, caps_json FROM projects WHERE status IN ('planning','awaiting_approval','running') AND decide_for_me = 0").fetchall():
+                if not any(step.get("dept") == dept_id for step in (json.loads(row["caps_json"] or "{}").get("plan") or [])):
+                    continue
+                if not self.store.approvals(row["id"], status="open"):
+                    continue
+                tx.conn.execute("UPDATE projects SET decide_for_me = 1 WHERE id = ?", (row["id"],))
+                self.store.audit(tx, actor="owner", action="project.decide_for_me", project_id=row["id"], decision="n/a", reason="Decide for me was turned on")
+                self._decide_by_rule(tx, row["id"])
+                switched += 1
+        return switched
+
     def _ceiling(self, project: sqlite3.Row) -> int | None:
         """The most credits a plan may be estimated at for Decide for me to say yes once: the cap `project_credits`, never more (D294). The project's own ceiling, `budget_credits`, is the sum of its slices."""
         found = json.loads(project["caps_json"] or "{}").get("project_credits")

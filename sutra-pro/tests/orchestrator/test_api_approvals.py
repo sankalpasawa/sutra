@@ -68,3 +68,16 @@ def test_the_system_routes_are_404_when_off_need_the_token_and_404_for_a_questio
             assert client.post(url, json={}, headers=HEADERS).status_code == 404
     finally:
         client.__exit__(None, None, None)
+
+
+def test_the_settings_switch_the_page_uses_answers_the_open_questions_of_the_teams_projects(tmp_path):
+    import asyncio
+    client, services = project_asking_github(tmp_path, nodes_v1=True)
+    try:
+        assert rows(services, "SELECT status FROM approvals")[0]["status"] == "open"
+        async def switch():
+            return services.send_setting("sales", {"decide_for_me": True})
+        asyncio.run(switch())
+        assert rows(services, "SELECT status, decided_by FROM approvals")[0]["decided_by"] == "rule:decide_for_me" and rows(services, "SELECT decide_for_me FROM projects")[0]["decide_for_me"] == 1
+    finally:
+        client.__exit__(None, None, None)
