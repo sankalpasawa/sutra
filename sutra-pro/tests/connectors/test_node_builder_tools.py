@@ -86,8 +86,8 @@ def test_a_step_with_the_default_grant_is_started_with_reads_and_writes_in_its_o
 
 
 def test_an_ordinary_call_keeps_the_whole_list(fake, tmp_path, folders):
-    """No node in the tag: byte for byte what J2 asked for, with a router that has rights set and one that has none."""
-    for rights in (NodeRights((0, 1), "none"), None):
+    """No node in the tag and a router that was not made for a node: byte for byte what J2 asked for."""
+    for rights in (None,):
         fake.sequence("ok_plain").reply(text="built")
         router = rig(fake, tmp_path, rights)
         try:
@@ -178,3 +178,36 @@ def test_a_codex_step_with_a_read_folder_runs_in_the_read_only_sandbox(fake, tmp
     CodexConnector(cfg, sandbox="read-only").call_text("look", folder=Folder(str(work), edit=False))
     argv = fake.model_calls("codex")[-1]["argv"]
     assert value(argv, "-s") == "read-only" and "workspace-write" not in argv and "danger-full-access" not in " ".join(argv)
+
+
+# ---- the whole way: the node block of task.json, the port spec, the router, the command line (D387, m1) -----------------------------------
+
+def test_the_port_made_from_a_nodes_spec_narrows_every_builder_call_even_one_whose_tag_lost_the_node(fake, tmp_path, folders):
+    """`port_from_config` sets the router's rights from `PortSpec.node_tiers`: delete that line and this fails. The tag is not what the narrowing hangs on in a node's own process."""
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    fake.sequence("ok_plain").reply(text="built")
+    spec = PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(tmp_path / "data"), node_tiers=(0, 1, 4), node_commands="git_reads")
+    port = engine_port.port_from_config(spec, ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert port.router.node_rights == NodeRights((0, 1, 4), "git_reads")
+        port.complete(CompletionRequest(system="s", user="build it", tag=CallTag(function="W-1", role="builder"), run_tools=builder_grant(folders)))     # no node in the tag
+        argv = command_of(fake)
+    finally:
+        port.close()
+    assert value(argv, "--tools") == "Read,Write,Edit,Glob,Grep" and "Bash" not in value(argv, "--allowedTools")
+
+
+def test_the_port_of_an_ordinary_run_has_no_rights_and_keeps_the_whole_list(fake, tmp_path, folders):
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    fake.sequence("ok_plain").reply(text="built")
+    spec = PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(tmp_path / "data"))
+    port = engine_port.port_from_config(spec, ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert port.router.node_rights is None
+        port.complete(CompletionRequest(system="s", user="build it", tag=CallTag(function="W-1", role="builder"), run_tools=builder_grant(folders)))
+        argv = command_of(fake)
+    finally:
+        port.close()
+    assert value(argv, "--tools") == ",".join(FULL_TOOLS)

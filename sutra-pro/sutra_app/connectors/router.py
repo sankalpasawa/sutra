@@ -862,8 +862,8 @@ class Router:
     def tools_for(self, tag: Any, grant: Any, allowance: Any = None) -> Any:
         """The builder tools grant a call is planned with (D380). A call with no builder tools, or whose tag names no node, is returned as it came (the very same object): an ordinary run keeps
         J2's whole list. A call of a step of a project is taken down to what that step's frozen grant allows; with no rights known it is the narrowest list."""
-        if grant is None or not getattr(tag, "node_id", ""):
-            return grant
+        if grant is None or not (getattr(tag, "node_id", "") or self.node_rights is not None):
+            return grant                                        # a router made for a step's process (`node_rights` set from its task file) narrows even a call whose tag lost the node
         narrowed = narrow_tools(grant, self.node_rights or NARROWEST)
         left = getattr(allowance, "max_usd", None)
         if left is not None:                                     # D387: one builder call is bounded by what the step has left, not by the engine's $2 per call; none left: no program is started
