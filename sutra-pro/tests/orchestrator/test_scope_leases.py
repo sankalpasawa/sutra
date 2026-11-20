@@ -74,3 +74,18 @@ def test_a_node_that_cannot_write_is_never_held_by_a_lease(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "legal", [])], scope={"a1": ("site/",)})
     rig.start()
     assert tasks["a2"] in started(rig)
+
+
+def test_the_gate_reads_the_owners_folder_setting_once_in_a_moment_not_for_every_waiting_step(rig):             # PB-16
+    reads = []
+    original = rig.projects._folder_of
+
+    def counting():
+        reads.append(1)
+        return original()
+    rig.projects._folder_of = counting
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", []), ("a3", "ops", [])], scope={"a1": ("site/",), "a2": ("docs/",), "a3": ("tests/",)})
+    conn = rig.t.db.conn()
+    for ref in ("a1", "a2", "a3", "a1", "a2"):
+        rig.projects.gate(conn, 1793786400, rig.t.row(tasks[ref]))
+    assert len(reads) == 1

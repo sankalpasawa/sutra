@@ -177,9 +177,11 @@ def test_a_node_that_fails_still_leaves_what_it_did_and_an_attempt_leaves_only_i
 def test_a_node_ended_before_the_file_could_be_read_ahead_is_read_at_its_end(rig):
     reservation, tasks = started(rig)
     write_tools(rig, tasks["a1"], [("Grep", "search", "")])
-    rig.projects.conductor._tools.pop(tasks["a1"], None)                                     # nothing was read ahead (a restart, or a task that ended at once)
+    rig.projects.conductor.prepare_tools = lambda task_id: None                              # nothing was read ahead (a restart, or a task that ended at once)
     rig.finish(tasks["a1"], files={"out.md": "done"})
-    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"]
+    assert rig.audit("tool.used") == [] and len(rig.projects.conductor._owed_tools) == 1     # no file is read inside the transaction (PB-16)
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))                                         # the next tick reads it outside any transaction and writes the rows
+    assert [r["target"] for r in rig.audit("tool.used")] == ["Grep"] and rig.projects.conductor._owed_tools == []
 
 
 def test_many_different_tools_are_capped_and_the_rest_are_counted(rig):

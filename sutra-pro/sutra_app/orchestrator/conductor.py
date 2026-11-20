@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,9 @@ def _covers_path(scope: tuple[str, ...], path: str) -> bool:
     return any(low == entry.rstrip("/").casefold() or low.startswith(entry.rstrip("/").casefold() + "/") for entry in scope)
 
 
+FOLDER_TTL_S = 2.0
+
+
 def caps_of(project: Any) -> dict[str, Any]:
     return json.loads(project["caps_json"] or "{}")
 
@@ -65,6 +69,8 @@ class Conductor:
         self._ticker: Any = None
         self._stop_tasks: list[str] = []                                           # tasks of nodes that were failed closed and are still alive: the next tick stops them (M3)
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
+        self._folder_seen: tuple[Any, float, Any] | None = None                    # (the lookup, when it was read, the folder): see `_folder`
+        self._owed_tools: list[tuple[str, str, str, str, str]] = []               # (node, project, role, task, run) whose tool log was not read ahead: written as audit rows by the next tick, outside any transaction (PB-16)
         self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
@@ -164,6 +170,18 @@ class Conductor:
         dept = next((s.get("dept") for s in plan if s.get("ref") == row["plan_ref"]), "")
         return () if dept and self.service._output_name(dept) == "auto" else None
 
+    def _folder(self) -> Any:
+        """The owner's working folder for the lease check, read from the settings file at most once in `FOLDER_TTL_S` seconds (PB-16: the gate runs inside the start transaction and must not read a
+        file for every waiting step). A replaced lookup (a test, a new wiring) is read at once."""
+        look = self.service._folder_of
+        now = time.monotonic()
+        cached = self._folder_seen
+        if cached is not None and cached[0] is look and now - cached[1] < FOLDER_TTL_S:
+            return cached[2]
+        found = look()
+        self._folder_seen = (look, now, found)
+        return found
+
     def _lease_conflict(self, conn: sqlite3.Connection, node_id: str) -> str:
         """A waiting sentence when another writer that is alive holds a part of the folder that overlaps this node's, else "". The leases are the rows of `agent_nodes` (their `writes_json`), so they
         survive a restart and are read in the transaction that starts the node. A folder that is not a git repository cannot say who changed what: writers run one at a time (D260)."""
@@ -171,8 +189,8 @@ class Conductor:
         mine = self._lease_of(conn, mine_row) if mine_row is not None else None
         if mine is None:
             return ""
-        folder = self.service._folder_of()
-        serial = bool(folder) and not (Path(folder) / ".git").exists()
+        folder = self._folder()
+        serial = bool(folder) and not (Path(folder) / ".git").exists()           # one stat, no read
         for other in conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id <> ? AND state IN ('leased','running','handing_off','expired')", (node_id,)).fetchall():
             theirs = self._lease_of(conn, other)
             if theirs is not None and (serial or scopes_overlap(mine, theirs)):
@@ -341,24 +359,37 @@ class Conductor:
 
     def _audit_tools(self, tx: Tx, node: sqlite3.Row) -> None:
         """MAN-14, D327: at a node's end its tool calls become audit rows: one for each different tool, with its kind, the base name of a file and how many times. Names and kinds only, never an
-        input (the log holds none). The lines read ahead (`prepare_tools`) are used; when none were (the node ended before it could be read, or the server restarted) the file is read here: it is
-        small and has a hard limit. At most MAX_KINDS rows; the calls of the kinds that did not fit are counted in one last row. Nothing at all for a node that made no tool call."""
+        input (the log holds none). The lines read ahead (`prepare_tools`) are used; when none were (the node ended before it could be read, or the server restarted) the next tick reads the file
+        outside the transaction and writes the rows (`_pay_tools`). At most MAX_KINDS rows; the calls of the kinds that did not fit are counted in one last row. Nothing at all for a node that made no tool call."""
         task_id = node["task_id"] or ""
         ahead = self._tools.pop(task_id, None)
         rows = ahead[1] if ahead is not None else None
         if rows is None and task_id and self.tasks is not None:
-            try:
-                row = self.tasks.store.row_in(tx.conn, task_id)
-                rows = read_log(log_path(self.settings.data_dir, row.run_id)) if row is not None and row.run_id is not None else []
-            except Exception:                                                # noqa: BLE001  (a tool log that cannot be read is no rows, never a node that cannot end)
-                rows = []
-        groups, left_out = summarize(rows or [])
+            row = self.tasks.store.row_in(tx.conn, task_id)
+            if row is not None and row.run_id is not None:                       # not read ahead (a restart, a task that ended at once): no file is read inside the transaction; the next tick writes the rows (PB-16)
+                self._owed_tools.append((node["id"], node["project_id"], node["role"], task_id, row.run_id))
+            return
+        self._tool_rows(tx, node["id"], node["project_id"], node["role"], task_id, rows or [])
+
+    def _tool_rows(self, tx: Tx, node_id: str, project_id: str, role: str, task_id: str, rows: list[dict[str, Any]]) -> None:
+        groups, left_out = summarize(rows)
         for name, kind, target, times in groups:
-            self.store.audit(tx, actor="node", action="tool.used", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", target=name,
+            self.store.audit(tx, actor="node", action="tool.used", project_id=project_id, node_id=node_id, role=role, decision="n/a", target=name,
                              reason=f"{kind}{' ' + target if target else ''}, {times} time{'s' if times != 1 else ''}", ref=task_id)
         if left_out:
-            self.store.audit(tx, actor="node", action="tool.used", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", target="more",
+            self.store.audit(tx, actor="node", action="tool.used", project_id=project_id, node_id=node_id, role=role, decision="n/a", target="more",
                              reason=f"{left_out} more calls of other tools", ref=task_id)
+
+    def _pay_tools(self) -> int:
+        """The tool rows of nodes whose log could not be read ahead (PB-16): the files are read here, outside any transaction, and the rows are written in one short one. Called by the tick."""
+        owed, self._owed_tools = self._owed_tools, []
+        if not owed:
+            return 0
+        read = [(*item, read_log(log_path(self.settings.data_dir, item[4]))) for item in owed]
+        with self.db.tx() as tx:
+            for node_id, project_id, role, task_id, _run, rows in read:
+                self._tool_rows(tx, node_id, project_id, role, task_id, rows)
+        return len(read)
 
     @staticmethod
     def _stamp(run_dir: Any, name: str = HANDOFF_FILE) -> tuple[int, int, int] | None:
@@ -613,6 +644,11 @@ class Conductor:
         began = int(self._clock.now())
         moment = int(now) if now is not None else began
         gap = 0 if self._last_tick is None else moment - self._last_tick
+        if self._owed_tools:
+            try:
+                await run_blocking(self._pay_tools)                                     # outside any transaction of the tick's own (PB-16)
+            except Exception:                                                           # noqa: BLE001
+                log.exception("could not write the tool rows of nodes that ended")
         try:
             return await self._tick(moment, gap)
         finally:
