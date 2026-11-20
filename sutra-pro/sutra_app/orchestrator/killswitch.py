@@ -371,9 +371,12 @@ class NodeControl:
     def spawn_guard(self, conn: Any, row: Any) -> str:
         """`TaskService.spawn_guard`, asked just before a process is started and just after: the outcome sentence when this task is a node and the KILL file is there, else "". A start
         that was decided before the kill (the task is `starting` already) is abandoned here, or stopped right after it began (M1)."""
-        if not self.switch.killed:
+        node = conn.execute("SELECT state FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone()
+        if node is None:
             return ""
-        return KILL_OUTCOME if conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None else ""
+        if node["state"] in ("failed", "cancelled"):                  # the node was ended before its process began (the state machine failed closed, a no, a stop): nothing may start (M3)
+            return "stopped: this step was ended before it started"
+        return KILL_OUTCOME if self.switch.killed else ""
 
     def start_watching(self, interval: float = WATCH_S) -> None:
         """Look for a KILL file made by hand every `interval` seconds, on the running loop. Idempotent."""

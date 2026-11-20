@@ -54,6 +54,7 @@ class Conductor:
         self._last_tick: int | None = None
         self._extended: dict[str, int] = {}                                       # node id -> the moment its lease was extended (once) for a sleeping computer
         self._ticker: Any = None
+        self._stop_tasks: list[str] = []                                           # tasks of nodes that were failed closed and are still alive: the next tick stops them (M3)
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
 
     # what the Conductor shares with the service (read live: the wiring sets some of them after the service is built)
@@ -161,6 +162,7 @@ class Conductor:
                 self.store.audit(tx, actor="conductor", action="node.error", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=NODE_ERROR_WHY,
                                  ref=task_id)
                 tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
+                self._stop_its_task(tx, task_id)
         except Exception:                                                    # noqa: BLE001
             log.exception("could not end the node of task %s", task_id)
             return
@@ -170,6 +172,17 @@ class Conductor:
                     step(tx, task_id)
             except Exception:                                                # noqa: BLE001  (the next tick looks at the project again)
                 log.exception("could not settle the project after the node of task %s", task_id)
+
+    def _stop_its_task(self, tx: Tx, task_id: str) -> None:
+        """A node ended by the contained-error path must not leave its task alive (M3): a queued or blocked task is cancelled here; a live one (`starting`, `running`, `waiting_user`) is queued for the
+        stop ladder, which the next tick runs (a process that has not begun is refused by `spawn_guard`)."""
+        status = tx.conn.execute("SELECT status FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if status is None or self.tasks is None:
+            return
+        if status["status"] in ("queued", "blocked"):
+            self.tasks.cancel_in(tx, task_id, "stopped: following this step failed")
+        elif status["status"] in ("starting", "running", "waiting_user"):
+            self._stop_tasks.append(task_id)
 
     def _cancel_dependants_of(self, tx: Tx, task_id: str) -> None:
         node = tx.conn.execute("SELECT * FROM agent_nodes WHERE task_id = ?", (task_id,)).fetchone()
@@ -417,6 +430,9 @@ class Conductor:
         did = await run_blocking(self._tick_sync, moment, gap)
         if did["expire"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, f"no sign of life for {did['lease']} s", by="system") for task_id in did["expire"]), return_exceptions=True)
+        stuck, self._stop_tasks = self._stop_tasks, []
+        if stuck:
+            await asyncio.gather(*(self.tasks.stop_node(task_id, "stopped: following this step failed", by="system") for task_id in stuck), return_exceptions=True)
         if did["scrub"]:
             await asyncio.gather(*(self.tasks.stop_node(task_id, "stopped: its prompts held secrets again and again", by="system") for task_id in did["scrub"]), return_exceptions=True)
         for project_id, reason in did["refuse"]:

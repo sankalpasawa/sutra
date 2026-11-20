@@ -136,3 +136,30 @@ def test_a_hand_off_that_changed_after_it_was_prepared_is_read_again_inside(rig)
     handoff_file.write(run_dir, handoff_file.build(run_dir, node(rig, "a1")["id"], "done", "second and longer"))
     rig.finish(tasks["a1"], handoff=False)
     assert json.loads((run_dir / "handoff.accepted.json").read_text())["handoff"]["summary"] == "second and longer"
+
+
+# ---- the contained error also stops the task (M3) ------------------------------------------------------------------------------------------
+
+def test_a_node_failed_closed_while_its_task_is_starting_leaves_no_process_behind(rig, monkeypatch):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    real = rig.projects.conductor._sync_task
+
+    def break_on_start(tx, task_id):
+        if task_id == tasks["a1"] and rig.t.row(task_id).status == "starting":
+            raise RuntimeError("the state machine broke while the task was starting")
+        return real(tx, task_id)
+    monkeypatch.setattr(rig.projects.conductor, "_sync_task", break_on_start)
+    rig.start()
+    assert node(rig, "a1")["state"] == "failed"
+    assert tasks["a1"] not in {s.task_id for s, *_ in rig.t.launcher.started}                      # the guard refused the start: no process began
+    assert rig.t.status(tasks["a1"]) == "stopped"
+    assert tasks["a2"] in {s.task_id for s, *_ in rig.t.launcher.started}                          # the other step was not touched
+
+
+def test_a_node_failed_closed_while_its_task_runs_has_that_task_stopped_by_the_next_tick(rig):
+    reservation, tasks = two(rig)                                                                   # a1 runs
+    with rig.t.db.tx() as tx:
+        rig.projects.conductor._fail_closed(tx, tasks["a1"])
+    assert node(rig, "a1")["state"] == "failed" and rig.projects.conductor._stop_tasks == [tasks["a1"]] and rig.t.status(tasks["a1"]) == "running"
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))
+    assert rig.t.status(tasks["a1"]) == "stopped" and rig.projects.conductor._stop_tasks == [] and rig.t.launcher.stopped
