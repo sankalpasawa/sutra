@@ -148,3 +148,19 @@ def test_with_the_switch_on_the_routes_answer_a_write_needs_the_token_and_a_bad_
         assert client.get("/api/projects/prj_000000000001/summary").status_code == 404                                       # needs the nodes too
     finally:
         client.__exit__(None, None, None)
+
+
+def test_the_work_page_exists_only_with_the_switch_on_and_every_file_it_names_is_served(tmp_path):
+    import re
+    off, _c = make_app(tmp_path / "off")
+    with TestClient(off, base_url=BASE) as client:
+        assert client.get("/work").status_code == 404
+        home = client.get("/")
+        assert "/work" not in home.text and "work_page" not in home.text
+    on, _c = make_app(tmp_path / "on", work_v1=True)
+    with TestClient(on, base_url=BASE) as client:
+        page = client.get("/work")
+        assert page.status_code == 200 and 'id="work-root"' in page.text and '"page":"work"' in page.text and "<!--SUTRA-BOOT-->" not in page.text
+        assert client.head("/work").status_code == 200
+        for name in re.findall(r'(?:src|href)="(/ui/[^"]+)"', page.text):
+            assert client.get(name).status_code == 200, name

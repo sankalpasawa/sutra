@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Work - Sutra</title>
+<link rel="stylesheet" href="/ui/css/j2-shell.css">
+<link rel="stylesheet" href="/ui/css/sutra-panel.css"><link rel="stylesheet" href="/ui/css/sutra-console.css"><link rel="stylesheet" href="/ui/css/sutra-project.css"><link rel="stylesheet" href="/ui/css/sutra-work.css">
+<!--SUTRA-BOOT-->
+<script src="/ui/js/sutra_ctx.js"></script>
+<script>/* the viewer's Appearance before the first paint (Home's Settings sets it): light, dark or system; dark by default; one choice for every page */
+try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset.theme = tp === "light" ? "light" : tp === "system" && matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }</script>
+</head>
+<body class="console project work">
+<!-- Everything Sutra did, in one list: find it by words or by a tag you put on it, and ask a finished project how it went. This page exists only while SUTRA_WORK_V1 is on (the server answers 404
+     otherwise). It holds no data of its own: work_page.js fills it from /api/work. -->
+<header class="shead"><a class="ghost" href="/">&larr; Home</a><b id="stitle">Work</b><span class="meta" id="w-state" role="status"></span><span class="spacer"></span></header>
+<main class="cmain" id="work-root">
+  <section class="cpanel" id="w-filters" aria-label="Find work"></section>
+  <section class="cpanel" id="w-list" aria-label="Your work" aria-live="polite"><p class="cempty">Loading&hellip;</p></section>
+</main>
+<script src="/ui/js/work_view.js"></script>
+<script src="/ui/js/work_page.js"></script>
+</body>
+</html>

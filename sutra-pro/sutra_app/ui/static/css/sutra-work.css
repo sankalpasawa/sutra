@@ -1,0 +1,17 @@
+/* sutra-work.css - the Work page at /work (DV-2). Loaded after sutra-console.css and sutra-project.css, whose panels, notes, lists and buttons it reuses. Only J2's tokens. */
+.wfind { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wfind input, .wfind select { border: 1px solid var(--line); background: var(--panel2); color: var(--ink); border-radius: 8px; padding: 6px 10px; font: inherit; min-width: 0; }
+.wfind input[type="search"] { flex: 1 1 14em; }
+.wtags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.wtag { border: 1px solid var(--line); background: var(--panel2); color: var(--ink); border-radius: 999px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; }
+.wtag[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 20%, var(--panel2)); font-weight: 600; }
+.witem { display: grid; gap: 4px; }
+.witem .wtop { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.witem .wkind { font: 600 11px var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.witem a { color: var(--accent); overflow-wrap: anywhere; }
+.wedit { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.wedit input { border: 1px solid var(--line); background: var(--panel2); color: var(--ink); border-radius: 8px; padding: 4px 8px; font: inherit; min-width: 10em; }
+.wsum { margin: 6px 0 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); font-size: 13.5px; }
+.wsum p { margin: 2px 0; }
+.work button:focus-visible, .work input:focus-visible, .work select:focus-visible, .work a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.work .witem button { border: 1px solid var(--line); background: var(--panel2); color: var(--ink); border-radius: 8px; padding: 4px 10px; cursor: pointer; }

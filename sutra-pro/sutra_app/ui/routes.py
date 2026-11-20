@@ -52,6 +52,8 @@ DEPT_PAGE = "j2_ui.html"
 CONSOLE_PAGE = "console.html"
 PROJECT_PAGE = "project.html"           # MAN-13: the page of one multi-agent project; served only while SUTRA_NODES_V1 is on
 PROJECT_ID = re.compile(r"prj_[0-9a-f]{12}")
+WORK_PAGE = "work.html"                 # Devin parity DV-2: the Work page; served only while SUTRA_WORK_V1 is on
+RECIPES_PAGE = "recipes.html"           # Devin parity DV-3: Recipes; served only while SUTRA_RECIPES_V1 is on
 APP_NAME = "Sutra Pro"
 STATIC_URL = "/ui"
 
@@ -277,6 +279,22 @@ def build_project_router(*, token: str, version: str, project: Callable[[str], b
 
     router = APIRouter()
     router.add_api_route("/p/{project_id}", project_page, methods=["GET", "HEAD"], response_model=None, include_in_schema=False, name="ui_project")
+    return router
+
+
+def build_simple_page_router(*, token: str, version: str, page: str, path: str, name: str, pages_dir: Path = PAGES_DIR) -> APIRouter:
+    """A router with ONE page, `path`, of its own (the Work page, the Recipes page): mounted by `ui` only while its switch is on, so with the switch off the route does not exist and no other page
+    changes. `page` is the file under `pages/` and also the boot context's page name (the file name without `.html`)."""
+    kind = page[:-5]
+    BootContext(page=kind, token=token, version=version)
+    pages = Path(pages_dir)
+    cache = _PageCache()
+
+    def serve_it() -> Response:
+        return _serve(cache, pages, page, BootContext(page=kind, token=token, version=version))
+
+    router = APIRouter()
+    router.add_api_route(path, serve_it, methods=["GET", "HEAD"], response_model=None, include_in_schema=False, name=name)
     return router
 
 
