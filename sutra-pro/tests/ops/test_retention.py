@@ -319,8 +319,8 @@ def test_the_tool_log_of_an_old_finished_run_goes_with_the_run_and_a_young_or_op
         logs[name] = path
     stray = log_path(folder.root, "j2-2026-9999")                                                              # a log of a run the database does not list: never touched
     stray.write_text("x")
-    code, out = prune(folder, capsys=capsys)
-    assert code == 0 and "j2-2026-0001.jsonl" in out and logs["old"].exists()                                            # a dry run removes nothing
+    code, out = prune(folder, "--json", capsys=capsys)
+    assert code == 0 and [c["path"] for c in json.loads(out)["candidates"] if c["what"] == "tool log"] == [str(logs["old"])] and logs["old"].exists()      # a dry run lists it and removes nothing
     code, out = prune(folder, "--yes", capsys=capsys)
     assert code == 0
     assert not logs["old"].exists() and logs["young"].exists() and logs["open"].exists() and stray.exists()
