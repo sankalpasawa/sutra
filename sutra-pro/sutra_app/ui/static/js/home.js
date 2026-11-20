@@ -495,13 +495,16 @@
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
   const providersOf = () => (S.pillData ? S.pillData.providers : []);
   const askBlocked = () => (directOn() && S.pillData ? root.ChatComposer.askBlock(providersOf()) : "");
+  // Ask (DV-1): the server says so in the pill (`ask`, only with SUTRA_ASK_V1 on). Without it the switch is never drawn and the bar is what it was.
+  const askExists = () => !!(S.pillData && S.pillData.ask === true);
 
   function renderBar() {
     const c = composer();
     const bar = $("sbar");
     if (!c || !bar) return;
     const CC = root.ChatComposer;
-    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
+    c.enableAsk(askExists());
+    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}, ask: askExists()});
     ctx.paint(bar, html);
     bar.hidden = html === "";
     if (liveOn()) $("sstream").hidden = true;                                       // the reply is a node of the transcript now (renderLive)
@@ -539,6 +542,17 @@
     if (!out.ok) return false;
     S.own = true;
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+    return true;
+  }
+
+  // "Turn this into work" on a sources card (DV-1): the request is DRAFTED in the box, with Send pointing at "Plan with Sutra"; the owner edits it and presses Send. Nothing is sent here.
+  function askToWork(draft) {
+    const c = composer();
+    const box = $("sbox");
+    if (!c || !box || box.disabled) return false;
+    root.ChatComposer.fillBox(box, c.draft(draft));
+    renderBar();
+    renderComposer();
     return true;
   }
 
@@ -722,6 +736,8 @@
       retryDirect(b.dataset.turn);
     } else if (act === "composer-stop") {
       stopDirect();
+    } else if (act === "ask-to-work") {
+      askToWork(b.dataset.draft || "");
     } else if (act === "copy-reply" || act === "copy-code") {
       if (root.ChatLiveView) root.ChatLiveView.copy(b, {fallback: copyFallback});
     }
@@ -1830,6 +1846,7 @@
       const c = composer();
       if (!b || !c) return;
       if (b.dataset.act === "composer-mode") c.setMode(b.dataset.mode);
+      else if (b.dataset.act === "composer-ask") c.setAsk(b.dataset.ask);
       else if (b.dataset.act === "composer-attach") { const input = $("sbar").querySelector(".ccinput"); if (input) input.click(); }
       else if (b.dataset.act === "composer-remove") c.removeFile(b.dataset.key);
     });
