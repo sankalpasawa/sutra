@@ -358,6 +358,10 @@ class ProjectService:
             return False
         return bool(await run_blocking(self.stop_planners, request_id))
 
+    def exists(self, project_id: str) -> bool:
+        """Whether there is a project with this id (the project page answers 404 for one that is not)."""
+        return self._project_row(project_id) is not None
+
     def _project_row(self, project_id: str) -> sqlite3.Row | None:
         return self.db.conn().execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
 

@@ -233,6 +233,8 @@ def create_app(settings: Settings | None = None, *, connector: Any = None, launc
         app.include_router(module.build_router())
     app.state.ops_api = _mount_ops_api(app)
     app.state.plugins = {name: _mount_plugin(app, services, name) for name in PLUGINS}
+    if services.settings.nodes_v1 and getattr(services, "projects", None) is not None and app.state.plugins.get("sutra_app.ui"):
+        importlib.import_module("sutra_app.ui").mount_project_page(app, services)      # the project page exists only with the feature on (MAN-13, D326)
     inner = app.build_middleware_stack
     app.build_middleware_stack = lambda: logsetup.RequestIdMiddleware(inner())       # outermost: the Host guard's 400 and a 500 carry the id too
     return app

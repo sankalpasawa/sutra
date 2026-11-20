@@ -1,7 +1,7 @@
 """The page routes, the static mount and the headers the pages carry.
 
 `sutra_app.ui` is the only server of HTML and static files (D72); the engine and the orchestrator answer no page.
-Three pages share one look: Home at `/`, the owner console at `/console` (usage and cost, the Atom log, health; GAP-CONSOLE) and the
+Three pages share one look (a fourth, the project page of the multi-agent nodes at `/p/{id}`, MAN-13, exists only while SUTRA_NODES_V1 is on): Home at `/`, the owner console at `/console` (usage and cost, the Atom log, health; GAP-CONSOLE) and the
 copied J2 page for one department at `/d/{dept}/`. The shared template library is a page of the team too, `/d/{dept}/library`: the same
 page file, the same boot block and the same policy (D141); the library behind it is one global store, and the team in the path only gives
 the page its shell (rail, token, node panel). A page is a file under `pages/` with one boot marker; `render_page` fills it per
@@ -17,6 +17,7 @@ import html as html_lib
 import inspect
 import logging
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +50,8 @@ STATIC_DIR = UI_DIR / "static"  # css/, js/, vendor/
 HOME_PAGE = "home.html"
 DEPT_PAGE = "j2_ui.html"
 CONSOLE_PAGE = "console.html"
+PROJECT_PAGE = "project.html"           # MAN-13: the page of one multi-agent project; served only while SUTRA_NODES_V1 is on
+PROJECT_ID = re.compile(r"prj_[0-9a-f]{12}")
 APP_NAME = "Sutra Pro"
 STATIC_URL = "/ui"
 
@@ -249,6 +252,34 @@ def _unavailable(name: str) -> Response:
     )
 
 
+def _serve(cache: "_PageCache", pages: Path, name: str, boot: BootContext) -> Response:
+    """One page file, filled with its boot block, under the policy built from that file."""
+    try:
+        page = cache.get(pages / name)
+        html = render_page(page.html, boot)
+    except (OSError, UnicodeDecodeError, BootMarkerError) as exc:
+        log.error("page %s cannot be served: %s", name, exc)
+        return _unavailable(name)
+    return _html(html, page.csp)
+
+
+def build_project_router(*, token: str, version: str, project: Callable[[str], bool], pages_dir: Path = PAGES_DIR) -> APIRouter:
+    """The one route of the project page, `/p/{project_id}` (MAN-13, D326). It is a router of its own, mounted by `ui.mount_project_page` only while SUTRA_NODES_V1 is on, so with the flag off
+    the route does not exist and no other page changes. `project` says whether a project with that id exists; anything else answers 404."""
+    BootContext(page="project", token=token, version=version)
+    pages = Path(pages_dir)
+    cache = _PageCache()
+
+    def project_page(project_id: str) -> Response:
+        if PROJECT_ID.fullmatch(project_id) is None or not project(project_id):
+            raise StarletteHTTPException(status_code=404)
+        return _serve(cache, pages, PROJECT_PAGE, BootContext(page="project", token=token, version=version))
+
+    router = APIRouter()
+    router.add_api_route("/p/{project_id}", project_page, methods=["GET", "HEAD"], response_model=None, include_in_schema=False, name="ui_project")
+    return router
+
+
 def build_router(
     *,
     token: str,
@@ -263,13 +294,7 @@ def build_router(
     cache = _PageCache()
 
     def serve(name: str, boot: BootContext) -> Response:
-        try:
-            page = cache.get(pages / name)
-            html = render_page(page.html, boot)
-        except (OSError, UnicodeDecodeError, BootMarkerError) as exc:
-            log.error("page %s cannot be served: %s", name, exc)
-            return _unavailable(name)
-        return _html(html, page.csp)
+        return _serve(cache, pages, name, boot)
 
     def known_dept(raw: str) -> str | None:
         """`raw` when it passes the id rule and `Services.department` knows it, else None."""

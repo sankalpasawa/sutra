@@ -213,6 +213,11 @@
   // A question of a multi-agent project (D317, a `node_approval` card): what is asked in plain words and its answers as buttons. A button posts to the project's answer route
   // (`allow_once`, `allow_project`, `deny`) or, for a permission of the computer, to its check or skip route (`check_again`, `skip`). An answered or ended card reads "Answered".
   const NODE_ANSWER_WORDS = freeze({allow_once: "Allow once", allow_project: "Allow for this project", deny: "No", check_again: "Check again", skip: "Skip"});
+  // MAN-13: the way to the project's own page, where everything about it is. Only for an id of the project shape, so a hostile word is never a link.
+  function projectLink(id) {
+    const project = clean(id);
+    return /^prj_[0-9a-f]{12}$/.test(project) ? '<p class="plinkrow"><a class="plink" href="/p/' + esc(project) + '">Open the project</a></p>' : "";
+  }
   function nodeApprovalCard(c, ctx) {
     const done = ctx.answered === true || clean(ctx.answer) !== "";
     const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
@@ -220,7 +225,7 @@
       esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(NODE_ANSWER_WORDS[o]) + "</button>").join("");
     return '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '"' +
       (done ? ' data-answered="true"' : "") + '><p class="sq">' + safeText(clean(c.question)) + "</p>" +
-      (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + "</div>";
+      (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + projectLink(c.project_id) + "</div>";
   }
 
   // The team's Identity question, as it said it. The answer goes to the DEPARTMENT's session (data-session, from ctx.deptSession), never to the org chat.

@@ -45,3 +45,10 @@ test("an org-chat card message is answered when the server says so (it points at
   const html = ChatView.transcript({kind: "org", writable: true}, messages, {answers: ChatView.answersOf(messages, {})});
   assert.match(html, /data-answered="true"/);
 });
+
+test("the card links to the project's own page, and only for an id of the project's shape", () => {
+  assert.ok(ChatView.card(card()).includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  const hostile = ChatView.card(card({project_id: '"><script>x</script>'}));
+  assert.equal(hostile.includes("<script"), false);
+  assert.equal(hostile.includes("/p/"), false);
+});

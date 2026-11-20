@@ -51,7 +51,7 @@ class BootContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True, hide_input_in_errors=True)
 
-    page: Literal["home", "dept", "console"]
+    page: Literal["home", "dept", "console", "project"]
     token: str = Field(min_length=TOKEN_MIN_LENGTH)
     dept: str = ""
     dept_label: str = ""  # the department's name (row.name); the Simple view's title
@@ -61,7 +61,7 @@ class BootContext(BaseModel):
 
     @model_validator(mode="after")
     def _check_page(self) -> "BootContext":
-        if self.page in ("home", "console"):
+        if self.page in ("home", "console", "project"):
             if self.dept:
                 raise ValueError(f"the {self.page} page belongs to no department: dept must be empty")
         else:
