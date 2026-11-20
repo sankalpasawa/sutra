@@ -7,6 +7,7 @@ narrowest list, never the widest.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from sutra_app.engine.port import ToolGrant
@@ -17,11 +18,22 @@ from sutra_app.orchestrator.builder_rights import (
 __all__ = ["NodeRights", "READ_TOOLS", "WRITE_TOOLS", "NARROWEST", "allowed_tools", "narrow", "words"]
 
 
-def _confined(cwd: str) -> list[str]:
-    """Permission rules that let the file tools write only below `cwd`: the absolute form (`//` + the path from the root) and the one relative to the working folder."""
-    posix = Path(cwd).as_posix()
-    absolute = "/" + posix if posix.startswith("/") else "//" + posix
-    return [f"Edit({absolute}/**)", "Edit(./**)"]
+_GLOB_OR_SYNTAX = re.compile(r"([\\*?\[\]()])")
+_DRIVE = re.compile(r"^([A-Za-z]):(?:/|$)")
+
+
+def confined_rules(path: str) -> list[str]:
+    """Permission rules that let the file tools write only below `path` (D387, m2). `Edit(./**)` is the one that confines: it is relative to the call's working folder, which is this folder, and it
+    needs no spelling of a path. The absolute rule is a second line and is only as good as its spelling: the program's form is `//<path from the root>`; a Windows path `C:\\a\\b` is `//c/a/b`; a character
+    that is part of a rule's own syntax (`* ? [ ] ( )` and the backslash) in the folder's name is escaped, so a folder called `(work)` is not read as a pattern."""
+    slashed = path.replace("\\", "/") if _DRIVE.match(path.replace("\\", "/")) else Path(path).as_posix()
+    drive = _DRIVE.match(slashed)
+    if drive:
+        absolute = "//" + drive.group(1).lower() + slashed[2:]
+    else:
+        absolute = "/" + slashed if slashed.startswith("/") else "//" + slashed
+    escaped = _GLOB_OR_SYNTAX.sub(lambda m: "\\" + m.group(1), absolute)
+    return [f"Edit({escaped.rstrip('/')}/**)", "Edit(./**)"]
 
 
 def narrow(grant: ToolGrant, rights: NodeRights) -> ToolGrant:
@@ -40,5 +52,5 @@ def narrow(grant: ToolGrant, rights: NodeRights) -> ToolGrant:
         if name not in WRITE_TOOLS and name not in rules and not any(r.split("(", 1)[0].strip() == name for r in rules):
             rules.append(name)
     if writes:
-        rules.extend(_confined(grant.cwd))
+        rules.extend(confined_rules(grant.cwd))
     return grant.model_copy(update={"tools": tools, "allow": tuple(rules)})

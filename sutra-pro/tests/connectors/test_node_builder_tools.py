@@ -211,3 +211,30 @@ def test_the_port_of_an_ordinary_run_has_no_rights_and_keeps_the_whole_list(fake
     finally:
         port.close()
     assert value(argv, "--tools") == ",".join(FULL_TOOLS)
+
+
+# ---- the spelling of the confining rule (D387, m2) -----------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("path, absolute", [
+    ("/private/tmp/x/out", "Edit(//private/tmp/x/out/**)"),
+    ("/Users/A (work)/data[1]/out", "Edit(//Users/A \\(work\\)/data\\[1\\]/out/**)"),         # a folder called (work) or [1] is not a pattern
+    ("/srv/a*b?/out", "Edit(//srv/a\\*b\\?/out/**)"),
+    ("C:\\Users\\Me\\data\\out", "Edit(//c/Users/Me/data/out/**)"),                           # the Windows spelling of the program: //c/...
+    ("C:/Users/Me/out", "Edit(//c/Users/Me/out/**)"),
+])
+def test_the_absolute_rule_is_spelled_for_the_system_and_escapes_what_a_rule_reads_as_syntax(path, absolute):
+    assert node_tools.confined_rules(path) == [absolute, "Edit(./**)"], "the relative rule is the one that confines, and it is always there and always last"
+
+
+def test_a_folder_with_glob_characters_reaches_the_command_line_escaped(fake, tmp_path):
+    fake.sequence("ok_plain").reply(text="built")
+    out = os.path.realpath(tmp_path / "A (work)" / "run" / "out")
+    os.makedirs(out)
+    grant = ToolGrant(tools=FULL_TOOLS, allow=FULL_ALLOW, cwd=out, root=os.path.dirname(out), usd=0.5, log_chars=10)
+    router = rig(fake, tmp_path, NodeRights((0, 1), "none"))
+    try:
+        run(router, grant, NODE_TAG)
+        allowed = value(command_of(fake), "--allowedTools")
+    finally:
+        router.close()
+    assert allowed.endswith("Edit(./**)") and "Edit(//" in allowed and "A \\(work\\)" in allowed
