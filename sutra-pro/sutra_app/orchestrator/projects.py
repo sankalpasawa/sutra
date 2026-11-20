@@ -432,7 +432,7 @@ class ProjectService:
         if project is None or project["status"] in PROJECT_FINAL:
             return "ended"
         approvals = self.store.approvals(project_id)
-        if any(a.status == "expired" or (a.status == "denied" and not self._is_step_question(a)) for a in approvals):      # a no to the estimate, or a question that ran out, stops the project
+        if any((a.status == "expired" and not a.request.get("late")) or (a.status == "denied" and not self._is_step_question(a)) for a in approvals):      # a no to the estimate, or a question that ran out, stops the project
             self.conductor._refuse_in(tx, project_id, why)
             return "refused"
         for a in approvals:                                                          # a no to ONE step's question cancels only that step (D315 b)
@@ -496,14 +496,18 @@ class ProjectService:
         when nothing is left to ask, the project starts; a no stops it with "not approved". Returns the project's snapshot."""
         def work() -> str:
             with self.db.tx() as tx:
-                found = tx.conn.execute("SELECT 1 FROM approvals WHERE id = ? AND project_id = ?", (approval_id, project_id)).fetchone()
+                found = tx.conn.execute("SELECT request_json FROM approvals WHERE id = ? AND project_id = ?", (approval_id, project_id)).fetchone()
                 if found is None:
                     raise NotFound("that question")
+                if '"kind":"system"' in found["request_json"].replace(" ", ""):            # a question about the computer has its own two answers (m2)
+                    raise AppError("validation", "That question is about your computer. Use Check again or Skip")
                 row = self.store.decide(tx, approval_id, decision, decided_by="owner" if by == "owner" else "system")
                 if row.duplicate:
                     return "again"
-                self.store.audit(tx, actor="owner" if by == "owner" else "system", action="gate.decided", project_id=project_id, node_id=row.node_id or None, tier=row.tier,
-                                 decision="deny" if decision == "deny" else "allow", reason=f"decided_by {row.decided_by}: {decision}", ref=approval_id)
+                refused = decision == "deny" or row.status in ("denied", "expired")                  # an answer that came after the question ran out is a refusal, not an allow (m1)
+                self.store.audit(tx, actor="owner" if by == "owner" else "system", action="gate.refused" if row.status == "expired" else "gate.decided", project_id=project_id,
+                                 node_id=row.node_id or None, tier=row.tier, decision="deny" if refused else "allow",
+                                 reason=("the question had run out of time" if row.status == "expired" else f"decided_by {row.decided_by}: {decision}"), ref=approval_id)
                 return self._settle_answers(tx, project_id, why="not approved: you said no" if decision == "deny" else "not approved: a question was answered no")
         outcome = await run_blocking(work)
         if outcome == "running" and self.tasks is not None:
@@ -632,6 +636,9 @@ class ProjectService:
                 self.store.decide(tx, found.id, "allow_once", decided_by="owner")
                 self.store.audit(tx, actor="owner", action="system.cleared", project_id=project_id, tier=found.tier, decision="allow", reason=f"{item}: {label}"[:200], ref=found.id)
                 self._release_system_nodes(tx, project_id, list(found.request.get("nodes") or []))
+                if found.request.get("late"):                                          # P3 (D322 g): the step that the computer refused gets ONE fresh attempt that spends no retry
+                    for node_id in found.request.get("nodes") or []:
+                        self.conductor.restart_after_permission(tx, str(node_id))
                 return self._settle_answers(tx, project_id)
         outcome = await run_blocking(work)
         if outcome in ("running", "waiting", "ended") and not still and self.tasks is not None:

@@ -63,3 +63,69 @@ def test_check_again_on_a_late_card_really_probes_and_stays_open_while_the_folde
     adapter.blocked = False
     snapshot = rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
     assert snapshot["system_cards"] == [] and [r["action"] for r in rig.audit("system.cleared")] == ["system.cleared"]
+
+
+# ---- P3, m1, m2, m3 ---------------------------------------------------------------------------------------------------------------------
+
+def blocked_then_allowed(rig, tmp_path):
+    from sutra_app.syspermissions import MacAdapter, Need
+
+    class Switch(MacAdapter):
+        blocked = True
+
+        def probe(self, folder, *, write):
+            return [Need("files_folders", "write", "Desktop")] if self.blocked else []
+    rig.projects._folder_of = lambda: str(tmp_path)
+    rig.projects._adapter = adapter = Switch(home=tmp_path)
+    return adapter
+
+
+def test_after_the_late_card_clears_the_failed_step_gets_one_fresh_attempt_that_does_not_spend_its_retry(rig, tmp_path):
+    adapter = blocked_then_allowed(rig, tmp_path)
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    adapter.blocked = False
+    rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert node["attempt"] == 2 and node["state"] in ("queued", "leased") and [r["action"] for r in rig.audit("node.restarted")] == ["node.restarted"] and rig.audit("node.retry") == []
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], status="crashed", outcome="a real crash", handoff=False)                         # its own retry is still there
+    assert rig.sql("SELECT attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 3 and [r["action"] for r in rig.audit("node.retry")] == ["node.retry"]
+
+
+def test_the_late_restart_happens_once_for_each_node(rig, tmp_path):
+    adapter = blocked_then_allowed(rig, tmp_path)
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    adapter.blocked = False
+    rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
+    with rig.t.db.tx() as tx:
+        assert rig.projects.conductor.restart_after_permission(tx, rig.sql("SELECT id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]) is False
+
+
+def test_a_late_card_that_runs_out_or_meets_a_sleep_does_not_stop_the_healthy_steps(rig):
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE_NOW + 5)
+    rig.t.run(rig.projects.tick(now=BASE_NOW + 10))
+    done = rig.t.run(rig.projects.tick(now=BASE_NOW + 5000))                                                        # a sleep with the late card open
+    assert done["refused"] == [] and rig.project(reservation.project_id)["status"] == "running" and rig.node_states(tasks)["a2"] == "running"
+    rig.sql("UPDATE approvals SET expires_at = ?", BASE_NOW + 5001)
+    rig.sql("UPDATE tasks SET last_event_at = ?", BASE_NOW + 5990)
+    done = rig.t.run(rig.projects.tick(now=BASE_NOW + 6000))                                                        # and the 24 h end only ends the card
+    assert done["refused"] == [] and rig.node_states(tasks)["a3"] == "running" and rig.project(reservation.project_id)["status"] == "running"
+    assert rig.sql("SELECT status FROM approvals").fetchone()[0] == "expired"
+
+
+def test_the_generic_answer_route_refuses_a_permission_question_and_points_to_check_and_skip(rig, tmp_path):
+    from sutra_app.orchestrator.errors import AppError
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    [asked] = [a for a in rig.store.approvals(reservation.project_id, status="open")]
+    with pytest.raises(AppError) as error:
+        rig.t.run(rig.projects.answer(reservation.project_id, asked.id, "allow_once"))
+    assert error.value.code == "validation" and "Check again or Skip" in str(error.value) and rig.store.get_approval(asked.id).status == "open"
+
+
+BASE_NOW = 1793786400

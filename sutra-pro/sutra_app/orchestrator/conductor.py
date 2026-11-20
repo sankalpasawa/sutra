@@ -37,6 +37,7 @@ APP_CLOSED = "the app was closed"
 APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
+PERMISSION_RESTART = "the computer allowed it, so the step starts again"
 NEEDS_SYSTEM_PERMISSION = "needs_system_permission"           # why a node ended when the computer refused a file (MAN-15)
 CAP_PHRASES = ("used up its model calls", "used up its dollars", "ran out of time")      # what the engine host writes (`llm.CAP_WORDS`)
 CAP_REACHED = "stopped: this step "                       # + "used up its model calls" / "used up its dollars" / "ran out of time"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
@@ -436,13 +437,16 @@ class Conductor:
                 lease_s = int(json.loads(project["caps_json"] or "{}").get("lease_s") or lease_default)
                 slept = gap > lease_s // 2
                 ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
+                if any(a.request.get("late") for a in ran_out):                      # a late permission question that ran out only ends: the other steps keep their work (m3)
+                    self.service.sync_cards(tx, project["id"])
+                ran_out = [a for a in ran_out if not a.request.get("late")]
                 reason = ""
                 if ran_out:
                     for approval in ran_out:
                         self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project["id"], node_id=approval.node_id or None, tier=approval.tier, decision="deny",
                                          reason="the question ran out of time", ref=approval.id)
                     reason = "not approved: the question ran out of time"
-                elif slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None:
+                elif slept and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND request_json NOT LIKE '%\"late\":1%'", (project["id"],)).fetchone() is not None:
                     reason = GATE_REFUSED_SLEEP
                 elif project["status"] == "awaiting_approval" and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is None:
                     reason = "not approved: no question was left to answer"          # a project that waits for nothing would wait for ever (MJ7)
@@ -601,6 +605,24 @@ class Conductor:
         tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
         self._sync_project(tx, node["project_id"])
 
+    def restart_after_permission(self, tx: Tx, node_id: str) -> bool:
+        """P3 (D322 g): after the late permission card was cleared, the node that ended `needs_system_permission` gets ONE fresh attempt, as a new task of the same node, that does not spend its
+        retry (the D314 mechanism: audit `node.restarted`). Once for each node; never for a node whose project has ended. Returns True when it started one."""
+        node = tx.conn.execute("SELECT * FROM agent_nodes WHERE id = ?", (node_id,)).fetchone()
+        if node is None or node["state"] != "failed" or node["failure_reason"] != NEEDS_SYSTEM_PERMISSION or not node["task_id"] or self.tasks is None:
+            return False
+        project = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (node["project_id"],)).fetchone()
+        if project is None or project["status"] in PROJECT_FINAL:
+            return False
+        if tx.conn.execute("SELECT 1 FROM node_audit WHERE node_id = ? AND action = 'node.restarted' AND reason = ?", (node_id, PERMISSION_RESTART)).fetchone() is not None:
+            return False
+        try:
+            with tx.savepoint():
+                self._retry(tx, node, PERMISSION_RESTART, action="node.restarted")
+        except AppError:                                                     # the team is gone: the node stays failed
+            return False
+        return True
+
     def _note(self, tx: Tx, project_id: str, text: str, src_ref: str) -> None:
         """A plain note in the org chat about a project (once, by its `src_ref`): a trigger that ended a step or the project says so (D311: a note, not a card)."""
         if self.chats is None:
@@ -632,7 +654,7 @@ class Conductor:
             fixed = 0
             with self.db.tx() as tx:
                 for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running') ORDER BY created_at").fetchall():
-                    gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open'", (project["id"],)).fetchone() is not None
+                    gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND request_json NOT LIKE '%\"late\":1%'", (project["id"],)).fetchone() is not None
                     if gate_open:
                         refused.append(project["id"])
                         continue
