@@ -18,11 +18,13 @@ import hashlib
 import json
 import os
 import re
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from sutra_app import oslayer
 from sutra_app.connectors.egress import scrubbed
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
 
@@ -179,15 +181,15 @@ def write_accepted(run_dir: str | os.PathLike[str], accepted: Accepted) -> Path:
     """`handoff.accepted.json` in the node's run folder, by the SERVER (mode 0600, temp file and rename): the validated, scrubbed hand-off with a plain note that it is data. This is the one
     hand-off file that the upstream listing offers to dependants; the node's own `handoff.json` is never given on."""
     target = Path(run_dir) / ACCEPTED_FILE
-    temp = target.with_name(f".{ACCEPTED_FILE}.tmp")
+    temp = target.with_name(f".{ACCEPTED_FILE}.{os.getpid()}.{secrets.token_hex(4)}.tmp")      # a name nobody else has, made with O_EXCL: a planted link under a fixed name is never followed (Minor 4)
     body = json.dumps({"note": DATA_NOTE, "from": accepted.document["node_id"], "handoff": accepted.document}, indent=2, ensure_ascii=False) + "\n"
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(body)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, target)
+        oslayer.replace(temp, target)
     except BaseException:
         try:
             os.unlink(temp)

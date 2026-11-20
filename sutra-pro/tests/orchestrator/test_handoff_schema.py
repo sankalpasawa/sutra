@@ -196,3 +196,20 @@ def test_a_listed_file_whose_size_is_wrong_is_still_refused_when_it_is_past_the_
     root = folder(tmp_path, {"a.bin": b"a" * 30})
     put(root, good(root, files=[{"path": "a.bin", "sha256": "0" * 64, "bytes": 31}]))
     refused(root, "different size")
+
+
+def test_the_accepted_file_is_written_through_a_unique_exclusive_temp_and_a_planted_link_is_not_followed(tmp_path, monkeypatch):
+    root = folder(tmp_path, {"out.md": "# result"})
+    put(root, good(root))
+    accepted = read_handoff(root, NODE, "engine")
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    (root / ".handoff.accepted.json.tmp").symlink_to(victim)
+    seen = []
+    real_open = os.open
+    monkeypatch.setattr(os, "open", lambda path, flags, *a, **k: (seen.append((str(path), flags)), real_open(path, flags, *a, **k))[1])
+    write_accepted(root, accepted)
+    write_accepted(root, accepted)
+    temps = [(p, f) for p, f in seen if p.endswith(".tmp")]
+    assert victim.read_text() == "keep me" and len(temps) == 2 and temps[0][0] != temps[1][0] and all(f & os.O_EXCL for _, f in temps)
+    assert (root / "handoff.accepted.json").is_file()

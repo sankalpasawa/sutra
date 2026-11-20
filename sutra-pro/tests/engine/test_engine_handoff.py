@@ -116,3 +116,23 @@ def test_the_hand_off_runs_first_so_a_slow_step_never_costs_a_node_its_hand_off(
     assert [row["step"] for row in rows] == ["handoff", "agent_views", "catalog"]
     assert rows[0]["result"] == "ok" and (folder / "handoff.json").is_file()
     assert rows[1].get("slow") is True and rows[2]["result"] == "skipped"
+
+
+def test_a_link_planted_under_the_old_temp_name_is_never_followed_and_the_temp_is_unique_and_exclusive(tmp_path, monkeypatch):
+    """Minor 4: the temp file has a name nobody else has and is made with O_EXCL, so a symlink planted at the old fixed name does not redirect the write."""
+    folder = run_folder(tmp_path, out__txt="x")
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep me")
+    (folder / ".handoff.json.tmp").symlink_to(victim)
+    seen = []
+    real_open = os.open
+
+    def spy(path, flags, *a, **k):
+        seen.append((str(path), flags))
+        return real_open(path, flags, *a, **k)
+    monkeypatch.setattr(os, "open", spy)
+    handoff.write(folder, handoff.build(folder, NODE, "done", "ok"))
+    handoff.write(folder, handoff.build(folder, NODE, "done", "again"))
+    temps = [(p, f) for p, f in seen if p.endswith(".tmp")]
+    assert victim.read_text() == "keep me" and len(temps) == 2 and temps[0][0] != temps[1][0] and all(f & os.O_EXCL for _, f in temps)
+    assert json.loads((folder / "handoff.json").read_text())["summary"] == "again" and sorted(p.name for p in folder.iterdir() if p.name.endswith(".tmp")) == [".handoff.json.tmp"]

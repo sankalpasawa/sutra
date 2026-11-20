@@ -20,9 +20,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Any
 
+from sutra_app import oslayer
 from sutra_app.library.types import clip
 
 __all__ = ["build", "write", "HANDOFF_FILE", "ACCEPTED_FILE", "SCHEMA_V", "MAX_FILES", "MAX_SUMMARY", "MAX_CLAIMS", "MAX_CLAIM", "MAX_BYTES", "NOT_HANDED_ON"]
@@ -74,14 +76,14 @@ def build(run_dir: str | os.PathLike[str], node_id: str, status: str, outcome: s
 def write(run_dir: str | os.PathLike[str], document: dict[str, Any]) -> Path:
     """`<run folder>/handoff.json` by temp file and rename, mode 0600."""
     target = Path(run_dir) / HANDOFF_FILE
-    temp = target.with_name(f".{HANDOFF_FILE}.tmp")
-    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    temp = target.with_name(f".{HANDOFF_FILE}.{os.getpid()}.{secrets.token_hex(4)}.tmp")      # a name nobody else has, made with O_EXCL: a planted link or file under the old fixed name is never followed (Minor 4)
+    fd = os.open(temp, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp, target)
+        oslayer.replace(temp, target)
     except BaseException:
         try:
             os.unlink(temp)
