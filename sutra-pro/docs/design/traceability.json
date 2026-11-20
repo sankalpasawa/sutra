@@ -8,7 +8,7 @@
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 343,
+ "max_decision": 353,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -442,10 +442,10 @@
     "D250",
     "D251",
     "D252",
-    "D340",
-    "D341",
-    "D342",
-    "D343"
+    "D350",
+    "D351",
+    "D352",
+    "D353"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -4610,7 +4610,7 @@
    "diagram": "label \"Budget field on home + team page, empty = team default\", pill on band:DEPARTMENT RUNTIME."
   },
   {
-   "id": "D340",
+   "id": "D350",
    "title": "Ask: the direct chat answers read only, with the limits of a function's question (DV-1, `SUTRA_ASK_V1`)",
    "packages": [
     "ABS-1",
@@ -4628,7 +4628,7 @@
    "diagram": "label \"Ask: read-only cited answer (DV-1)\", pill on Connector router."
   },
   {
-   "id": "D341",
+   "id": "D351",
    "title": "The sources of an answer are checked by code, and \"checked\" says only what code looked at",
    "packages": [],
    "status": "documented only",
@@ -4636,7 +4636,7 @@
    "diagram": "label \"sources checked by code, never by the model (citations.py)\", pill on Chat sessions."
   },
   {
-   "id": "D342",
+   "id": "D352",
    "title": "With `SUTRA_ASK_V1` off nothing of Ask exists: the word `mode` is refused as before, no answer has a new key, no switch is drawn",
    "packages": [
     "GAP-W1",
@@ -4648,7 +4648,7 @@
    "diagram": "label \"Ask off: mode refused, no new field\", pill on Chat sessions."
   },
   {
-   "id": "D343",
+   "id": "D353",
    "title": "The sources are one card after the answer; \"Turn this into work\" drafts a request and never sends it",
    "packages": [
     "ABS-1",

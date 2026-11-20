@@ -1,4 +1,4 @@
-"""The Ask mode of the direct chat (DV-1, flag SUTRA_ASK_V1, decisions D340 to D343): a read-only answer about the owner's folder whose sources code checks.
+"""The Ask mode of the direct chat (DV-1, flag SUTRA_ASK_V1, decisions D350 to D353): a read-only answer about the owner's folder whose sources code checks.
 
     POST /api/chats/{sid}/direct  {text, mode: "ask"}         the same route, the same turn, held to read access, with a card of sources after the answer
     POST /api/chats/{sid}/direct/retry  {message_id, mode: "ask"}

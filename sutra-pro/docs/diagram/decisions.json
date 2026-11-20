@@ -1260,22 +1260,22 @@
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
-  "id": "D340",
+  "id": "D350",
   "label": "Ask: read-only cited answer (DV-1)",
   "anchor": "Connector router"
  },
  {
-  "id": "D341",
+  "id": "D351",
   "label": "sources checked by code, never by the model",
   "anchor": "Chat sessions"
  },
  {
-  "id": "D342",
+  "id": "D352",
   "label": "Ask off: mode refused, no new field",
   "anchor": "Chat sessions"
  },
  {
-  "id": "D343",
+  "id": "D353",
   "label": "sources card + draft-only Turn this into work",
   "anchor": "Chat sessions"
  }

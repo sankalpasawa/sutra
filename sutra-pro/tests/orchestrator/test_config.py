@@ -193,7 +193,7 @@ def test_layout_helpers_and_ensure_dirs(tmp_path):
     assert oct((tmp_path / "d").stat().st_mode & 0o777) == "0o700"
 
 
-# ---- SUTRA_ASK_V1 (DV-1, D342): off by default, and an off flag is not in any answer ---------------------------------------------------------
+# ---- SUTRA_ASK_V1 (DV-1, D352): off by default, and an off flag is not in any answer ---------------------------------------------------------
 
 OLD_PUBLIC_KEYS = {"data_dir", "host", "port", "connector", "engine", "offline", "chat_timeout", "chat_attempts", "max_runs", "max_live", "watch_ms", "live", "live_v1"}
 

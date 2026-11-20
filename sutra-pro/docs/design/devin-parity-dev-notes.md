@@ -1,11 +1,11 @@
 # Devin parity: developer notes (DV-1 and later)
 
 What the builder found and decided while building a package of `docs/design/devin-parity.md` (the owner's spec; it is not on `main` yet, so this file does not link to it). One section per package.
-Everything here is also in the decision log (D340 to D343) where it is a decision; this file holds the deviations, the limits and what was not verified. Paths are relative to `sutra-pro/`.
+Everything here is also in the decision log (D350 to D353) where it is a decision; this file holds the deviations, the limits and what was not verified. Paths are relative to `sutra-pro/`.
 
 ## DV-1. Ask: cited answers, read only (`SUTRA_ASK_V1`, default 0)
 
-Branch `feat/sutra-pro-devin-ask`. Decisions D340 (the turn), D341 (the check), D342 (flag off), D343 (the card and the draft).
+Branch `feat/sutra-pro-devin-ask`. Decisions D350 (the turn), D351 (the check), D352 (flag off), D353 (the card and the draft).
 
 ### What was built
 
@@ -23,7 +23,7 @@ No new table, no new route, no new script on any page, no migration.
 
 ### Decisions taken, and where they differ from the spec's wording
 
-1. **Decision numbers D340 to D343, not the next free number on `main` (D253).** `origin/feat/sutra-pro-agent-nodes` already holds D253 to D331 (and is still adding), so D253 would have collided the day both land. Taking a block of its own means neither branch has to renumber; the numbers between D252 and D340 are simply not on `main` until the nodes branch lands. `tests/test_diagram_decisions.py` and the traceability generator only need the log and `decisions.json` to agree, which they do. If the owner prefers contiguous numbers, renumbering four headings, four `decisions.json` entries, the two documents that name "D340 to D343" and `scripts/build_traceability.py` is a ten-minute change.
+1. **Decision numbers D350 to D353, not the next free number on `main` (D253).** `origin/feat/sutra-pro-agent-nodes` already holds D253 to D345 and is still adding (it was at D331 when this package started and at D345 when it was pushed), so D253 would have collided the day both land. DV-1 therefore takes a small block of its own above what that branch has used; the numbers between D252 and D350 are simply not on `main` until the nodes branch lands. `tests/test_diagram_decisions.py` and the traceability generator only need the log and `decisions.json` to agree, which they do. If the nodes branch grows past D349 before either lands, whoever lands second renumbers: four headings, four `decisions.json` entries, and the mentions of "D350 to D353" (`config.py`, `ask_mode.py`, `ENVIRONMENT.md`, `OPERATIONS.md`, this file, four tests), then `scripts/py scripts/build_traceability.py`.
 2. **`mode` is a field of the body that the route class takes out, not a field of `DirectIn`.** The spec says "`mode=ask`" and "refused or ignored exactly as today when the flag is off". Today a body that names an unknown field is a 422 `extra_forbidden` (the request models are closed), so the way to keep today's bytes is to leave the models alone and to take `mode` out of the body only when the flag is on (`ask_mode.AskRoute`). Consequence: `mode` is not listed in the OpenAPI document of the two routes (the request schemas are what they were). A query parameter would have been ignored by a flag-off server, which would answer an Ask as an ordinary chat; that is why it was not used.
 3. **The mode of a Retry is named again by the page.** The server stores no mode (no new table, no new column), so `POST /direct/retry` takes `mode` too. The page remembers how it sent each line (in memory, 50 lines) and a Retry of an Ask asks again, even after the switch went back to Do. A line from before a reload follows the switch as it is now. A Retry with no mode is a Retry of the chat as it was (no card). Not tied to the stored line on purpose: it keeps the stored shape of every row unchanged.
 4. **The limits of a function's question reach a chat turn as a gate before each model process, not as a cap inside it.** `agent_ask.py` has 2 calls, $0.25, 120 s; they go through `ChatTurnIn.allowance` into the router's own gate. Calls and the deadline hold (the deadline also shortens the turn's timeout). The dollar figure is checked before each spawn against what earlier spawns of the turn cost; the connector's chat plan has no per-call budget, so a single spawn can pass $0.25 (the usage ledger books it). A hard cap inside the CLI for chat turns needs a connector change and was not made.

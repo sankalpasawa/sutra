@@ -403,7 +403,7 @@ def test_config_shows_the_settings_and_never_a_secret(tmp_path):
 
 
 def test_config_lists_the_ask_flag_only_when_it_is_on(tmp_path):
-    """DV-1 (D342): an off flag is not in the answer, so the shape of /api/config is what it was before the flag existed."""
+    """DV-1 (D352): an off flag is not in the answer, so the shape of /api/config is what it was before the flag existed."""
     keys = {}
     for flag in (False, True):
         settings = Settings.load({}, data_dir=tmp_path / f"data{flag}", token=TOKEN, env_file=tmp_path / "none.env", engine="fake", ask_v1=flag)

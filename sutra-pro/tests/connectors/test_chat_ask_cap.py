@@ -1,4 +1,4 @@
-"""The Ask mode's read cap in the router (DV-1, D340): a chat turn whose tag asks for `workspace: read` never gets more of the owner's folder than the file tools that look, even
+"""The Ask mode's read cap in the router (DV-1, D350): a chat turn whose tag asks for `workspace: read` never gets more of the owner's folder than the file tools that look, even
 when the owner let the team change files; a turn that does not ask is exactly what it was. Real Claude and Codex connectors against the fake CLIs, no network, no model.
 
 Also: the limits a turn carries in `ChatTurnIn.allowance` reach the router's own gate, and a turn without them is unchanged."""

@@ -198,4 +198,4 @@ are there and, when words were quoted, those words are on those lines; **could n
 "No sources given". **Turn this into work** only writes the start of a request in the box (Send then points at the team); you finish it and press Send. A stopped or failed answer has no card.
 
 With no working folder every source reads "no working folder is set". Switch the flag off (unset it, or `SUTRA_ASK_V1=0`) and nothing of Ask exists: no switch, and a request that names `mode` is refused as an unknown
-field, as before. Nothing is stored in a new table; the card is an ordinary chat message. Details: D340 to D343 in [DECISIONS.md](DECISIONS.md).
+field, as before. Nothing is stored in a new table; the card is an ordinary chat message. Details: D350 to D353 in [DECISIONS.md](DECISIONS.md).
