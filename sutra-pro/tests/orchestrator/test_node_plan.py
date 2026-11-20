@@ -55,8 +55,9 @@ def test_a_step_that_needs_github_makes_the_plan_ask_tier_4_and_the_paths_are_st
     try:
         project = rows(services, "SELECT * FROM projects")[0]
         assert project["status"] == "awaiting_approval"
-        [asked] = rows(services, "SELECT * FROM approvals")
-        assert asked["tier"] == 4 and json.loads(asked["request_json"])["kind"] == "tier"
+        [asked] = [r for r in rows(services, "SELECT * FROM approvals") if r["tier"] == 4]
+        assert json.loads(asked["request_json"])["kind"] == "tier"
+        assert [json.loads(r["request_json"])["kind"] for r in rows(services, "SELECT * FROM approvals WHERE tier = 1")] == ["sutra_tools"]            # the app's own data is a question too (D325)
         stored = {step["ref"]: step for step in json.loads(project["caps_json"])["plan"]}
         assert stored["a1"]["scope"] == ["site"]                      # `site/pricing` is covered by `site`, as `normalize_scope` says
         assert stored["a1"]["scope"] == ["site"] and stored["a2"]["needs"] == ["github"]

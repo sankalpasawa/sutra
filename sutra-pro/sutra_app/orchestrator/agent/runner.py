@@ -483,7 +483,7 @@ class TurnRunner:
                     if reservation.waits is not None:
                         said.append(line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1])))
                     if reservation.asks:
-                        what = " and ".join({"tier": "Reading GitHub", "scope": "Changing files in several places"}[k] for k in reservation.asks)
+                        what = " and ".join({"tier": "Reading GitHub", "scope": "Changing files in several places", "sutra_tools": "Reading this app\u2019s own data"}[k] for k in reservation.asks)
                         said.append(line("project_asks", title=reservation.title, what=what))
                     if asked_system:
                         said.append(line("project_system", title=reservation.title))

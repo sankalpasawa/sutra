@@ -26,7 +26,7 @@ def decided(rig):
 
 
 def test_every_row_of_the_rule_table_answers_as_it_says():
-    assert {name for name, _, _ in RULE_TABLE} == {"tiers_0_3", "tier_4_github", "scope_wide_or_missing", "credits_raise", "estimate_within_ceiling", "scope_violation", "tier_6", "system_permission"}
+    assert {name for name, _, _ in RULE_TABLE} == {"tiers_0_3", "tier_4_github", "scope_wide_or_missing", "credits_raise", "estimate_within_ceiling", "scope_violation", "sutra_tools", "tier_6", "system_permission"}
     for tier in (1, 2, 3):
         assert decide_for_me_answer("tier", tier).decision == "allow_project"
     assert decide_for_me_answer("tier", 4).decision == "allow_project"                                       # read-only GitHub, for this project only

@@ -154,3 +154,37 @@ def test_a_rewritten_grant_keeps_the_words_output_auto(rig):
     answer(rig, reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "allow_once")
     issued = [r for r in rig.audit("grant.issued") if r["node_id"] == rig.node_of(tasks["a2"])["id"]]
     assert len(issued) == 2 and all("output auto (decided in the run)" in r["reason"] for r in issued) and "tools github" in issued[1]["reason"]
+
+
+# ---- the app's own data is a question to the owner, never a planner's say (D325) ----------------------------------------------------------------
+
+def test_a_planner_need_for_the_apps_own_data_is_a_question_the_grant_does_not_hold_it_before_and_decide_for_me_never_answers_it(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a1": ("sutra",)}, decide_for_me=True)
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    assert asked.request["kind"] == "sutra_tools" and asked.tier == 1 and asked.node_id == rig.node_of(tasks["a1"])["id"]
+    assert grant(rig, "a1")["tool_profile"] == "none"
+    assert rig.project(reservation.project_id)["status"] == "awaiting_approval" and rig.audit("gate.decided") == [] and rig.start() == []
+    [card] = rig.projects.approval_cards(reservation.project_id)
+    assert card.options == ["allow_once", "deny"] and "app's own data" in card.question
+
+
+def test_only_an_allow_by_the_owner_gives_the_sutra_tools_and_a_no_cancels_only_that_step(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a1": ("sutra",)})
+    answer(rig, reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "allow_once")
+    assert grant(rig, "a1")["tool_profile"] == "sutra"
+    other, more = rig.request([("b1", "dev", []), ("b2", "legal", [])], request_id="req-2", needs={"b1": ("sutra", "github")})
+    assert grant_of(rig, "b1")["tool_profile"] == "none"                                              # neither tool is held before the owner answers
+    for approval in rig.store.approvals(other.project_id, status="open"):
+        answer(rig, other.project_id, approval.id, "deny" if approval.request["kind"] == "sutra_tools" else "allow_once")
+    assert rig.sql("SELECT state FROM agent_nodes WHERE plan_ref = 'b1'").fetchone()[0] == "cancelled"
+    assert rig.project(other.project_id)["status"] == "running"
+
+
+def test_a_plan_node_that_asks_for_sutra_is_never_given_it_by_its_role_alone(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], needs={"a1": ("sutra",), "a2": ("sutra",)})
+    assert grant(rig, "a1")["tool_profile"] == "none" and grant(rig, "a2")["tool_profile"] == "none"
+    assert len(rig.store.approvals(reservation.project_id, status="open")) == 2
+
+
+def grant_of(rig, ref):
+    return json.loads(rig.sql("SELECT grants_json FROM agent_nodes WHERE plan_ref = ?", ref).fetchone()[0])

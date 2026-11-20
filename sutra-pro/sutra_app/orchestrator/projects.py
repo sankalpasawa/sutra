@@ -61,8 +61,10 @@ class ProjectStep:
     needs: tuple[str, ...] = ()                       # the app tools it asks for: `sutra`, `github`
 
 
-def _tool_profile(needs: Sequence[str]) -> str:
-    asked = set(needs)
+def _tool_profile(needs: Sequence[str], allow_sutra: bool = False) -> str:
+    """The tool profile a planner's `needs` can ask for. `github` is asked (and needs the owner's yes, D298); `sutra` (a read of the whole app database) is NOT granted on a planner's say: it is only
+    a question to the owner, and only an allowed question adds it (D325)."""
+    asked = set(needs) & ({"sutra", "github"} if allow_sutra else {"github"})
     return "sutra+github" if {"sutra", "github"} <= asked else "github" if "github" in asked else "sutra" if "sutra" in asked else "none"
 
 
@@ -213,7 +215,9 @@ class ProjectService:
         ceiling = None if budget is not None or any(g.kind == "estimate" for g in evaluation.gates) else (min(sum(wants), cap) if cap else None)         # the owner's own number, or the estimate the owner approves, is the ceiling; else the cap
         slices = make_slices(wants, ceiling)                                      # each step's share (MAN-9, D324); the project's ceiling is their sum, written as `budget_credits`
         caps["owner_budget"] = budget                                            # the owner's own number for each run (D252), None when they gave none
-        status = "failed" if not evaluation.ok else "awaiting_approval" if evaluation.gates else "running"
+        sutra_asks = [step.ref for step in steps if "sutra" in step.needs]               # the app's own data is only ever a question to the owner (D325)
+        holds = bool(evaluation.gates) or bool(sutra_asks)
+        status = "failed" if not evaluation.ok else "awaiting_approval" if holds else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
             "INSERT INTO projects(id, request_id, title, status, decide_for_me, caps_json, budget_credits, created_at, ended_at, stop_reason) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -236,7 +240,7 @@ class ProjectService:
             node_id = node_ids[step.ref]
             grant = evaluation.grants[step.ref].for_node(self.ids.grant_id(), node_id)
             writes = list(grant.scope)
-            state = "awaiting_approval" if evaluation.gates else "planned"
+            state = "awaiting_approval" if holds else "planned"
             tx.conn.execute(
                 "INSERT INTO agent_nodes(id, project_id, role, runtime, plan_ref, depends_on, state, grants_json, writes_json, slice_credits, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (node_id, project_id, "worker", "engine", step.ref, json.dumps([node_ids[d] for d in step.depends_on if d in node_ids]), state,
@@ -249,6 +253,9 @@ class ProjectService:
                                      reason=denial.why, target=step.dept_id)
         expires = now + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400)
         total = sum(max(0, int(step.estimate_credits or 0)) for step in plan.steps)
+        for ref in sutra_asks:
+            asked_sutra = self.store.open_approval(tx, project_id=project_id, node_id=node_ids[ref], tier=1, expires_at=expires, request={"kind": "sutra_tools", "why": "Read this app's own data"})
+            self.store.audit(tx, actor="gatekeeper", action="gate.asked", project_id=project_id, node_id=node_ids[ref], tier=1, decision="ask", reason="Read this app's own data", ref=asked_sutra.id)
         for gate in evaluation.gates:                                                  # the questions are rows; the cards and the answers are MAN-8
             tier = gate.tier if gate.tier is not None else 5
             detail = {"credits": total, "limit": int(plan.confirm_credits or 0)} if gate.kind == "estimate" else {}
@@ -263,7 +270,7 @@ class ProjectService:
             self._decide_by_rule(tx, project_id)                                      # Decide for me (D294): the rule table answers in this transaction; nothing it cannot answer is hidden
         self.sync_cards(tx, project_id)                                                 # one card in the org chat for each open question (D317)
         waits = (total, int(plan.confirm_credits or 0)) if self._waits_of(tx, project_id) is not None else None
-        asks = tuple(dict.fromkeys(str(a.request.get("kind", "")) for a in self.store.approvals(project_id, status="open") if a.request.get("kind") in ("tier", "scope")))
+        asks = tuple(dict.fromkeys(str(a.request.get("kind", "")) for a in self.store.approvals(project_id, status="open") if a.request.get("kind") in ("tier", "scope", "sutra_tools")))
         return Reservation(project_id, True, "", node_ids, planner_node_id, title=" ".join(title.split())[:200], waits=waits, asks=asks)
 
     @staticmethod
@@ -396,7 +403,7 @@ class ProjectService:
     def _is_step_question(a: Any) -> bool:
         """A question about ONE step: a system permission (D295's skip) or a tier-4 or wide-scope question that names its node (D315 b)."""
         kind = a.request.get("kind")
-        return kind == "system" or (kind in ("tier", "scope") and bool(a.node_id))
+        return kind == "system" or (kind in ("tier", "scope", "sutra_tools") and bool(a.node_id))
 
     def _cancel_step(self, tx: Tx, project_id: str, node_id: str) -> bool:
         """Cancel one step that was not approved ("not approved: you said no") and, following the plan's edges, the steps that wait for it ("a step it needed was not approved"). Returns True
@@ -446,6 +453,7 @@ class ProjectService:
         nodes = {r["plan_ref"]: r for r in tx.conn.execute("SELECT * FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (project_id,))}
         by_id = {row["id"]: ref for ref, row in nodes.items()}
         approved: dict[str, set[int]] = {}
+        sutra_ok: set[str] = set()
         wide: set[str] = set()
         estimate_ok = False
         for approval in approvals:
@@ -456,6 +464,8 @@ class ProjectService:
                 approved.setdefault(ref, set()).add(approval.tier)
             elif kind == "scope" and ref:
                 wide.add(ref)
+            elif kind == "sutra_tools" and ref:
+                sutra_ok.add(ref)
             elif kind == "plan_estimate":
                 estimate_ok = True
         rows = caps.get("plan") or []
@@ -464,7 +474,8 @@ class ProjectService:
             slice_credits = owner_budget if owner_budget is not None else DEFAULT_SLICE
             plan = Plan(
                 steps=tuple(PlanStep(id=r["ref"], role="worker", depends_on=tuple(r.get("depends_on") or ()), output=self._output_of(r["dept"]), estimate_credits=r.get("estimate") or slice_credits,
-                                     wants=frozenset({4}) if "github" in r.get("needs", ()) else frozenset(), scope=tuple(r.get("scope") or ()), tool_profile=_tool_profile(r.get("needs", ())))
+                                     wants=frozenset({4}) if "github" in r.get("needs", ()) else frozenset(), scope=tuple(r.get("scope") or ()),
+                                     tool_profile=_tool_profile(r.get("needs", ()), r["ref"] in sutra_ok))
                             for r in rows),
                 owner_access=self._owner_access(), approved={k: frozenset(v) for k, v in approved.items()}, approved_wide=frozenset(wide),
                 confirm_credits=None if estimate_ok or caps.get("owner_budget") is not None else int(caps.get("confirm_credits") or NODE_DEFAULT_CAPS["confirm_credits"] or 500))
@@ -522,6 +533,7 @@ class ProjectService:
     # the words of a card (plain, simple). A no to a question about one step cancels that step (D315 b); a no to the estimate stops the project; nothing here says a writer "runs alone" before MAN-10 (D323).
     _WORDS = {
         "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "scope": "A step changes files in several places of your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
         "system": "Your computer must allow something first. Open the settings, allow it, then press Check again. If you skip it, the steps that need it are cancelled.",
@@ -529,7 +541,7 @@ class ProjectService:
 
     def _card_of(self, project_id: str, a: Any) -> NodeApprovalCard:
         kind = str(a.request.get("kind", ""))
-        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
+        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope", "sutra_tools") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
         question = self._WORDS.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"))
         return NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at),
                                 item=str(a.request.get("item", ""))[:40] if kind == "system" else "")

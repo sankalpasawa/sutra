@@ -216,6 +216,7 @@ RULE_TABLE: tuple[tuple[str, str, str], ...] = (
     ("estimate_within_ceiling", "allow", "the plan's estimate is allowed once, up to the project's ceiling and no further"),
     ("scope_violation", "quarantine", "a node that writes outside its scope is quarantined: ended, its files kept, nothing is merged"),
     ("tier_6", "never", "publishing outside is never granted and never asked"),
+    ("sutra_tools", "never", "a planner cannot grant itself a read of the app's own data: it is a question to the owner, never answered by Decide for me (D325)"),
     ("system_permission", "never", "a permission of the computer is the owner's: Decide for me cannot answer it (D295)"),
 )
 
@@ -224,7 +225,7 @@ def decide_for_me_answer(kind: str, tier: int | None, *, estimate: int = 0, ceil
     """The rule table's answer to ONE open question, or None when only the owner may answer (the question stays open). `kind` is the question's kind (`tier`, `scope`, `plan_estimate`,
     `system`). It can allow, never raise: credits (tier 5) are allowed once for the plan's own estimate up to the ceiling and never beyond; tier 6 and a permission of the computer are
     never answered."""
-    if kind == "system" or tier == 6:
+    if kind in ("system", "sutra_tools") or tier == 6:                    # a permission of the computer and a read of the app's own data are the owner's alone (D295, D325)
         return None
     if kind == "plan_estimate" or tier == 5:
         if kind == "plan_estimate" and ceiling is not None and 0 <= estimate <= ceiling:
