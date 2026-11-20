@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 349,
+  "decisions": 355,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 349,
+ "max_decision": 385,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -538,7 +538,13 @@
     "D346",
     "D347",
     "D348",
-    "D349"
+    "D349",
+    "D380",
+    "D381",
+    "D382",
+    "D383",
+    "D384",
+    "D385"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5584,6 +5590,68 @@
    "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"tool records: prune, sweep, durable debt\", key only."
+  },
+  {
+   "id": "D380",
+   "title": "A step's builder tools are narrowed to its grant",
+   "packages": [
+    "CN-7",
+    "CT-1",
+    "E0",
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"step tools = grant: reads, own-folder writes, no shell, no web\", key only."
+  },
+  {
+   "id": "D381",
+   "title": "The monthly dollar limit stops a running project",
+   "packages": [
+    "GAP-DEMO",
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"month limit stops project + caps each step\", key only."
+  },
+  {
+   "id": "D382",
+   "title": "The reply to a project ends with its page address",
+   "packages": [
+    "ORCH-1",
+    "ORCH-7",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"project reply + step cards link to /p/id\", key only."
+  },
+  {
+   "id": "D383",
+   "title": "The project page: plain words, the whole cost, a phone-sized picture",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"page: plain words, ledger cost, phone graph\", key only."
+  },
+  {
+   "id": "D384",
+   "title": "nodes status asks the running app; nodes resume is audited",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"nodes status: shell vs app; resume audited\", key only."
+  },
+  {
+   "id": "D385",
+   "title": "Checklist corrections after run 1 and what it did not see",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"checklist fixed; run 1 unseen listed\", key only."
   }
  ],
  "packages": [
