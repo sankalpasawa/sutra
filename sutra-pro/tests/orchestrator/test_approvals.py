@@ -124,3 +124,11 @@ def test_the_allowed_tool_reaches_the_run_through_the_node_block_of_task_json_an
     answer(rig, reservation.project_id, asked.id, "allow_once")
     blocks = {ref: json.loads((rig.t.run_dir(task_id) / "task.json").read_text(encoding="utf-8"))["node"] for ref, task_id in tasks.items()}
     assert blocks["a2"]["tool_profile"] == "github" and blocks["a1"]["tool_profile"] == "none"
+
+
+def test_a_rewritten_grant_keeps_the_words_output_auto(rig):
+    rig.projects._output_name = lambda dept: "auto"
+    reservation, tasks = asking_github(rig)
+    answer(rig, reservation.project_id, rig.store.approvals(reservation.project_id)[0].id, "allow_once")
+    issued = [r for r in rig.audit("grant.issued") if r["node_id"] == rig.node_of(tasks["a2"])["id"]]
+    assert len(issued) == 2 and all("output auto (decided in the run)" in r["reason"] for r in issued) and "tools github" in issued[1]["reason"]

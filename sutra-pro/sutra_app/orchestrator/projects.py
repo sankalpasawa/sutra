@@ -421,8 +421,9 @@ class ProjectService:
                         issued = evaluation.grants[ref].for_node(self.ids.grant_id(), node["id"])
                         tx.conn.execute("UPDATE agent_nodes SET grants_json = ?, writes_json = ? WHERE id = ?",
                                         (json.dumps(issued.to_json(), sort_keys=True), json.dumps(list(issued.scope)), node["id"]))
+                        dept = next((r["dept"] for r in rows if r["ref"] == ref), "")
                         self.store.audit(tx, actor="gatekeeper", action="grant.issued", project_id=project_id, node_id=node["id"], role="worker", tier=max(issued.tiers), decision="allow",
-                                         reason=issued.describe(), ref=issued.id)
+                                         reason=issued.describe(output=self._output_name(dept)), target=dept, ref=issued.id)
         if any(a.status == "open" for a in approvals):
             return "waiting"
         tx.conn.execute("UPDATE projects SET status = 'running' WHERE id = ? AND status = 'awaiting_approval'", (project_id,))
