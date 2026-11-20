@@ -21,7 +21,7 @@ from sutra_app.orchestrator.db import Tx, run_blocking
 from sutra_app.orchestrator.grants import scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
-from sutra_app.engine.host.toollog import TOOLS_FILE, read_log, summarize
+from sutra_app.engine.host.toollog import log_path, read_log, summarize
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
 from sutra_app.syspermissions import is_permission_failure
@@ -331,11 +331,11 @@ class Conductor:
             row = self.tasks.store.find_row(task_id)
             if row is None or row.run_id is None:
                 return
-            run_dir = self.tasks.store.run_dir_of(row)
-            stamp = self._stamp(run_dir, TOOLS_FILE)
+            path = log_path(self.settings.data_dir, row.run_id)
+            stamp = self._stamp(path.parent, path.name)
             if stamp is None or (task_id in self._tools and self._tools[task_id][0] == stamp):
                 return
-            self._tools[task_id] = (stamp, read_log(run_dir))
+            self._tools[task_id] = (stamp, read_log(path))
         except Exception:                                                    # noqa: BLE001
             log.exception("could not read the tool log of task %s ahead of time", task_id)
 
@@ -349,7 +349,7 @@ class Conductor:
         if rows is None and task_id and self.tasks is not None:
             try:
                 row = self.tasks.store.row_in(tx.conn, task_id)
-                rows = read_log(self.tasks.store.run_dir_of(row)) if row is not None and row.run_id is not None else []
+                rows = read_log(log_path(self.settings.data_dir, row.run_id)) if row is not None and row.run_id is not None else []
             except Exception:                                                # noqa: BLE001  (a tool log that cannot be read is no rows, never a node that cannot end)
                 rows = []
         groups, left_out = summarize(rows or [])

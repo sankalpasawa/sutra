@@ -83,29 +83,39 @@ def test_the_progress_of_the_page_still_gets_every_event_and_a_hook_that_fails_s
 
 # ---- the host's file ------------------------------------------------------------------------------------------------------------------------------
 def test_the_log_is_one_small_line_for_each_call_and_reads_back_whole(tmp_path):
-    log = toollog.ToolLog(tmp_path / toollog.TOOLS_FILE, clock=lambda: 1_700_000_000.9)
+    where = toollog.log_path(tmp_path, "j2-20261104-100000-bbbb")
+    log = toollog.ToolLog(where, clock=lambda: 1_700_000_000.9)
     log(Tag("nd_0123456789ab"), "Read", "read", "a.txt")
     log(Tag("nd_0123456789ab"), "Bash", "run", "")
-    lines = (tmp_path / toollog.TOOLS_FILE).read_text().splitlines()
+    lines = where.read_text().splitlines()
+    assert where == tmp_path / "nodes" / "tools" / "j2-20261104-100000-bbbb.jsonl"                 # outside every run folder (PB-6)
     assert json.loads(lines[0]) == {"at": 1_700_000_000, "name": "Read", "kind": "read", "target": "a.txt"}
-    assert toollog.read_log(tmp_path) == [{"name": "Read", "kind": "read", "target": "a.txt"}, {"name": "Bash", "kind": "run", "target": ""}]
+    assert toollog.read_log(where) == [{"name": "Read", "kind": "read", "target": "a.txt"}, {"name": "Bash", "kind": "run", "target": ""}]
 
 
 def test_the_log_stops_at_its_limit_and_a_damaged_or_missing_file_is_no_rows(tmp_path):
-    log = toollog.ToolLog(tmp_path / toollog.TOOLS_FILE)
+    where = tmp_path / toollog.TOOLS_FILE
+    log = toollog.ToolLog(where)
     for _ in range(toollog.MAX_LINES + 50):
         log(Tag("n"), "Read", "read", "a.txt")
-    assert len(toollog.read_log(tmp_path)) == toollog.MAX_LINES
-    (tmp_path / toollog.TOOLS_FILE).write_text('not json\n{"name": 5, "kind": "read"}\n{"name": "Read", "kind": "launch"}\n[1]\n{"name": "Edit", "kind": "edit", "target": 7}\n')
-    assert toollog.read_log(tmp_path) == [{"name": "Edit", "kind": "edit", "target": ""}]
+    assert len(toollog.read_log(where)) == toollog.MAX_LINES
+    where.write_text('not json\n{"name": 5, "kind": "read"}\n{"name": "Read", "kind": "launch"}\n[1]\n{"name": "Edit", "kind": "edit", "target": 7}\n')
+    assert toollog.read_log(where) == [{"name": "Edit", "kind": "edit", "target": ""}]
     assert toollog.read_log(tmp_path / "nowhere") == []
+    where.write_text('{"name": "<b>Rm</b>\\n -rf", "kind": "run", "target": "a\\u0007b.txt"}\n{"name": "", "kind": "run"}\n')              # PB-6: the host's file is made safe again when it is read
+    assert toollog.read_log(where) == [{"name": "b_Rm_b_-rf", "kind": "run", "target": "ab.txt"}]
+    link = tmp_path / "link.jsonl"
+    link.symlink_to(where)
+    assert toollog.read_log(link) == []                                                                                  # a link is never followed
 
 
 def test_a_log_that_cannot_be_written_never_stops_a_call(tmp_path):
-    log = toollog.ToolLog(tmp_path / "gone" / toollog.TOOLS_FILE)
+    blocker = tmp_path / "blocked"
+    blocker.write_text("a file where the folder should be")
+    log = toollog.ToolLog(blocker / "x.jsonl")
     log(Tag("n"), "Read", "read", "a.txt")
     log(Tag("n"), "Read", "read", "a.txt")                                                # the second call does not even try
-    assert toollog.read_log(tmp_path / "gone") == []
+    assert toollog.read_log(blocker / "x.jsonl") == []
 
 
 def test_calls_are_grouped_in_the_order_they_first_happened_and_what_does_not_fit_is_counted():
@@ -123,7 +133,8 @@ def rig(db, settings, clock, events, tmp_path):
 
 
 def write_tools(rig, task_id, calls):
-    log = toollog.ToolLog(rig.t.run_dir(task_id) / toollog.TOOLS_FILE)
+    row = rig.t.row(task_id)
+    log = toollog.ToolLog(toollog.log_path(rig.projects.settings.data_dir, row.run_id))
     for name, kind, target in calls:
         log(Tag("n"), name, kind, target)
 

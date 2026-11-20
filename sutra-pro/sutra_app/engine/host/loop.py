@@ -50,7 +50,7 @@ from ..spec import (
 )
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
-from .toollog import TOOLS_FILE, ToolLog
+from .toollog import ToolLog, log_path
 from .handoff import CHANGES_FILE
 
 __all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
@@ -409,7 +409,7 @@ class Host:
         router = getattr(self.port, "router", None)
         if getattr(self.task, "node", None) is None or router is None or self.paths is None:
             return
-        router.on_tool = ToolLog(self.paths.run_dir / TOOLS_FILE)
+        router.on_tool = ToolLog(log_path(self.paths.data_dir, self.task.run_id))       # outside the step's own folder (PB-6)
 
     def _node_meter(self) -> Optional["llm.NodeMeter"]:
         """The meter of a node of a multi-agent project (MAN-9, D272): its calls, dollars and wall time from the `node` block's caps, cumulative for the whole process. None for every run that is
