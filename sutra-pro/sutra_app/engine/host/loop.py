@@ -227,7 +227,7 @@ class Host:
         if self.writer is None:
             return
         self._write_deliverable()                   # before the last line: the server reads the file when it applies run.ended
-        self._blank_tool_inputs()                   # a node's tool inputs are not kept in its record (R11, D345)
+        self._blank_tool_inputs()                   # a node's tool inputs are not kept in its record (R11, D344)
         try:
             self.writer.emit(run_ended_event(status=status, outcome=outcome, code=code))
         except (EventError, OSError) as exc:

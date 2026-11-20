@@ -213,7 +213,7 @@ class ProjectService:
         caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0),
                               "depends_on": list(step.depends_on)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
         wants = [budget if budget is not None else (step.estimate_credits or DEFAULT_SLICE) for step in steps]            # the owner's number wins over the planner's guess (D252)
-        # PA-2 (D324, D342): the project's ceiling is the sum of its slices, which is what the owner agreed to: their own budget for each step, or the estimate they approved (a plan estimated above
+        # PA-2 (D324, D345): the project's ceiling is the sum of its slices, which is what the owner agreed to: their own budget for each step, or the estimate they approved (a plan estimated above
         # `confirm_credits` always asks first; Decide for me may say yes only up to `project_credits`). So there is nothing to cut here: an earlier `min(sum, cap)` could never be below the sum
         # (a plan above the cap always has the estimate question) and was dead code. `make_slices` keeps its ceiling argument for the callers that have one (tests).
         slices = make_slices(wants)                                               # each step's share (MAN-9, D324); the project's ceiling is their sum, written as `budget_credits`

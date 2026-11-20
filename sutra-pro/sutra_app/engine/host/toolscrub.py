@@ -1,4 +1,4 @@
-"""Blank the INPUTS of the tool calls in a node's run record when the run ends (R11, D345): J2 keeps, for each builder call, the tool calls the model program made, with their inputs cut to a few hundred
+"""Blank the INPUTS of the tool calls in a node's run record when the run ends (R11, D344): J2 keeps, for each builder call, the tool calls the model program made, with their inputs cut to a few hundred
 characters (`tools.calls[*].input` in `calls.jsonl`, and the same record in `snapshot.json`). An input can be a command or a URL that holds something private, and nothing scrubs it. For a run that is a
 node of a project (flag on only) the host replaces each input with an empty text at the end and keeps the number, the name and the result of the call. The vendored engine is not touched: this is done by the
 host, on the files, after J2 has finished with them. Best effort: a file that cannot be read or written is left as it was and the run still ends."""

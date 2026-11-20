@@ -1,4 +1,4 @@
-"""The tool-call log of a node's run (MAN-14, D327, D343): one line for each tool call, written by the host as the router reports it and read by the Conductor at the node's end (`read_log`),
+"""The tool-call log of a node's run (MAN-14, D327, D345): one line for each tool call, written by the host as the router reports it and read by the Conductor at the node's end (`read_log`),
 which turns it into audit rows. The file is NOT in the run folder (PB-6): it is `<data>/nodes/tools/<run id>.jsonl`, a place the step's own working folder does not hold, so a step cannot delete or
 rewrite it by touching its own files. A step with a shell runs as the same person as Sutra and could still reach it; the log is a record kept by the host, not a proof, and the audit says "reported by
 the step's own host". A line is `{"at": seconds, "name", "kind", "target"}`: names and kinds only, a file's base name at most (see

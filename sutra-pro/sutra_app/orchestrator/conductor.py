@@ -879,7 +879,7 @@ class Conductor:
         return ended
 
     def _review_as_no(self, tx: Tx, project_id: str, why: str) -> int:
-        """PB-3 (D330, D343): a question about the reviewer's verdict is advice, not a gate: when it is refused, ran out, or met a sleep or a restart, it counts as the owner's no, which is "the project
+        """PB-3 (D330, D345): a question about the reviewer's verdict is advice, not a gate: when it is refused, ran out, or met a sleep or a restart, it counts as the owner's no, which is "the project
         ends as it is" (the work is finished). The question is answered `denied` by the system, one audit row says why, and the project ends by its steps. Returns how many questions it closed."""
         closed = 0
         for approval in self.store.approvals(project_id, status="open"):
