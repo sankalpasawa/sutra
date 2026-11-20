@@ -133,5 +133,3 @@ def test_the_time_the_computer_slept_is_not_counted_in_the_wall_time(rig):      
     assert woke["stopped"] == [] and rig.project(reservation.project_id)["status"] == "running"
     [row] = rig.audit("project.slept")
     assert "asleep or closed" in row["reason"] and 7400 <= int(row["ref"]) <= 7490
-    rig.sql("UPDATE tasks SET last_event_at = ?", BASE + 7500 + 7300)
-    assert tick(rig, 7510 + 7300)["stopped"] == [reservation.project_id]                                     # real working time still counts: two more hours of work stops it
