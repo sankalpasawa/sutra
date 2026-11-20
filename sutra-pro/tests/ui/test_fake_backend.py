@@ -2151,7 +2151,8 @@ def test_a_working_log_and_a_step_are_read_only_and_an_unknown_chat_is_gone(fake
     assert len(ok(fake, "/api/chats/cs_77aa10c2e9b4/messages")["messages"]) == 16  # nothing was added
 
 
-BODY_MESSAGE = "the body is {text, choice?, budget?}"
+BODY_MESSAGE = "the body is {text, choice?, budget?, usd_budget?}"
+USD_MESSAGE = "usd_budget must be dollars from 1 to 10000"      # D257
 TEXT_MESSAGE = "text must be 1 to 8000 characters"
 CHOICE_MESSAGE = "choice is {message_id, option}"
 
@@ -2164,6 +2165,8 @@ CHOICE_MESSAGE = "choice is {message_id, option}"
     ({"text": "x", "choice": {"message_id": 1}}, "choice", CHOICE_MESSAGE),
     ({"text": "x", "choice": {"message_id": 1, "option": "Yes", "more": 1}}, "choice", CHOICE_MESSAGE),
     ({"text": "x", "choice": {"message_id": 1, "option": 2}}, "choice", CHOICE_MESSAGE),
+    ({"text": "x", "usd_budget": 0.5}, "usd_budget", USD_MESSAGE), ({"text": "x", "usd_budget": 12.345}, "usd_budget", USD_MESSAGE),
+    ({"text": "x", "usd_budget": True}, "usd_budget", USD_MESSAGE),
 ])
 def test_a_line_that_is_not_text_of_one_to_8000_characters_is_refused_before_anything_is_stored(fake, body, path, message):
     error = error_of(fake.post("/api/chats/cs_org/messages", body), 422, "validation")
