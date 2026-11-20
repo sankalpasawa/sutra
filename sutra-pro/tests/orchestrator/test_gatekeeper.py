@@ -144,9 +144,14 @@ def test_a_plan_with_a_structural_problem_is_refused_and_nothing_is_stored_as_ok
     assert not evaluation.ok and code in codes(evaluation) and evaluation.conflicts == ()
 
 
-def test_a_plan_of_exactly_twelve_steps_is_fine_and_the_limit_can_be_set():
-    assert evaluate(plan(*(PlanStep(f"a{i}", output=READ) for i in range(12)))).ok
+def test_a_plan_of_twelve_workers_is_fine_reviewers_come_on_top_and_the_limit_can_be_set():
+    workers = tuple(PlanStep(f"a{i}", output=READ) for i in range(12))
+    assert evaluate(plan(*workers)).ok
+    assert evaluate(plan(*workers, PlanStep("r1", role="reviewer", output=READ, depends_on=("a0",)), PlanStep("r2", role="reviewer", output=READ, depends_on=("a1",)))).ok     # 12 workers and 2 reviewers (D305)
+    too_many = evaluate(plan(*workers, PlanStep("a12", output=READ)))
+    assert not too_many.ok and codes(too_many) == ["plan.too_big"]                                                  # 13 workers
     assert not evaluate(plan(PlanStep("a1", output=READ), PlanStep("a2", output=READ), max_nodes=1)).ok
+    assert evaluate(plan(PlanStep("a1", output=READ), PlanStep("r1", role="reviewer", output=READ, depends_on=("a1",)), max_nodes=1)).ok
 
 
 def test_an_unknown_owner_access_refuses_the_plan_and_gives_no_grant():

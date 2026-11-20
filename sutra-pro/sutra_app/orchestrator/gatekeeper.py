@@ -47,7 +47,7 @@ class Plan:
     """The steps in plan order (a step waits only for earlier steps), the owner's folder access (`none`, `read`, `edit`), and what has been allowed so far: `approved` maps a step id
     to the tiers the owner or a rule allowed for it, `approved_wide` holds the steps whose wide write scope was allowed. `confirm_credits` is the estimate above which the plan asks
     (None: it never asks about the estimate; the default is the configured 500 work credits, D300, and the caller passes None only for a project the owner gave a budget). `max_nodes`
-    bounds the steps (the plan limit)."""
+    bounds the WORKERS of the plan (the plan limit); reviewers come on top (D305)."""
 
     steps: tuple[PlanStep, ...]
     owner_access: str = "none"
@@ -113,8 +113,8 @@ def _evaluate(plan: Plan) -> Evaluation:
     steps = tuple(plan.steps)
     if not steps:
         refusals.append(Refusal(None, "plan.empty", "The plan has no step"))
-    if len(steps) > max(1, int(plan.max_nodes)):
-        refusals.append(Refusal(None, "plan.too_big", f"The plan has more than {plan.max_nodes} steps"))
+    if sum(1 for step in steps if step.role == "worker") > max(1, int(plan.max_nodes)):
+        refusals.append(Refusal(None, "plan.too_big", f"The plan has more than {plan.max_nodes} worker steps"))
     if not isinstance(plan.owner_access, str) or plan.owner_access not in OWNER_ACCESS:
         refusals.append(Refusal(None, "plan.owner_access", "The owner's folder access is not one of none, read or edit"))
         return Evaluation(False, {}, refusals=tuple(refusals))
