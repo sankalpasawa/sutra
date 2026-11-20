@@ -128,6 +128,8 @@ class Conductor:
             return "Waiting for your answer before this project starts"
         if node["paused"]:
             return "Paused: this project is paused until you resume it"
+        if self._upstream_held(conn, node["id"]):
+            return "Waiting: a step it needs is held for your answer"             # PB-1: never handed the work of a step that has not been kept or set aside, whoever pressed Continue
         caps = json.loads(node["caps"] or "{}")
         limit = int(caps.get("max_parallel") or NODE_DEFAULT_CAPS["max_parallel"] or 3)
         running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off','expired')", (node["project_id"],)).fetchone()[0]      # an expired node whose process is still there holds its slot (Minor 6)
@@ -143,6 +145,11 @@ class Conductor:
             if slices > ceiling:
                 return "Waiting: the credits set aside for this project's steps are more than the project may spend"
         return ""
+
+    @staticmethod
+    def _upstream_held(conn: sqlite3.Connection, node_id: str) -> bool:
+        """True when a step this node follows is `awaiting_approval`: its work is finished but the owner has not yet said keep or set aside (MAN-10, PB-1)."""
+        return conn.execute("SELECT 1 FROM agent_nodes d WHERE d.state = 'awaiting_approval' AND d.id IN (SELECT j.value FROM agent_nodes n, json_each(n.depends_on) j WHERE n.id = ?)", (node_id,)).fetchone() is not None
 
     def _lease_of(self, conn: sqlite3.Connection, row: Any) -> tuple[str, ...] | None:
         """The part of the owner's folder a node may change, as a lease: None for a node that cannot write, `()` for the whole folder (a writer with no scope, or a team whose output is `auto`: a
@@ -1028,6 +1035,8 @@ class Conductor:
                     raise NotFound("that project")
                 if found["status"] in PROJECT_FINAL:
                     raise AppError("busy", "That project has ended")
+                if resume and tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND json_extract(request_json, '$.kind') = 'scope_violation'", (project_id,)).fetchone():
+                    raise AppError("busy", "A step changed files nobody gave it. Answer that question first; the project goes on when you do")       # the hold is not the owner's pause (PB-1)
                 tx.conn.execute("UPDATE projects SET paused = ? WHERE id = ?", (0 if resume else 1, project_id))
                 self.store.audit(tx, actor="owner", action="project.resumed" if resume else "project.paused", project_id=project_id, decision="n/a")
                 tx.emit("project.updated", {"project_id": project_id, "paused": not resume})

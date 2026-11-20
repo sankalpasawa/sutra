@@ -96,3 +96,19 @@ def test_the_host_builds_the_changes_list_from_its_own_folder_watch_and_skips_th
     assert "changes" not in host_handoff.build(run, "nd_" + "a" * 12, "done", "ok")                                       # git could not say: no key
     (run / "deliverable.json").write_text(json.dumps({"changes": {"files": [{"path": "site/a.html", "status": "new"}, {"path": ".sutra-probe-abcdef", "status": "new"}, {"path": "dir/.sutra-probe-1", "status": "new"}], "more": 0}}))
     assert host_handoff.build(run, "nd_" + "a" * 12, "done", "ok")["changes"] == ["site/a.html"]
+
+
+def test_continue_cannot_lift_the_hold_and_a_step_that_follows_a_held_one_never_starts(rig):          # PB-1
+    from sutra_app.orchestrator.errors import AppError
+    reservation, tasks = two_writers(rig)
+    finish_with(rig, tasks["a1"], ["site/index.html", "secrets/notes.txt"])
+    pid = reservation.project_id
+    assert node(rig, "a1")["state"] == "awaiting_approval" and rig.project(pid)["paused"] == 1
+    with pytest.raises(AppError) as refused:
+        rig.t.run(rig.projects.pause(pid, resume=True))                                                   # the owner's Continue
+    assert refused.value.code == "busy" and "Answer that question first" in refused.value.message and rig.project(pid)["paused"] == 1
+    rig.sql("UPDATE projects SET paused = 0 WHERE id = ?", pid)                                           # even with the flag cleared by any other way
+    assert rig.start() == [] and rig.t.status(tasks["a3"]) == "queued"                                    # a3 follows a1, which is held: it is not handed a1's work
+    [asked] = rig.store.approvals(pid, status="open")
+    rig.t.run(rig.projects.answer(pid, asked.id, "allow_once"))
+    assert node(rig, "a1")["state"] == "done" and rig.t.status(tasks["a3"]) in ("queued", "starting", "running")
