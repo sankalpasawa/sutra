@@ -291,3 +291,42 @@ Open points for the architect:
 
 - Architect ruling: the fixes before phase 3 are G1 to G10 and the move-only split C0, listed in `build-plan.md` ("Before phase 3"). In short: G1 the `handoff` step runs first for a node; G2 the tick measures its gap from the end of the last tick; G3 a node held for "no valid grant" is failed with `grant.denied`; G4 a node's retry keeps its dependencies (upstream); G5 the resumed request carries the planner's identity and token; G6 flag-on planner calls are `workspace=read`; G7 the lines `stopped` and `project_waits`; G8 `reserve` and `link_task` fail closed; G9 the 64 MB hash budget; G10 `grant.issued` says "output auto"; G11 register D306 to D312; C0 split `projects.py` into `projects.py` and `conductor.py`. Everything else in the code agrees with the design (lifecycle, lease, one scheduler and gate composition, `node_messages` and D297, hand-off flow, failure rows N1 to N12 and N14, D296, D301 to D303).
 - Architect ruling: the Conductor lives in `projects.py` (`gate`, `sync_task`, `tick`, `refuse_open_gates`, `stop`), not in `conductor.py` as the component table said. Decided, D312: the design now says so, and the split into `conductor.py` is done first in phase 3 (C0, a move with no change of behaviour) because MAN-8 to MAN-11 add to the gate and the tick. The node states `ready` and `torn_down` of the first state diagram are not stored states (`queued` is "ready" and `torn_down_at` is a column); `handing_off` exists only inside one transaction and no reader sees it. Architecture 3.3 is corrected. The project is made by `reserve` (before the tasks) and each task is linked by `link_task` in the transaction that makes it, not by one `adopt` in one transaction: approved, because the tasks are made by the chat agent's unchanged runner one transaction each; a crash between them is settled by `reconcile_projects`.
+
+## Phase 2 review round (the fixes before phase 3, then MAN-8, MAN-9 and MAN-15)
+
+### N32. The planner's Stop never reached the runner (G5, G7)
+The D301 handling in the runner (`except CallCancelledError`) was dead code: the agent's `_stage` turned every connector error, the owner's Stop included, into a `ConnectorFailure`, so a stop ended as "I can't reach Claude (the turn was stopped)". Fixed in the agent: `ports.was_stopped(exc)` (code `cancelled`, not retryable) lets it go up as it is, so the runner ends the turn with the new line `stopped`. Tests: `test_resumed_planner.py` (fresh and resumed request).
+
+### N33. `project_waits` cannot be reached at the default threshold yet (G7)
+The chat agent plans at most 5 steps (`MAX_ASSIGNMENTS`), and 5 x the slice of 100 is 500, which is not over the confirm threshold of 500. So the architect's test "a six-step plan's reply says it waits" cannot be made through the chat; the test lowers the threshold. The line is reachable at the default only once a step has its own estimate (the node plan stage, MAN-8) or a larger slice (MAN-9). The two lines are in a separate table, `planner.NODE_LINES`, not in `LINES`: the coordinator's rule was that the flag-off set stays as it was; `line()` and `matches_template` read both. `Reservation` gained `title` and `waits`; the estimate question stores `credits` and `limit` in its request so a request that is planned again finds the numbers.
+
+### N34. How the tick gap is measured with a given `now` (G2)
+`tick(now=...)` sets the next gap from `now` plus what the tick took on the clock, so a test that passes `now` and a real run give the same reading. The tick's own work is never a sleep.
+
+### N35. G3 and G8 details
+G3 also fails nodes that wait in `awaiting_approval` or `awaiting_system` with a broken grant (a grant is rewritten only by the answer path of MAN-8), never retries (`_fail(retry=False)`), and writes `grant.denied` with fixed words. G8 and B2 are one change: `reserve` returns a not-ok reservation for any project that has ended (failed, stopped, done) and `link_task` raises (`AppError busy`) for a step with no node and for a node that has its task already.
+
+### N36. B1: what "contained" means
+`Tx.savepoint()` (new, in `db.py`) undoes the writes and the events of a part that failed. `sync_task` runs `_sync_task` in one; on an exception the node is ended `failed` with the audit row `node.error` (fixed words, nothing from the node), never retried, its dependants are cancelled and the project is settled, each in its own savepoint; the task's own change is not lost. A hand-off that is refused (`handoff.refused`) still follows the normal rule, one retry. `read_handoff` is total: deep nesting, bytes that are not Unicode, a lone surrogate, a path that cannot be compared are `HandoffRefused`. A retry for an archived team (`AppError` from `retry_in`) ends the node `failed` with "(it could not be tried again)".
+
+### N37. MJ5: the hand-off is read before the transaction (a new hook in the projector)
+`Projector.before_drain` (set by the wiring only while the flag is on) calls `ProjectService.prepare_handoff(task_id)` before `drain` opens its transaction: when the task is the run of a worker node and `handoff.json` is there, the file is read, checked and hashed and `handoff.accepted.json` is written outside any transaction; the result waits in a small dict, keyed by the file's stamp, until `_hand_off` uses it. A file that changed meanwhile, or a task that ended another way, is read again inside as before. The accepted file may exist for a node that is then refused for another reason; nothing gives it on.
+
+### N38. MJ7 and the audit names
+A stop by the owner denies the open questions with the audit row `approval.denied` (actor owner); a stop by the system uses `gate.refused`. `_refuse_in` is the whole database part of the D296 refusal inside one transaction; the tick uses it, so the decision and the stop commit together. A project that is `awaiting_approval` with no open question is ended by the tick ("not approved: no question was left to answer"); the answer path of MAN-8 moves a project on in the transaction of the answer, so this never meets a project in the middle of an answer.
+
+### N39. Minor 2: a new value of `_stopped_by`
+`TaskService.stop_node(..., by=)` records `system` for a lease that ran out, a kill and a stop the app decided. It is not `app`: the Heads up wording for `app` says "when the app closed". A `system` stop is listed as "stopped before it finished"; the owner's own stop is still never listed.
+
+### N40. Existing tests that changed on purpose
+`test_a_nodes_folder_that_is_a_file_fails_closed` (Minor 3: it said `none`); `test_kill_all_says_when_the_file_could_not_be_written...` now expects the switch to read `kill` from memory; the two kill-switch tests that replaced `stop_node` pass the new `by` keyword on. Nothing was deleted or weakened: each now asserts the safer rule.
+
+### N41. Minor 7, D313: where the hold is installed
+With the flag off the wiring builds nothing. `start_services` looks at the database after the migration and installs `nodes_store.held_while_off` as the task gate only when some step of a project has not started (blocked or queued). An app that never made a project has `task_gate = None` exactly as before.
+
+### N42. D314: restart attempts are counted from the audit trail
+No column was added: `node.restarted` rows are counted (`MAX_RESTARTS = 2`). `attempt - restarts <= retries` keeps the single real retry. A node whose task `reconcile` ended as stopped with "the app was closed" or crashed with "the app was closed while it ran" is a restart; a stop by the owner is not.
+
+### N43. Known v1 limits recorded (m9)
+`node_audit` and `node_messages` have no retention in v1 (they are append-only and a project is never deleted, D305); the size is small (words and numbers only) and a retention rule needs a decision about the append-only triggers, so it waits for a later version.
+
