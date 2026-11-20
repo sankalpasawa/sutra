@@ -470,6 +470,8 @@ class TurnRunner:
                     reservation = await run_blocking(self._reserve_project, request, drafts, asked, defaulted)
                     if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
                         raise AppError("validation", reservation.why or "the plan was refused")
+                    if reservation is not None:
+                        await self.projects.probe_system(reservation.project_id)    # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
                 if reservation is not None and reservation.waits is not None:          # the project waits for the owner's OK on its estimate: say so (D308)
                     waits = line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1]))

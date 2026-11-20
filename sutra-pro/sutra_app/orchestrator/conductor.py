@@ -21,6 +21,7 @@ from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
+from sutra_app.syspermissions import is_permission_failure
 from sutra_app.orchestrator.nodes_store import GATE_REFUSED_ACTION, GATE_REFUSED_CLOSED, GATE_REFUSED_SLEEP, PROJECT_STOPPED_ACTION, NodeBlockError, node_block_of
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ APP_CLOSED = "the app was closed"
 APP_CLOSED_WHY = "the app was closed while it ran"
 MAX_RESTARTS = 2                                   # a node that the closing of the app ended gets a fresh attempt that does not use up its one retry, at most this many times (D314)
 NODE_ERROR_WHY = "following this step failed, so it was ended"
+NEEDS_SYSTEM_PERMISSION = "needs_system_permission"           # why a node ended when the computer refused a file (MAN-15)
 CAP_REACHED = "stopped: this step reached its"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
 
 
@@ -192,6 +194,9 @@ class Conductor:
         elif want in ("cancelled", "failed") and outcome.startswith(APP_CLOSED):
             want = "failed"                                                  # the app was closed under the node: nothing the owner asked for, so it is tried again, not cancelled
             outcome = APP_CLOSED_WHY
+        if want == "failed" and state not in NODE_FINAL and is_permission_failure(outcome):
+            self._late_permission(tx, node, outcome)
+            return
         if want in ("cancelled", "failed") and outcome.startswith(CAP_REACHED):
             self.store.audit(tx, actor="conductor", action="trigger.cap_reached", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason=outcome[:200],
                              ref=task_id)
@@ -563,6 +568,21 @@ class Conductor:
         self._receipt(tx, project_id, reason)
         tx.emit("project.updated", {"project_id": project_id, "status": "stopped"})
         return cancelled
+
+    def _late_permission(self, tx: Tx, node: sqlite3.Row, outcome: str) -> None:
+        """A node that ended on a refusal of the computer (EPERM, WinError 5: a permission the probe could not see) did not fail: it `needs_system_permission`. It ends `failed` with that reason, is not
+        retried (it would be refused again), and ONE card asks the owner (a system question of the project, once, by its client id); the audit says `system.late_denied`."""
+        self.store.audit(tx, actor="conductor", action="system.late_denied", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny", reason="needs_system_permission",
+                         ref=node["task_id"] or "")
+        asked = self.store.open_approval(tx, project_id=node["project_id"], node_id=node["id"], tier=2,
+                                         request={"kind": "system", "item": "unknown", "level": "write", "late": 1, "nodes": [node["id"]]},
+                                         expires_at=tx.now() + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400), client_id=f"system:late:{node['project_id']}")
+        if not asked.duplicate:
+            self.store.audit(tx, actor="gatekeeper", action="system.asked", project_id=node["project_id"], node_id=node["id"], tier=2, decision="ask", reason="late: the computer refused a file", ref=asked.id)
+            self._note(tx, node["project_id"], "A step could not use your files because your computer did not allow it. Open the project to see what to allow.", f"project:{node['project_id']}#late")
+        self._fail(tx, node, NEEDS_SYSTEM_PERMISSION, retry=False)
+        tx.emit("node.updated", {"project_id": node["project_id"], "node_id": node["id"], "state": "failed"})
+        self._sync_project(tx, node["project_id"])
 
     def _note(self, tx: Tx, project_id: str, text: str, src_ref: str) -> None:
         """A plain note in the org chat about a project (once, by its `src_ref`): a trigger that ended a step or the project says so (D311: a note, not a card)."""

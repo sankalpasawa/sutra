@@ -35,7 +35,7 @@ __all__ = [
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
-    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
+    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "SystemPermissionCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
     "NODE_RUNTIMES",
 ]
 
@@ -696,6 +696,22 @@ class NodeApprovalCard(Value):
     question: Annotated[str, StringConstraints(max_length=500)]
     options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)]
     expires_at: Iso
+
+
+class SystemPermissionCard(Value):
+    """A permission of the computer a step needs before it starts (MAN-15, D295): which one, what it is for, the plain steps for THIS system, and the two answers: check again (after the owner allowed
+    it in the settings) or skip (the steps that need it are cancelled). Sutra changes no setting and Decide for me cannot answer it."""
+
+    type: Literal["system_permission"] = "system_permission"
+    project_id: ProjectId
+    approval_id: ApprovalId
+    item: Annotated[str, StringConstraints(max_length=40)]
+    label: Annotated[str, StringConstraints(max_length=200)] = ""
+    level: Literal["read", "write"] = "read"
+    steps: Annotated[list[Annotated[str, StringConstraints(max_length=300)]], Field(max_length=8)]
+    platform: Annotated[str, StringConstraints(max_length=20)] = ""
+    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)] = ["check_again", "skip"]
+    affects: Annotated[list[str], Field(max_length=20)] = []
 
 
 class NodeOut(Value):

@@ -47,3 +47,24 @@ def test_with_the_flag_off_the_route_is_404_before_the_token_is_looked_at(tmp_pa
         assert client.post("/api/projects/prj_000000000000/approvals/ap_000000000000", json={"decision": "deny"}, headers=HEADERS).status_code == 404
     finally:
         client.__exit__(None, None, None)
+
+
+def test_the_system_routes_are_404_when_off_need_the_token_and_404_for_a_question_that_is_not_open(tmp_path):
+    client, services = project_asking_github(tmp_path)
+    try:
+        for action in ("check", "skip"):
+            assert client.post(f"/api/projects/prj_000000000000/system/files_folders/{action}", json={}, headers=HEADERS).status_code == 404         # off: the feature does not exist
+    finally:
+        client.__exit__(None, None, None)
+    on_dir = tmp_path / "on"
+    on_dir.mkdir()
+    client, services = project_asking_github(on_dir, nodes_v1=True)
+    try:
+        project = rows(services, "SELECT id FROM projects")[0]["id"]
+        for action in ("check", "skip"):
+            url = f"/api/projects/{project}/system/files_folders/{action}"
+            assert client.post(url, json={}).status_code == 401
+            assert client.post(url, json={"x": 1}, headers=HEADERS).status_code == 422
+            assert client.post(url, json={}, headers=HEADERS).status_code == 404
+    finally:
+        client.__exit__(None, None, None)

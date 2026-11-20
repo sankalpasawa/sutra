@@ -26,6 +26,7 @@ import sqlite3
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
@@ -34,10 +35,11 @@ from sutra_app.orchestrator.budgets import DEFAULT_SLICE, make_slices
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
 from sutra_app.orchestrator.errors import AppError, NotFound
-from sutra_app.orchestrator.gatekeeper import DECIDE_FOR_ME, Evaluation, Plan, PlanStep, decide_for_me_answer, evaluate
+from sutra_app import oslayer, syspermissions
+from sutra_app.orchestrator.gatekeeper import DECIDE_FOR_ME, Evaluation, Plan, PlanStep, Refusal, decide_for_me_answer, evaluate
 from sutra_app.orchestrator.grants import Grant
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
-from sutra_app.orchestrator.models import NodeApprovalCard, NodeOut, ProjectOut
+from sutra_app.orchestrator.models import NodeApprovalCard, NodeOut, ProjectOut, SystemPermissionCard
 from sutra_app.orchestrator.nodes_store import NodeStore
 
 __all__ = ["ProjectService", "ProjectStep", "Reservation", "default_output_of", "default_output_name", "NODE_FINAL", "PROJECT_FINAL", "TASK_TO_NODE"]
@@ -113,7 +115,8 @@ def default_output_name(data_dir: Any) -> Callable[[str], str]:
 class ProjectService:
     def __init__(self, db: Database, *, store: NodeStore, ids: IdFactory | None = None, clock: Clock | None = None, settings: Settings,
                  owner_access: Callable[[], str] | None = None, output_of: Callable[[str], Any] | None = None, node_control: Any = None, tasks: Any = None, chats: Any = None,
-                 output_name: Callable[[str], str] | None = None) -> None:
+                 output_name: Callable[[str], str] | None = None, folder_of: Callable[[], str | None] | None = None, adapter: Any = None,
+                 elevated: Callable[[], bool] | None = None) -> None:
         self.db = db
         self.store = store
         self.ids = ids or IdFactory()
@@ -122,6 +125,9 @@ class ProjectService:
         self._owner_access = owner_access or (lambda: "none")
         self._output_of = output_of or (lambda dept: None)
         self._output_name = output_name or (lambda dept: "")
+        self._folder_of = folder_of or (lambda: None)                              # the owner's working folder, for the system probe (MAN-15)
+        self._adapter = adapter                                                     # a fake in tests; None: the adapter of this system
+        self._elevated = elevated or oslayer.is_elevated
         self.control = node_control
         self.tasks = tasks
         self.chats = chats                                                        # the org chat's store: where the receipt of a stopped project is written (MAN-7)
@@ -176,6 +182,8 @@ class ProjectService:
                                  tool_profile=_tool_profile(step.needs)) for step in steps),
             owner_access=self._owner_access(), confirm_credits=None if budget is not None else int(NODE_DEFAULT_CAPS["confirm_credits"] or 500))
         evaluation = evaluate(plan)
+        if self._elevated():                                                        # a process run as administrator makes no node: what it writes would belong to the administrator (MAN-15)
+            evaluation = Evaluation(False, {}, refusals=(Refusal(None, "system.elevated", "Sutra is running as administrator. Close it and open it again the usual way, then ask again"),))
         with self.db.tx() as tx:
             if tx.conn.execute("SELECT id FROM projects WHERE request_id = ?", (request_id,)).fetchone() is not None:
                 found = tx.conn.execute("SELECT id, status FROM projects WHERE request_id = ?", (request_id,)).fetchone()
@@ -212,6 +220,8 @@ class ProjectService:
                             (planner_node_id, project_id, "planner", "inline", "done", now, now))
         if not evaluation.ok:
             self.store.audit(tx, actor="gatekeeper", action="plan.refused", project_id=project_id, decision="deny", reason=why)
+            if any(refusal.code == "system.elevated" for refusal in evaluation.refusals):
+                self.store.audit(tx, actor="gatekeeper", action="system.elevated", project_id=project_id, decision="deny", reason="a process run as administrator makes no node")
             tx.emit("project.created", {"project_id": project_id, "status": "failed"})
             return Reservation(project_id, False, why or "the plan was refused")
         node_ids = {step.ref: self.ids.node_id() for step in steps}
@@ -356,7 +366,7 @@ class ProjectService:
         if project is None or project["status"] in PROJECT_FINAL:
             return "ended"
         approvals = self.store.approvals(project_id)
-        if any(a.status in ("denied", "expired") for a in approvals):
+        if any(a.status == "expired" or (a.status == "denied" and a.request.get("kind") != "system") for a in approvals):      # a skipped system question only cancels the steps that need it
             self.conductor._refuse_in(tx, project_id, why)
             return "refused"
         caps = json.loads(project["caps_json"] or "{}")
@@ -440,6 +450,131 @@ class ProjectService:
             cards.append(NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at)))
         return cards
 
+    # ---- system permissions (MAN-15, D295) ------------------------------------------------------------------------------------------
+
+    def _system_adapter(self) -> Any:
+        return self._adapter if self._adapter is not None else syspermissions.adapter_for()
+
+    async def probe_system(self, project_id: str) -> int:
+        """Before any node of the project starts: what the computer has allowed (the probe only looks). A step that writes needs the write probe, the others the read probe. Every need is ONE
+        question of the project (kind `system`, tier 2 for a write, 1 for a read; the same question for several steps), the steps it affects wait in `awaiting_system` (the gate holds them),
+        the others run. It touches the disk and may show a system dialog, so it is not run inside the gate: the runner calls it after `reserve` and before the tasks are made. Returns how many
+        questions it opened. Decide for me does not answer them."""
+        folder = self._folder_of()
+        if not folder:
+            return 0
+        adapter = self._system_adapter()
+        nodes = await run_blocking(lambda: [dict(r) for r in self.db.conn().execute(
+            "SELECT id, grants_json, state FROM agent_nodes WHERE project_id = ? AND role = 'worker' AND state IN ('planned','awaiting_approval','queued')", (project_id,))])
+        writers = [n for n in nodes if json.loads(n["grants_json"] or "{}").get("folder") == "edit"]
+        readers = [n for n in nodes if n not in writers]
+        found: dict[tuple[str, str, str], list[str]] = {}
+        for group, write in ((writers, True), (readers, False)):
+            if not group:
+                continue
+            for need in await run_blocking(lambda write=write: adapter.probe(Path(folder), write=write)):
+                found.setdefault((need.item, need.level, need.label), []).extend(n["id"] for n in group)
+        if not found:
+            return 0
+
+        def open_questions() -> int:
+            opened = 0
+            with self.db.tx() as tx:
+                expires = tx.now() + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400)
+                for (item, level, label), ids in found.items():
+                    asked = self.store.open_approval(tx, project_id=project_id, node_id="", tier=2 if level == "write" else 1, expires_at=expires, client_id=f"system:{item}:{level}",
+                                                     request={"kind": "system", "item": item, "level": level, "label": label, "nodes": list(dict.fromkeys(ids))[:12]})
+                    if asked.duplicate:
+                        continue
+                    opened += 1
+                    self.store.audit(tx, actor="gatekeeper", action="system.asked", project_id=project_id, tier=asked.tier, decision="ask", reason=f"{item}: {label}"[:200], ref=asked.id)
+                    for node_id in dict.fromkeys(ids):
+                        tx.conn.execute("UPDATE agent_nodes SET state = 'awaiting_system' WHERE id = ? AND state IN ('planned','queued')", (node_id,))
+                        tx.emit("node.updated", {"project_id": project_id, "node_id": node_id, "state": "awaiting_system"})
+            return opened
+        return await run_blocking(open_questions)
+
+    def _release_system_nodes(self, tx: Tx, project_id: str, node_ids: Sequence[str]) -> None:
+        """The steps that waited for one permission go on when nothing else holds them: `awaiting_system` becomes `planned` (no task yet or blocked) or `queued`, unless another open system
+        question still names them."""
+        still = {n for a in self.store.approvals(project_id, status="open") if a.request.get("kind") == "system" for n in (a.request.get("nodes") or [])}
+        for node_id in node_ids:
+            if node_id in still:
+                continue
+            row = tx.conn.execute("SELECT t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.id = ? AND n.state = 'awaiting_system'", (node_id,)).fetchone()
+            if row is None:
+                continue
+            state = "queued" if row["tstatus"] == "queued" else "planned"
+            tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE id = ?", (state, node_id))
+            tx.emit("node.updated", {"project_id": project_id, "node_id": node_id, "state": state})
+
+    async def system_check(self, project_id: str, item: str) -> dict[str, Any]:
+        """"Check again": the probe runs again. If the permission is there now the question is answered (allow once, by the owner), the steps that waited go on and the project starts what can
+        start; if not, the audit says `system.still_needed` and the card stays with its steps."""
+        found = await run_blocking(self._find_system, project_id, item)
+        level, label = str(found.request.get("level", "read")), str(found.request.get("label", ""))
+        folder = self._folder_of()
+        adapter = self._system_adapter()
+        needs = await run_blocking(lambda: adapter.probe(Path(folder), write=level == "write")) if folder else []
+        still = any(need.item == item for need in needs)
+
+        def work() -> str:
+            with self.db.tx() as tx:
+                if still:
+                    self.store.audit(tx, actor="owner", action="system.still_needed", project_id=project_id, tier=found.tier, decision="n/a", reason=f"{item}: {label}"[:200], ref=found.id)
+                    return "still"
+                self.store.decide(tx, found.id, "allow_once", decided_by="owner")
+                self.store.audit(tx, actor="owner", action="system.cleared", project_id=project_id, tier=found.tier, decision="allow", reason=f"{item}: {label}"[:200], ref=found.id)
+                self._release_system_nodes(tx, project_id, list(found.request.get("nodes") or []))
+                return self._settle_answers(tx, project_id)
+        outcome = await run_blocking(work)
+        if outcome in ("running", "waiting", "ended") and not still and self.tasks is not None:
+            await self.tasks.start_ready()
+        return await run_blocking(self.snapshot, project_id)
+
+    def _find_system(self, project_id: str, item: str) -> Any:
+        for approval in self.store.approvals(project_id, status="open"):
+            if approval.request.get("kind") == "system" and approval.request.get("item") == item:
+                return approval
+        raise NotFound("that question")
+
+    async def system_skip(self, project_id: str, item: str) -> dict[str, Any]:
+        """"Skip": the owner does not want to allow it. The question is answered no, and ONLY the steps that need it are cancelled ("skipped: the computer did not allow it"); the others run."""
+        found = await run_blocking(self._find_system, project_id, item)
+
+        def work() -> None:
+            with self.db.tx() as tx:
+                self.store.decide(tx, found.id, "deny", decided_by="owner")
+                self.store.audit(tx, actor="owner", action="system.skipped", project_id=project_id, tier=found.tier, decision="deny", reason=f"{item}: {found.request.get('label', '')}"[:200], ref=found.id)
+                for node_id in found.request.get("nodes") or []:
+                    row = tx.conn.execute("SELECT n.state AS state, n.task_id AS task_id, t.status AS tstatus FROM agent_nodes n LEFT JOIN tasks t ON t.id = n.task_id WHERE n.id = ?", (node_id,)).fetchone()
+                    if row is None or row["state"] != "awaiting_system":
+                        continue
+                    if row["task_id"] and row["tstatus"] in ("blocked", "queued"):
+                        self.tasks.cancel_in(tx, row["task_id"], "skipped: the computer did not allow it")
+                    else:
+                        tx.conn.execute("UPDATE agent_nodes SET state = 'cancelled', failure_reason = ?, ended_at = ?, torn_down_at = ? WHERE id = ?",
+                                        ("skipped: the computer did not allow it", tx.now(), tx.now(), node_id))
+                        tx.emit("node.updated", {"project_id": project_id, "node_id": node_id, "state": "cancelled"})
+                self.conductor._sync_project(tx, project_id)
+                self._settle_answers(tx, project_id)
+        await run_blocking(work)
+        if self.tasks is not None:
+            await self.tasks.start_ready()
+        return await run_blocking(self.snapshot, project_id)
+
+    def system_cards(self, project_id: str) -> list[SystemPermissionCard]:
+        """The open permission questions of a project as cards, with the steps of THIS system in plain words."""
+        adapter = self._system_adapter()
+        cards = []
+        for a in self.store.approvals(project_id, status="open"):
+            if a.request.get("kind") != "system":
+                continue
+            need = syspermissions.Need(str(a.request.get("item", "unknown")), "write" if a.request.get("level") == "write" else "read", str(a.request.get("label", "")))
+            cards.append(SystemPermissionCard(project_id=project_id, approval_id=a.id, item=need.item[:40], label=need.label[:200], level=need.level, steps=[s[:300] for s in adapter.explain(need)][:8],
+                                              platform=str(getattr(adapter, "name", ""))[:20], affects=[str(n) for n in (a.request.get("nodes") or [])][:20]))
+        return cards
+
     # ---- reading --------------------------------------------------------------------------------------------------------------------
 
     @staticmethod
@@ -487,7 +622,8 @@ class ProjectService:
                      for a in self.store.approvals(project_id, status="open")]
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
-                "spend": {"calls": spend["calls"], "usd": round(spend["usd"], 6) if spend["usd"] is not None else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id)], "last_message_seq": last}
+                "spend": {"calls": spend["calls"], "usd": round(spend["usd"], 6) if spend["usd"] is not None else None}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
+                "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
 
     @staticmethod
     def _conflict_edges(project: ProjectOut, nodes: Sequence[NodeOut]) -> list[tuple[str, str]]:

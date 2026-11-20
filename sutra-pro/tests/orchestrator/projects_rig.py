@@ -33,7 +33,7 @@ class PRig:
 
     # ---- making a request the way the runner does ---------------------------------------------------------------------------------
 
-    def request(self, steps, *, request_id="req-1", budget=None, title="A project", needs=None, scope=None, estimates=None, decide_for_me=False):
+    def request(self, steps, *, request_id="req-1", budget=None, title="A project", needs=None, scope=None, estimates=None, decide_for_me=False, probe=False):
         """`steps`: (ref, team, [refs it waits for]). Reserves the project, then makes every task and links it in the same transaction. Returns (reservation, {ref: task id})."""
         t = self.t
         project_steps = [ProjectStep(ref=ref, dept_id=dept, depends_on=tuple(deps), needs=tuple((needs or {}).get(ref, ())), scope=tuple((scope or {}).get(ref, ())),
@@ -42,6 +42,8 @@ class PRig:
         tasks = {}
         if reservation is None or not reservation.ok:
             return reservation, tasks
+        if probe:                                                              # what the computer has allowed, before any task exists (MAN-15), as the runner does it
+            t.run(self.projects.probe_system(reservation.project_id))
         for ref, dept, deps in steps:
             with t.db.tx() as tx:
                 task = t.service.create(tx, dept_id=dept, text=f"{ref} of {request_id}", title=ref, depends_on=[tasks[d] for d in deps], request=request_id)

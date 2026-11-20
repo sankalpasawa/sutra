@@ -13,6 +13,8 @@
     GET  /api/projects/{id}       -> snapshot: project, nodes, edges, caps, spend, open approvals, last_message_seq
     POST /api/projects/{id}/stop  {}                       -> {stopped: n}                  the project is stopped, its agents go through the stop ladder together
     POST /api/projects/{id}/pause {resume?: bool}          -> ProjectOut
+    POST /api/projects/{id}/system/{item}/check {}          -> snapshot                      (MAN-15: the probe runs again; allowed: the steps that waited go on)
+    POST /api/projects/{id}/system/{item}/skip  {}          -> snapshot                      (only the steps that need that permission are cancelled)
     POST /api/projects/{id}/approvals/{aid} {decision}     -> snapshot                      (MAN-8: allow_once | allow_project | deny; the plan is evaluated again and, when nothing is left to ask, the project starts)
 
 Every route answers `404 not_found` while SUTRA_NODES_V1 is off, whoever asks and whether or not a token came (the feature does not exist then); with it on, every write needs the launch
@@ -128,6 +130,14 @@ def build_router() -> APIRouter:
     @router.post("/api/projects/{project_id}/approvals/{approval_id}", summary="Answer one question of a project: allow_once, allow_project or deny", dependencies=[Depends(require_token)])
     async def answer_approval(request: Request, project_id: str, approval_id: str, body: AnswerBody) -> RedactedJSONResponse:
         return _json(request, await _projects(request).answer(project_id, approval_id, body.decision, by="owner"))
+
+    @router.post("/api/projects/{project_id}/system/{item}/check", summary="Check again: the computer has been asked for the permission once more", dependencies=[Depends(require_token)])
+    async def system_check(request: Request, project_id: str, item: str, body: EmptyBody) -> RedactedJSONResponse:
+        return _json(request, await _projects(request).system_check(project_id, item))
+
+    @router.post("/api/projects/{project_id}/system/{item}/skip", summary="Skip: cancel only the steps that need that permission", dependencies=[Depends(require_token)])
+    async def system_skip(request: Request, project_id: str, item: str, body: EmptyBody) -> RedactedJSONResponse:
+        return _json(request, await _projects(request).system_skip(project_id, item))
 
     @router.post("/api/projects/{project_id}/pause", summary="Pause or resume one project: no agent of it starts while it is paused", dependencies=[Depends(require_token)])
     async def pause_project(request: Request, project_id: str, body: PauseBody) -> RedactedJSONResponse:
