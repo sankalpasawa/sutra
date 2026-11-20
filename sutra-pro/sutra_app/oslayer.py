@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 __all__ = ["console_python", "IS_WINDOWS", "O_BINARY", "SIGKILL", "try_lock", "unlock", "pid_alive", "process_command", "popen_group_kwargs",
-           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name"]
+           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name", "is_elevated", "long_paths_enabled"]
 
 IS_WINDOWS = os.name == "nt"
 O_BINARY: int = getattr(os, "O_BINARY", 0)          # 0 on POSIX: OR-ing it in changes nothing there
@@ -336,3 +336,29 @@ def user_token() -> str:
         return str(getuid())
     import getpass
     return re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser() or "user")[:40] or "user"
+
+
+# ---- what the computer has allowed (MAN-15; read only: Sutra changes no system setting) --------------------------------------------
+
+def is_elevated() -> bool:
+    """True when this process runs with administrator rights on Windows (an elevated process refuses new nodes: files it makes would belong to the administrator). False everywhere else and
+    whenever the answer cannot be had: only a positive answer refuses anything."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())          # type: ignore[attr-defined]
+    except Exception:                                               # noqa: BLE001
+        return False
+
+
+def long_paths_enabled() -> bool:
+    """Whether Windows lets a path be longer than 260 characters (the `LongPathsEnabled` setting, read only). True on every other system and when the answer cannot be had."""
+    if not IS_WINDOWS:
+        return True
+    try:
+        import winreg                                               # type: ignore[import-not-found]
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
+            return bool(winreg.QueryValueEx(key, "LongPathsEnabled")[0])
+    except Exception:                                               # noqa: BLE001
+        return True
