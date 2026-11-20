@@ -99,7 +99,7 @@ def _write(level: str):
         if settings is None:
             return 2
         reason = " ".join((args.reason or "").split())[:REASON_MAX]
-        from sutra_app.orchestrator.killswitch import KillSwitch
+        from sutra_app.orchestrator.killswitch import KillSwitch, resume_command
         try:
             KillSwitch(settings.nodes_dir, consume=False).set(level, by="owner", reason=reason)
         except OSError as exc:
@@ -108,7 +108,7 @@ def _write(level: str):
         done = ("Paused: no new agent starts; the ones that run finish." if level == "pause" else
                 "Kill switch on: a running Sutra stops every agent (all together, about 12 seconds at most), and none starts.")
         running = _running(settings)
-        emit(args, {"level": level, "folder": str(settings.nodes_dir), "running": running}, [done, "Run `sutra-pro nodes resume` to remove it.", *_running_words(running), *_off_note(settings, running)])
+        emit(args, {"level": level, "folder": str(settings.nodes_dir), "running": running}, [done, f"Run `{resume_command(settings.data_dir)}` to remove it.", *_running_words(running), *_off_note(settings, running)])
         return 0
     return run
 

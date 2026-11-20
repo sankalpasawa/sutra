@@ -29,6 +29,7 @@ import logging
 import os
 import secrets
 import stat
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,7 +40,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 
-__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
+__all__ = ["resume_command", "KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
@@ -53,6 +54,17 @@ LIVE_TASK_STATUSES = ("starting", "running", "waiting_user")
 OPEN_TASK_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 KILL_OUTCOME = "stopped by the kill switch"
 NO_GRANT_HELD = "Held: this step has no permissions set, so it cannot start"
+
+
+def resume_command(data_dir: str | os.PathLike[str], executable: str | None = None) -> str:
+    """The command that resumes THIS install, as the owner can type it (D392). An app (the beta, the installed Mac app) has no `sutra-pro` on the path: its own Python runs the same command
+    (`<app>/Contents/Resources/python/bin/python3 -I -B -m sutra_app nodes resume --data-dir <dir>`). Anything else (a command-line install) has `sutra-pro`. There is no Resume button on the page for
+    the switch (the page's Pause and Continue are for one project), so this is the way."""
+    exe = executable if executable is not None else sys.executable
+    flat = (exe or "").replace("\\", "/")
+    if "/Contents/Resources/python/" in flat or "/resources/python/" in flat.lower():
+        return f'"{exe}" -I -B -m sutra_app nodes resume --data-dir "{data_dir}"'
+    return "sutra-pro nodes resume"
 
 
 class KillSwitch:
@@ -139,11 +151,11 @@ class KillSwitch:
         """The sentence a node that waits for this shows, or "" when nothing holds it (the waiting detail of a held task)."""
         level = self.level()
         if level == "kill" and self.broken():
-            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `sutra-pro nodes resume`"
+            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `{resume_command(self.directory.parent)}`"
         if level == "kill":
-            return "Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `sutra-pro nodes resume`)"
+            return f"Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `{resume_command(self.directory.parent)}`)"
         if level == "pause":
-            return "Paused: no new agent starts until you resume (remove the PAUSE file or run `sutra-pro nodes resume`)"
+            return f"Paused: no new agent starts until you resume (remove the PAUSE file or run `{resume_command(self.directory.parent)}`)"
         return ""
 
     def _note(self, name: str) -> dict[str, Any] | None:
