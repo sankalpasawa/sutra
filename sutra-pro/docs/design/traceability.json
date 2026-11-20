@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 355,
+  "decisions": 359,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 385,
+ "max_decision": 389,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -544,7 +544,11 @@
     "D382",
     "D383",
     "D384",
-    "D385"
+    "D385",
+    "D386",
+    "D387",
+    "D388",
+    "D389"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5652,6 +5656,44 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"checklist fixed; run 1 unseen listed\", key only."
+  },
+  {
+   "id": "D386",
+   "title": "No web tool for a step's builder call",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no web for a step; tier 4 = GitHub reads only\", key only."
+  },
+  {
+   "id": "D387",
+   "title": "Tool-narrowing review hardening",
+   "packages": [
+    "CN-7",
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"per-call dollar clamp; node router narrows all; no shell level\", key only."
+  },
+  {
+   "id": "D388",
+   "title": "The project's dollar limit, tightened",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"limit counts project spend; removed/new month ignored\", key only."
+  },
+  {
+   "id": "D389",
+   "title": "The reply's project address is the app's own",
+   "packages": [
+    "ORCH-7",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"reply links only a real project, only in org chat\", key only."
   }
  ],
  "packages": [
