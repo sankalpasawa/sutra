@@ -2,7 +2,6 @@
 golden files in tests/fixtures/run_spec were written by the code of origin/main at the time of MAN-1). A node's file carries one more block, read back by the engine's `TaskSpec`; the
 child environment names the node (SUTRA_NODE_ID) only for a node."""
 import json
-import logging
 from pathlib import Path
 
 import pytest
@@ -136,13 +135,15 @@ def test_with_the_flag_on_a_node_task_gets_the_block_from_its_row_and_its_grant(
     assert TaskSpec.model_validate(doc).node.id == NODE
 
 
-def test_a_node_without_a_usable_grant_starts_as_an_ordinary_task_and_the_log_says_so_with_ids_only(make, caplog):
+def test_a_node_without_a_usable_grant_does_not_get_a_task_json_at_all_it_raises_and_the_run_folder_is_cleaned_up(make):
+    """No fallback (D302): `_run_spec` never writes a plain file for a node with no grant. The task gate holds such a node, so this is only reached by a bug."""
+    from sutra_app.orchestrator.nodes_store import NodeBlockError
     tenv = make(nodes_v1=True)
     task = tenv.new("web", "Build a landing page")
     seed_node(tenv, task.id, with_grant=False)
-    with caplog.at_level(logging.WARNING, logger="sutra_app.orchestrator.tasks"):
-        text, _ = start_and_read(tenv, task.id)
-    assert "node" not in json.loads(text) and task.id in caplog.text and "usable grant" in caplog.text and "landing page" not in caplog.text
+    with pytest.raises(NodeBlockError):
+        tenv.run(tenv.service.start_ready())
+    assert tenv.status(task.id) == "queued" and not list((tenv.settings.data_dir / "departments" / "web" / "runs").glob("j2-*"))
 
 
 def test_a_grant_that_does_not_fit_the_node_row_is_not_a_usable_grant(db):

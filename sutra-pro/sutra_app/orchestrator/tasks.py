@@ -57,7 +57,7 @@ from sutra_app.orchestrator.models import (
     LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
-from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
+from sutra_app.orchestrator.nodes_store import node_block_of
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
@@ -699,10 +699,7 @@ class TaskService:
                 connector = chosen["pinned"]
         node = None
         if self.settings.nodes_v1:                                   # the identity block is written only while SUTRA_NODES_V1 is on: off, nothing of it is read or written (D254)
-            try:
-                node = node_block_of(conn, row.id)
-            except NodeBlockError as exc:
-                log.warning("task %s is a node without a usable grant (%s): it starts as an ordinary task", row.id, exc)
+            node = node_block_of(conn, row.id)                       # a node with no usable grant raises: the task gate holds such a node, so it never gets here, and it is never started as an ordinary task (D302)
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,

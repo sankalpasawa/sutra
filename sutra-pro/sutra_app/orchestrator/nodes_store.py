@@ -67,8 +67,8 @@ def node_block_of(conn: sqlite3.Connection, task_id: str) -> NodeBlock | None:
         return None
     try:
         grant = Grant.from_json(json.loads(row["grants_json"] or "{}"))
-        if grant.role != row["role"] or not grant.id:
-            raise NodeBlockError("the grant does not belong to the node's role, or has no id")
+        if grant.role != row["role"] or not grant.id or grant.node_id != row["id"]:
+            raise NodeBlockError("the grant does not belong to this node (its role or its id), or has no id")
         return NodeBlock(id=row["id"], project_id=row["project_id"], role=row["role"], runtime=row["runtime"], attempt=int(row["attempt"]), grants_id=grant.id,
                          caps=grant.caps, scope=list(grant.scope))
     except (GrantError, ValueError, TypeError) as exc:

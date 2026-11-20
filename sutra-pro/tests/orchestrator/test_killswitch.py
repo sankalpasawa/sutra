@@ -111,6 +111,14 @@ def seed_node(t, task_id, n, role="worker"):
     return node
 
 
+def seed_raw(t, task_id, n, grants_json, role="worker"):
+    """A node row with whatever is in its `grants_json`."""
+    t.sql("INSERT OR IGNORE INTO projects(id, created_at) VALUES (?, 1)", PROJECT)
+    t.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, grants_json, created_at) VALUES (?,?,?,?,?,?,?,1)", f"nd_{n:012x}", PROJECT, task_id, role, "engine", "queued",
+          grants_json)
+    return f"nd_{n:012x}"
+
+
 class Rig:
     def __init__(self, tenv):
         self.t = tenv
@@ -320,3 +328,54 @@ def test_one_node_that_will_not_stop_does_not_keep_the_others_running(rig, monke
 
     monkeypatch.setattr(t.service, "stop_node", flaky)
     assert t.run(rig.control.kill_all()) == 1 and t.status(b.id) == "stopped" and rig.switch.level() == "kill"
+
+
+# ---- a node with no usable grant is held, never started (D302) ---------------------------------------------------------------------
+
+def bad_grants(n):
+    node = f"nd_{n:012x}"
+    good = intersect("worker", StepRequest(), "edit", "edit", grant_id=f"gr_{n:012x}", node_id=node).to_json()
+    reviewer = intersect("reviewer", StepRequest(), "edit", "edit", grant_id=f"gr_{n:012x}", node_id=node).to_json()
+    return {
+        "empty": "{}", "not json": "not json at all", "an array": "[1]", "a reviewer's grant on a worker": json.dumps(reviewer),
+        "wider than the role table": json.dumps({**good, "tiers": [0, 1, 2, 3, 6]}), "tier 5": json.dumps({**good, "tiers": [0, 1, 2, 3, 5]}),
+        "somebody else's grant": json.dumps({**good, "node_id": "nd_" + "e" * 12}), "no id": json.dumps({**good, "id": ""}), "an unknown field": json.dumps({**good, "surprise": 1}),
+    }
+
+
+@pytest.mark.parametrize("why", list(bad_grants(1)))
+def test_a_node_whose_grant_is_missing_unreadable_too_wide_or_not_its_own_is_held_and_the_queue_goes_on(rig, why):
+    t = rig.t
+    broken, fine = t.new("web", "node with a bad grant"), t.new("sales", "an ordinary task behind it")
+    seed_raw(t, broken.id, 1, bad_grants(1)[why])
+    assert t.run(t.service.start_ready()) == [fine.id]                                # the held one does not stop the next from starting
+    assert t.status(broken.id) == "queued" and "Held: this agent has no valid grant" in waiting_detail(t, broken.id)
+    assert t.launcher.stopped == [] and not list((t.settings.data_dir / "departments" / "web" / "runs").glob("j2-*"))
+
+
+def test_a_node_with_a_good_grant_starts_and_the_one_without_is_still_held_next_to_it(rig):
+    t = rig.t
+    good, broken = t.new("web", "good node"), t.new("sales", "broken node")
+    seed_node(t, good.id, 1)
+    seed_raw(t, broken.id, 2, "{}")
+    assert t.run(t.service.start_ready()) == [good.id] and t.status(broken.id) == "queued"
+
+
+def test_a_node_whose_grant_is_repaired_starts_by_itself_at_the_next_start_attempt(rig):
+    t = rig.t
+    task = t.new("web", "node")
+    node = seed_raw(t, task.id, 1, "{}")
+    assert t.run(t.service.start_ready()) == []
+    grant = intersect("worker", StepRequest(), "edit", "edit", grant_id="gr_" + "1" * 12, node_id=node)
+    t.sql("UPDATE agent_nodes SET grants_json = ? WHERE id = ?", json.dumps(grant.to_json()), node)
+    assert t.run(t.service.start_ready()) == [task.id]
+
+
+def test_the_gate_names_the_switch_before_the_grant_and_never_holds_an_ordinary_task(rig):
+    t = rig.t
+    task, ordinary = t.new("web", "node"), t.new("sales", "plain")
+    seed_raw(t, task.id, 1, "{}")
+    conn = t.db.conn()
+    assert rig.control.gate(conn, 0, t.row(task.id)) == "Held: this agent has no valid grant" and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""
+    rig.switch.set("pause")
+    assert "Paused" in rig.control.gate(conn, 0, t.row(task.id)) and rig.control.gate(conn, 0, t.row(ordinary.id)) == ""

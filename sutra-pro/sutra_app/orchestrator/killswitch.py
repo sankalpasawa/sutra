@@ -35,8 +35,9 @@ from sutra_app import oslayer
 from sutra_app.connectors.egress import scrubbed
 from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
+from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 
-__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES"]
+__all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD"]
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
@@ -47,6 +48,7 @@ REASON_MAX = 200
 LIVE_TASK_STATUSES = ("starting", "running", "waiting_user")
 OPEN_TASK_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 KILL_OUTCOME = "stopped by the kill switch"
+NO_GRANT_HELD = "Held: this agent has no valid grant"
 
 
 class KillSwitch:
@@ -189,13 +191,20 @@ class NodeControl:
             self.store.mark_ended(tx, node_id, state, why)
 
     def gate(self, conn: Any, now: int, row: Any) -> str:
-        """`TaskService.task_gate` for the switch: the sentence a NODE task waits with while a file is there, "" for everything else. The files are looked at first (one `lstat`); the table
-        only when a file holds something back. An ordinary task is never held. The Conductor's task gate (MAN-5) keeps this rule."""
+        """`TaskService.task_gate`: the sentence a NODE task waits with, "" for everything else (an ordinary task is never held). Two reasons hold a node: a file of the switch is there
+        (the files are looked at first: one `lstat`), or its grant is missing, unreadable, wider than its role or not its own (D302): an ordinary task has the reach of a team run, wider than
+        a reviewer's, so a node with a broken grant is held and never started as one. The Conductor's task gate (MAN-5) asks this first and adds its checks, never replaces it (D303)."""
         held = self.switch.held()
-        if not held:
-            return ""
         found = conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone()
-        return held if found is not None else ""
+        if found is None:
+            return ""
+        if held:
+            return held
+        try:
+            node_block_of(conn, row.id)
+        except NodeBlockError:
+            return NO_GRANT_HELD
+        return ""
 
     # ---- stop one node -----------------------------------------------------------------------------------------------------------
 
