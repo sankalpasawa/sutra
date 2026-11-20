@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 296,
+  "decisions": 305,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 296,
+ "max_decision": 305,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -485,7 +485,16 @@
     "D293",
     "D294",
     "D295",
-    "D296"
+    "D296",
+    "D297",
+    "D298",
+    "D299",
+    "D300",
+    "D301",
+    "D302",
+    "D303",
+    "D304",
+    "D305"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -4244,6 +4253,7 @@
    "title": "One stop owner: a per-turn `CancelToken` through `ChatPort`, `Router` and `base._events`",
    "packages": [
     "ABS-1",
+    "CN-1",
     "CN-3",
     "CN-7"
    ],
@@ -4663,8 +4673,10 @@
    "id": "D254",
    "title": "Everything is behind SUTRA_NODES_V1, default 0",
    "packages": [
+    "GAP-DEMO",
     "GAP-W1",
-    "ORCH-1"
+    "ORCH-1",
+    "ORCH-6"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -4689,8 +4701,10 @@
   {
    "id": "D257",
    "title": "One scheduler: the Conductor is a task gate, not a second queue",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"one scheduler; Conductor is a task gate\", pill on band:ORCHESTRATION."
   },
@@ -4816,6 +4830,7 @@
    "id": "D272",
    "title": "A NodeMeter makes the router's allowance cumulative per node",
    "packages": [
+    "E0",
     "ORCH-1"
    ],
    "status": "implemented",
@@ -4902,8 +4917,11 @@
   {
    "id": "D282",
    "title": "Egress scrub per node: observe for engine nodes, replace where the app owns the text",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ABS-2",
+    "CN-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"egress per node: observe / replace\", pill on Connector router."
   },
@@ -4911,7 +4929,13 @@
    "id": "D283",
    "title": "Node identity travels in the tag, task.json and the environment",
    "packages": [
-    "ORCH-1"
+    "ABS-2",
+    "CN-6",
+    "CN-7",
+    "E0",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-6"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -4978,8 +5002,12 @@
   {
    "id": "D291",
    "title": "The planner is the chat agent's staged planning with an identity",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "CN-1",
+    "CN-7",
+    "ORCH-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"planner = chat agent with identity and slice\", pill on Chat agent (orchestrator)."
   },
@@ -5022,6 +5050,82 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"closed laptop = refusal; gates end, project stops\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D297",
+   "title": "node_messages seq is 1 to n per project, with no gap",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"message seq: 1..n per project, no gap\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D298",
+   "title": "Tier 4 does not depend on the folder; the tool profile is split into sutra and github",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"tier 4 independent of folder; sutra / github split\", key only."
+  },
+  {
+   "id": "D299",
+   "title": "J2's builder tools are not a tier: the grant describes them as run_tools",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"builder tools = run_tools, not a tier\", pill on band:DEPARTMENT RUNTIME."
+  },
+  {
+   "id": "D300",
+   "title": "The plan gate's confirm threshold is 500 work credits",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"plan confirm threshold: 500 credits\", key only."
+  },
+  {
+   "id": "D301",
+   "title": "A planner Stop must end the running call",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"planner Stop ends the running call\", pill on Connector router."
+  },
+  {
+   "id": "D302",
+   "title": "A node with no valid grant never starts",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"no valid grant, no start\", pill on band:ORCHESTRATION."
+  },
+  {
+   "id": "D303",
+   "title": "The kill switch: one owner, four rules",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"kill switch: watcher stays; ladders together; kill ends project\", pill on Operator."
+  },
+  {
+   "id": "D304",
+   "title": "Developer findings of phase 1 adopted as design",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"phase 1 findings adopted (N2..N25)\", key only."
+  },
+  {
+   "id": "D305",
+   "title": "Small rules found while building phase 1",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"small rules: workers counted, task_id = current attempt\", key only."
   }
  ],
  "packages": [

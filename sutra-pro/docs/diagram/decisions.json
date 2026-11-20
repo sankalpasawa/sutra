@@ -1478,5 +1478,50 @@
   "id": "D296",
   "label": "closed laptop = refusal; gates end, project stops",
   "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D297",
+  "label": "message seq: 1..n per project, no gap",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D298",
+  "label": "tier 4 independent of folder; sutra / github split",
+  "anchor": null
+ },
+ {
+  "id": "D299",
+  "label": "builder tools = run_tools, not a tier",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D300",
+  "label": "plan confirm threshold: 500 credits",
+  "anchor": null
+ },
+ {
+  "id": "D301",
+  "label": "planner Stop ends the running call",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D302",
+  "label": "no valid grant, no start",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D303",
+  "label": "kill switch: watcher stays; ladders together; kill ends project",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D304",
+  "label": "phase 1 findings adopted (N2..N25)",
+  "anchor": null
+ },
+ {
+  "id": "D305",
+  "label": "small rules: workers counted, task_id = current attempt",
+  "anchor": null
  }
 ]
