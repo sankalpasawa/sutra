@@ -238,3 +238,16 @@ def test_a_folder_with_glob_characters_reaches_the_command_line_escaped(fake, tm
     finally:
         router.close()
     assert allowed.endswith("Edit(./**)") and "Edit(//" in allowed and "A \\(work\\)" in allowed
+
+
+def test_a_codex_call_of_a_step_with_no_folder_is_read_only_whatever_the_policy_sandbox_says(fake, tmp_path):
+    """m9: the policy may say workspace-write for Codex; a call that names a node and has no folder of the owner's must still be read-only. An ordinary call keeps the policy's sandbox."""
+    from sutra_app.connectors.models import RouteContext
+    cfg = ConnectorConfig(**fake.config_kwargs(tmp_path))
+    fake.sequence("ok_plain").reply(text="ok")
+    connector = CodexConnector(cfg, sandbox="workspace-write")
+    connector.call_text("review", ctx=RouteContext(tag=CallTag(function="audit", node_id="nd_0123456789ab", node_role="reviewer")))
+    assert value(fake.model_calls("codex")[-1]["argv"], "-s") == "read-only"
+    fake.sequence("ok_plain").reply(text="ok")
+    connector.call_text("ordinary", ctx=RouteContext(tag=CallTag(function="audit")))
+    assert value(fake.model_calls("codex")[-1]["argv"], "-s") == "workspace-write"
