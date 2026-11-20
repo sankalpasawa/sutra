@@ -198,3 +198,18 @@ def test_the_token_reaches_the_stub_and_a_requested_one_ends_the_call_there_too(
     token.request()
     with pytest.raises(CallCancelledError):
         rig.call(context=PLANNER, cancel=token)
+
+
+def test_a_planner_call_is_tagged_to_read_the_owners_folder_and_the_chat_agent_of_today_still_edits(tmp_path):
+    """G6 (D307): a chat_agent call that names a node only reads; with the owner on "read and change" the folder the router gives it has no edit tools. Without a node the tag is what it was."""
+    from sutra_app.connectors.stub import StubConnector
+    from sutra_app.connectors.workdir import Folder, WorkFolder
+    assert build_tag("chat_agent", "assign", PLANNER).workspace == "read" and build_tag("chat_agent", "assign", ORG).workspace == "edit"
+    assert build_tag("audit", None, {"agent_node_id": NODE}).workspace == build_tag("audit", None, {}).workspace          # only the chat agent's tag changes
+    cfg = ConnectorConfig(data_dir=tmp_path / "data", work_root=tmp_path / "work")
+    router = Router({"stub": StubConnector(cfg)}, policy())
+    router.folders = WorkFolder(cfg.data_dir, cfg.resolved_work_root())
+    (tmp_path / "p").mkdir()
+    router.folders.set(str(tmp_path / "p"), access="edit")
+    planner_folder, chat_folder = router.folder_for(build_tag("chat_agent", "assign", PLANNER)), router.folder_for(build_tag("chat_agent", "assign", ORG))
+    assert isinstance(planner_folder, Folder) and planner_folder.edit is False and isinstance(chat_folder, Folder) and chat_folder.edit is True

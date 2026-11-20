@@ -43,7 +43,7 @@ def build_tag(function: str, step: Optional[str], context: Optional[Mapping[str,
     ctx = context or {}
     fields: dict[str, Any] = {"function": function, "stage": step or None}
     if function == ORG_AGENT:
-        fields["workspace"] = "edit"
+        fields["workspace"] = "read" if ctx.get("agent_node_id") else "edit"          # a planner node (a project's planning call) only reads the owner's folder; the chat agent of today edits (D127, G6, D307)
     if ctx.get("purpose"):
         fields["purpose"] = ctx["purpose"]
     if ctx.get("task_id"):
