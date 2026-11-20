@@ -459,7 +459,8 @@ class TurnRunner:
             reservation = None
             try:
                 if self.projects is not None and len(drafts) >= 2:      # nodes on and two or more steps: a project (D255); one step keeps today's path
-                    reservation = await run_blocking(self._reserve_project, request, drafts)
+                    asked, defaulted = await self.agent.node_plan(request, drafts)       # stage D (D306): the scope and the needs the steps ask for; flag on and two or more steps only
+                    reservation = await run_blocking(self._reserve_project, request, drafts, asked, defaulted)
                     if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
                         raise AppError("validation", reservation.why or "the plan was refused")
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
@@ -569,12 +570,14 @@ class TurnRunner:
         return {"v": 1, "message_id": request.message_id, "text": request.text, "keywords": plan.keywords,
                 "decision": json.loads(plan.decision.model_dump_json()) if plan.decision is not None else None}
 
-    def _reserve_project(self, request: PlanRequest, drafts: Sequence[AssignmentDraft]) -> Any:
+    def _reserve_project(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], asked: Any = None, defaulted: bool = False) -> Any:
         """The project of a request with two or more steps, made before its tasks (MAN-5): the plan goes through the Gatekeeper's rules, each step gets a node and a frozen grant."""
         from sutra_app.orchestrator.projects import ProjectStep
-        steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref)) for d in drafts]
+        asked = asked or {}
+        steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
         title = drafts[0].title if drafts else one_line_title(request.text, 80)
-        return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id))
+        return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
+                                      plan_defaults=defaulted)
 
     def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None, reservation: Any = None) -> list[str]:
         """One transaction per assignment, dependencies first. The owner's words become the first line of the team's chat (the

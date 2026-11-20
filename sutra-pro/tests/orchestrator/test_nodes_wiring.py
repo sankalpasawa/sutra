@@ -95,7 +95,7 @@ def test_with_the_flag_turned_off_the_waiting_steps_of_a_project_stay_held_and_t
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
-        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
+        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five, {"kind": "node_plan", "steps": []})
         waiting = [r["id"] for r in rows(services, "SELECT id FROM tasks ORDER BY created_at, rowid")]
         assert len(waiting) == 5 and {r["status"] for r in rows(services, "SELECT status FROM tasks")} == {"queued"}
     app2 = create_app(Settings.load({}, data_dir=tmp_path / "data", token=TOKEN, env_file=tmp_path / "none.env", engine="fake", watch_ms=20, max_runs=4, max_live=8), connector=ScriptedConnector(), launcher=FakeLauncher())

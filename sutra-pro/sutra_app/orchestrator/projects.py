@@ -52,6 +52,13 @@ class ProjectStep:
     dept_id: str
     depends_on: tuple[str, ...] = ()
     estimate_credits: int = 0
+    scope: tuple[str, ...] = ()                       # the paths of the owner's folder the step asks to change (the node plan, D306)
+    needs: tuple[str, ...] = ()                       # the app tools it asks for: `sutra`, `github`
+
+
+def _tool_profile(needs: Sequence[str]) -> str:
+    asked = set(needs)
+    return "sutra+github" if {"sutra", "github"} <= asked else "github" if "github" in asked else "sutra" if "sutra" in asked else "none"
 
 
 @dataclass(frozen=True)
@@ -154,7 +161,7 @@ class ProjectService:
     # ---- planning: the Gatekeeper's rules, then the rows ---------------------------------------------------------------------------
 
     def reserve(self, request_id: str, title: str, steps: Sequence[ProjectStep], *, budget: int | None = None, decide_for_me: bool = False,
-                planner_node_id: str = "") -> Reservation | None:
+                planner_node_id: str = "", plan_defaults: bool = False) -> Reservation | None:
         """Make the project and its nodes for a request, before its tasks exist (the tasks are linked as they are made: `link_task`). None when this is not a project: fewer than two steps (D255:
         a one-step request keeps today's path). The plan goes through `gatekeeper.evaluate`; a refused plan makes a project that is `failed` and no node. A plan that needs the owner (a question
         about a tier above the defaults, a wide scope, or an estimate over the confirm threshold) makes the project `awaiting_approval` with its questions stored as approvals; nothing starts until
@@ -164,7 +171,8 @@ class ProjectService:
         slice_credits = budget if budget is not None else DEFAULT_SLICE
         plan = Plan(
             steps=tuple(PlanStep(id=step.ref, role="worker", depends_on=tuple(step.depends_on), output=self._output_of(step.dept_id),
-                                 estimate_credits=step.estimate_credits or slice_credits) for step in steps),
+                                 estimate_credits=step.estimate_credits or slice_credits, wants=frozenset({4}) if "github" in step.needs else frozenset(), scope=tuple(step.scope),
+                                 tool_profile=_tool_profile(step.needs)) for step in steps),
             owner_access=self._owner_access(), confirm_credits=None if budget is not None else int(NODE_DEFAULT_CAPS["confirm_credits"] or 500))
         evaluation = evaluate(plan)
         with self.db.tx() as tx:
@@ -174,16 +182,17 @@ class ProjectService:
                 if found["status"] in PROJECT_FINAL:                                  # fail closed (G8, B2): a request whose project ended makes no task, so no ordinary task escapes the gate
                     return Reservation(found["id"], False, "that project has already ended, so it was not started again")
                 return Reservation(found["id"], True, "", nodes, waits=self._waits_of(tx, found["id"]))        # a request planned again (stale chart) finds its project
-            return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id)
+            return self._reserve(tx, request_id, title, steps, plan, evaluation, budget, decide_for_me, planner_node_id, plan_defaults)
 
     def _reserve(self, tx: Tx, request_id: str, title: str, steps: Sequence[ProjectStep], plan: Plan, evaluation: Evaluation, budget: int | None, decide_for_me: bool,
-                 planner_node_id: str) -> Reservation:
+                 planner_node_id: str, plan_defaults: bool = False) -> Reservation:
         now = tx.now()
         project_id = self.ids.project_id()
         caps = {key: value for key, value in NODE_DEFAULT_CAPS.items()}
         if budget is not None:
             caps["confirm_credits"] = None                                           # the owner's own number is the answer (D300)
         caps["conflict_edges"] = [list(edge) for edge in evaluation.conflicts]     # kept for the lanes package (MAN-10): a delay, never a cancel (D259)
+        caps["plan"] = [{"ref": step.ref, "dept": step.dept_id, "scope": list(step.scope), "needs": list(step.needs), "estimate": int(step.estimate_credits or 0)} for step in steps]       # what the answer path re-evaluates (MAN-8); not shown
         status = "failed" if not evaluation.ok else "awaiting_approval" if evaluation.gates else "running"
         why = "; ".join(refusal.why for refusal in evaluation.refusals)[:200]
         tx.conn.execute(
@@ -191,6 +200,8 @@ class ProjectService:
             (project_id, request_id, " ".join(title.split())[:200], status, 1 if decide_for_me else 0, json.dumps(caps, sort_keys=True), budget, now,
              now if status == "failed" else None, why if status == "failed" else ""))
         self.store.audit(tx, actor="system", action="project.created", project_id=project_id, decision="n/a", reason=f"{len(steps)} steps", ref=request_id)
+        if plan_defaults:
+            self.store.audit(tx, actor="system", action="plan.defaults", project_id=project_id, decision="n/a", reason="the step requests could not be read, so no step asks for more than its defaults")
         if planner_node_id:
             tx.conn.execute("INSERT INTO agent_nodes(id, project_id, role, runtime, state, created_at, ended_at) VALUES (?,?,?,?,?,?,?)",
                             (planner_node_id, project_id, "planner", "inline", "done", now, now))
@@ -314,7 +325,8 @@ class ProjectService:
     @staticmethod
     def _project_out(row: sqlite3.Row) -> ProjectOut:
         return ProjectOut(id=row["id"], request_id=row["request_id"], title=row["title"], status=row["status"], failure_policy=row["failure_policy"],
-                          decide_for_me=bool(row["decide_for_me"]), paused=bool(row["paused"]), review_loops=row["review_loops"], caps=json.loads(row["caps_json"] or "{}"),
+                          decide_for_me=bool(row["decide_for_me"]), paused=bool(row["paused"]), review_loops=row["review_loops"],
+                          caps={key: value for key, value in json.loads(row["caps_json"] or "{}").items() if key != "plan"},
                           budget_credits=row["budget_credits"], budget_usd=row["budget_usd"], created_at=iso_z(row["created_at"]),
                           ended_at=iso_z(row["ended_at"]) if row["ended_at"] is not None else None, stop_reason=row["stop_reason"])
 

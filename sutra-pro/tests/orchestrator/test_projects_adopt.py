@@ -25,6 +25,9 @@ def make_app(tmp_path, **flags):
     return create_app(settings, connector=connector, launcher=FakeLauncher(node_script)), connector
 
 
+NO_REQUESTS = {"kind": "node_plan", "steps": []}                      # the node plan stage (D306): a flag-on request with two or more steps makes one more call; here nothing is asked for
+
+
 def four_steps():
     return assignments(draft("a1", "web", title="Page"), draft("a2", "sales", title="Quote"), draft("a3", "web", title="Polish", depends_on=("a1",)),
                        draft("a4", "sales", title="Send", depends_on=("a2", "a3")))
@@ -50,7 +53,7 @@ def world(tmp_path):
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         mid = talk(client, services, connector, "A site and a quote please",
-                   decide(change="add", reuse=(), why="two new teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), four_steps())
+                   decide(change="add", reuse=(), why="two new teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), four_steps(), NO_REQUESTS)
         yield client, services, connector, mid
 
 
@@ -180,7 +183,7 @@ def test_a_plan_over_the_confirm_threshold_makes_a_project_that_waits_and_the_re
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         five = assignments(*[draft(f"a{i}", "web" if i % 2 else "sales", title=f"Step {i}") for i in range(1, 6)])
-        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five)
+        talk(client, services, connector, "A lot of work", decide(change="add", reuse=(), why="two teams"), change_reply(add_dept("$web", "Web", "Websites"), add_dept("$sales", "Sales", "Quotes")), five, NO_REQUESTS)
         project = rows(services, "SELECT * FROM projects")[0]
         assert project["status"] == "awaiting_approval" and len(rows(services, "SELECT * FROM tasks")) == 5 and all(r["status"] != "running" for r in rows(services, "SELECT status FROM tasks"))
         said = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE role = 'agent' ORDER BY id")]

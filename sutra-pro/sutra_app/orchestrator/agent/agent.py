@@ -35,7 +35,7 @@ from sutra_app.orchestrator.agent.planner import Candidate, candidates, fallback
 from sutra_app.orchestrator.agent.ports import (
     ATTEMPTS, CALL_TIMEOUT, DIGEST_CHARS, HISTORY, MAX_CALLS, NO_RETRY_KINDS, ConnectorFailure, ConnectorPort, failure_kind, was_stopped,
 )
-from sutra_app.orchestrator.agent.replies import AssignmentDraft, AssignmentPlan, ChatDecision, plan_of
+from sutra_app.orchestrator.agent.replies import AssignmentDraft, AssignmentPlan, ChatDecision, NodePlan, plan_of
 from sutra_app.orchestrator.chart import ChartStore
 from sutra_app.orchestrator.db import run_blocking
 from sutra_app.orchestrator.errors import AppError
@@ -48,6 +48,7 @@ __all__ = [
 ]
 
 log = logging.getLogger(__name__)
+NODE_PLAN_ATTEMPTS = 2                      # the node plan stage asks at most twice (D306)
 STAGES = ("decide", "change", "assign")
 KEYWORDS_NOTE = "(planned by keywords)"
 _CALL_GRACE_S = 10.0              # the connector enforces `timeout`; this outer cut only guards a connector that does not
@@ -295,18 +296,53 @@ class ChatAgent:
 
         return await self._stage("assign", "chat_turn", "assignments", prompt, schema, request, budget, build)
 
+    async def node_plan(self, request: PlanRequest, drafts: Sequence[AssignmentDraft]) -> tuple[dict[str, tuple[tuple[str, ...], tuple[str, ...]]], bool]:
+        """Stage D (D306), only for a request that became a project: per step the write scope and the app tools it asks for, as `{ref: (scope, needs)}`, and whether the defaults had to
+        be used (`True`: the stage failed, so no step asks for anything; the project never fails because of it). Its own cap of 2 attempts. The reply is read as a request: the paths go
+        through `normalize_scope`, a ref that is not a step is refused and asked again."""
+        from sutra_app.orchestrator.grants import GrantError, normalize_scope
+        schema = REGISTRY.transport_schema("node_plan")
+        steps = "\n".join(f"{d.ref}: {d.title} (team {d.dept}) - {clip(' '.join(d.brief.split()), 300)}" for d in drafts)
+        prompt = prompts.render("nodeplan", steps=steps, message=request.text, schema=_dump(schema))
+        refs = {d.ref for d in drafts}
+
+        async def build(model: NodePlan) -> tuple[Any, list[Violation]]:
+            found: list[Violation] = []
+            plan: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {}
+            for index, step in enumerate(model.steps):
+                if step.ref not in refs:
+                    found.append(violation(f"steps.{index}.ref", "unknown_ref", f"{step.ref} is not one of the steps: use {', '.join(sorted(refs))}"))
+                    continue
+                try:
+                    scope = normalize_scope(step.scope)
+                except GrantError as exc:
+                    found.append(violation(f"steps.{index}.scope", "bad_scope", str(exc)))
+                    continue
+                plan[step.ref] = (scope, tuple(dict.fromkeys(step.needs)))
+            return plan, found
+
+        try:
+            return await self._stage("nodeplan", "node_plan", None, prompt, schema, request, _Budget(NODE_PLAN_ATTEMPTS), build, attempts=NODE_PLAN_ATTEMPTS), False
+        except StageFailed as failed:
+            log.info("request %s: stage %s failed (%s): the defaults", request.request_id, failed.stage, failed.reason)
+            return {}, True
+        except ConnectorFailure as failure:                       # the model cannot be reached for this small stage: the project is made with the defaults, it never fails because of it
+            log.info("request %s: stage nodeplan could not be asked (%s): the defaults", request.request_id, failure)
+            return {}, True
+
     async def _stage(self, stage: str, family: str, kind: str | None, prompt: str, schema: dict, request: PlanRequest,
-                     budget: _Budget, build: Build) -> Any:
+                     budget: _Budget, build: Build, attempts: int | None = None) -> Any:
         """One stage: ask, read, gate, check; on rejection ask again with the reasons. Returns what `build` made."""
         context = call_context(request.message_id, request.node_id)
         stop = {} if request.cancel is None else {"cancel": request.cancel}          # only a request that has a token hands one on: every connector double of today takes no such argument
         violations: list[Violation] = []
         replies: list[dict] = []
-        for attempt in range(1, self.attempts + 1):
+        limit = self.attempts if attempts is None else attempts
+        for attempt in range(1, limit + 1):
             text = prompt
             if attempt > 1:
                 delta = prompts.changed_keys(replies[-2] if len(replies) > 1 else None, replies[-1] if replies else None)
-                text = prompt + "\n\n" + prompts.render("retry", n=attempt - 1, max=self.attempts,
+                text = prompt + "\n\n" + prompts.render("retry", n=attempt - 1, max=limit,
                                                        violations=prompts.violation_lines(violations), delta=delta)
             budget.take(stage, violations)
             try:

@@ -42,7 +42,7 @@ def test_a_resumed_request_carries_the_planner_identity_and_its_project_has_the_
     client, services, connector = world
     card = ask_for_a_merge(client, services, connector)
     connector.calls.clear()
-    say_yes(client, services, connector, card, assignments(draft("a1", "web", title="Page"), draft("a2", "sales", title="Quote")))
+    say_yes(client, services, connector, card, assignments(draft("a1", "web", title="Page"), draft("a2", "sales", title="Quote")), {"kind": "node_plan", "steps": []})
     planner = rows(services, "SELECT * FROM agent_nodes WHERE role = 'planner'")
     assert len(rows(services, "SELECT * FROM projects")) == 1 and len(planner) == 1
     assert connector.calls and {call.context.get("agent_node_id") for call in connector.calls} == {planner[0]["id"]} and all(call.cancel is not None for call in connector.calls)

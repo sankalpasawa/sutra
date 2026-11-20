@@ -28,7 +28,7 @@ JUNK = {".DS_Store"}
 MUST_SHIP = [
     "ui/pages/home.html", "ui/pages/j2_ui.html", "ui/pages/j2_ui_render.js", "ui/pages/j2_graph_layout.js",
     "orchestrator/agent/templates/decide.md", "orchestrator/agent/templates/change.md", "orchestrator/agent/templates/assign.md",
-    "orchestrator/agent/templates/retry.md", "library/specs/function_specs.json", "connectors/policy.default.json",
+    "orchestrator/agent/templates/retry.md", "orchestrator/agent/templates/nodeplan.md", "library/specs/function_specs.json", "connectors/policy.default.json",
 ]
 
 
