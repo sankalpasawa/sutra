@@ -389,7 +389,7 @@ class Router:
             return ""
         allowed = bool(getattr(grant, "edit", False))
         crew = ("edit" if allowed else "read") if getattr(tag, "team_workspace", "none") == "edit" else ""
-        return Folder(str(grant), edit=want == "edit" and allowed, team=crew, git=want == "inspect" and allowed)
+        return Folder(str(grant), edit=want == "edit" and allowed, team=crew, git=want == "inspect" and allowed, scope=tuple(getattr(self, "node_scope", ()) or ()) if getattr(tag, "node_id", "") else ())
 
     @staticmethod
     def _grounded(system: str, folder: "Folder | str") -> str:

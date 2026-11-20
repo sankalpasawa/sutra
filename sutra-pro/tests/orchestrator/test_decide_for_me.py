@@ -35,6 +35,7 @@ def test_every_row_of_the_rule_table_answers_as_it_says():
     assert decide_for_me_answer("plan_estimate", 5, estimate=1000, ceiling=1000).decision == "allow_once"
     assert decide_for_me_answer("plan_estimate", 5, estimate=1001, ceiling=1000) is None                    # over the ceiling: the owner decides
     assert decide_for_me_answer("plan_estimate", 5, estimate=10, ceiling=None) is None                      # no ceiling: never
+    assert decide_for_me_answer("scope_violation", 2).decision == "deny"                                    # set aside, never kept
     assert decide_for_me_answer("tier", 5) is None and decide_for_me_answer("credits", 5) is None             # credits are never raised
     assert decide_for_me_answer("tier", 6) is None and decide_for_me_answer("scope", 6) is None              # tier 6 is never granted
     assert decide_for_me_answer("system", 1) is None and decide_for_me_answer("system", 2) is None           # never a permission of the computer (D295)

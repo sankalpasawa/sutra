@@ -231,6 +231,8 @@ def decide_for_me_answer(kind: str, tier: int | None, *, estimate: int = 0, ceil
         if kind == "plan_estimate" and ceiling is not None and 0 <= estimate <= ceiling:
             return RuleAnswer("allow_once", "estimate_within_ceiling", f"the estimate of {estimate} credits is within the ceiling of {ceiling}")
         return None
+    if kind == "scope_violation":                                          # never keeps the work: it is set aside (quarantine), its files stay for the owner
+        return RuleAnswer("deny", "scope_violation", "a step that changed files nobody owns is set aside; its files are kept")
     if kind == "scope":
         return RuleAnswer("allow_once", "scope_wide_or_missing", "a wide write scope is allowed and kept apart from other writers")
     if kind == "tier" and tier == 4:

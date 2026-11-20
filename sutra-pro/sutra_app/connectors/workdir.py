@@ -84,18 +84,22 @@ class Folder(str):
     files here and the owner allowed it), `read` (the run is built to change files but the owner chose read only: nobody can), or `` (nothing is
     said about a team: a direct chat, the org agent, an output whose builders only read). It changes the words of `grounding_text`, never the tools.
 
+    `scope` (a step of a multi-agent project, MAN-10) narrows what an editing call may change to those paths: the claude connector allows the edit tools only inside them.
+
     `git` says the call may run the four git reads (status, diff, log, show) without being able to change a file (Audit of a run whose builders change
     files, D135); a call that may edit has them anyway. The claude connector adds Bash restricted to those reads and the same deny list as for an edit."""
 
     edit: bool = False
     team: str = ""
     git: bool = False
+    scope: tuple[str, ...] = ()
 
-    def __new__(cls, path: str, edit: bool = False, team: str = "", git: bool = False) -> "Folder":
+    def __new__(cls, path: str, edit: bool = False, team: str = "", git: bool = False, scope: tuple[str, ...] = ()) -> "Folder":
         found = super().__new__(cls, path)
         found.edit = bool(edit)
         found.team = team if team in ("edit", "read") else ""
         found.git = bool(git)
+        found.scope = tuple(scope)                      # a step of a project: the paths it may change (MAN-10); empty for every other call, which changes what it always could
         return found
 
 

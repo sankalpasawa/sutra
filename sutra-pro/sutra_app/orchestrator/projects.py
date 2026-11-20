@@ -361,6 +361,27 @@ class ProjectService:
 
     # ---- Decide for me, and the answer path (MAN-8, D294, D306, D308) --------------------------------------------------------------
 
+    def _after_violation(self, tx: Tx, project_id: str, approval: Any) -> str:
+        node = tx.conn.execute("SELECT task_id FROM agent_nodes WHERE id = ?", (approval.node_id,)).fetchone()
+        if not self.store.approvals(project_id, status="open") or not any(a.request.get("kind") == "scope_violation" for a in self.store.approvals(project_id, status="open")):
+            tx.conn.execute("UPDATE projects SET paused = 0 WHERE id = ? AND paused = 1", (project_id,))
+            self.store.audit(tx, actor="system", action="project.resumed", project_id=project_id, decision="n/a", reason="the question about files nobody owns was answered")
+        if node is not None and node["task_id"]:
+            self.conductor.sync_task(tx, node["task_id"])                               # the held step is handed on, or set aside
+        self.sync_cards(tx, project_id)
+        return "running"
+
+    def violation_by_rule(self, tx: Tx, row: Any) -> None:
+        """Decide for me meets a scope violation: the rule table SETS THE WORK ASIDE (never keeps it): the question is answered no by `rule:decide_for_me`, audited as such."""
+        answer = decide_for_me_answer("scope_violation", 2)
+        approval_id = row.id
+        if answer is None:
+            return
+        self.store.decide(tx, approval_id, answer.decision, decided_by=DECIDE_FOR_ME)
+        self.store.audit(tx, actor="gatekeeper", action="gate.decided", project_id=row.project_id, node_id=row.node_id or None, tier=row.tier, decision="deny",
+                         reason=f"decided_by {DECIDE_FOR_ME}: {answer.rule}: {answer.why}", ref=approval_id)
+        self.sync_cards(tx, row.project_id)
+
     def owner_turned_on(self, dept_id: str) -> int:
         """The owner turned Decide for me on for a team (the Simple view's switch, D319, P2): every project of that team that still has open questions is switched to Decide for me and the
         rule table answers what it may at once (the same table, audited the same way). Turning it OFF changes nothing here: it applies to the next project (a question already answered stays
@@ -405,7 +426,7 @@ class ProjectService:
     def _is_step_question(a: Any) -> bool:
         """A question about ONE step: a system permission (D295's skip) or a tier-4 or wide-scope question that names its node (D315 b)."""
         kind = a.request.get("kind")
-        return kind == "system" or (kind in ("tier", "scope", "sutra_tools") and bool(a.node_id))
+        return kind in ("system", "scope_violation") or (kind in ("tier", "scope", "sutra_tools") and bool(a.node_id))
 
     def _cancel_step(self, tx: Tx, project_id: str, node_id: str) -> bool:
         """Cancel one step that was not approved ("not approved: you said no") and, following the plan's edges, the steps that wait for it ("a step it needed was not approved"). Returns True
@@ -447,7 +468,7 @@ class ProjectService:
             self.conductor._refuse_in(tx, project_id, why)
             return "refused"
         for a in approvals:                                                          # a no to ONE step's question cancels only that step (D315 b)
-            if a.status == "denied" and a.request.get("kind") != "system" and self._is_step_question(a):
+            if a.status == "denied" and a.request.get("kind") not in ("system", "scope_violation") and self._is_step_question(a):
                 if self._cancel_step(tx, project_id, a.node_id) and project["failure_policy"] == "stop_all":
                     self.conductor._refuse_in(tx, project_id, "not approved: you said no and this project stops at the first failure")
                     return "refused"
@@ -526,6 +547,8 @@ class ProjectService:
                 self.store.audit(tx, actor="owner" if by == "owner" else "system", action="gate.refused" if row.status == "expired" else "gate.decided", project_id=project_id,
                                  node_id=row.node_id or None, tier=row.tier, decision="deny" if refused else "allow",
                                  reason=("the question had run out of time" if row.status == "expired" else f"decided_by {row.decided_by}: {decision}"), ref=approval_id)
+                if row.request.get("kind") == "scope_violation":                          # a held step goes on (kept) or is set aside, and the project starts again
+                    return self._after_violation(tx, project_id, row)
                 return self._settle_answers(tx, project_id, why="not approved: you said no" if decision == "deny" else "not approved: a question was answered no")
         outcome = await run_blocking(work)
         if outcome == "running" and self.tasks is not None:
@@ -535,6 +558,7 @@ class ProjectService:
     # the words of a card (plain, simple). A no to a question about one step cancels that step (D315 b); a no to the estimate stops the project; nothing here says a writer "runs alone" before MAN-10 (D323).
     _WORDS = {
         "tier": "A step wants to read GitHub, through your own GitHub login (read only). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
+        "scope_violation": "A step changed files that no step was given ({count}, for example {paths}). Keep its work? If you say no, its work is set aside, its files are kept for you to look at, and the steps that need it are cancelled.",
         "sutra_tools": "A step wants to read this app's own data (your teams, tasks and notes). Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "scope": "A step changes files in several places of your folder. It is kept apart from other steps that change your folder. Allow it? If you say no, only that step is cancelled and the steps that need it. The rest go on.",
         "plan_estimate": "This plan is estimated at about {credits} credits, which is over {limit}. Allow it once? If you say no, the whole project stops.",
@@ -543,8 +567,9 @@ class ProjectService:
 
     def _card_of(self, project_id: str, a: Any) -> NodeApprovalCard:
         kind = str(a.request.get("kind", ""))
-        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope", "sutra_tools") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
-        question = self._WORDS.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"))
+        options = (["check_again", "skip"] if kind == "system" else ["allow_once", "deny"] if kind in ("plan_estimate", "scope", "sutra_tools", "scope_violation") or a.tier == 5 else ["allow_once", "allow_project", "deny"])
+        question = self._WORDS.get(kind, "A step needs your answer.").format(credits=a.request.get("credits", "?"), limit=a.request.get("limit", "?"), count=a.request.get("count", "?"),
+                                                                            paths=", ".join(a.request.get("paths") or [])[:150])
         return NodeApprovalCard(project_id=project_id, approval_id=a.id, kind=kind[:40], tier=a.tier, node_id=a.node_id, question=question, options=options, expires_at=iso_z(a.expires_at),
                                 item=str(a.request.get("item", ""))[:40] if kind == "system" else "")
 

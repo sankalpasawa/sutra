@@ -26,13 +26,14 @@ from typing import Any
 
 from sutra_app import oslayer
 from sutra_app.connectors.egress import scrubbed
-from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
+from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE, MAX_BYTES, MAX_CHANGES, MAX_CLAIM, MAX_CLAIMS, MAX_FILES, MAX_SUMMARY, SCHEMA_V
 from sutra_app.orchestrator.grants import is_plain_name
 
 __all__ = ["read_handoff", "write_accepted", "Accepted", "HandoffRefused", "DATA_NOTE", "MAX_HASHED_BYTES"]
 
 MAX_HASHED_BYTES = 64 * 1024 * 1024        # the files of ONE hand-off share this many bytes of hashing; past it a file is checked for its size only and counted `unchecked` (G9, D309: reading it all would stall the writer)
 _KEYS = {"v", "node_id", "status", "summary", "files", "claims", "needs"}
+_OPTIONAL = {"changes"}                     # a list of paths of the owner's folder the host saw change (MAN-10)
 _FILE_KEYS = {"path", "sha256", "bytes"}
 _STATUS = ("done", "done_with_open_items", "blocked")
 _HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -139,7 +140,7 @@ def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, r
         raw = json.loads(path.read_bytes().decode("utf-8"))
     except (OSError, ValueError, RecursionError):
         raise _refuse("the hand-off is not valid JSON") from None
-    if not isinstance(raw, dict) or set(raw) != _KEYS:
+    if not isinstance(raw, dict) or not _KEYS <= set(raw) <= _KEYS | _OPTIONAL:
         raise _refuse("the hand-off does not have exactly the fields of a hand-off")
     if raw["v"] != SCHEMA_V or isinstance(raw["v"], bool):
         raise _refuse("the hand-off has a version this app does not read")
@@ -151,6 +152,9 @@ def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, r
     if not isinstance(summary, str) or len(summary) > MAX_SUMMARY:
         raise _refuse("the summary is not text of at most 2000 characters")
     files, claims, needs = raw["files"], raw["claims"], raw["needs"]
+    changes = raw.get("changes")
+    if "changes" in raw and (not isinstance(changes, list) or len(changes) > MAX_CHANGES or not all(isinstance(c, str) for c in changes)):
+        raise _refuse("the list of changed files is longer than the limit")
     if not isinstance(files, list) or len(files) > MAX_FILES:
         raise _refuse("the file list is longer than the limit")
     if not isinstance(claims, list) or len(claims) > MAX_CLAIMS or not all(isinstance(c, str) and len(c) <= MAX_CLAIM for c in claims):
@@ -177,6 +181,8 @@ def _read_handoff(run_dir: str | os.PathLike[str], node_id: str, runtime: str, r
             unchecked += 1
         clean_files.append({"path": _clean(rel, redact), "sha256": sha, "bytes": size})
     document = {"v": SCHEMA_V, "node_id": node_id, "status": raw["status"], "summary": _clean(summary, redact), "files": clean_files, "claims": [_clean(c, redact) for c in claims], "needs": []}
+    if changes is not None:
+        document["changes"] = [_clean("".join(ch for ch in c[:400] if ord(ch) >= 32), redact) for c in changes]
     return Accepted(document, checked, unchecked)
 
 

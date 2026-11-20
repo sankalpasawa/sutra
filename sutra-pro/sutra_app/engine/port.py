@@ -81,6 +81,8 @@ class PortSpec(BaseModel):
     # the app tools a node of a multi-agent project was granted (`sutra`, `github`; MAN-8, D298). Empty for every run there was before. The RouterPort puts them on the run's own agent-turn
     # calls only, never on a builder-tools call (`run_tools`), so a grant of GitHub reads reaches the agents the engine asks and nothing else.
     tools: tuple[str, ...] = ()
+    # the paths of the owner's folder a step of a project may change (MAN-10): the router narrows an editing call's tools to them. Empty for every run that is not a node and for a node with no scope.
+    scope: tuple[str, ...] = ()
 
 
 class ToolGrant(BaseModel):

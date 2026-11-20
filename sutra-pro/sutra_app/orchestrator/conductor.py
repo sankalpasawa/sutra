@@ -45,6 +45,12 @@ CAP_PHRASES = ("used up its model calls", "used up its dollars", "ran out of tim
 CAP_REACHED = "stopped: this step "                       # + "used up its model calls" / "used up its dollars" / "ran out of time"          # the outcome the engine host writes when a node used up its calls, dollars or time (MAN-9)
 
 
+def _covers_path(scope: tuple[str, ...], path: str) -> bool:
+    """`path` (of the owner's folder, written with `/`) is inside one of the `scope` entries, compared without case (Windows and the default macOS file system do not tell them apart)."""
+    low = path.replace("\\", "/").lstrip("/").casefold()
+    return any(low == entry.rstrip("/").casefold() or low.startswith(entry.rstrip("/").casefold() + "/") for entry in scope)
+
+
 def caps_of(project: Any) -> dict[str, Any]:
     return json.loads(project["caps_json"] or "{}")
 
@@ -330,6 +336,8 @@ class Conductor:
             else:
                 accepted = read_handoff(run_dir, node["id"], node["runtime"], self.store.redact)
                 write_accepted(run_dir, accepted)
+            if self._scope_violation(tx, node, accepted, task_id):                # a path nobody owns was changed: held for the owner's answer, or set aside (MAN-10)
+                return
             posted = self.store.post(tx, project_id=node["project_id"], kind="handoff", src_ref=f"handoff:{node['id']}:{node['attempt']}", body=accepted.document,
                                      from_node=node["id"], to_node="project", file=ACCEPTED_FILE)
         except HandoffRefused as refused:
@@ -345,6 +353,52 @@ class Conductor:
         self.store.audit(tx, actor="conductor", action="handoff.accepted", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="allow",
                          reason=f"{len(accepted.document['files'])} file(s), message {posted.seq}", ref=str(posted.seq))
         self._teardown(tx, node, "done", "")
+
+    def _scope_violation(self, tx: Tx, node: sqlite3.Row, accepted: Accepted, task_id: str) -> bool:
+        """MAN-10 (D303): a path the node's run changed in the owner's folder that NO writer of the project owns (the union of the scopes of its writers; a writer with no scope owns the whole
+        folder, so nothing can be outside) is a scope violation. The owner is asked (a card): keep the work or set it aside; Decide for me sets it aside (`gatekeeper.on_scope_violation`: the node is
+        quarantined, its files kept, nothing is given on). While the question is open the node waits (`awaiting_approval`) and the project starts nothing new. Returns True when the hand-off must not
+        go on now (held or set aside), False when there is nothing outside or the owner allowed it."""
+        changes = accepted.document.get("changes") or []
+        if not changes:
+            return False
+        owned: list[tuple[str, ...]] = []
+        for row in tx.conn.execute("SELECT plan_ref, grants_json, writes_json, project_id FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (node["project_id"],)).fetchall():
+            lease = self.service.conductor._lease_of(tx.conn, row)
+            if lease is not None:
+                owned.append(lease)
+        if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing is outside
+            return False
+        outside = [path for path in changes if not any(_covers_path(scope, path) for scope in owned)]
+        if not outside:
+            return False
+        key = f"violation:{node['id']}:{node['attempt']}"
+        found = tx.conn.execute("SELECT id, status FROM approvals WHERE project_id = ? AND client_id = ?", (node["project_id"], key)).fetchone()
+        if found is None:
+            names = [path[:200] for path in outside[:5]]
+            asked = self.store.open_approval(tx, project_id=node["project_id"], node_id=node["id"], tier=2, client_id=key,
+                                             expires_at=tx.now() + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400), request={"kind": "scope_violation", "paths": names, "count": len(outside)})
+            self.store.audit(tx, actor="conductor", action="scope.violation", project_id=node["project_id"], node_id=node["id"], role=node["role"], tier=2, decision="ask",
+                             reason=f"{len(outside)} file(s) outside every step's part of your folder", ref=asked.id)
+            tx.conn.execute("UPDATE agent_nodes SET state = 'awaiting_approval' WHERE id = ?", (node["id"],))
+            tx.conn.execute("UPDATE projects SET paused = 1 WHERE id = ?", (node["project_id"],))
+            self.store.audit(tx, actor="system", action="project.paused", project_id=node["project_id"], decision="n/a", reason="a step changed files nobody owns")
+            decide = tx.conn.execute("SELECT decide_for_me FROM projects WHERE id = ?", (node["project_id"],)).fetchone()["decide_for_me"]
+            if decide:
+                tx.conn.execute("UPDATE projects SET paused = 0 WHERE id = ?", (node["project_id"],))
+                self.service.violation_by_rule(tx, asked)                       # the rule table sets it aside, audited as `rule:decide_for_me`
+                return self._scope_violation(tx, tx.conn.execute("SELECT * FROM agent_nodes WHERE id = ?", (node["id"],)).fetchone(), accepted, task_id)
+            self.service.sync_cards(tx, node["project_id"])
+            return True
+        if found["status"] == "open":
+            tx.conn.execute("UPDATE agent_nodes SET state = 'awaiting_approval' WHERE id = ?", (node["id"],))
+            return True
+        if found["status"] in ("allowed_once", "allowed_project"):
+            return False
+        self.store.audit(tx, actor="conductor", action="scope.quarantined", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="deny",
+                         reason="its changes outside every step's part of your folder were set aside; its files are kept", ref=found["id"])
+        self._fail(tx, node, "it changed files nobody gave it: its work was set aside and its files are kept", retry=False)
+        return True
 
     @staticmethod
     def _beat(tx: Tx, node: sqlite3.Row) -> None:
