@@ -113,12 +113,12 @@ def ended_of(run_dir):
     return [event for event in lines if event.get("t") == "run.ended"][-1]
 
 
-def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(make_run_dir):
+def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(j2, make_run_dir):
     run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET, node={**NODE, "caps": {"calls": 1, "usd": None, "wall_s": 1800}})
     Running(run_dir, "--mock").wait()
     assert ended_of(run_dir)["outcome"] == "stopped: this step reached its calls cap"
 
 
-def test_a_run_without_a_node_is_not_metered(make_run_dir):
+def test_a_run_without_a_node_is_not_metered(j2, make_run_dir):
     plain = make_run_dir(user_text=BREW_LAB, settings=QUIET)
     assert Running(plain, "--mock").wait() == 0 and "reached its" not in ended_of(plain)["outcome"]
