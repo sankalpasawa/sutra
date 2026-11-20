@@ -14,8 +14,9 @@ The label belongs to CODE alone. A model writes a mark; it never writes a label,
 can change one. "checked" says exactly this: the file is there, it is inside the folder, those lines exist, and, when exact words were given, the words are
 on those lines (white space does not matter, case does). It does NOT say the lines support what the answer claims: the card says so in words.
 
-A path is refused (label "could not find", with the reason) when it could reach anything but a plain file inside the folder, whatever the machine:
-an absolute path outside the folder, a `..` part, a path starting with `~`, a backslash (a Windows spelling), a drive letter or a colon (`C:x`, `file:stream`),
+A path is refused (label "could not find", with the reason) when it could reach anything but a plain file inside the folder, whatever the machine, and the first group of rules
+looks at the TEXT only, before any file-system call (D351): a backslash, a colon, a leading `//`, `~`, a control character, an absolute path that does not start with the folder as text.
+The rest: an absolute path outside the folder, a `..` part, a path starting with `~`, a backslash (a Windows spelling), a drive letter or a colon (`C:x`, `file:stream`),
 a part that Windows reads differently (a trailing dot or space, a device name such as `CON` or `NUL`), a control character, or a character a path never needs
 (`<>|?*`). Then the path is resolved with the real file system (`realpath`): a link that leads out of the folder is outside, a folder, a device or a pipe is
 not a file, and a file that is large, not text or too short for the range is not checked. Nothing is ever written, and no file is opened before those steps.
@@ -32,7 +33,7 @@ import time
 from dataclasses import dataclass
 from typing import Iterable
 
-__all__ = ["Mark", "Source", "Report", "parse_marks", "check_mark", "check_answer", "clean_relative", "CHECKED", "MISSING", "MAX_MARKS", "MAX_SPAN",
+__all__ = ["Mark", "Source", "Report", "parse_marks", "check_mark", "check_answer", "clean_relative", "spelling_problem", "absolute_parts", "CHECKED", "MISSING", "MAX_MARKS", "MAX_SPAN",
            "MAX_FILE_BYTES", "MAX_QUOTE", "MIN_QUOTE", "MAX_LINE_NUMBER", "BUDGET_S"]
 
 CHECKED = "checked"
@@ -124,21 +125,31 @@ def parse_marks(answer: str) -> list[Mark]:
 
 # ---- the path ---------------------------------------------------------------------------------------------------------------------
 
+def spelling_problem(path: str) -> str:
+    """The reason a path cannot be a plain path inside the folder, from its spelling alone, or "". It looks at the text and nothing else: no file system is asked, so a UNC path
+    (`\\\\host\\share`, `//host/share`), a device path (`\\\\.\\pipe\\x`), a drive (`C:x`), an alternate stream (`file:stream`) or a backslash can never reach `realpath`, `stat` or `open`
+    (on Windows the file system would connect to the host or open the pipe just to answer). The same text is refused on every machine, so a test on one machine says what all do."""
+    if not isinstance(path, str) or not path.strip():
+        return "the path is empty"
+    if len(path) > MAX_PATH_CHARS:
+        return "the path is too long"
+    if any(ord(c) < 32 or ord(c) == 127 for c in path):
+        return "the path has a character a path cannot have"
+    if "\\" in path or ":" in path or path.startswith("//"):
+        return "the path is not written as a path inside the folder (use / and no drive letter)"
+    if path.startswith("~"):
+        return "the path starts with ~, which is not inside the folder"
+    if any(c in _NOT_A_PATH for c in path):
+        return "the path has a character a path cannot have"
+    return ""
+
+
 def clean_relative(path: str) -> tuple[list[str] | None, str]:
     """`(the parts of the path below the folder, "")` for a path written the way a path inside the folder is written; `(None, the reason)` for any other.
     Only the spelling is looked at here (no file system): it is what keeps `..`, a Windows spelling or a device name from ever reaching `open`."""
-    if not isinstance(path, str) or not path.strip():
-        return None, "the path is empty"
-    if len(path) > MAX_PATH_CHARS:
-        return None, "the path is too long"
-    if any(ord(c) < 32 or ord(c) == 127 for c in path):
-        return None, "the path has a character a path cannot have"
-    if "\\" in path or re.match(r"^[A-Za-z]:", path) or ":" in path:
-        return None, "the path is not written as a path inside the folder (use / and no drive letter)"
-    if path.startswith("~"):
-        return None, "the path starts with ~, which is not inside the folder"
-    if any(c in _NOT_A_PATH for c in path):
-        return None, "the path has a character a path cannot have"
+    bad = spelling_problem(path)
+    if bad:
+        return None, bad
     parts = [p for p in path.split("/") if p not in ("", ".")]
     if not parts:
         return None, "the path is empty"
@@ -157,17 +168,16 @@ def _inside(real: str, root: str) -> bool:
     return a == b or a.startswith(b.rstrip("\\/") + os.sep)
 
 
-def _absolute_inside(path: str, root: str) -> list[str] | None:
-    """The parts below `root` of an absolute path that, after the file system has resolved it, is inside `root`; else None."""
-    if not os.path.isabs(path):
+def absolute_parts(path: str, folder: str) -> list[str] | None:
+    """The parts below `folder` of an absolute path (it starts with one `/`), compared as TEXT with the folder: no file system is asked here. A path that does not start with the folder's
+    own spelling is not inside it (None); the parts then go through the same spelling rules as a relative path and `realpath` decides the rest. A folder written with a drive or
+    backslashes (Windows) never matches a `/` path, so on Windows only relative marks are accepted: the prompt asks for relative ones."""
+    if not path.startswith("/") or path.startswith("//") or not isinstance(folder, str) or not folder:
         return None
-    try:
-        real = os.path.realpath(path)
-    except (OSError, ValueError):
+    root = folder.rstrip("/")
+    if root == "" or not path.startswith(root + "/"):
         return None
-    if not _inside(real, root) or os.path.normcase(real) == os.path.normcase(root):
-        return None
-    return [p for p in os.path.relpath(real, root).replace(os.sep, "/").split("/") if p]
+    return [p for p in path[len(root) + 1:].split("/") if p not in ("", ".")] or None
 
 
 # ---- one mark ---------------------------------------------------------------------------------------------------------------------
@@ -197,13 +207,15 @@ def _check(mark: Mark, folder: str) -> Source:
         return _no(mark, "that line number is too big")
     if mark.end - mark.start + 1 > MAX_SPAN:
         return _no(mark, f"the range is wider than {MAX_SPAN} lines, too wide to be a source")
-    root = os.path.realpath(folder)
     path = mark.path
+    bad = spelling_problem(path)                             # FIRST, and from the text alone: nothing below touches the file system for a path that fails it
+    if bad:
+        return _no(mark, bad)
     parts: list[str] | None
-    if path.startswith("/") or os.path.isabs(path):
-        if ".." in path.replace("\\", "/").split("/"):
+    if path.startswith("/"):
+        if ".." in path.split("/"):
             return _no(mark, "the path goes up out of the folder")
-        parts = _absolute_inside(path, root)                 # an absolute path is kept only when the file system puts it inside the folder
+        parts = absolute_parts(path, folder)                 # compared with the folder as text; the file system is asked only for a path that starts with it
         if parts is None:
             return _no(mark, "the path is not inside the folder")
         reason = ""
@@ -214,6 +226,7 @@ def _check(mark: Mark, folder: str) -> Source:
     checked_parts, reason = clean_relative("/".join(parts))      # the parts of an absolute path pass the same spelling rules
     if checked_parts is None:
         return _no(mark, reason)
+    root = os.path.realpath(folder)
     real = os.path.realpath(os.path.join(root, *checked_parts))
     if not _inside(real, root) or os.path.normcase(real) == os.path.normcase(root):
         return _no(mark, "the path leads outside the folder")

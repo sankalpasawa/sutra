@@ -5,14 +5,18 @@ What the tests hold the module to: a label comes from code alone; a path that co
 never an exception."""
 from __future__ import annotations
 
+import builtins
+import contextlib
+import ntpath
 import os
+import posixpath
 import stat
 import sys
 
 import pytest
 
 from sutra_app.orchestrator import citations as c
-from sutra_app.orchestrator.citations import CHECKED, MISSING, Mark, check_answer, check_mark, clean_relative, parse_marks
+from sutra_app.orchestrator.citations import CHECKED, MISSING, Mark, absolute_parts, check_answer, check_mark, clean_relative, parse_marks, spelling_problem
 
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="needs POSIX links or pipes")
 
@@ -205,6 +209,83 @@ def test_the_spelling_check_alone_names_the_reason_and_gives_the_parts():
     assert clean_relative("a/../b") == (None, "the path goes up out of the folder")
     assert clean_relative("a\\b")[0] is None and clean_relative("C:x")[0] is None and clean_relative("~/x")[0] is None
     assert clean_relative(None)[0] is None                                              # type: ignore[arg-type]
+
+
+# ---- a refusal by spelling comes before any file-system call (M1: on Windows realpath of a UNC path connects to the host) -----------------------------------------------------
+
+WINDOWS = [
+    r"\\server\share\x.txt", "//server/share/x.txt", "//attacker.example/s/x", r"\\attacker.example\s\x", r"\\.\pipe\x", r"\\.\PhysicalDrive0", r"\\?\C:\Windows\win.ini",
+    r"\\?\UNC\host\share\x", "//./pipe/x", "//?/C:/x", "C:", "c:x.txt", r"C:\Windows\win.ini", "C:/Windows/win.ini", "/C:/Windows/win.ini", "x:stream", "src/app.py::$DATA",
+    "src/app.py:Zone.Identifier", r"PROGRA~1\x.txt", r"src\app.py", r"..\x", "CON", "nul.txt", "src/COM1", "LPT1.log", "AUX", "src/PRN.txt", "con.", "src/app.py. ",
+]
+
+
+@contextlib.contextmanager
+def no_file_system(*extra):
+    """Every file-system entry a check could use is replaced, for the body of the `with` only, by a function that fails the test when called (pytest's own use of the file system
+    happens outside it)."""
+    def trap(*a, **k):
+        raise AssertionError("the file system was asked for a refused path")
+    saved = []
+    targets = [(os.path, n) for n in ("realpath", "exists", "isfile", "isdir", "samefile", "lexists")] + [(os, n) for n in ("stat", "lstat", "fstat", "open", "scandir", "listdir", "readlink", "access")]
+    targets.append((builtins, "open"))
+    try:
+        for owner, name in targets:
+            saved.append((owner, name, getattr(owner, name)))
+            setattr(owner, name, trap)
+        yield
+    finally:
+        for owner, name, original in reversed(saved):
+            setattr(owner, name, original)
+
+
+@pytest.mark.parametrize("path", WINDOWS)
+def test_a_windows_spelling_is_refused_before_the_file_system_is_asked(path):
+    with no_file_system():
+        got = check_mark(Mark(path, 1, 1), "/some/folder")
+    assert got.label == MISSING and got.reason != "" and got.reason != "the file could not be read"
+
+
+@pytest.mark.parametrize("path", ["/etc/passwd", "/", "//", "/some/folder", "/some/folderEvil/x.txt", "/some/other/x.txt", "/some/folder/../x.txt", "/some/folder/./../x.txt"])
+def test_an_absolute_path_is_compared_with_the_folder_as_text_first(path):
+    with no_file_system():
+        got = check_mark(Mark(path, 1, 1), "/some/folder")
+    assert got.label == MISSING and got.reason in ("the path is not inside the folder", "the path goes up out of the folder", "the path is not written as a path inside the folder (use / and no drive letter)")
+
+
+def test_the_pure_parts_say_the_same_for_every_ntpath_absolute_spelling(monkeypatch):
+    """What `ntpath` (Windows) calls absolute is refused by text, or compared with the folder as text; none of it needs a Windows machine to be tested."""
+    for path in WINDOWS + [r"\\x", "/x", "//x", r"\\", "C:\\", "D:/x"]:
+        if ntpath.isabs(path) or ntpath.splitdrive(path)[0]:
+            assert spelling_problem(path) != "" or (path.startswith("/") and not path.startswith("//")), path
+    assert absolute_parts("//server/share/x", "/some/folder") is None
+    assert absolute_parts(r"\\server\share\x", "/some/folder") is None
+    assert absolute_parts("/some/folder/src/app.py", "/some/folder") == ["src", "app.py"]
+    assert absolute_parts("/some/folderEvil/app.py", "/some/folder") is None
+    assert absolute_parts("/some/folder", "/some/folder") is None
+    assert absolute_parts("/some/folder/", "/some/folder") is None
+    assert absolute_parts("/x", "") is None and absolute_parts("src/a.py", "/some/folder") is None
+
+
+def test_windows_isabs_cannot_pull_a_path_into_the_absolute_branch(monkeypatch):
+    """As if this were Windows: `os.path.isabs` is ntpath's. The decision no longer asks it, and nothing reaches the file system."""
+    monkeypatch.setattr(os.path, "isabs", ntpath.isabs)
+    with no_file_system():
+        results = [check_mark(Mark(path, 1, 1), "/some/folder").label for path in WINDOWS]
+    assert results == [MISSING] * len(WINDOWS)
+
+
+def test_eight_dot_three_names_are_refused_with_a_backslash_and_left_to_realpath_with_a_slash(folder):
+    assert clean_relative(r"PROGRA~1\x.txt")[0] is None
+    assert clean_relative("PROGRA~1/x.txt") == (["PROGRA~1", "x.txt"], "")                 # a short name leads to a real file in the folder, or nowhere: realpath and the prefix check decide
+    assert one(folder, "PROGRA~1/x.txt").reason == "there is no such file"
+
+
+def test_the_spelling_check_alone_names_a_reason_for_each_family():
+    assert spelling_problem("src/app.py") == "" and spelling_problem("/abs/ok.py") == "" and spelling_problem(".gitignore") == ""
+    for path in (r"a\b", "C:x", "a:b", "//h/s", "~x", "a\x00b", "", "a*b"):
+        assert spelling_problem(path) != "", path
+    assert posixpath.normpath("a/b") == "a/b"                                                # (keeps the import used by the simulations above honest)
 
 
 # ---- the label is code's alone --------------------------------------------------------------------------------------------------------
