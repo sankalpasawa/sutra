@@ -104,9 +104,11 @@ def test_the_summary_says_what_it_used_what_was_tried_again_what_was_asked_and_w
     summary = service(rig, projects=True).summary(pid)
     assert summary["calls"] == 3 and summary["usd"] == pytest.approx(0.6) and summary["retries"] == 1
     assert summary["lines"][0] == "It is still going." and "It used 3 credits and about $0.60" in summary["lines"][1]
-    assert any("Step a1 was tried again (1 extra try)" in line for line in summary["lines"])
-    names = {s["name"]: s for s in summary["steps"]}
-    assert names["Step a1"]["tries"] == 2 and names["Step a1"]["calls"] == 3 and names["Step a2"]["calls"] == 0 and names["Step a2"]["usd"] is None
+    assert any("a1 was tried again after a failure (1 extra try)" in line for line in summary["lines"])
+    names = {s["name"]: s for s in summary["steps"]}                                                                       # a step is named by its task's title (here the rig gives the ref)
+    assert names["a1"]["tries"] == 2 and names["a1"]["calls"] == 3 and names["a2"]["calls"] == 0 and names["a2"]["usd"] is None and names["a1"]["usd"] == pytest.approx(0.6)
+    assert names["a1"]["state_word"] and names["a2"]["state_word"] == "Waiting for another step" or names["a2"]["state_word"]      # node states have owner words from the server
+    assert summary["minutes"] is not None                                                                                  # after a retry the first attempt's start still counts
 
 
 def test_the_summary_of_an_ended_project_names_the_question_the_notice_and_the_reason(rig):
@@ -164,3 +166,47 @@ def test_the_work_page_exists_only_with_the_switch_on_and_every_file_it_names_is
         assert client.head("/work").status_code == 200
         for name in re.findall(r'(?:src|href)="(/ui/[^"]+)"', page.text):
             assert client.get(name).status_code == 200, name
+
+
+# ---- review findings ---------------------------------------------------------------------------------------------------------------------
+def test_every_attempt_of_a_retried_step_is_under_its_project_not_listed_on_its_own(rig):                         # review 1
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], title="Cafe site")
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)                                         # the first attempt ends and a second is made
+    new = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]
+    assert new != tasks["a1"] and rig.t.status(tasks["a1"]) == "crashed"
+    work = service(rig, projects=True)
+    assert [i["kind"] for i in work.items()] == ["project"]                                                                # no "a1 - Did not finish" next to the project
+    assert work.items(status="crashed") == [] and work.items(q="a1") == []
+    assert {i["kind"] for i in service(rig, projects=False).items()} == {"task"}                                           # without the nodes there are no projects: the tasks are what there is
+
+
+def test_a_secret_in_capitals_is_refused_as_typed_and_nothing_is_echoed_back():                                          # review 3
+    for secret in ("AKIAIOSFODNN7EXAMPLE", "password=hunter2hunter2", "ghp_" + "A" * 36):
+        with pytest.raises(AppError) as refused:
+            clean_tags([secret])
+        assert refused.value.code == "validation" and secret not in refused.value.message and secret.lower() not in refused.value.message.lower()
+    with pytest.raises(AppError) as plain:
+        clean_tags(["bad/tag with 'quotes'"])
+    assert "bad/tag" not in plain.value.message and "1 to 30 letters" in plain.value.message                              # a tag that is only badly spelled is not repeated either
+    assert clean_tags(["Café", "CAFE 2"]) == ["cafe 2", "café"]                                                            # capitals and accents in an ordinary word are fine
+
+
+def test_a_tag_with_a_hidden_character_is_refused_and_one_with_a_joiner_for_a_language_is_not():                          # review 4
+    for hidden in ("ca\u200bfe", "ca\u202efe", "cafe\U000e0041", "cafe\ue000", "\u2060cafe", "cafe\ufeff"):
+        with pytest.raises(AppError) as refused:
+            clean_tags([hidden])
+        assert "hidden character" in refused.value.message
+    assert clean_tags(["ca\u200dfe"]) == ["ca\u200dfe"]                                                                    # the joiner some languages and emoji need is kept
+
+
+def test_the_list_is_filtered_and_paged_by_the_database_and_its_limit_is_a_page(rig):                                   # review 10, 11
+    for i in range(7):
+        rig.sql("INSERT INTO usage_ledger(at, provider, purpose, task_id, usd) SELECT ?, 'claude', 'x', id, 0.1 FROM tasks LIMIT 0", T0)
+        task = rig.t.new("web", f"Write note number {i} about the 100% real menu_v2")
+        rig.sql("UPDATE tasks SET created_at = ? WHERE id = ?", T0 - i * 10, task.id)
+    work = service(rig)
+    assert [i["title"] for i in work.items(limit=3)] and len(work.items(limit=3)) == 3 and len(work.items(limit=3, offset=3)) == 3 and len(work.items(limit=3, offset=6)) == 1
+    assert len(work.items(q="100% real")) == 7 and work.items(q="100%x") == [] and len(work.items(q="menu_v2")) == 7 and work.items(q="menu_v3") == []        # % and _ are letters, not patterns
+    assert len(work.items(q="NOTE number 3")) == 1

@@ -10,6 +10,7 @@ Nothing here guesses: a refused line is never stored, trimmed or half-kept.
 """
 import json
 import sqlite3
+import unicodedata
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -17,7 +18,7 @@ from typing import Any
 from sutra_app.connectors.egress import scan
 from sutra_app.library.practice import clean_text
 
-__all__ = ["refusal", "local_today", "json_meta", "save_meta", "is_date"]
+__all__ = ["refusal", "local_today", "json_meta", "save_meta", "is_date", "hidden_text_refusal"]
 
 
 def refusal(text: str, redact: Callable[[str], str] | None = None, limit: int = 300) -> str | None:
@@ -65,3 +66,16 @@ def save_meta(conn: sqlite3.Connection, key: str, doc: dict[str, Any]) -> None:
     """Store `doc` under `key` (the upsert of the chart store's own meta rows). Call inside `db.tx()`."""
     conn.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                  (key, json.dumps(doc, ensure_ascii=False, separators=(",", ":"))))
+
+
+_HIDDEN_KEEP = {"\u200c", "\u200d"}                    # the zero-width non-joiner and joiner are needed to write some languages and emoji; every other invisible character is refused
+
+
+def hidden_text_refusal(text: str) -> str | None:
+    """None when `text` holds no invisible character, else one plain sentence (never echoing the text): a zero-width space, a text-direction mark (right-to-left override and friends), a character of
+    the Unicode Tags block, a private-use or unassigned code point. Such text cannot be read by the person who is asked to approve it, so words that are saved as theirs (a recipe, a tag, an answer to a
+    blank) must not carry it (DV-3). Used by Recipes and tags; the notes and rules gate (`refusal`) is unchanged, so those pages keep their behaviour."""
+    for ch in str(text):
+        if ch not in _HIDDEN_KEEP and unicodedata.category(ch) in ("Cf", "Co", "Cs", "Cn"):
+            return "That text has a hidden character in it (for example a zero-width space or a text-direction mark), and those are never kept. Take it out and try again."
+    return None
