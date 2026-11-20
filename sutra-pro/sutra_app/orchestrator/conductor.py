@@ -24,6 +24,7 @@ from sutra_app.orchestrator.grants import fold, scopes_overlap
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.engine.host.handoff import ACCEPTED_FILE, HANDOFF_FILE
 from sutra_app.engine.host.toollog import log_path, read_log, summarize
+from sutra_app.engine.host.toolscrub import blank_tool_inputs
 from sutra_app.orchestrator.handoff_intake import Accepted, HandoffRefused, read_handoff, write_accepted
 from sutra_app.orchestrator.models import ProjectOut
 from sutra_app.syspermissions import is_permission_failure
@@ -77,6 +78,8 @@ class Conductor:
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
         self._resolved_seen: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}      # (folder, scope) -> (when, scope with its links followed): `warm_scopes`
         self._folder_seen: tuple[Any, float, Any] | None = None                    # (the lookup, when it was read, the folder): see `_folder`
+        self._sweep: list[str] = []                                               # task ids of nodes that ended: their run record is looked at once more for tool inputs (F-1, R11)
+        self._sweep_recent = True                                                  # at start: the nodes that ended in the last 7 days too (a crash or a force stop may have left inputs)
         self._maybe_owed = True                                                    # a `tool.pending` row may be waiting for the next tick (true at start: a restart may have left one) (PB-16, N-7)
         self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
 
@@ -438,6 +441,29 @@ class Conductor:
             self.store.audit(tx, actor="node", action="tool.used", project_id=project_id, node_id=node_id, role=role, decision="n/a", target="more",
                              reason=f"{left_out} more calls of other tools", ref=task_id)
 
+    def _sweep_tool_inputs(self) -> int:
+        """F-1 (R11, D344): the host empties the tool inputs of a step's record when it ends normally; a step that was force-stopped, killed or crashed never got there. Here, outside any transaction,
+        the record of every node that ended is looked at once more and emptied (idempotent: a file with no input left is not rewritten). Only a task that is over is touched, so a run that is
+        still writing is never raced. Returns how many inputs were emptied."""
+        ids, self._sweep = list(dict.fromkeys(self._sweep)), []
+        conn = self.db.conn()
+        if self._sweep_recent:
+            self._sweep_recent = False
+            ids += [r[0] for r in conn.execute("SELECT t.id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.state IN ('done','failed','cancelled') AND t.ended_at > ?",
+                                               (int(self._clock.now()) - 7 * 86400,))]
+        emptied = 0
+        for task_id in dict.fromkeys(ids):
+            row = self.tasks.store.find_row(task_id) if self.tasks is not None else None
+            if row is None or row.run_id is None or row.status not in ("done", "done_with_open_items", "stopped", "crashed", "cancelled"):
+                if row is not None and row.status in ("queued", "starting", "running", "waiting_user", "blocked"):
+                    self._sweep.append(task_id)                                  # not over yet: asked again next time
+                continue
+            try:
+                emptied += blank_tool_inputs(self.tasks.store.run_dir_of(row))
+            except Exception:                                                    # noqa: BLE001
+                log.exception("could not empty the tool inputs of task %s", task_id)
+        return emptied
+
     def _pay_tools(self) -> int:
         """The tool rows of nodes whose log could not be read ahead (PB-16, N-7): a `tool.pending` row says one is owed; the files are read here, outside any transaction, and the rows are written
         in one short one, with a `tool.logged` row that closes the debt, so a repeat or a restart never writes them twice. Called by the tick (and once after a restart)."""
@@ -605,6 +631,8 @@ class Conductor:
         """A node ended: its final state, its lease released, the time stamped, one audit row. The run folder stays where it is (D276: nothing the owner could want is deleted)."""
         now = tx.now()
         self._prepared.pop(node["task_id"] or "", None)
+        if node["task_id"]:
+            self._sweep.append(node["task_id"])
         tx.conn.execute("UPDATE agent_nodes SET state = ?, failure_reason = ?, lease_expires_at = NULL, ended_at = ?, torn_down_at = ? WHERE id = ?", (state, why[:200], now, now, node["id"]))
         self._audit_tools(tx, node)                                                 # the tool calls of this attempt, as names and kinds (MAN-14); before the end row, so the story reads in order
         self.store.audit(tx, actor="conductor", action=f"node.{state}", project_id=node["project_id"], node_id=node["id"], role=node["role"], decision="n/a", reason=why, ref=node["task_id"] or "")
@@ -717,6 +745,11 @@ class Conductor:
         began = int(self._clock.now())
         moment = int(now) if now is not None else began
         gap = 0 if self._last_tick is None else moment - self._last_tick
+        if self._sweep or self._sweep_recent:
+            try:
+                await run_blocking(self._sweep_tool_inputs)                              # outside any transaction (F-1)
+            except Exception:                                                        # noqa: BLE001
+                log.exception("could not look at the tool inputs of nodes that ended")
         if self._maybe_owed:
             try:
                 await run_blocking(self._pay_tools)                                     # outside any transaction of the tick's own (PB-16)

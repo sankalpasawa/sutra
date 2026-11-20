@@ -216,3 +216,39 @@ def test_a_node_that_fails_for_good_leaves_what_it_did_once(rig):
     node_id = rig.sql("SELECT id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()["id"]
     assert rig.sql("SELECT state FROM agent_nodes WHERE id = ?", node_id).fetchone()["state"] == "failed"
     assert [(r["target"], r["reason"]) for r in rig.audit("tool.used") if r["node_id"] == node_id] == [("Bash", "run, 2 times")]
+
+
+SECRET = "curl -H 'token: ghp_" + "a" * 36 + "' https://x.example/private"
+
+
+def calls_with_input():
+    return json.dumps({"id": 1, "fn": "builder", "tools": {"calls": [{"n": 1, "name": "Bash", "input": SECRET, "ok": True}]}}) + "\n"
+
+
+def test_a_step_that_was_stopped_by_force_has_its_tool_inputs_emptied_by_the_server_afterwards(rig):          # F-1, R11
+    reservation, tasks = started(rig)
+    ordinary = rig.t.new("ops", "A plain task")                                                              # not a step of a project: its record is never touched
+    rig.t.run_dir(tasks["a1"]).joinpath("calls.jsonl").write_text(calls_with_input())                         # the host never got to empty it
+    rig.finish(tasks["a1"], status="stopped", outcome="stopped by you", handoff=False)
+    path = rig.t.run_dir(tasks["a1"]) / "calls.jsonl"
+    assert "ghp_" in path.read_text()                                                                         # the transaction read no file and wrote none
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))
+    row = json.loads(path.read_text())
+    assert row["tools"]["calls"][0] == {"n": 1, "name": "Bash", "input": "", "ok": True} and "ghp_" not in path.read_text()
+    assert rig.t.row(ordinary.id).run_id is None                                                              # (it never even started: there is no record of it to touch)
+
+
+def test_after_a_restart_the_nodes_that_ended_recently_are_looked_at_once(rig):
+    reservation, tasks = started(rig)
+    rig.finish(tasks["a1"], status="stopped", outcome="stopped by you", handoff=False)
+    rig.t.run(rig.projects.tick(now=1793786400 + 5))
+    path = rig.t.run_dir(tasks["a1"]) / "calls.jsonl"
+    path.write_text(calls_with_input())                                                                       # the app was killed before the host emptied it
+    conductor = rig.projects.conductor
+    conductor._sweep_recent = True                                                                            # what a new process starts with
+    rig.t.run(rig.projects.tick(now=1793786400 + 9))
+    assert "ghp_" not in path.read_text() and conductor._sweep_recent is False
+    before = path.read_bytes()
+    conductor._sweep = [tasks["a1"]]
+    rig.t.run(rig.projects.tick(now=1793786400 + 14))
+    assert path.read_bytes() == before                                                                        # nothing left to empty: the file is not rewritten
