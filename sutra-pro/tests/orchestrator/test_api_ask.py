@@ -280,23 +280,22 @@ def test_a_stopped_or_failed_ask_turn_has_no_card(ask):
     assert kinds == ["text", "text", "error"] and "card" not in kinds
 
 
-def test_a_limit_the_owner_set_holds_ask_back_in_its_own_words_and_nothing_starts(ask):
+def test_the_owners_monthly_limit_does_not_hold_ask_back_while_a_plain_chat_still_works(ask):
+    """Review m9: the read-only way must not be refused while the writing way works. A direct chat is not gated by the monthly limit today; Ask follows it."""
     client, world, chats, bus, services = ask
     sid = world.session_of["web"]
-    seen = []
+    asked = []
 
     class Held:
         def gate(self, conn, now, dept):
-            seen.append(dept)
+            asked.append(dept)
             return "Waiting: the monthly limit is reached (about $10.10 of $10.00)"
 
     services.limits = Held()
-    services.chat_port = Port(started(), text("x"))
-    r = say(client, sid, mode="ask")
-    assert error_code(r, 409) == "busy" and r.json()["error"]["message"].startswith("Waiting: the monthly limit")
-    assert seen == ["web"] and chats.messages(sid) == [] and services.chat_port.streams == []
-    assert say(client, sid).status_code == 202                                              # a chat without a mode is not held by it, as before
-    assert finish(chats, sid, 2)
+    services.chat_port = port = Port(started(), text("It prints hello [src/app.py:4]."))
+    assert say(client, sid, mode="ask").status_code == 202 and finish(chats, sid, 3)
+    assert say(client, sid, "plain").status_code == 202 and finish(chats, sid, 5)
+    assert asked == [] and port.streams[0][1].tag.workspace == "read" and [m.kind for m in chats.messages(sid)] == ["text", "text", "card", "text", "text"]
 
 
 def test_a_retry_of_a_failed_ask_turn_names_its_mode_again_and_is_read_only_with_a_card_of_its_own(ask):
@@ -517,3 +516,29 @@ def test_the_openapi_document_of_the_chat_routes_is_byte_for_byte_what_it_was_be
     before = (Path(__file__).resolve().parents[1] / "fixtures" / "openapi" / "chat_routes_before_ask.json").read_text(encoding="utf-8")
     assert now == before
     assert '"mode"' not in now and "AnswerCard" not in now and "answer_sources" not in now
+
+
+def test_the_ask_setup_reads_the_folder_off_the_event_loop(ask, monkeypatch):
+    """Review m8: `ask_mode.begin` reads a setting file; on the loop it would stall every other request. It runs in the worker pool, for a send and for a retry."""
+    import threading
+    client, world, chats, bus, services = ask
+    sid = world.session_of["web"]
+    seen = {}
+    real_begin, real_turn = ask_mode.begin, direct_running.begin_turn
+
+    def begin(*a, **k):
+        seen.setdefault("begin", []).append(threading.get_ident())
+        return real_begin(*a, **k)
+
+    def begin_turn(*a, **k):
+        seen.setdefault("loop", []).append(threading.get_ident())                   # called on the event loop's own thread
+        return real_turn(*a, **k)
+    monkeypatch.setattr(ask_mode, "begin", begin)
+    monkeypatch.setattr(direct_running, "begin_turn", begin_turn)
+    services.chat_port = Port(started(), CrashedError("died"))
+    line = say(client, sid, mode="ask").json()["message_id"]
+    assert finish(chats, sid, 2)
+    services.chat_port = Port(started(), text("ok [src/app.py:1]"))
+    assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line}, headers=H).status_code == 202 and finish(chats, sid, 4)
+    assert len(seen["begin"]) == 2 and len(seen["loop"]) == 2
+    assert set(seen["begin"]).isdisjoint(seen["loop"])

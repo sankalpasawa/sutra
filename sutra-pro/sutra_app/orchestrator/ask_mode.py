@@ -14,7 +14,8 @@ What an Ask turn is, and where each part is held:
     tools of Claude, which are not confined to the folder (D350). With no folder the sandbox is read-only too. The grounding says so (`chat_ground.ground(ask=True)`).
   * limited as a function's question is (`agent_ask`: 2 calls, $0.25, 120 s), through the turn's own `Allowance`: the calls and the deadline hold for both providers (a gate before every
     process, and the turn's timeout is cut to the deadline). The dollars are a real ceiling for Claude only (the remaining budget goes to the process as `--max-budget-usd`);
-    Codex has no such flag, so for it $0.25 is a check before each process, not a cap inside one. The owner's monthly limit and plan window hold Ask back with their own words.
+    Codex has no such flag, so for it $0.25 is a check before each process, not a cap inside one. The owner's monthly limit and plan window do not hold a direct chat back, and they
+    do not hold an Ask back: the read-only way is never refused while the writing way works (D350).
   * scrubbed: the owner's line and the grounding go through the same secret scrub as every direct chat; what is written on the card goes through it too.
   * the sources: after the answer, ONE card (`AnswerCard`, a message of kind `card`) stored in the same transaction as the answer. Its labels come from `citations.check_answer` and from
     nothing a model wrote. A turn that was stopped or failed has no card: nothing was claimed. The card proves the citation (the file, the lines, the quoted words), never the claim:
@@ -159,21 +160,9 @@ def _folder(router: Any) -> str:
         return ""
 
 
-def _held(services: Any, session: Any) -> str:
-    """The owner's monthly limit or plan window, in its own words, when it holds Ask back as it holds a task back; "" when nothing does or there are no limits."""
-    limits = getattr(services, "limits", None)
-    gate = getattr(limits, "gate", None)
-    if not callable(gate):
-        return ""
-    dept = session.node_id if getattr(session, "kind", "") == "department" else ""
-    return str(gate(services.db.conn(), services.clock.now(), dept) or "")
-
-
 def begin(services: Any, port: Any, session: Any, question: str, scrub: Callable[[str], str]) -> AskTurn:
-    """Start an Ask turn: refuse (409 `busy`, with the limit's own words) when a limit holds it back, else read the folder and make the turn's limits. `question` is the owner's line as stored."""
-    held = _held(services, session)
-    if held:
-        raise AppError("busy", held)
+    """Start an Ask turn: read the folder and make the turn's limits. `question` is the owner's line as stored. Reads a file (the working folder's setting), so the routes call it
+    off the event loop (`run_blocking`). Nothing here refuses: the owner's monthly limit and plan window do not hold a direct chat back and do not hold an Ask back either (D350)."""
     router = _router(services, port)
     now = float(getattr(router, "_clock", time.time)())            # the deadline is in the router's own time, as agent_ask has it
     return AskTurn(folder=_folder(router), question=question, scrub=scrub,

@@ -252,7 +252,8 @@ def build_router() -> APIRouter:
             named = clean_name(owner_names[n]) if owner_names else ""
             refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
         # DV-1: the Ask mode, only when the flag is on and the request named `ask` (a request without a mode never gets here, and the flag off never reads one)
-        asking = ask_mode.begin(services, port, session, _clean(services, body.text), lambda value: _clean(services, value)) if ask_mode.requested(request) == "ask" else None
+        asking = (await run_blocking(ask_mode.begin, services, port, session, _clean(services, body.text), lambda value: _clean(services, value))
+                  if ask_mode.requested(request) == "ask" else None)
         if _live_on(services):
             return await _start_live(request, services, port, sid, said=_clean(services, body.text),
                                      attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id, ask=asking)

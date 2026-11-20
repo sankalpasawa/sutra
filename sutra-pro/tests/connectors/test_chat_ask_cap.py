@@ -258,3 +258,26 @@ def test_codex_an_ask_turn_with_no_folder_is_read_only_whatever_the_policy_sandb
     assert value(plain, "-s") == "workspace-write"                                         # the chat as it was
     assert value(ask1, "-s") == "read-only" and 'sandbox_mode="read-only"' in ask2          # an Ask, first turn of its thread and resumed
     assert value(plain2, "-s") == "workspace-write"
+
+
+def test_a_lost_provider_session_does_not_give_an_ask_turn_a_third_process_under_a_two_call_limit(rig, fake):
+    """Review m9: the second round after a lost session is a spawn like any other and goes through the router's gate (the connector calls before_call for every process)."""
+    fake.sequence("ok_plain", "session_lost", "session_lost", "ok_plain").reply(text="r")
+    router, _ = rig("claude", access="read")
+    port = RouterChatPort(router)
+    port.send(SID, ChatTurnIn(text="one"))                                          # a thread exists now
+    before = len(fake.model_calls("claude"))
+    with pytest.raises(Exception):                                                  # resume is lost (1 process), the new thread is lost too (2): the limit is reached, no third
+        port.send(SID, ChatTurnIn(text="two", allowance=Allowance(max_calls=2, max_usd=0.25)))
+    assert len(fake.model_calls("claude")) - before == 2
+
+
+def test_a_lost_provider_session_with_a_one_call_limit_is_refused_before_the_second_process(rig, fake):
+    fake.sequence("ok_plain", "session_lost", "ok_plain").reply(text="r")
+    router, _ = rig("claude", access="read")
+    port = RouterChatPort(router)
+    port.send(SID, ChatTurnIn(text="one"))
+    before = len(fake.model_calls("claude"))
+    with pytest.raises(EnvelopeExceededError):
+        port.send(SID, ChatTurnIn(text="two", allowance=Allowance(max_calls=1)))
+    assert len(fake.model_calls("claude")) - before == 1
