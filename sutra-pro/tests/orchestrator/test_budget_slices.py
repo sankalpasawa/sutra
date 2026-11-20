@@ -118,11 +118,16 @@ def test_the_dollar_total_and_the_snapshot_count_every_attempt_of_every_node(rig
     assert rig.projects.snapshot(reservation.project_id)["spend"] == {"calls": 3, "usd": pytest.approx(0.9)}
 
 
-def test_the_ceiling_is_real_through_reserve_the_slices_never_pass_it_and_it_is_the_sum(rig):
+def test_the_ceiling_is_what_the_owner_agreed_to_the_estimate_they_are_asked_about_or_the_sum_of_the_default_slices(rig):          # PA-2
     from sutra_app.orchestrator.projects import ProjectStep
     wants = [ProjectStep(f"a{i}", "web", estimate_credits=900) for i in range(1, 3)]
-    reservation = rig.projects.reserve("req-big", "t", wants, decide_for_me=True)                  # 1800 over the cap of 1000: the owner would have to say yes; Decide for me may not
-    assert rig.project(reservation.project_id)["budget_credits"] == 1800 and rig.project(reservation.project_id)["status"] == "awaiting_approval"
+    reservation = rig.projects.reserve("req-big", "t", wants, decide_for_me=True)                  # 1800 is over the cap of 1000: the owner must say yes; Decide for me may not
+    project = rig.project(reservation.project_id)
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    assert project["status"] == "awaiting_approval" and asked.request["kind"] == "plan_estimate"
+    assert project["budget_credits"] == asked.request["credits"] == 1800                              # the number the owner is asked about IS the ceiling: no step can be given more, and none is cut below what was approved
     plain = rig.projects.reserve("req-4", "t", [ProjectStep(f"a{i}", "web") for i in range(1, 5)])
     slices = [n["slice_credits"] for n in rig.sql("SELECT slice_credits FROM agent_nodes WHERE project_id = ?", plain.project_id)]
-    assert slices == [100] * 4 and rig.project(plain.project_id)["budget_credits"] == sum(slices) <= 1000
+    assert slices == [100] * 4 and rig.project(plain.project_id)["budget_credits"] == sum(slices) == 400 and rig.store.approvals(plain.project_id, status="open") == []
+    owner = rig.projects.reserve("req-own", "t", [ProjectStep(f"a{i}", "web", estimate_credits=900) for i in range(1, 4)], budget=250)
+    assert [n["slice_credits"] for n in rig.sql("SELECT slice_credits FROM agent_nodes WHERE project_id = ?", owner.project_id)] == [250] * 3          # the owner's number wins over the planner's guess
