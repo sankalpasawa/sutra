@@ -274,3 +274,29 @@ def test_the_owners_own_project_stop_is_recorded_as_theirs(rig):
     reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
     rig.t.run(rig.projects.stop(reservation.project_id))
     assert {stopped_by(rig, t) for t in tasks.values()} == {"owner"}
+
+
+# ---- an expired node whose stop failed (Minor 6) ----------------------------------------------------------------------------------------
+
+def test_an_expired_node_whose_stop_failed_is_stopped_again_by_the_next_tick_and_holds_its_slot_meanwhile(rig, monkeypatch):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", []), ("a3", "ops", [])])
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.max_parallel', 2) WHERE id = ?", reservation.project_id)
+    rig.start()
+    for ref in ("a1", "a2"):
+        rig.go(tasks[ref])
+    rig.sql("UPDATE tasks SET last_event_at = ? WHERE id = ?", BASE + 95, tasks["a2"])
+    real = rig.t.service.stop_node
+    calls = []
+
+    async def failing(task_id, outcome="stopped by you", **kw):
+        calls.append(task_id)
+        raise RuntimeError("the ladder did not work")
+    monkeypatch.setattr(rig.t.service, "stop_node", failing)
+    assert tick(rig, 100)["expired"] == [tasks["a1"]] and rig.node_of(tasks["a1"])["state"] == "expired" and rig.t.status(tasks["a1"]) == "running"
+    assert "free slot" in rig.projects.gate(rig.t.db.conn(), BASE + 100, rig.t.row(tasks["a3"]))               # the expired one still holds a slot: a1 (expired) and a2 are two
+    assert tick(rig, 105)["expired"] == [tasks["a1"]] and calls == [tasks["a1"], tasks["a1"]]                  # asked again, not forgotten
+    assert [r["action"] for r in rig.audit("node.heartbeat_lost")] == ["node.heartbeat_lost"]                  # and not said twice
+    monkeypatch.setattr(rig.t.service, "stop_node", real)
+    assert tick(rig, 110)["expired"] == [tasks["a1"]] and rig.t.status(tasks["a1"]) == "stopped"
+    assert rig.sql("SELECT attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 2                  # it ended failed and was retried once
+    assert tick(rig, 112)["expired"] == []

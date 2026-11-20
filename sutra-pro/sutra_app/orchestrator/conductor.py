@@ -107,7 +107,7 @@ class Conductor:
             return "Paused: this project is paused until you resume it"
         caps = json.loads(node["caps"] or "{}")
         limit = int(caps.get("max_parallel") or NODE_DEFAULT_CAPS["max_parallel"] or 3)
-        running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off')", (node["project_id"],)).fetchone()[0]
+        running = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND state IN ('leased','running','handing_off','expired')", (node["project_id"],)).fetchone()[0]      # an expired node whose process is still there holds its slot (Minor 6)
         if running >= limit:
             return f"Waiting for a free slot in this project ({limit} at a time)"
         return ""
@@ -407,6 +407,9 @@ class Conductor:
                     refuse.append((project["id"], reason))
                     continue
                 self._fail_without_grant(tx, project["id"])
+                for stuck in tx.conn.execute("SELECT n.task_id AS task_id FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state = 'expired' "
+                                             "AND t.status IN ('starting','running','waiting_user')", (project["id"],)).fetchall():
+                    expire.append(stuck["task_id"])                                   # its stop did not work: ask again every tick until the process is gone (Minor 6)
                 for node in tx.conn.execute(
                         "SELECT n.id AS id, n.role AS role, n.task_id AS task_id, n.state AS state, COALESCE(t.last_event_at, t.started_at, ?) AS beat FROM agent_nodes n "
                         "JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND n.state IN ('leased','running')", (now, project["id"])).fetchall():
