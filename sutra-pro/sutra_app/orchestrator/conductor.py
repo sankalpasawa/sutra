@@ -599,7 +599,16 @@ class Conductor:
                 ran_out = self.store.expire_due(tx, project_id=project["id"], now=now)
                 if any(a.request.get("late") for a in ran_out):                      # a late permission question that ran out only ends: the other steps keep their work (m3)
                     self.service.sync_cards(tx, project["id"])
-                ran_out = [a for a in ran_out if not a.request.get("late")]
+                reviews_out = [a for a in ran_out if a.request.get("kind") == "review"]
+                for approval in reviews_out:                                         # the reviewer's advice ran out: a no, the project ends as it is (PB-3)
+                    self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project["id"], node_id=approval.node_id or None, tier=approval.tier, decision="deny",
+                                     reason="the question ran out of time, so it counts as a no", ref=approval.id)
+                if reviews_out:
+                    self._sync_project(tx, project["id"])
+                    self.service.sync_cards(tx, project["id"])
+                ran_out = [a for a in ran_out if not a.request.get("late") and a.request.get("kind") != "review"]
+                if slept:
+                    self._review_as_no(tx, project["id"], "the computer was closed or asleep before you answered, so it counts as a no")
                 reason = ""
                 if ran_out:
                     for approval in ran_out:
@@ -824,13 +833,31 @@ class Conductor:
         ended += await self._stop_nodes(project_id, reason, "system")
         return ended
 
+    def _review_as_no(self, tx: Tx, project_id: str, why: str) -> int:
+        """PB-3 (D330, D343): a question about the reviewer's verdict is advice, not a gate: when it is refused, ran out, or met a sleep or a restart, it counts as the owner's no, which is "the project
+        ends as it is" (the work is finished). The question is answered `denied` by the system, one audit row says why, and the project ends by its steps. Returns how many questions it closed."""
+        closed = 0
+        for approval in self.store.approvals(project_id, status="open"):
+            if approval.request.get("kind") == "review":
+                self.store.decide(tx, approval.id, "deny", decided_by="system")
+                self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="deny", reason=why, ref=approval.id)
+                closed += 1
+        if closed:
+            self._sync_project(tx, project_id)
+            self.service.sync_cards(tx, project_id)
+        return closed
+
     def _refuse_in(self, tx: Tx, project_id: str, reason: str) -> int:
         """The database part of the D296 refusal, inside the caller's transaction: the open questions denied, the project stopped, the nodes that had not started cancelled, the receipt. The nodes
         that run are stopped by the caller after the commit (`_stop_nodes`). 0 when the project is over already."""
         status = tx.conn.execute("SELECT status FROM projects WHERE id = ?", (project_id,)).fetchone()
         if status is None or status["status"] in PROJECT_FINAL:
             return 0
-        for approval in self.store.approvals(project_id, status="open"):
+        open_now = self.store.approvals(project_id, status="open")
+        if open_now and all(a.request.get("kind") == "review" for a in open_now) and status["status"] == "reviewing":
+            self._review_as_no(tx, project_id, reason)                          # only the reviewer's advice was open: the project ends as it is, it is not stopped (PB-3)
+            return 0
+        for approval in open_now:
             self.store.decide(tx, approval.id, "deny", decided_by="system")
             self.store.audit(tx, actor="system", action=GATE_REFUSED_ACTION, project_id=project_id, node_id=approval.node_id or None, tier=approval.tier, decision="deny",
                              reason=reason, ref=approval.id)

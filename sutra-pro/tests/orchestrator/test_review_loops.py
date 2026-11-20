@@ -150,3 +150,45 @@ def test_the_card_says_not_independent_when_the_conductor_says_so_whatever_the_t
     rig.finish(node["task_id"], files=verdict_files("changes", ["a1"], "The page has no menu."))
     [asked] = rig.store.approvals(reservation.project_id, status="open")
     assert asked.request["independent"] is False and "not independent" in rig.projects.approval_cards(reservation.project_id)[0].question
+
+
+def open_review_question(rig):
+    reservation, tasks = two_done(rig)
+    node = reviewer(rig)
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], files=verdict_files("changes", ["a1"], "The page has no menu."))
+    [asked] = rig.store.approvals(reservation.project_id, status="open")
+    assert rig.project(reservation.project_id)["status"] == "reviewing"
+    return reservation, asked
+
+
+def test_a_sleep_with_the_reviewers_question_open_ends_the_project_as_it_is_not_stopped(rig):                  # PB-3
+    reservation, asked = open_review_question(rig)
+    rig.t.run(rig.projects.tick(now=BASE + 10))
+    done = rig.t.run(rig.projects.tick(now=BASE + 3000))                                                       # the computer slept
+    project = rig.project(reservation.project_id)
+    assert done["refused"] == [] and project["status"] == "done" and project["stop_reason"] == ""
+    assert rig.store.approvals(reservation.project_id)[0].status == "denied" and [r["decision"] for r in rig.audit("gate.refused")] == ["deny"]
+    assert rig.sql("SELECT count(*) FROM chat_messages WHERE src_ref LIKE ?", "project:%#stopped").fetchone()[0] == 0          # no "stopped" receipt
+
+
+def test_the_question_running_out_after_a_day_ends_the_project_as_it_is(rig):                                   # PB-3
+    reservation, asked = open_review_question(rig)
+    rig.sql("UPDATE approvals SET expires_at = ? WHERE id = ?", BASE + 500, asked.id)
+    done = rig.t.run(rig.projects.tick(now=BASE + 600))
+    assert done["refused"] == [] and rig.project(reservation.project_id)["status"] == "done" and rig.store.approvals(reservation.project_id)[0].status in ("expired", "denied")
+
+
+def test_a_restart_with_the_reviewers_question_open_ends_the_project_as_it_is(rig):                             # PB-3
+    reservation, asked = open_review_question(rig)
+    rig.t.run(rig.projects.reconcile_projects())
+    assert rig.project(reservation.project_id)["status"] == "done"
+
+
+def test_allow_for_the_project_is_not_an_answer_to_the_reviewers_question(rig):                                  # PB-11
+    from sutra_app.orchestrator.errors import AppError
+    reservation, asked = open_review_question(rig)
+    with pytest.raises(AppError) as refused:
+        rig.t.run(rig.projects.answer(reservation.project_id, asked.id, "allow_project"))
+    assert refused.value.code == "validation" and rig.store.approvals(reservation.project_id)[0].status == "open"

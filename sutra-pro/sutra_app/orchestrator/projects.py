@@ -547,6 +547,8 @@ class ProjectService:
                     raise NotFound("that question")
                 if '"kind":"system"' in found["request_json"].replace(" ", ""):            # a question about the computer has its own two answers (m2)
                     raise AppError("validation", "That question is about your computer. Use Check again or Skip")
+                if decision == "allow_project" and '"kind":"review"' in found["request_json"].replace(" ", ""):        # the reviewer's question has two answers: yes or no (PB-11)
+                    raise AppError("validation", "That question has two answers: yes, send them back, or no")
                 row = self.store.decide(tx, approval_id, decision, decided_by="owner" if by == "owner" else "system")
                 if row.duplicate:
                     return "again"
