@@ -128,7 +128,7 @@ def test_a_verdict_that_is_not_the_typed_object_fails_the_reviewer_and_changes_n
     rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.retries', 0)")
     rig.finish(node["task_id"], files={"verdict.json": json.dumps({"verdict": "approve", "summary": "x", "run": "rm -rf /"})})
     assert reviewer(rig)["state"] == "failed" and rig.audit("verdict.refused") and rig.sql("SELECT attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 1
-    assert rig.project(reservation.project_id)["status"] == "done_with_open_items" and rig.store.approvals(reservation.project_id) == []
+    assert rig.project(reservation.project_id)["status"] == "done" and rig.store.approvals(reservation.project_id) == []          # PB-13: every step finished; only the review did not (said apart)
 
 
 def test_words_in_a_verdict_are_stored_as_text_and_cannot_change_a_grant_or_a_node(rig):
@@ -192,3 +192,15 @@ def test_allow_for_the_project_is_not_an_answer_to_the_reviewers_question(rig): 
     with pytest.raises(AppError) as refused:
         rig.t.run(rig.projects.answer(reservation.project_id, asked.id, "allow_project"))
     assert refused.value.code == "validation" and rig.store.approvals(reservation.project_id)[0].status == "open"
+
+
+def test_a_reviewer_that_could_not_run_does_not_make_a_finished_project_look_unfinished(rig):                  # PB-13
+    reservation, tasks = two_done(rig)
+    node = reviewer(rig)
+    rig.start()
+    rig.go(node["task_id"])
+    rig.sql("UPDATE projects SET caps_json = json_set(caps_json, '$.retries', 0)")
+    rig.finish(node["task_id"], status="crashed", outcome="Crashed: the reviewer's verdict could not be used", handoff=False)
+    project = rig.project(reservation.project_id)
+    assert project["status"] == "done" and project["stop_reason"] == "The review could not run, so nobody has checked the work"
+    assert rig.sql("SELECT count(*) FROM chat_messages WHERE src_ref = ?", f"project:{reservation.project_id}#review-failed").fetchone()[0] == 1

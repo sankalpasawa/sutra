@@ -524,8 +524,12 @@ class Conductor:
             return
         if self._review(tx, project_id):                                    # a reviewer is made, or the owner's answer to a verdict is awaited (MAN-11): the project does not end yet
             return
-        states = [r["state"] for r in tx.conn.execute("SELECT state FROM agent_nodes WHERE project_id = ? AND role <> 'planner'", (project_id,))]
-        if not states or any(state not in NODE_FINAL for state in states):
+        rows = tx.conn.execute("SELECT role, state FROM agent_nodes WHERE project_id = ? AND role <> 'planner'", (project_id,)).fetchall()
+        if not rows or any(r["state"] not in NODE_FINAL for r in rows):
+            return
+        states = [r["state"] for r in rows if r["role"] == "worker"]              # the steps decide how the project ended; a reviewer that could not run is said apart (PB-13)
+        reviews = [r["state"] for r in rows if r["role"] == "reviewer"]
+        if not states:
             return
         open_items = tx.conn.execute("SELECT count(*) FROM agent_nodes n JOIN tasks t ON t.id = n.task_id WHERE n.project_id = ? AND t.status = 'done_with_open_items'", (project_id,)).fetchone()[0]
         if all(state == "done" for state in states) and open_items:
@@ -536,6 +540,9 @@ class Conductor:
             end, why = "done_with_open_items", "some steps did not finish"
         else:
             end, why = "failed", "no step finished"
+        if end == "done" and reviews and reviews[-1] != "done":
+            why = "The review could not run, so nobody has checked the work"
+            self._note(tx, project_id, "The steps are done, but the review could not run, so nobody has checked the work. Open the project to see more.", f"project:{project_id}#review-failed")
         tx.conn.execute("UPDATE projects SET status = ?, ended_at = ?, stop_reason = ? WHERE id = ?", (end, tx.now(), why, project_id))
         self.store.audit(tx, actor="conductor", action="project.ended", project_id=project_id, decision="n/a", reason=end)
         tx.emit("project.updated", {"project_id": project_id, "status": end})

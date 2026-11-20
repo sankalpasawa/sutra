@@ -67,7 +67,7 @@
   function whyHtml(snap) {
     const p = isObj(snap) && isObj(snap.project) ? snap.project : {};
     const reason = clean(p.stop_reason);
-    if (!reason || (p.status !== "stopped" && p.status !== "failed" && p.status !== "done_with_open_items")) return "";
+    if (!reason || (p.status !== "stopped" && p.status !== "failed" && p.status !== "done_with_open_items" && p.status !== "done")) return "";
     return '<p class="pwhy" role="status"><b>Why:</b> ' + esc(reason) + "</p>";
   }
 
