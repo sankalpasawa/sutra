@@ -43,6 +43,7 @@ __all__ = ["KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WA
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
+RESUME_FILE = "nodes.resume"               # the CLI leaves this next to the switch folder when it resumes, so a running app lets go of a switch it holds in memory (m11)
 PAUSE_FILE = "PAUSE"
 LEVELS = ("none", "pause", "kill")
 WATCH_S = 2.0                                  # how often the server looks for a file made by hand
@@ -75,12 +76,35 @@ class KillSwitch:
             return True
         return True
 
+    def _released(self) -> None:
+        """A `nodes resume` of the command line (a separate process) leaves a RESUME file: a switch held in memory because its file could not be written is let go, and the marker is removed."""
+        marker = self.resume_marker()
+        if os.path.lexists(marker):
+            self._latched = ""
+            try:
+                os.unlink(marker)
+            except OSError:
+                pass
+
+    def resume_marker(self) -> Path:
+        """Where the command line leaves its word (a sibling of the switch's folder, so the folder holds only the two switch files)."""
+        return self.directory.parent / (self.directory.name + ".resume")
+
+    def broken(self) -> bool:
+        """True when the node switch's folder is a FILE (or a link to one): nothing can be looked for or written there. Nothing starts (fail closed), and the sentence says what to fix."""
+        try:
+            return self.directory.exists() and not self.directory.is_dir()
+        except OSError:
+            return False
+
     @property
     def killed(self) -> bool:
+        self._released()
         return self._latched == "kill" or self._present(KILL_FILE)
 
     @property
     def paused(self) -> bool:
+        self._released()
         return self._latched in ("kill", "pause") or self._present(PAUSE_FILE)
 
     def latch(self, level: str) -> None:
@@ -100,6 +124,8 @@ class KillSwitch:
     def held(self) -> str:
         """The sentence a node that waits for this shows, or "" when nothing holds it (the waiting detail of a held task)."""
         level = self.level()
+        if level == "kill" and self.broken():
+            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `sutra-pro nodes resume`"
         if level == "kill":
             return "Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `sutra-pro nodes resume`)"
         if level == "pause":

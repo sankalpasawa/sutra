@@ -120,3 +120,25 @@ def test_a_switch_file_that_cannot_be_written_is_exit_1_and_says_nothing_is_held
     (tmp_path / "d" / "nodes").write_text("a file where the folder should be")
     code, out, err = call(capsys, *args(tmp_path, "kill"))
     assert code == 1 and "could not write the KILL file" in err and "nothing is held back" in err and "Kill switch on" not in out
+
+
+def test_resume_tells_a_running_app_to_let_go_of_a_switch_it_holds_in_memory_and_a_nodes_path_that_is_a_file_is_a_plain_error(capsys, tmp_path, monkeypatch):
+    from sutra_app.orchestrator.killswitch import KillSwitch, RESUME_FILE
+    monkeypatch.setenv("SUTRA_DATA_DIR", str(tmp_path / "data"))
+    (tmp_path / "data").mkdir()
+    app_side = KillSwitch(tmp_path / "data" / "nodes")
+    monkeypatch.setattr(app_side, "_write", lambda *a, **k: (_ for _ in ()).throw(OSError("read-only disk")))
+    with pytest.raises(OSError):
+        app_side.set("kill")
+    assert app_side.killed is True                                                              # held in memory
+    assert cli.main(["nodes", "resume"]) == 0
+    marker = app_side.resume_marker()
+    assert marker.exists() and app_side.killed is False and not marker.exists() and marker.name == RESUME_FILE
+    broken = tmp_path / "other"
+    monkeypatch.setenv("SUTRA_DATA_DIR", str(broken))
+    broken.mkdir()
+    (broken / "nodes").write_text("x")
+    capsys.readouterr()
+    assert cli.main(["nodes", "resume"]) == 1
+    assert "is a file, not a folder" in capsys.readouterr().out and (broken / "nodes").read_text() == "x"                  # nothing of the owner's is deleted
+    assert "file, not a folder" in KillSwitch(broken / "nodes").held() and KillSwitch(broken / "nodes").broken()

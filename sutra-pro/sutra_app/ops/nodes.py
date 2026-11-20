@@ -72,7 +72,15 @@ def _resume(args: argparse.Namespace) -> int:
     if settings is None:
         return 2
     from sutra_app.orchestrator.killswitch import KillSwitch
-    removed = KillSwitch(settings.nodes_dir).clear()
+    switch = KillSwitch(settings.nodes_dir)
+    if switch.broken():                                       # a plain error, never a silent "killed for ever" (m11)
+        emit(args, {"error": "not_a_folder", "path": str(settings.nodes_dir)}, [f"{settings.nodes_dir} is a file, not a folder, so the stop switch cannot work. Rename or remove that file, then run this again."])
+        return 1
+    removed = switch.clear()
+    try:                                                      # tell a running app to let go of a switch it holds in memory (its file could not be written)
+        switch.resume_marker().write_text("resume\n", encoding="utf-8")
+    except OSError:
+        pass
     emit(args, {"removed": removed}, ["Resumed: " + ", ".join(removed) + " removed." if removed else "Nothing to resume: neither file was there."])
     return 0
 
