@@ -48,7 +48,7 @@ def events(run):
 
 
 def run_it(run, port, **kw):
-    return host.run(run, make_port=lambda spec: port, heartbeat_s=0.05, **kw)
+    return host.run(run, make_port=lambda spec, usage_sink=None: port, heartbeat_s=0.05, **kw)
 
 
 def test_a_review_writes_the_same_files_and_events_as_an_engine_run_and_the_verdict(tmp_path):
@@ -58,7 +58,7 @@ def test_a_review_writes_the_same_files_and_events_as_an_engine_run_and_the_verd
     types = [e["t"] for e in events(run)]
     assert types[0] == "run.started" and types[-1] == "run.ended" and events(run)[-1]["status"] == "done"
     verdict = json.loads((run / "verdict.json").read_text())
-    assert verdict["verdict"] == "changes" and verdict["needs_work"] == ["a1"] and verdict["independent"] is True and (run / "handoff.json").is_file()
+    assert verdict["verdict"] == "changes" and verdict["needs_work"] == ["a1"] and "independent" not in verdict and (run / "handoff.json").is_file()
     assert sorted(p.name for p in run.iterdir() if not p.name.startswith(".")) == ["events.jsonl", "handoff.json", "task.json", "verdict.json"]      # nothing else is written
     assert "Built the page." in port.requests[0].user and port.requests[0].tag.node_role == "reviewer" and port.requests[0].json_schema == reviewer.VERDICT_SCHEMA
 
@@ -105,3 +105,29 @@ def test_the_reviewer_verdict_checks_directly():
         with pytest.raises(reviewer.VerdictInvalid):
             reviewer.check_verdict(bad)
     assert SimpleNamespace(read=reviewer.read_reports)                                                  # imported for the host
+
+
+def test_the_reviewer_finds_the_data_folder_from_its_run_folder_records_its_call_and_takes_slots(tmp_path, monkeypatch):          # PB-2
+    run = make_run(tmp_path)
+    task = json.loads((run / "task.json").read_text())
+    task["node"]["slots"] = True
+    (run / "task.json").write_text(json.dumps(task))
+    monkeypatch.delenv("SUTRA_DATA_DIR", raising=False)                         # the installed app does not export it: the run folder is the only way to find the data
+    monkeypatch.chdir(run)                                                       # the process starts in its run folder, as the launcher starts it
+    seen = {}
+    reply = {"verdict": "approve", "summary": "Looks right.", "needs_work": [], "points": []}
+
+    def make(spec, usage_sink=None):
+        seen["spec"], seen["sink"] = spec, usage_sink
+        port = FakePort(reply)
+        original = port.complete
+
+        def complete(req, on_progress=None):
+            usage_sink.record({"fn": "audit", "provider": "codex", "model": "x", "purpose": "review", "usd": 0.01, "tokens_in": 10, "tokens_out": 5, "seconds": 1.0, "ok": True, "how": "native", "call_ref": "r:abc"})
+            return original(req, on_progress)
+        port.complete = complete
+        return port
+    assert host.run(run, make_port=make, heartbeat_s=0.05) == 0
+    assert seen["spec"].data_dir == str((tmp_path / "data").resolve()) and seen["spec"].slots is True and seen["spec"].tools == () and seen["spec"].scope == ()
+    usage = [e for e in events(run) if e["t"] == "usage"]
+    assert len(usage) == 1 and usage[0]["provider"] == "codex" and usage[0]["purpose"] == "review"                 # the ledger, the project's spend and the independence pick can see the call

@@ -767,7 +767,7 @@ class Conductor:
                 self.store.audit(tx, actor="conductor", action="review.loop_cap", project_id=node["project_id"], node_id=node["id"], role="reviewer", decision="deny", reason="the work went back twice already")
                 self._note(tx, node["project_id"], "The reviewer still asks for changes after two tries, so I stopped there. Open the project to read what it said.", f"project:{node['project_id']}#review-cap")
             else:
-                independent = bool(verdict.get("independent"))
+                independent = bool(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node["project_id"],)).fetchone()[0] or "{}").get("reviewer_independent"))      # the Conductor's own fact from the usage ledger (G25, D338 a)
                 asked = self.store.open_approval(tx, project_id=node["project_id"], node_id="", tier=1, client_id=f"review:{node['id']}:{node['attempt']}",
                                                  expires_at=tx.now() + int(NODE_DEFAULT_CAPS["approval_expiry_s"] or 86400),
                                                  request={"kind": "review", "verdict": verdict["verdict"], "summary": verdict["summary"][:200], "refs": verdict["needs_work"], "independent": independent})

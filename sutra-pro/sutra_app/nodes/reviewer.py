@@ -26,7 +26,7 @@ class VerdictInvalid(ValueError):
 def check_verdict(raw: Any) -> dict[str, Any]:
     """The verdict as the closed object `{v, verdict, summary, needs_work, points}`: only the enum and the refs can affect flow, and the words are plain text that is shown and never read as an
     instruction. Anything else is `VerdictInvalid`."""
-    if not isinstance(raw, dict) or not {"verdict", "summary"} <= set(raw) or set(raw) - {"v", "verdict", "summary", "needs_work", "points", "independent"}:
+    if not isinstance(raw, dict) or not {"verdict", "summary"} <= set(raw) or set(raw) - {"v", "verdict", "summary", "needs_work", "points"}:
         raise VerdictInvalid("the verdict does not have the fields of a verdict")
     if raw["verdict"] not in VERDICTS:
         raise VerdictInvalid("the verdict is not approve, changes or reject")
@@ -41,8 +41,7 @@ def check_verdict(raw: Any) -> dict[str, Any]:
         raise VerdictInvalid("the points are too long")
     if raw["verdict"] == "approve" and needs:
         raise VerdictInvalid("an approval asks for no step to be done again")
-    return {"v": 1, "verdict": raw["verdict"], "summary": " ".join(summary.split()), "needs_work": list(dict.fromkeys(needs)), "points": [" ".join(p.split()) for p in points],
-            "independent": bool(raw.get("independent", False))}
+    return {"v": 1, "verdict": raw["verdict"], "summary": " ".join(summary.split()), "needs_work": list(dict.fromkeys(needs)), "points": [" ".join(p.split()) for p in points]}
 
 
 def read_reports(run_dir: Path, upstream: list[dict]) -> list[tuple[str, dict]]:

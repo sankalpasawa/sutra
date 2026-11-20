@@ -12,11 +12,14 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from sutra_app import oslayer
-from sutra_app.engine.events import EventWriter, run_ended_event, run_started_event
+from sutra_app.engine.events import EventUsageSink, EventWriter, run_ended_event, run_started_event
 from sutra_app.engine.host import handoff as handoff_file
 from sutra_app.engine.host.heartbeat import Heartbeat
 from sutra_app.engine.llm import NodeCapReached, NodeMeter
+from sutra_app.engine.paths import DataPaths, RunDirError
 from sutra_app.engine.spec import TaskSpec
+
+from sutra_app.library.types import overhead_atom_id
 
 from . import reviewer
 
@@ -43,7 +46,13 @@ def run(run_dir: Path, *, mock: bool = False, make_port: Optional[Callable[..., 
     if node is None or node.runtime != "light" or node.role != "reviewer":
         sys.stderr.write("the light node host runs a reviewer node only\n")
         return EXIT_START
+    try:
+        paths = DataPaths.from_run_dir(run_dir)                  # the data folder is found from the run folder, as the engine host does (PB-2); never from the environment
+    except (RunDirError, ValueError) as exc:
+        sys.stderr.write(f"{exc}\n")
+        return EXIT_START
     writer = EventWriter(run_dir)
+    sink = EventUsageSink(writer, default_atom=overhead_atom_id(task.run_id))      # the reviewer's call is a usage row of the run: the ledger, the project's spend and the independence pick see it
     stopping = threading.Event()
 
     def on_term(signum, frame):                       # noqa: ARG001
@@ -62,11 +71,10 @@ def run(run_dir: Path, *, mock: bool = False, make_port: Optional[Callable[..., 
         if mock or not reports:
             raw = {"verdict": "approve", "summary": "Nothing to check." if not reports else "Mock review.", "needs_work": [], "points": []}
         else:
-            raw = _ask(task, reviewer.prompt_of(task.user_text, reports), make_port, mock, meter, stopping)
+            raw = _ask(task, reviewer.prompt_of(task.user_text, reports), make_port, mock, meter, stopping, paths, sink)
         if stopping.is_set():
             status, outcome = "stopped", "stopped by you"
         else:
-            raw["independent"] = bool(getattr(task, "connector", "auto") != "auto")
             verdict = reviewer.check_verdict(raw)
             _atomic(run_dir / reviewer.VERDICT_FILE, json.dumps(verdict, indent=2) + "\n")
             outcome = f"Done: the reviewer says {verdict['verdict']}"
@@ -88,13 +96,14 @@ def run(run_dir: Path, *, mock: bool = False, make_port: Optional[Callable[..., 
     return EXIT_STOPPED if status == "stopped" else EXIT_OK
 
 
-def _ask(task: TaskSpec, prompt: str, make_port: Optional[Callable[..., Any]], mock: bool, meter: NodeMeter, stopping: threading.Event) -> dict:
+def _ask(task: TaskSpec, prompt: str, make_port: Optional[Callable[..., Any]], mock: bool, meter: NodeMeter, stopping: threading.Event, paths: DataPaths, sink: EventUsageSink) -> dict:
     from sutra_app.engine.port import CallTag, CompletionRequest, PortSpec
     if make_port is None:
         from sutra_app.connectors.engine_port import make_port as real
         make_port = real
-    spec = PortSpec(mock=mock, connector=task.connector, run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id, data_dir=str(Path(os.environ.get("SUTRA_DATA_DIR", ".")).resolve()))
-    port = make_port(spec)
+    spec = PortSpec(mock=mock, connector=task.connector, run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id, data_dir=str(paths.data_dir),
+                    slots=bool(task.node.slots))                  # the machine-wide limit includes the reviewer (SUTRA_NODES_SLOTS)
+    port = make_port(spec, usage_sink=sink)
     try:
         meter.begin()
         tag = CallTag(run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id, function="audit", purpose="review", node_id=task.node.id, node_role="reviewer")
