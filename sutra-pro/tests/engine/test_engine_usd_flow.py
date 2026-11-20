@@ -123,3 +123,118 @@ def test_p26_limit_checked_between_turns(tmp_path, monkeypatch):
         assert p and p["handoff"]["limit"].startswith("Dollar limit") and run.usd_used >= float(limit)
         assert QUESTION.match(p["questions"][0]["question"])
         assert run.usd_used - float(limit) <= max(r["usd_counted"] for r in run.call_log) * 20      # at most one turn's calls past it
+
+
+# ---- review round 1 (R1-2 to R1-5, R1-11): every shortfall the Requester can meet asks in dollars, never in credits ----------------
+CREDIT = re.compile(r"credit", re.I)
+DESIGN_BRIEF = (BREW_LAB + " Write the design docs first. Users: coffee lovers and office staff. Problem: people can't see the menu or "
+                "order ahead. Must-have features: see the menu with prices, pre-order a coffee, find the shop, read the opening "
+                "hours. Constraints: one page only. Success: 30 pre-orders per week.")
+
+
+def asked(run):
+    """Every word of the open question the Requester reads: the question, its options, and Identity's message above them."""
+    p = run.paused
+    msg = next(m["text"] for m in run.chat if m["id"] == p["msg"])
+    return [msg, *(t for q in p["questions"] for t in [q["question"], *q["options"]])]
+
+
+def resume_at(run, to, handoff):
+    """Point the paused run's next answer at `to` with `handoff`: the loop then takes that turn as it would after any answer."""
+    run.paused = {**run.paused, "to": to, "handoff": handoff}
+
+
+def test_a_big_raise_confirmed_from_the_card_applies_once(tmp_path):
+    """R1-2: the re-asked card's button sends "Add $N and keep going" with the typed amount; that confirms it (once), never
+    asks back again."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        big = round(float(limit) * 6 + 1, 2)
+        typed = f"Add ${big:g} and keep going"
+        say(run, typed)
+        assert run.paused and run.paused["msg"] and run.usd_raises == [], run.outcome       # asked back once
+        assert asked(run)[0].count("more than 5 times"), asked(run)[0]
+        say(run, typed)                                                                      # the card's button: same text
+        assert [r["asked"] for r in run.usd_raises] == [big], run.usd_raises
+        assert not (run.paused and "more than 5 times" in asked(run)[0]), "asked back again"
+
+
+def test_add_zero_dollars_is_not_a_raise(tmp_path):
+    """R1-11: a typed "Add $0" is asked again, never the option's own amount."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        say(run, "Add $0 and keep going")
+        assert run.usd_raises == [] and run.paused and run.paused["handoff"].get("reasked"), (run.usd_raises, run.outcome)
+
+
+def test_approval_shortfall_asks_in_dollars(tmp_path):
+    """R1-3 (approval): a workflow over its envelope that the dollars left can't fund: the dollar question, no credits."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        run.usd_limit = round(run.usd_used + 0.5, 2)                     # some dollars left, far too few for the workflow
+        w = next(w for w in run.workflows if not w.get("approval_asked"))
+        w.update(cost=100_000, charged=False)
+        resume_at(run, "priority", {"kind": "envelope", "wid": w["id"]})
+        say(run, "Go on")
+        assert any(e["type"] == "hold" for e in run.events), "the envelope check did not run"
+        p = run.paused
+        words = asked(run)
+        assert not [t for t in words if CREDIT.search(t)], words
+        assert p["handoff"].get("usd") is True and QUESTION.match(p["questions"][0]["question"]), p["questions"]
+        say(run, "Option 1")
+        assert len(run.usd_raises) == 1 and not [r for r in run.raises if not r.get("code") and r["cycle"] == run.cycle
+                                                  and "over its envelope" in r["why"]], run.raises
+
+
+def test_ruling_shortfall_asks_in_dollars(tmp_path):
+    """R1-3 (ruling): Identity's ruling costs more than the dollars left fund: the question is in dollars and option 1
+    raises the dollar limit, never credits."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        run.usd_limit = round(run.usd_used + 0.5, 2)
+        wf = {**run.workflows[0], "id": "W-90", "name": "Loyalty card", "cost": 100_000, "charged": False,
+              "envelope": {**run.workflows[0]["envelope"], "money_limit": 100_000}}
+        c = run._open_conflict("scope", ["adaptation", "priority"], "W-90", "the loyalty card")      # as a dispute opens one
+        c.update(identity=[{"say": "The loyalty card is in the charter."}], pending_winner="adaptation", ruled_wfs=[wf])
+        resume_at(run, "priority", {"kind": "ruling", "table": [wf], "conflict": c["id"]})
+        say(run, "Go on")
+        p = run.paused
+        assert p and p["kind"] == "ruling_budget", run.outcome
+        words = asked(run)
+        assert not [t for t in words if CREDIT.search(t)], words
+        assert p["questions"][0]["question"].startswith("This run has used $"), p["questions"][0]["question"]
+        say(run, "Option 1")
+        assert len(run.usd_raises) == 1 and not [r for r in run.raises if f"{c['id']} ruling" in r["why"]], (run.usd_raises, run.raises)
+
+
+def test_document_chain_shortfall_asks_in_dollars(tmp_path):
+    """R1-4: a chain of documents the dollars can't cover: code tops up first, then asks in dollars ("[adds $Z]")."""
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET="1") as j2:
+        run = j2.J2Run(run_dir=tmp_path / "runs" / "j2-20261104-100002-7f3a")
+        say(run, DESIGN_BRIEF)
+        p = run.paused
+        assert p and p["handoff"].get("kind") == "stage_decision", run.outcome
+        words = asked(run)
+        assert not [t for t in words if CREDIT.search(t)], words
+        assert p["handoff"].get("usd") and QUESTION.match(p["questions"][0]["question"]), p["questions"][0]["question"]
+        assert "[adds $" in words[0], words[0]
+        say(run, "Option 1")
+        assert len(run.usd_raises) == 1, (run.usd_raises, run.outcome)
+
+
+def test_a_stated_need_the_dollars_cover_is_not_asked_for(tmp_path):
+    """R1-5: a decision question that names the credits it needs: when the dollars left fund them, code tops up and the
+    question offers no raise (no dollar question)."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        run.usd_limit = round(run.usd_used + 50, 2)                      # plenty of dollars left
+        resume_at(run, "identity", {"kind": "limit", "budget_needed": 40, "reason": "Adaptation asked: add the loyalty card?"})
+        say(run, "Go on")
+        p = run.paused
+        assert p and p["kind"] == "limit" and not p["handoff"].get("usd"), p and p["handoff"]
+        assert run.budget - run.spent >= 40 and not CREDIT.search(" ".join(asked(run)))
