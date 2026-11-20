@@ -142,3 +142,90 @@ def test_resume_tells_a_running_app_to_let_go_of_a_switch_it_holds_in_memory_and
     assert cli.main(["nodes", "resume"]) == 1
     assert "is a file, not a folder" in capsys.readouterr().out and (broken / "nodes").read_text() == "x"                  # nothing of the owner's is deleted
     assert "file, not a folder" in KillSwitch(broken / "nodes").held() and KillSwitch(broken / "nodes").broken()
+
+
+# ---- the shell's settings are not the running app's (D384) -------------------------------------------------------------------------------
+
+import http.server
+import threading
+
+from sutra_app.ops.lock import InstanceLock
+
+
+class _Status(http.server.BaseHTTPRequestHandler):
+    code = 200
+    body = {"level": "none", "kill": None, "pause": None, "settings": {"SUTRA_NODES_V1": True, "SUTRA_NODES_LANES": False, "SUTRA_NODES_REVIEWER": False, "SUTRA_NODES_SLOTS": False}}
+
+    def do_GET(self):                                   # noqa: N802
+        payload = json.dumps(self.body).encode() if self.code == 200 else b'{"error":{"code":"not_found"}}'
+        self.send_response(self.code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, *args):                       # noqa: D401
+        pass
+
+
+@pytest.fixture
+def running_app(tmp_path):
+    """A stand-in for a running Sutra on tmp/d: it holds the folder's lock and answers /api/nodes/status."""
+    data = tmp_path / "d"
+    data.mkdir()
+    lock = InstanceLock(data, version="0.0.0")
+    assert lock.acquire()
+
+    def start(code=200):
+        handler = type("H", (_Status,), {"code": code})
+        server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        lock.update(port=server.server_address[1])
+        return server
+    servers = []
+    yield lambda code=200: servers.append(start(code))
+    for server in servers:
+        server.shutdown()
+        server.server_close()
+    lock.release()
+
+
+def test_status_labels_the_shells_settings_and_says_nothing_runs_when_no_app_holds_the_folder(capsys, tmp_path):
+    code, out, _ = call(capsys, *args(tmp_path, "status"))
+    assert "settings in this shell: SUTRA_NODES_V1=0" in out and "running Sutra: none holds this folder now" in out
+    assert "so a running Sutra does not look" not in out and "no agent runs" not in out, "it must not say a running app has nothing on because this shell does not"
+
+
+def test_status_shows_a_running_app_with_projects_on_whatever_the_shell_says(capsys, tmp_path, running_app):
+    running_app(200)
+    code, out, _ = call(capsys, *args(tmp_path, "status"))                              # this shell has SUTRA_NODES_V1 unset
+    assert code == 0 and "SUTRA_NODES_V1=0, SUTRA_NODES_LANES=0" in out.split("running Sutra")[0] and "projects are ON" in out
+    assert "no agent runs" not in out and "SUTRA_NODES_V1 is 0" not in out
+    _, as_json, _ = call(capsys, *args(tmp_path, "status", "--json"))
+    doc = json.loads(as_json)
+    assert doc["settings"]["SUTRA_NODES_V1"] is False and doc["running"]["state"] == "running" and doc["running"]["projects"] is True
+    assert doc["running"]["settings"]["SUTRA_NODES_V1"] is True and doc["running"]["level"] == "none"
+
+
+def test_status_says_a_running_app_with_projects_off_does_not_look_at_the_files(capsys, tmp_path, running_app, monkeypatch):
+    running_app(404)
+    monkeypatch.setenv("SUTRA_NODES_V1", "1")                                           # this shell says ON, the app is OFF
+    code, out, _ = call(capsys, *args(tmp_path, "status"))
+    assert "projects are OFF (it was started without SUTRA_NODES_V1=1)" in out and "no agent runs" in out
+    assert json.loads(call(capsys, *args(tmp_path, "status", "--json"))[1])["running"]["projects"] is False
+
+
+def test_status_says_when_a_running_app_does_not_answer(capsys, tmp_path, running_app):
+    data = tmp_path / "d"
+    running_app(200)
+    from sutra_app.ops import lock as lock_module
+    (data / lock_module.PID_NAME).write_text(f"{os.getpid()} 1\n", encoding="utf-8")        # a port nobody listens on
+    code, out, _ = call(capsys, *args(tmp_path, "status"))
+    assert code == 0 and "it did not answer, so its settings are not known" in out
+
+
+def test_pause_and_kill_say_what_runs_too(capsys, tmp_path, running_app):
+    running_app(200)
+    for action in ("pause", "kill"):
+        code, out, _ = call(capsys, *args(tmp_path, action))
+        assert code == 0 and "projects are ON" in out

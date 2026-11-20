@@ -61,6 +61,7 @@ class KillSwitch:
     def __init__(self, directory: str | os.PathLike[str], *, clock: Clock | None = None) -> None:
         self.directory = Path(directory)
         self._clock = clock or SystemClock()
+        self._by_hand: list[str] = []              # the texts of the resume markers the command line left, not yet audited (D384)
         self._latched = ""                         # "kill" or "pause" when the file could not be written: the switch is on in memory until it is cleared (Minor 3: a full or read-only disk must not open the gate)
 
     # ---- reading ---------------------------------------------------------------------------------------------------------------
@@ -82,9 +83,19 @@ class KillSwitch:
         if os.path.lexists(marker):
             self._latched = ""
             try:
+                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:400]
+            except OSError:
+                said = ""
+            self._by_hand.append(said)                                      # what the command said it removed: the one that has the database writes an audit row for it (D384)
+            try:
                 os.unlink(marker)
             except OSError:
                 pass
+
+    def take_resumed_by_hand(self) -> list[str]:
+        """The words of every `nodes resume` of the command line that was found since the last call (each is the marker file's text), and forget them."""
+        found, self._by_hand = self._by_hand, []
+        return found
 
     def resume_marker(self) -> Path:
         """Where the command line leaves its word (a sibling of the switch's folder, so the folder holds only the two switch files)."""
@@ -383,7 +394,12 @@ class NodeControl:
         """While a KILL file is there, run the stop ladder for every live node, on EVERY call: a node that started after the file appeared (a start that was under way, a retry) is
         stopped at the next tick, so nothing keeps running behind a kill (M1). Only the audit row `kill` is once per file (by its stamp). Returns how many it stopped. Costs one `lstat`
         when there is no file, and one query while there is."""
-        if not await run_blocking(lambda: self.switch.killed):
+        killed = await run_blocking(lambda: self.switch.killed)                  # this look also finds a `nodes resume` left by the command line
+        for said in await run_blocking(self.switch.take_resumed_by_hand):
+            removed = next((line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")), "")
+            if removed:                                                           # the command only writes the words when it removed a file: a row for each, never for a look
+                await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
+        if not killed:
             self._enforced = None
             return 0
         marker = await run_blocking(self._marker)

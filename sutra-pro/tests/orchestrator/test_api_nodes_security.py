@@ -95,7 +95,7 @@ def test_every_write_route_of_the_nodes_router_depends_on_the_token_and_reads_do
 
 def test_the_status_needs_no_token(on):
     t, client, switch, headers = on
-    assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None}
+    assert {k: v for k, v in client.get("/api/nodes/status").json().items() if k != "settings"} == {"level": "none", "kill": None, "pause": None}
 
 
 # ---- the routes -------------------------------------------------------------------------------------------------------------------
@@ -108,7 +108,7 @@ def test_pause_kill_and_resume_move_the_switch_and_report_what_they_did(on):
     assert client.post("/api/nodes/kill-all", json={}, headers=headers).json() == {"affected": 0, "file_written": True}
     assert client.get("/api/nodes/status").json()["level"] == "kill" and (switch.directory / KILL_FILE).exists()
     assert client.post("/api/nodes/resume", json={}, headers=headers).json() == {"resumed": True}
-    assert client.get("/api/nodes/status").json() == {"level": "none", "kill": None, "pause": None}
+    assert {k: v for k, v in client.get("/api/nodes/status").json().items() if k != "settings"} == {"level": "none", "kill": None, "pause": None}
     assert client.post("/api/nodes/resume", json={}, headers=headers).json() == {"resumed": False}
     assert [row["action"] for row in NodeStore(t.db).audit_rows()] == ["pause", "kill", "resume"]
 

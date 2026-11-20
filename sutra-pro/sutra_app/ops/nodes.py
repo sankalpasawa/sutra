@@ -25,8 +25,51 @@ def _flags(settings: Settings) -> dict[str, bool]:
     return {"SUTRA_NODES_V1": settings.nodes_v1, "SUTRA_NODES_LANES": settings.nodes_lanes, "SUTRA_NODES_REVIEWER": settings.nodes_reviewer, "SUTRA_NODES_SLOTS": settings.nodes_slots}
 
 
-def _off_note(settings: Settings) -> list[str]:
-    return [] if settings.nodes_v1 else ["Note: SUTRA_NODES_V1 is 0 here, so a running Sutra does not look at these files and no agent runs. They hold agents back if you turn it on later."]
+def _running(settings: Settings) -> dict[str, Any]:
+    """What a RUNNING Sutra on this data folder says about itself (D384). The settings of this shell are not the app's: an app opened from the Dock or started elsewhere has its own. So: is a Sutra holding
+    the folder, and what does it answer at `/api/nodes/status` (404: projects are switched off in it; 200: they are on, with the settings it was started with). Reads only; one local request."""
+    from sutra_app.ops import lock
+    try:
+        held = lock.is_locked(settings.data_dir)
+    except OSError:
+        held = False
+    if not held:
+        return {"state": "not_running"}
+    holder = lock.read_holder(settings.data_dir)
+    out: dict[str, Any] = {"state": "running", "pid": holder.pid if holder is not None else None, "projects": None}
+    if holder is None or not holder.port:
+        return out
+    import json
+    import urllib.error
+    import urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(f"http://127.0.0.1:{holder.port}/api/nodes/status", timeout=2) as reply:
+            body = json.loads(reply.read().decode("utf-8", "replace"))
+        out.update(projects=True, level=body.get("level"), settings=body.get("settings") if isinstance(body.get("settings"), dict) else None)
+    except urllib.error.HTTPError as exc:
+        out["projects"] = False if exc.code == 404 else None
+    except (OSError, ValueError):
+        out["projects"] = None
+    return out
+
+
+def _running_words(running: dict[str, Any]) -> list[str]:
+    if running["state"] == "not_running":
+        return ["running Sutra: none holds this folder now. The two files act on the next one that starts with SUTRA_NODES_V1=1."]
+    who = f"pid {running['pid']}" if running.get("pid") else "a Sutra"
+    if running.get("projects") is True:
+        shown = running.get("settings") or {}
+        return [f"running Sutra ({who}): projects are ON. " + (", ".join(f"{name}={int(bool(value))}" for name, value in shown.items()) if shown else ""),]
+    if running.get("projects") is False:
+        return [f"running Sutra ({who}): projects are OFF (it was started without SUTRA_NODES_V1=1), so it does not look at these files and no agent runs."]
+    return [f"running Sutra ({who}): it did not answer, so its settings are not known."]
+
+
+def _off_note(settings: Settings, running: dict[str, Any] | None = None) -> list[str]:
+    if running is not None and running["state"] == "running":
+        return []
+    return [] if settings.nodes_v1 else ["Note: SUTRA_NODES_V1 is 0 in this shell. A Sutra started from here would not look at these files; one started with it on does. They hold agents back if it is turned on later."]
 
 
 def _status(args: argparse.Namespace) -> int:
@@ -35,15 +78,17 @@ def _status(args: argparse.Namespace) -> int:
         return 2
     from sutra_app.orchestrator.killswitch import KillSwitch
     state = KillSwitch(settings.nodes_dir).status()
-    payload: dict[str, Any] = {**state, "folder": str(settings.nodes_dir), "settings": _flags(settings)}
+    running = _running(settings)
+    payload: dict[str, Any] = {**state, "folder": str(settings.nodes_dir), "settings": _flags(settings), "running": running}
     words = {"none": "Agents may start.", "pause": "The PAUSE file is there: no new agent starts; the ones that run finish.", "kill": "The KILL file is there: a running Sutra stops every agent and starts none. (Look at the page or the log to see that they ended.)"}[state["level"]]
     lines = [f"nodes: {words}", f"  files in {settings.nodes_dir}: KILL {'present' if state['kill'] is not None else 'absent'}, PAUSE {'present' if state['pause'] is not None else 'absent'}"]
     for name in ("kill", "pause"):
         note = state[name]
         if note:
             lines.append(f"  {name.upper()}: " + "; ".join(f"{key} {note[key]}" for key in ("by", "reason", "at") if note.get(key)))
-    lines.append("  settings: " + ", ".join(f"{name}={int(value)}" for name, value in _flags(settings).items()))
-    lines += [f"  {line}" for line in _off_note(settings)]
+    lines.append("  settings in this shell: " + ", ".join(f"{name}={int(value)}" for name, value in _flags(settings).items()) + " (a running Sutra has its own, below)")
+    lines += [f"  {line}" for line in _running_words(running)]
+    lines += [f"  {line}" for line in _off_note(settings, running)]
     emit(args, payload, lines)
     return 0
 
@@ -62,7 +107,8 @@ def _write(level: str):
             return 1
         done = ("Paused: no new agent starts; the ones that run finish." if level == "pause" else
                 "Kill switch on: a running Sutra stops every agent (all together, about 12 seconds at most), and none starts.")
-        emit(args, {"level": level, "folder": str(settings.nodes_dir)}, [done, "Run `sutra-pro nodes resume` to remove it.", *_off_note(settings)])
+        running = _running(settings)
+        emit(args, {"level": level, "folder": str(settings.nodes_dir), "running": running}, [done, "Run `sutra-pro nodes resume` to remove it.", *_running_words(running), *_off_note(settings, running)])
         return 0
     return run
 
@@ -77,8 +123,8 @@ def _resume(args: argparse.Namespace) -> int:
         emit(args, {"error": "not_a_folder", "path": str(settings.nodes_dir)}, [f"{settings.nodes_dir} is a file, not a folder, so the stop switch cannot work. Rename or remove that file, then run this again."])
         return 1
     removed = switch.clear()
-    try:                                                      # tell a running app to let go of a switch it holds in memory (its file could not be written)
-        switch.resume_marker().write_text("resume\n", encoding="utf-8")
+    try:                                                      # tell a running app to let go of a switch it holds in memory (its file could not be written), and what was removed: it writes the audit row (D384)
+        switch.resume_marker().write_text("resume\n" + (f"removed: {', '.join(removed)}\n" if removed else ""), encoding="utf-8")
     except OSError:
         pass
     emit(args, {"removed": removed}, ["Resumed: " + ", ".join(removed) + " removed." if removed else "Nothing to resume: neither file was there."])
