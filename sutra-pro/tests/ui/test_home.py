@@ -172,7 +172,8 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
               "/api/chats/cs_org/providers",                   # the model pill of the org chat (ABS-9)
               "/api/limits", "/api/ops/attention",             # the limit line of the strip and the quiet hours (gap routines-limits)
               "/api/ops/welcome",                              # whether the first-run card is due (gap welcome-settings)
-              "/api/sections"}                                 # the sidebar's own sections (project_rail.js, SectionsStore)
+              "/api/sections",                                 # the sidebar's own sections (project_rail.js, SectionsStore)
+              "/api/engine/settings"}                          # D257: the home box's Budget chip shows the team default (effective.usd_budget)
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]
@@ -753,7 +754,7 @@ def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browse
     assert set(texts(browser, ".setfield[data-locked=true] .setlock")) == {"edit /data/sutra-pro/engine.json"}
     assert "Changes apply to the next run." in texts(browser, "#set-engine .setnote")[0]
     assert browser.js("document.querySelector('select[data-scope]').value") == ""                 # all teams
-    assert [r["query"] for r in fake.log("/api/engine/settings")] == [""]                   # `dept` is left out for all teams
+    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", ""]               # the Budget chip's read (D257), then Settings'; `dept` is left out for all teams
 
 
 @browser_only
@@ -795,7 +796,7 @@ def test_a_team_scope_passes_dept_in_the_query_for_both_calls(browser, fake):
     present(browser, "select[data-scope]")
     browser.js("(() => { const s = document.querySelector('select[data-scope]'); s.value = 'web'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
     browser.wait_for("document.querySelector('#set-engine .setnote').textContent.indexOf('this team only') > 0")
-    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", "dept=web"]
+    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", "", "dept=web"]      # the Budget chip's read (D257), Settings', then the team's
     browser.js("document.querySelector('[data-input=max_cycles]').value = '3'")
     browser.click('[data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
