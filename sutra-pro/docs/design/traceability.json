@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 325,
+  "decisions": 331,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 325,
+ "max_decision": 331,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -514,7 +514,13 @@
     "D322",
     "D323",
     "D324",
-    "D325"
+    "D325",
+    "D326",
+    "D327",
+    "D328",
+    "D329",
+    "D330",
+    "D331"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5216,7 +5222,8 @@
    "id": "D310",
    "title": "Retry and failure rules completed",
    "packages": [
-    "ORCH-6"
+    "ORCH-6",
+    "ORCH-7"
    ],
    "status": "implemented",
    "superseded_by": [],
@@ -5354,6 +5361,61 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"sutra tools only on the owner's yes\", key only."
+  },
+  {
+   "id": "D326",
+   "title": "The project page and the owner's route to start a project",
+   "packages": [
+    "GAP-CONSOLE",
+    "GAP-OPS-1",
+    "ORCH-7",
+    "UI-1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"project page /p/id; POST /api/projects, 202\", key only."
+  },
+  {
+   "id": "D327",
+   "title": "The tool-call audit: names and kinds, never inputs",
+   "packages": [
+    "GAP-W1"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"tool audit: names + kinds, no inputs\", key only."
+  },
+  {
+   "id": "D328",
+   "title": "Write-scope leases always, lanes behind a sub-flag",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"scope leases always; lanes = sub-flag\", key only."
+  },
+  {
+   "id": "D329",
+   "title": "Scope enforcement: a path nobody owns is a question",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"path nobody owns: ask, no = quarantine\", key only."
+  },
+  {
+   "id": "D330",
+   "title": "The reviewer: typed verdict, independent, the owner decides",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reviewer verdict informs; owner decides\", key only."
+  },
+  {
+   "id": "D331",
+   "title": "Provider slots, heartbeat coalescing and the load numbers",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"slots by file lock; 960 -> 72 writes\", key only."
   }
  ],
  "packages": [

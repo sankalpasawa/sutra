@@ -1623,5 +1623,35 @@
   "id": "D325",
   "label": "sutra tools only on the owner's yes",
   "anchor": null
+ },
+ {
+  "id": "D326",
+  "label": "project page /p/id; POST /api/projects, 202",
+  "anchor": null
+ },
+ {
+  "id": "D327",
+  "label": "tool audit: names + kinds, no inputs",
+  "anchor": null
+ },
+ {
+  "id": "D328",
+  "label": "scope leases always; lanes = sub-flag",
+  "anchor": null
+ },
+ {
+  "id": "D329",
+  "label": "path nobody owns: ask, no = quarantine",
+  "anchor": null
+ },
+ {
+  "id": "D330",
+  "label": "reviewer verdict informs; owner decides",
+  "anchor": null
+ },
+ {
+  "id": "D331",
+  "label": "slots by file lock; 960 -> 72 writes",
+  "anchor": null
  }
 ]

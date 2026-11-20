@@ -67,6 +67,7 @@ and runs are the part that grows.
   types/                             engine-owned: the types a run made (types.local.json, templates/<name>/) and their .lock    tiny
   agents/j2/                         engine-owned: the agent prompts a run reads
   connectors/policy.json             optional connector routing policy (the app ships a default)                 tiny
+  connectors/slots/                  with SUTRA_NODES_SLOTS=1: one small empty file for each slot of each provider  tiny
   departments/<team>/
     department.json                  a readable mirror of the team; the database is the authority                 tiny
     engine.json                      optional per-team engine settings                                            tiny
@@ -75,11 +76,14 @@ and runs are the part that grows.
       task.json  inbox.jsonl  events.jsonl  trace.jsonl  snapshot.json  live.json  settings.json  timing.json  autofix.json
       chat.jsonl  calls.jsonl  map.json  report.json  summary.json  goal.json  workflows.json  atoms.json
       run.stdout.log  run.stderr.log
+      handoff.json  handoff.accepted.json  tools.jsonl  verdict.json     only the run of a project step: its hand-off, the checked copy, its tool calls (names and kinds only) and the reviewer's verdict
       site/ (page versions, documents, shots/)  artifacts/                                                       ~0.08 MB for a mock run; MBs with screenshots
 ```
 
 Which files are whose: the **server** is the only writer of the database (D16). Each run is a separate process that writes only
 its own run folder. A restart reads those files again and projects them idempotently, so a crash costs no data.
+
+**Projects (multi-agent nodes, `SUTRA_NODES_V1=1` only).** A project of several steps has its own page, `/p/<id>` (the chat's question cards link to it): the questions waiting for you, the steps and the order they run in, what it has used, what Sutra decided for you, why it stopped and what happened. The same facts are in the database (`projects`, `agent_nodes`, `approvals`, `node_messages`, `node_audit`) and in the routes under `/api/projects`. `POST /api/projects` starts one from your own words, with `failure_policy` `stop_branch` (default: a step that fails stops only the steps after it) or `stop_all`. A step's tool calls are in the audit as `tool.used` rows with the tool's name, its kind and a file's base name, never what it carried (D327). With the setting off, none of this exists: the page answers 404.
 
 Do not edit the files of a run by hand while it is live. `engine.json` files are safe to edit when the app is stopped (or use
 `sutra-pro config set`, which writes them atomically).
