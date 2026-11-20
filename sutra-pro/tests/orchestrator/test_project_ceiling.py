@@ -144,3 +144,46 @@ def test_a_finished_project_leaves_one_note_with_the_way_back_into_it(rig):     
     assert rig.project(pid)["status"] == "done" and done["text"].endswith(f"It is finished. /p/{pid}")
     rig.t.run(rig.projects.tick(now=BASE + 20))
     assert len(notes(rig, pid, "ended")) == 1                                                                  # once
+
+
+def audit_row(rig, pid, action, at, ref=""):
+    rig.sql("INSERT INTO node_audit(at, project_id, actor, action, decision, ref, target) VALUES (?, ?, 'system', ?, 'n/a', ?, ?)", at, pid, action, ref, str(at) if action == "project.slept" else "")
+
+
+def test_a_pause_and_a_sleep_that_overlap_are_left_out_once_not_twice(rig):                                     # N-1
+    from sutra_app.orchestrator.conductor import Conductor
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    pid = reservation.project_id
+    audit_row(rig, pid, "project.paused", BASE + 20)                                                            # paused at T0 + 20 ...
+    audit_row(rig, pid, "project.slept", BASE + 7500, "7480")                                                   # ... the computer asleep until T0 + 7500 ...
+    audit_row(rig, pid, "project.resumed", BASE + 7500)                                                         # ... resumed then
+    with rig.t.db.tx() as tx:
+        assert Conductor._paused_seconds(tx, pid, BASE + 7600, BASE) == 7480                                    # the time away, once (it was 14969 when the two were added)
+        audit_row(rig, pid, "project.slept", BASE + 9000, "100")                                                # a separate sleep later: its own 100 seconds
+        assert Conductor._paused_seconds(tx, pid, BASE + 9100, BASE) == 7480 + 100
+        assert Conductor._paused_seconds(tx, pid, BASE + 9100, BASE + 7000) == 500 + 100                        # only what lies after `since`
+
+
+def test_a_pause_that_is_still_on_counts_until_now_and_a_sleep_inside_it_adds_nothing(rig):
+    from sutra_app.orchestrator.conductor import Conductor
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    pid = reservation.project_id
+    audit_row(rig, pid, "project.paused", BASE + 100)
+    audit_row(rig, pid, "project.slept", BASE + 4000, "3000")
+    with rig.t.db.tx() as tx:
+        assert Conductor._paused_seconds(tx, pid, BASE + 5000, BASE) == 4900
+
+
+def test_a_project_is_not_stopped_at_once_by_the_wall_limit_because_the_app_was_closed_for_hours(rig):          # N-2
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    pid = reservation.project_id
+    began = rig.sql("SELECT MIN(started_at) FROM tasks WHERE started_at IS NOT NULL").fetchone()[0]
+    rig.sql("UPDATE tasks SET last_event_at = ?", began + 60)                                                   # the last sign of life, a minute in
+    rig.t.clock.advance(3 * 3600)                                                                               # Sutra stays closed for three hours (the limit is two)
+    rig.t.run(rig.projects.reconcile_projects())
+    [row] = rig.audit("project.slept")
+    assert "closed or the computer was off" in row["reason"] and 10_000 < int(row["ref"]) < 11_000
+    now = rig.t.clock.peek
+    done = rig.t.run(rig.projects.tick(now=now))
+    assert done["stopped"] == [] and rig.project(pid)["status"] == "running"                                    # without the row the first tick would say "ran longer than 120 minutes"
+    assert rig.audit("trigger.project_wall") == []

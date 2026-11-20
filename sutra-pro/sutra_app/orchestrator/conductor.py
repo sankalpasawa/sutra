@@ -746,7 +746,7 @@ class Conductor:
                     refuse.append((project["id"], reason))
                     continue
                 if slept:                                                            # the time the computer slept is not time the project worked (PB-12, D311's own gap): written down, left out of the wall time
-                    self.store.audit(tx, actor="system", action="project.slept", project_id=project["id"], decision="n/a", reason=f"the computer was asleep or closed for about {max(1, gap // 60)} minutes", ref=str(gap))
+                    self.store.audit(tx, actor="system", action="project.slept", project_id=project["id"], decision="n/a", reason=f"the computer was asleep or closed for about {max(1, gap // 60)} minutes", ref=str(gap), target=str(now))      # `target` is when the gap ended (the tick's own moment)
                 if self._project_limit(tx, project["id"], now, project["created_at"], caps_of(project)):
                     continue
                 self._scrubbed_nodes(tx, project["id"], scrub, scrubs or {})
@@ -799,19 +799,31 @@ class Conductor:
 
     @staticmethod
     def _paused_seconds(tx: Tx, project_id: str, now: int, since: int) -> int:
-        """How long the project was paused after `since`, from its audit rows (`project.paused`, `project.resumed`); a pause that is still on counts until `now`. A gap the tick found (the computer slept: `project.slept`)
-        counts too. Not counted: a closed app (the tick's gap is kept in memory, so a restart does not know how long it was closed: D345)."""
-        total, began = 0, None
+        """How long the project did not work after `since`: the UNION of its pauses (audit rows `project.paused` and `project.resumed`; one still on counts until `now`) and of the gaps found while the
+        computer slept or Sutra was closed (`project.slept`: its `target` is when the gap ended, else the row's time, and its `ref` the seconds). Overlapping intervals count once: a project paused overnight with the
+        laptop closed is away once, not twice (N-1)."""
+        spans: list[tuple[int, int]] = []
+        began = None
         for row in tx.conn.execute("SELECT at, action FROM node_audit WHERE project_id = ? AND action IN ('project.paused','project.resumed') ORDER BY seq", (project_id,)):
             if row["action"] == "project.paused" and began is None:
-                began = max(int(row["at"]), since)
+                began = int(row["at"])
             elif row["action"] == "project.resumed" and began is not None:
-                total += max(0, int(row["at"]) - began)
+                spans.append((began, int(row["at"])))
                 began = None
-        total += (max(0, now - began) if began is not None else 0)
-        for row in tx.conn.execute("SELECT at, ref FROM node_audit WHERE project_id = ? AND action = 'project.slept'", (project_id,)):         # a sleeping computer is not working time (PB-12)
-            if int(row["at"]) >= since and str(row["ref"]).isdigit():
-                total += int(row["ref"])
+        if began is not None:
+            spans.append((began, now))
+        for row in tx.conn.execute("SELECT at, ref, target FROM node_audit WHERE project_id = ? AND action = 'project.slept'", (project_id,)):         # a sleeping computer or a closed app is not working time (PB-12, N-2)
+            if str(row["ref"]).isdigit():
+                end = int(row["target"]) if str(row["target"]).isdigit() else int(row["at"])
+                spans.append((end - int(row["ref"]), end))
+        total, reach = 0, since
+        for start, end in sorted((max(a, since), min(b, now)) for a, b in spans):
+            if end <= start:
+                continue
+            start = max(start, reach)
+            if end > start:
+                total += end - start
+                reach = end
         return total
 
     def _scrubbed_nodes(self, tx: Tx, project_id: str, scrub: list[str], counts: dict[str, int]) -> None:
@@ -1069,6 +1081,16 @@ class Conductor:
         payload = dict(kind="note", session_id=ORG_SESSION_ID, role="agent", who="sutra", text=text[:2000], src_ref=f"project:{project_id}#stopped", at=tx.now())
         self.chats.post(tx, ORG_SESSION_ID, GATE.check("chat_message", payload, ctx=tx.ctx))
 
+    def _closed_gap(self, tx: Tx, project_id: str) -> None:
+        """N-2: Sutra was closed (or the computer off) since the project last showed any sign of life: one `project.slept` row with that gap, so the wall time leaves it out (the same rule as a sleep, D311).
+        The gap is from the newest audit row or task event of the project to now; under half a lease it is not a gap. Dollars and the per-step caps still bound the project."""
+        lease = int(json.loads(tx.conn.execute("SELECT caps_json FROM projects WHERE id = ?", (project_id,)).fetchone()["caps_json"] or "{}").get("lease_s") or NODE_DEFAULT_CAPS["lease_s"] or 90)
+        last = tx.conn.execute("SELECT MAX(at) FROM node_audit WHERE project_id = ?", (project_id,)).fetchone()[0] or 0
+        beat = tx.conn.execute("SELECT MAX(COALESCE(t.last_event_at, t.started_at, 0)) FROM tasks t JOIN agent_nodes n ON n.task_id = t.id WHERE n.project_id = ?", (project_id,)).fetchone()[0] or 0
+        gap = tx.now() - max(int(last), int(beat))
+        if gap > lease // 2 and max(int(last), int(beat)) > 0:
+            self.store.audit(tx, actor="system", action="project.slept", project_id=project_id, decision="n/a", reason=f"Sutra was closed or the computer was off for about {max(1, gap // 60)} minutes", ref=str(gap), target=str(tx.now()))
+
     async def reconcile_projects(self) -> dict[str, int]:
         """Run once at start, after `reconcile` has settled the tasks and before anything starts (D277, D296). A project with an open gate was left open by a closed app: every gate is refused
         ("Sutra was closed before you answered"). The nodes follow their tasks (a task `reconcile` crashed gives a node that is retried); a node that was reserved but never got its task
@@ -1078,6 +1100,7 @@ class Conductor:
             fixed = 0
             with self.db.tx() as tx:
                 for project in tx.conn.execute("SELECT id FROM projects WHERE status IN ('planning','awaiting_approval','running','reviewing') ORDER BY created_at").fetchall():
+                    self._closed_gap(tx, project["id"])
                     gate_open = tx.conn.execute("SELECT 1 FROM approvals WHERE project_id = ? AND status = 'open' AND request_json NOT LIKE '%\"late\":1%'", (project["id"],)).fetchone() is not None
                     if gate_open:
                         refused.append(project["id"])
