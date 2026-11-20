@@ -1,7 +1,7 @@
 # Multi-agent nodes: guardrails and permissions
 
 Status: proposed, 2026-11-20. Design only. Read [architecture.md](architecture.md) first for the words (node, project, Conductor, Gatekeeper, lease, grant).
-Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303). After phase 2 (MAN-5 to MAN-7), D306 to D312: the node plan, `auto` output and the planner's reach, a gate nothing answers yet, hand-off intake rules, retry and failure rules, the sleep check and the receipt.
+Decisions: D266 to D282, D294, D295 and D296 in [decisions.md](decisions.md). Corrected after phase 1 (MAN-1 to MAN-4) by the architect rulings D297 to D305: tier 4 and the folder (D298), the builder tools are not a tier (D299), the confirm threshold (D300), the planner's stop (D301), no grant no start (D302), kill switch ownership (D303). After phase 2 (MAN-5 to MAN-7), D306 to D312: the node plan, `auto` output and the planner's reach, a gate nothing answers yet, hand-off intake rules, retry and failure rules, the sleep check and the receipt. After phase 3 (MAN-8, MAN-9, MAN-15), D315 to D323: a no is as wide as the question, the chat card, the plan gate numbers, Decide for me as built, budgets as built, caps and triggers, system permissions as built, "runs alone" is MAN-10's promise.
 
 ## 1. The rules in six lines
 
@@ -95,15 +95,16 @@ The Gatekeeper asks the owner through the card system the app already has (`need
 
 | Gate | When | What the owner sees | Answers |
 |---|---|---|---|
-| **Plan gate** (before the node plan exists, in MAN-8, it can ask the estimate question only: no step carries a tier-4 need or a wide scope, D306, D308) | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope of more than one path, or an estimate over the project's confirm threshold (default 500 work credits, `caps_json["confirm_credits"]`; not asked when the owner gave their own budget: D300). A writer with no declared scope is not asked about: it holds the whole folder and runs alone. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
+| **Plan gate** (before the node plan exists, in MAN-8, it can ask the estimate question only: no step carries a tier-4 need or a wide scope, D306, D308) | Before the first node starts, if any step needs more than the defaults: tier 4, or a write scope of more than one path, or an estimate over the project's confirm threshold (default 400 work credits, `caps_json["confirm_credits"]`, so five default steps ask; not asked when the owner gave their own budget: D300, D318). A writer with no declared scope is not asked about: it holds the whole folder and runs alone. | "This project has 4 steps. Step 3 wants to read GitHub. Step 2 will change files in `site/pricing/`. Estimated spend: about 180 credits." | Allow for this project, allow once, deny |
 | **Grant gate** | After a light node ends with `needs.json` (it lacked a tier). | "The reviewer asked for: read GitHub. Why: ... Allow and run it again?" | same |
-| **Budget gate** | A node asks for more credits (J2's own question, routed) or the project ceiling is near. | The existing raise question, with "So far: 100 + 30 = 130 work credits approved" (P25). | exact amount, or no |
+| **Budget gate (NOT built in v1, D320)** | A node asks for more credits or the project ceiling is near. | Not offered: a slice is final (`J2_BUDGET_CAP` equals the slice) and the owner asks again with a bigger budget. | none |
 
 Rules for gates:
 
 - No process waits alive for an answer. A gate is before spawn or after an end.
 - An approval is a row (`approvals`): who, what tier, what text, when, by whom. "Allow for this project" is allowed for tiers up to 4. Tier 5 is asked per raise. Tier 6 is not offered.
-- An approval expires after 24 hours. Expired means denied. The held nodes are `cancelled` with the reason "not approved". (With Decide for me on, no gate is held, so nothing expires: see 5.1.)
+- An approval expires after 24 hours. Expired means denied and the project stops ("not approved"). A no to a question about ONE step cancels that step only; its dependants follow the failure policy (D315; until P1 is built the code stops the whole project and the card says so). (With Decide for me on, the gates the table can answer are not held; the three it never answers are: see 5.1.)
+- The question is a card in the org chat and an item of `needs_you` (D317). It says what a no does.
 - The same answer sent twice is stored once (`client_id`).
 - With **Decide for me** off (the default), the owner's answer is the only thing that moves a gate. With it on, a fixed rule table answers instead (section 5.1). Nothing a node or a model writes can move a gate either way.
 
@@ -114,7 +115,7 @@ Sutra already has a Decide for me switch (the Simple view's switch, `J2_DECIDE_F
 What it does when it is on:
 
 1. **Inside each worker, nothing new.** The switch is passed to every worker as the existing task setting `J2_DECIDE_FOR_ME=1`, so J2 answers its own questions as it does today. A live flip reaches running workers through the existing inbox `setting` line.
-2. **At the three gates, a rule table answers.** The Gatekeeper (code, not a model, so "a model never approves a model" still holds) answers each gate at once and writes an audit row `gate.decided` with `decided_by: rule:decide_for_me` and the rule's name. No card is held, nothing waits, nothing expires.
+2. **At the gates, a rule table answers.** The Gatekeeper (code, not a model, so "a model never approves a model" still holds) answers each gate at once and writes an audit row `gate.decided` with `decided_by: rule:decide_for_me` and the rule's name. No card is held and nothing expires, except the three things the table never answers and leaves open for the owner: a permission of the computer, a plan estimate over `project_credits` (default 1000), and tier 5 otherwise (D319).
 3. **Every answer is on the record.** The project page shows a list "Sutra decided for you" with each gate, the answer and the rule. The owner can read it any time and can stop the project or one node with the normal kill switch.
 
 The rule table (fixed, in code, in `gatekeeper.py`):
@@ -123,8 +124,8 @@ The rule table (fixed, in code, in `gatekeeper.py`):
 |---|---|---|
 | Plan gate, tiers 0 to 3 | **Allow**, within the grant the roles table already gives | These are the defaults. The owner's folder access still caps every grant. |
 | Plan gate, tier 4 (network: GitHub read tools) | **Allow for this project**, only the read-only tools, only through the owner's own `gh` login | The owner switched Decide for me on knowing the project may read. Read-only, no write path. |
-| Plan gate, a write scope of more than one path (a missing scope needs no answer: it runs alone anyway) | **Allow, but the writer runs alone** among writers (no parallel writers) | The safe version of "yes": slower, never unsafe. |
-| Plan gate, estimate over the confirm threshold (500 by default) | **Allow only up to the project's credit ceiling** (the owner's own number, or the default). The ceiling is never raised. | The owner approved the ceiling up front, which is the owner's own answer. |
+| Plan gate, a write scope of more than one path (a missing scope needs no answer) | **Allow;** from MAN-10 the writer is kept apart from other writers (until then nothing does, D323) | The safe version of "yes": slower, never unsafe. |
+| Plan gate, estimate over the confirm threshold (400 by default) | **Allow once only up to `project_credits`** (1000 by default). Over it the question stays open for the owner. The ceiling is never raised. | The owner approved the ceiling up front, which is the owner's own answer. |
 | Grant gate: a node ended with `needs.json` for tier 0 to 4 | **Allow and run again, once** (the retry budget of the node) | Same as the plan gate. A second request for the same tier is refused. |
 | Grant gate: `needs.json` asks for tier 5 or 6 | **Deny.** The node ends with the reason; the project goes on by its failure policy | See the walls below. |
 | Budget gate: a node asks for more credits | **Do not raise** (P25 kept). The node stops at its slice. Unspent slices of finished nodes may move to a node that needs them, as long as the project total never goes above the ceiling | P25: a raise needs the Requester's own approval. Moving credits inside an approved total is not a raise. |
@@ -139,7 +140,7 @@ Walls Decide for me never crosses (each is also a test):
 - Prompt-injection rule stays: text a node writes can never turn Decide for me on, because the switch is a field on the project row that only the owner's own request (the Simple view switch or the start of a project) can set.
 - A model's own suggestion is not used. J2's inside-worker answers come from J2 as today; the node gates are answered by the rule table only.
 
-Where the switch lives: `projects.decide_for_me` (0 or 1), set at project start from the request's `J2_DECIDE_FOR_ME`, or later by the Simple view switch. A project with no switch uses the department default (today's behaviour). Turning it on while gates are held answers them at once; turning it off applies to the next gate and does not undo earlier answers.
+Where the switch lives: `projects.decide_for_me` (0 or 1), set at project start from the request's `decide_for_me` field OR the owner's own Decide for me setting (the Simple view switch), read when the project is reserved (D319, G13). A project with no switch uses the department default (today's behaviour). Turning it on while gates are held answers them at once; turning it off applies to the next gate and does not undo earlier answers.
 
 One thing Decide for me can never do: click an operating-system permission for the owner (section 5.2). That choice belongs to the person at the computer. A project holds only the steps that need it and carries on with the rest.
 
@@ -177,6 +178,8 @@ The two are different on Mac and on Windows, so Sutra checks them per system, te
 Linux is not a shipped version (the products are the Mac app, the Windows app and the Python package), so there are no system prompts to manage. Only the usual file permissions apply, and the check reports "nothing to ask".
 
 #### How the check works
+
+As built (D322): the probe looks in the owner's folder root (the temporary file is `.sutra-probe-<hex>`, removed at once), not in each node's scope; it has a 45 s limit; macOS is probed for Desktop, Documents and Downloads only (other protected places are found by the late refusal); a Windows elevated process makes the plan refused with a sentence; long paths are a need when the folder path is over 240 characters; the app-location note is for the project page (MAN-13).
 
 The check runs inside the Sutra server, because the system holds the **server's** app responsible for what its child programs do. (On a Mac that is Sutra Pro itself, or the Terminal if the owner started it with `sutra-pro` there; the card says which one to turn on.) It uses one new small module, `sutra_app/syspermissions.py`, beside the existing `sutra_app/oslayer.py` (which already separates Mac, Windows and POSIX behaviour). It has one adapter per system with the same three calls:
 
@@ -221,13 +224,13 @@ Defaults are in `projects.caps_json` and `config.py`. Every cap stops something 
 | Parallel nodes per project | 3 | others stay `queued` with "waiting for a free slot" | task gate |
 | Whole machine | `SUTRA_MAX_RUNS` 3, `SUTRA_MAX_LIVE` 12 | same | `start_ready` (unchanged) |
 | Provider processes | `max_concurrency` of the policy (Claude 4, Codex 2) for the whole machine | the call waits | slots (sub-flag) |
-| Node calls | 60 | the run is stopped, outcome names the limit | `NodeMeter` |
+| Node calls | 60 (a guess, to be measured: P4) | the run ends failed (`crashed`), outcome names the limit (D321) | `NodeMeter` |
 | Node dollars | none by default; owner may set | same | `NodeMeter` (Claude figures only) |
 | Node wall time | 30 minutes | same | `NodeMeter` deadline |
 | Node credits | its slice | J2's own limit logic; no self-raise | `J2_BUDGET`, `J2_BUDGET_CAP` |
 | Project credits | sum of slices | no spawn that does not fit | task gate |
 | Project dollars | none by default | nodes stopped with the ladder | Conductor tick |
-| Project wall time | 2 hours | project stopped | Conductor tick |
+| Project wall time | 2 hours, counted from the first node's start (D321) | project stopped | Conductor tick |
 | Retries per node | 1 | node failed | `agent_nodes.attempt` |
 | Review loops | 2 | card to the owner | `projects` row |
 | Plan confirm threshold | 500 work credits | the plan gate asks | `caps_json["confirm_credits"]` (D300) |
@@ -253,7 +256,7 @@ Four levels, from small to large. Each uses the one stop ladder that exists (sto
 
 The file exists because the UI can be the thing that is stuck. The owner can create `~/.sutra-pro/nodes/KILL` by hand (an empty file is enough). Three things look at it (D303): the `NodeControl` watcher (one `lstat` every 2 s and once at start; it runs the ladders once for each new file and stays when the Conductor arrives, so a stuck tick cannot hold back a kill), the task gate (inside the start transaction, so a missed tick cannot spawn past it; the check fails closed, a file that cannot be looked at counts as present), and the light node host in its loop. The command line only writes and removes the files: a launch token is never on disk, so it cannot call the server. A node the owner or the switch stopped is never retried or restarted by the Conductor.
 
-Automatic triggers (each also an audit row and a card), built with their causes and not in MAN-4 (D303): a project or node cap reached and the same node hitting the egress scrub three times (MAN-9); a node losing its lease twice (MAN-7); a scope violation (MAN-10); the owner's monthly dollar limit used up (the existing `Limits` hold, nothing new).
+Automatic triggers (each an audit row and one plain note in the org chat, not a card: D321), built with their causes and not in MAN-4 (D303): a project or node cap reached and the same node hitting the egress scrub three times (MAN-9); a node losing its lease twice (MAN-7); a scope violation (MAN-10); the owner's monthly dollar limit used up (the existing `Limits` hold, nothing new).
 
 ## 8. Audit trail per node action
 

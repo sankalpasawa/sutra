@@ -1568,5 +1568,50 @@
   "id": "D314",
   "label": "app closed: fresh attempt, retry not spent, cap 2",
   "anchor": null
+ },
+ {
+  "id": "D315",
+  "label": "a no is as wide as its question",
+  "anchor": null
+ },
+ {
+  "id": "D316",
+  "label": "MAN-8 as built: plan in caps_json, route shape",
+  "anchor": null
+ },
+ {
+  "id": "D317",
+  "label": "approval card in the chat, before phase 4",
+  "anchor": null
+ },
+ {
+  "id": "D318",
+  "label": "confirm 400, project_credits 1000",
+  "anchor": null
+ },
+ {
+  "id": "D319",
+  "label": "Decide for me: also the owner's own switch",
+  "anchor": null
+ },
+ {
+  "id": "D320",
+  "label": "slice is final; ceiling per attempt",
+  "anchor": null
+ },
+ {
+  "id": "D321",
+  "label": "cap hit = failed; wall time from first start",
+  "anchor": null
+ },
+ {
+  "id": "D322",
+  "label": "system probe as built; 45 s limit",
+  "anchor": null
+ },
+ {
+  "id": "D323",
+  "label": "runs alone is MAN-10's promise",
+  "anchor": null
  }
 ]

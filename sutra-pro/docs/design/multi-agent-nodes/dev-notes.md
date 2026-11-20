@@ -296,61 +296,80 @@ Open points for the architect:
 
 ### N32. The planner's Stop never reached the runner (G5, G7)
 The D301 handling in the runner (`except CallCancelledError`) was dead code: the agent's `_stage` turned every connector error, the owner's Stop included, into a `ConnectorFailure`, so a stop ended as "I can't reach Claude (the turn was stopped)". Fixed in the agent: `ports.was_stopped(exc)` (code `cancelled`, not retryable) lets it go up as it is, so the runner ends the turn with the new line `stopped`. Tests: `test_resumed_planner.py` (fresh and resumed request).
+- Architect ruling: accepted. It is the fix D301 and G5/G7 asked for (a stop must reach the runner and end as `stopped`). No change.
 
 ### N33. `project_waits` cannot be reached at the default threshold yet (G7)
 The chat agent plans at most 5 steps (`MAX_ASSIGNMENTS`), and 5 x the slice of 100 is 500, which is not over the confirm threshold of 500. So the architect's test "a six-step plan's reply says it waits" cannot be made through the chat; the test lowers the threshold. The line is reachable at the default only once a step has its own estimate (the node plan stage, MAN-8) or a larger slice (MAN-9). The two lines are in a separate table, `planner.NODE_LINES`, not in `LINES`: the coordinator's rule was that the flag-off set stays as it was; `line()` and `matches_template` read both. `Reservation` gained `title` and `waits`; the estimate question stores `credits` and `limit` in its request so a request that is planned again finds the numbers.
+- Architect ruling: accepted, and the cause is fixed in D318: the threshold was unreachable (5 default steps are 500, not over 500). Default becomes 400 (G18); the test then needs no lowered threshold. The `NODE_LINES` table is accepted (the flag-off set stays as it was).
 
 ### N34. How the tick gap is measured with a given `now` (G2)
 `tick(now=...)` sets the next gap from `now` plus what the tick took on the clock, so a test that passes `now` and a real run give the same reading. The tick's own work is never a sleep.
+- Architect ruling: accepted. No change.
 
 ### N35. G3 and G8 details
 G3 also fails nodes that wait in `awaiting_approval` or `awaiting_system` with a broken grant (a grant is rewritten only by the answer path of MAN-8), never retries (`_fail(retry=False)`), and writes `grant.denied` with fixed words. G8 and B2 are one change: `reserve` returns a not-ok reservation for any project that has ended (failed, stopped, done) and `link_task` raises (`AppError busy`) for a step with no node and for a node that has its task already.
+- Architect ruling: accepted. G3 and G8 as built match D310.
 
 ### N36. B1: what "contained" means
 `Tx.savepoint()` (new, in `db.py`) undoes the writes and the events of a part that failed. `sync_task` runs `_sync_task` in one; on an exception the node is ended `failed` with the audit row `node.error` (fixed words, nothing from the node), never retried, its dependants are cancelled and the project is settled, each in its own savepoint; the task's own change is not lost. A hand-off that is refused (`handoff.refused`) still follows the normal rule, one retry. `read_handoff` is total: deep nesting, bytes that are not Unicode, a lone surrogate, a path that cannot be compared are `HandoffRefused`. A retry for an archived team (`AppError` from `retry_in`) ends the node `failed` with "(it could not be tried again)".
+- Architect ruling: accepted. A node ends `failed` with fixed words and nothing from the node; the savepoint is the right tool.
 
 ### N37. MJ5: the hand-off is read before the transaction (a new hook in the projector)
 `Projector.before_drain` (set by the wiring only while the flag is on) calls `ProjectService.prepare_handoff(task_id)` before `drain` opens its transaction: when the task is the run of a worker node and `handoff.json` is there, the file is read, checked and hashed and `handoff.accepted.json` is written outside any transaction; the result waits in a small dict, keyed by the file's stamp, until `_hand_off` uses it. A file that changed meanwhile, or a task that ended another way, is read again inside as before. The accepted file may exist for a node that is then refused for another reason; nothing gives it on.
+- Architect ruling: accepted (MJ5). Note for MAN-12: the waiting dict is keyed by the file's stamp, so a changed file is read again inside; keep that test.
 
 ### N38. MJ7 and the audit names
 A stop by the owner denies the open questions with the audit row `approval.denied` (actor owner); a stop by the system uses `gate.refused`. `_refuse_in` is the whole database part of the D296 refusal inside one transaction; the tick uses it, so the decision and the stop commit together. A project that is `awaiting_approval` with no open question is ended by the tick ("not approved: no question was left to answer"); the answer path of MAN-8 moves a project on in the transaction of the answer, so this never meets a project in the middle of an answer.
+- Architect ruling: accepted. The audit names (`approval.denied` by the owner, `gate.refused` by the system) match guardrails 8.
 
 ### N39. Minor 2: a new value of `_stopped_by`
 `TaskService.stop_node(..., by=)` records `system` for a lease that ran out, a kill and a stop the app decided. It is not `app`: the Heads up wording for `app` says "when the app closed". A `system` stop is listed as "stopped before it finished"; the owner's own stop is still never listed.
+- Architect ruling: accepted. `system` is the right value for a stop the app decided.
 
 ### N40. Existing tests that changed on purpose
 `test_a_nodes_folder_that_is_a_file_fails_closed` (Minor 3: it said `none`); `test_kill_all_says_when_the_file_could_not_be_written...` now expects the switch to read `kill` from memory; the two kill-switch tests that replaced `stop_node` pass the new `by` keyword on. Nothing was deleted or weakened: each now asserts the safer rule.
+- Architect ruling: accepted. Each changed test now asserts the safer rule.
 
 ### N41. Minor 7, D313: where the hold is installed
 With the flag off the wiring builds nothing. `start_services` looks at the database after the migration and installs `nodes_store.held_while_off` as the task gate only when some step of a project has not started (blocked or queued). An app that never made a project has `task_gate = None` exactly as before.
+- Architect ruling: accepted, D313 (the owner's). The one read of `agent_nodes` at start with the flag off is what D313 allows; it amends D254.
 
 ### N42. D314: restart attempts are counted from the audit trail
 No column was added: `node.restarted` rows are counted (`MAX_RESTARTS = 2`). `attempt - restarts <= retries` keeps the single real retry. A node whose task `reconcile` ended as stopped with "the app was closed" or crashed with "the app was closed while it ran" is a restart; a stop by the owner is not.
+- Architect ruling: accepted, D314 (the owner's).
 
 ### N43. Known v1 limits recorded (m9)
 `node_audit` and `node_messages` have no retention in v1 (they are append-only and a project is never deleted, D305); the size is small (words and numbers only) and a retention rule needs a decision about the append-only triggers, so it waits for a later version.
+- Architect ruling: accepted. No retention in v1; revisit when the append-only triggers are touched (v7).
 
 ### N44. MAN-8: the node plan has no schema file in `docs/schemas`
 The architect expected `node_plan.v1.json` there. The exporter only writes the families the library registers; `chat_turn` (registered by `agent/replies.py` too) has no file either, so the new family follows it and `docs/schemas/` is unchanged. A flag-on request with two or more steps makes ONE more model call (the node plan), so every existing flag-on test that scripts the planner now scripts that reply too (`NO_REQUESTS` in `test_projects_adopt.py`).
+- Architect ruling: accepted, D316 (b). No `node_plan.v1.json`; D306's last sentence is amended. The extra model call for every flag-on request of two or more steps is the design's own (D306).
 
 ### N45. MAN-8: where the plan is kept
 The answer path must evaluate the plan again, so the step requests are kept in `projects.caps_json["plan"]` (ref, team, scope, needs, estimate, depends_on). It is an internal key, left out of `ProjectOut.caps`. No migration: the other choice was a v7 column for a table that has not been released.
+- Architect ruling: accepted, D316 (a). `caps_json["plan"]` is an internal input of the answer path, never shown, never edited after the project is made (D274). A v7 column is allowed if a later package needs more.
 
 ### N46. MAN-8: the Decide for me table
 `gatekeeper.RULE_TABLE` is data (nine rows, a test walks it) and `decide_for_me_answer` is the function the reserve uses: tiers 0 to 3 and tier 4 are allowed for the project, a wide or missing scope is allowed once (the writer runs alone), the plan estimate is allowed once up to the cap `project_credits` and never beyond, a permission of the computer and tier 6 are never answered, credits are never raised. The rows `slice_move` (`budgets.move_unspent`) and `scope_violation` (`on_scope_violation()`, "quarantine") are the runtime rules of MAN-9 and MAN-10 and are only data and pure functions until then.
+- Architect ruling: accepted, D319. The table matches D294 (cannot raise credits, cannot grant a permission of the computer, audited as `rule:decide_for_me`). Two additions: the estimate over `project_credits` stays open for the owner (D318, D319 b), and the switch must also read the owner's own setting (G13). The `scope_wide_or_missing` words must not say "runs alone" yet (G19, D323).
 
 ### N47. MAN-8: what is NOT built
 The card is a model (`NodeApprovalCard`) and comes with the project snapshot (`cards`); it is NOT posted as a message of the org chat, the `needs_you` list does not count it, and the page does not draw it, so there is no UI test. The reason: the `ChatCard` union is part of recorded API shapes, and adding a kind there moves goldens for the flag-off app; it needs its own change with the page (MAN-13). A no to any question of the plan stops the project ("not approved: you said no"), also the tier-4 question of one step: the design said "a deny or expiry cancels the nodes"; cancelling only the one step was not asked for.
+- Architect ruling: (1) NOT acceptable as the end of MAN-8: the card in the chat, `needs_you` and the page's rendering are built before phase 4 (D317, G12); the reason given (a new `ChatCard` kind moves flag-off shapes) does not hold, since an earlier kind was added the same way and a response with no such row keeps its bytes. Until then a flag-on beta goes to nobody who cannot call the API. (2) A no to any question stops the whole project: accepted for now because it fails to the safe side, but the design wants a per-step cancel for a question about one step (D315 b, P1, as D295's skip), and the card must say what a no does (G21).
 
 ### N48. MAN-8: the request carries `decide_for_me`
 `ChatPost` has a new optional field `decide_for_me` (stored in the line's `meta` like `budget`). It is read only with the flag on; with it off the field is accepted and ignored. A hand-off, a plan step or a message of a node has no way to set it.
+- Architect ruling: accepted, D316 (c), with G13: do not store the field when the flag is off, and read the owner's own Decide for me setting as well, because no screen sends this field.
 
 ### N49. Existing tests extended on purpose in this round
 `test_engine_port_contract.py` (`PortSpec.tools`), the node block goldens (`tool_profile`), `test_config.py` (`project_credits`), the two budget assertions (`budget_credits` is now the sum of the slices). Nothing was removed or weakened.
+- Architect ruling: accepted. Pinned lists were meant to be extended (N19). `test_config.py` also changes for G18.
 
 ### N50. MAN-9: what changed in meaning, and what is thin
 `projects.budget_credits` is now the ceiling, the sum of the slices; the owner's own number (each run's `J2_BUDGET`, D252) is each slice and is kept as `caps.owner_budget`. The slice reaches the run as `J2_BUDGET` and `J2_BUDGET_CAP` at `_run_spec`, so a run cannot raise itself (P25); the only test of "no raise without the Requester" is that these two settings are written and the task's own settings are not rewritten: the engine's cap behaviour is the existing D251 one and was not re-tested. The triggers say their words in a plain note (D311), not a card. `make_slices` and `move_unspent` are pure and tested; nothing calls `move_unspent` yet (the move is a rule for a later package that spends). Project dollars are read from `usage_ledger` through the nodes' tasks; with no `budget_usd` they are not limited.
+- Architect ruling: accepted with limits, D320. A slice is final (no raise card: the budget gate moves to Non-goals for v1); the ceiling is per attempt; the "fit" check is a guard. The missing engine re-test of "no raise" is accepted: J2's own Decide for me waits for the Requester on a raise (P25) and `J2_BUDGET_CAP` equals the slice, so the Sutra-side test (both settings reach `task.json`) is the right proof. Two real gaps found: a node that hit its cap can still end `done` (G14, D321 a) and the project wall time counts from creation (G15, D321 b).
 
 ### N51. MAN-15: what is not verified
 Everything uses fake adapters and a patched platform. NOT verified: a real macOS Files & Folders dialog, a real Controlled folder access block, a real elevated process, the settings pages the adapters open (`x-apple.systempreferences:` and `windowsdefender://`), and the page. The late-refusal check (`is_permission_failure`) reads the words of an outcome (EPERM, WinError 5, "Operation not permitted", "Access is denied", "Permission denied"), so an unrelated crash that quotes one of them is also read as a permission need. `oslayer` has no "app location" helper yet: nothing asks for it.
-
+- Architect ruling: accepted with changes, D322. Fix before phase 4: G16 (probe time limit, no task for an ended project), G17 (late card "Check again" must not clear while the folder refuses). Before publish: P3, P5 (the manual check). `is_permission_failure` reading words is accepted: a false positive makes a node wait for a card, which the owner can skip; the words list stays short.

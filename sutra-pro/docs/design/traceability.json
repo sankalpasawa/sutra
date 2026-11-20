@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 314,
+  "decisions": 323,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 314,
+ "max_decision": 323,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -503,7 +503,16 @@
     "D311",
     "D312",
     "D313",
-    "D314"
+    "D314",
+    "D315",
+    "D316",
+    "D317",
+    "D318",
+    "D319",
+    "D320",
+    "D321",
+    "D322",
+    "D323"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -4842,6 +4851,7 @@
    "title": "A NodeMeter makes the router's allowance cumulative per node",
    "packages": [
     "E0",
+    "GAP-W1",
     "ORCH-1"
    ],
    "status": "implemented",
@@ -5043,16 +5053,22 @@
   {
    "id": "D294",
    "title": "Decide for me works for projects: a rule table answers the gates",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"Decide for me for projects: a rule table\", pill on band:ORCHESTRATION."
   },
   {
    "id": "D295",
    "title": "Operating-system permissions are checked per system before a node starts",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ORCH-1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"OS permissions: check first, the owner clicks\", pill on Desktop app · Electron window."
   },
@@ -5077,8 +5093,14 @@
   {
    "id": "D298",
    "title": "Tier 4 does not depend on the folder; the tool profile is split into sutra and github",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "CN-7",
+    "CT-1",
+    "E0",
+    "GAP-W1",
+    "ORCH-1"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"tier 4 independent of folder; sutra / github split\", key only."
   },
@@ -5152,8 +5174,10 @@
   {
    "id": "D306",
    "title": "The node plan: scope and needs come from a separate small planner call",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"node plan: scope and needs from stage D\", key only."
   },
@@ -5228,6 +5252,78 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"app closed: fresh attempt, retry not spent, cap 2\", key only."
+  },
+  {
+   "id": "D315",
+   "title": "A no to a gate is as wide as the question",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"a no is as wide as its question\", key only."
+  },
+  {
+   "id": "D316",
+   "title": "MAN-8 as built, accepted",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"MAN-8 as built: plan in caps_json, route shape\", key only."
+  },
+  {
+   "id": "D317",
+   "title": "The approval card is a message of the org chat",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"approval card in the chat, before phase 4\", key only."
+  },
+  {
+   "id": "D318",
+   "title": "The numbers of the plan gate: 400 and 1000",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"confirm 400, project_credits 1000\", key only."
+  },
+  {
+   "id": "D319",
+   "title": "Decide for me as built, and what it must also do",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Decide for me: also the owner's own switch\", key only."
+  },
+  {
+   "id": "D320",
+   "title": "Budgets as built: a slice is final",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"slice is final; ceiling per attempt\", key only."
+  },
+  {
+   "id": "D321",
+   "title": "Caps and the automatic triggers as built",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"cap hit = failed; wall time from first start\", key only."
+  },
+  {
+   "id": "D322",
+   "title": "System permissions as built, accepted with changes",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"system probe as built; 45 s limit\", key only."
+  },
+  {
+   "id": "D323",
+   "title": "\"Runs alone\" is a promise only MAN-10 can keep",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"runs alone is MAN-10's promise\", key only."
   }
  ],
  "packages": [
