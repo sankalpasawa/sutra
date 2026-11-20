@@ -41,6 +41,7 @@ def test_a_node_silent_past_its_lease_gets_the_ladder_and_one_retry_and_its_depe
     assert rig.t.status(tasks["a2"]) == "blocked"
     actions = [r["action"] for r in rig.audit()]
     assert {"node.heartbeat_lost", "node.expired", "node.retry"} <= set(actions)
+    assert [r["reason"] for r in rig.audit("node.expired")] == ["it went quiet"]                                       # N-8: the owner reads it on the page: no "lease"
 
 
 def test_the_retry_runs_and_the_project_goes_on_as_if_nothing_happened(rig):

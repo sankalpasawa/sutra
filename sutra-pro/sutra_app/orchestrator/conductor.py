@@ -809,7 +809,7 @@ class Conductor:
                         tx.conn.execute("UPDATE agent_nodes SET state = 'expired' WHERE id = ?", (node["id"],))
                         self.store.audit(tx, actor="conductor", action="node.heartbeat_lost", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a",
                                          reason=f"silent for {silent} s (lease {lease_s} s)")
-                        self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="lease lost")
+                        self.store.audit(tx, actor="conductor", action="node.expired", project_id=project["id"], node_id=node["id"], role=node["role"], decision="n/a", reason="it went quiet")
                         expire.append(node["task_id"])
         return {"expire": expire, "scrub": scrub, "refuse": refuse, "extended": extended, "lease": lease_default}
 

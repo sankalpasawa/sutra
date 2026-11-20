@@ -45,6 +45,7 @@ def test_only_the_steps_the_permission_affects_wait_and_the_others_run(rig):
     started = rig.start()
     assert started == [tasks["a2"]] and "Waiting for your answer" in rig.detail(tasks["a1"])
     assert [r["action"] for r in rig.audit("system.asked")] == ["system.asked"]
+    assert rig.audit("system.asked")[0]["reason"] == "Desktop"                                                          # N-8: the folder's name, not the machine item id
 
 
 def test_a_plan_whose_steps_only_read_asks_the_read_question_not_the_write_one_and_a_free_computer_asks_nothing(rig):
