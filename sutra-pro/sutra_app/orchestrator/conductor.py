@@ -75,6 +75,7 @@ class Conductor:
         self._ticker: Any = None
         self._stop_tasks: list[str] = []                                           # tasks of nodes that were failed closed and are still alive: the next tick stops them (M3)
         self._prepared: dict[str, tuple[tuple[int, int, int], Accepted | None, str]] = {}      # task id -> (the hand-off file's stamp, what was accepted or why not): made outside any transaction (MJ5)
+        self._resolved_seen: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}      # (folder, scope) -> (when, scope with its links followed): `warm_scopes`
         self._folder_seen: tuple[Any, float, Any] | None = None                    # (the lookup, when it was read, the folder): see `_folder`
         self._owed_tools: list[tuple[str, str, str, str, str]] = []               # (node, project, role, task, run) whose tool log was not read ahead: written as audit rows by the next tick, outside any transaction (PB-16)
         self._tools: dict[str, tuple[tuple[int, int, int], list[dict[str, Any]]]] = {}         # task id -> (the tool log's stamp, its lines): read before the transaction, written as audit rows at the node's end (MAN-14)
@@ -200,13 +201,40 @@ class Conductor:
             for entry in scope:
                 real = os.path.realpath(os.path.join(root, *entry.rstrip("/").split("/")))
                 rel = os.path.relpath(real, root).replace("\\", "/")
-                if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+                if rel == ".." or rel.startswith("../") or os.path.isabs(rel) or rel == ".":         # a link out of the folder, or one that points at the folder itself: the whole folder
                     return ()
                 if rel != "." and rel != entry.rstrip("/"):
                     found.append(rel + ("/" if entry.endswith("/") else ""))
             return tuple(dict.fromkeys(found))
-        except (OSError, ValueError):
+        except ValueError:                                                      # Windows: a link to another drive has no path relative to the folder: it leaves the folder (N-6)
+            return ()
+        except OSError:
             return scope
+
+    def _resolved_for(self, folder: Any, scope: tuple[str, ...]) -> tuple[str, ...]:
+        """`_resolved`, from what `warm_scopes` looked up a moment ago (outside any transaction) when it is there, else looked up now. The stat calls of a link check belong before the start
+        transaction (N-6, PB-16); the cache lives `FOLDER_TTL_S` seconds."""
+        found = self._resolved_seen.get((str(folder), scope))
+        if found is not None and time.monotonic() - found[0] < FOLDER_TTL_S:
+            return found[1]
+        return self._resolved(folder, scope)
+
+    def warm_scopes(self) -> None:
+        """Called by the scheduler BEFORE it opens the start transaction (`TaskService.before_prepare`): the links of every unfinished step's scope are followed here, so the gate and the scope check
+        inside the transaction only read the answer. Never raises."""
+        try:
+            folder = self._folder()
+            if not folder:
+                return
+            fresh: dict[tuple[str, tuple[str, ...]], tuple[float, tuple[str, ...]]] = {}
+            now = time.monotonic()
+            for row in self.db.conn().execute("SELECT writes_json FROM agent_nodes WHERE role = 'worker' AND state NOT IN ('done','failed','cancelled')").fetchall():
+                scope = tuple(json.loads(row["writes_json"] or "[]"))
+                if scope:
+                    fresh[(str(folder), scope)] = (now, self._resolved(folder, scope))
+            self._resolved_seen = fresh
+        except Exception:                                                       # noqa: BLE001
+            log.exception("could not look at the links of the steps' scopes ahead of time")
 
     def _lease_conflict(self, conn: sqlite3.Connection, node_id: str) -> str:
         """A waiting sentence when another writer that is alive holds a part of the folder that overlaps this node's, else "". The leases are the rows of `agent_nodes` (their `writes_json`), so they
@@ -217,11 +245,11 @@ class Conductor:
             return ""
         folder = self._folder()
         serial = bool(folder) and not (Path(folder) / ".git").exists()           # one stat, no read
-        mine = self._resolved(folder, mine)
+        mine = self._resolved_for(folder, mine)
         for other in conn.execute("SELECT id, project_id, plan_ref, grants_json, writes_json FROM agent_nodes WHERE id <> ? AND state IN ('leased','running','handing_off','expired')", (node_id,)).fetchall():
             theirs = self._lease_of(conn, other)
             if theirs is not None:
-                theirs = self._resolved(folder, theirs)
+                theirs = self._resolved_for(folder, theirs)
             if theirs is not None and (serial or scopes_overlap(mine, theirs)):
                 return "Waiting: another step is changing the same part of your folder" if not serial else "Waiting: another step is changing your folder (it is not a git folder, so steps change it one at a time)"
         return ""
@@ -506,7 +534,7 @@ class Conductor:
             return []
         folder = self._folder()
         if mine is not None and self._ran_alone(tx, node, task_id):
-            own = self._resolved(folder, mine)
+            own = self._resolved_for(folder, mine)
             if not own:                                                         # a link that leads out of the folder: the scope cannot be said
                 self._unchecked(tx, node, task_id, "one of this step's paths leads out of your folder, so what it changed could not be checked")
                 return []
@@ -515,7 +543,7 @@ class Conductor:
         for row in tx.conn.execute("SELECT plan_ref, grants_json, writes_json, project_id FROM agent_nodes WHERE project_id = ? AND role = 'worker'", (node["project_id"],)).fetchall():
             lease = self._lease_of(tx.conn, row)
             if lease is not None:
-                owned.append(self._resolved(folder, lease))
+                owned.append(self._resolved_for(folder, lease))
         if any(not scope for scope in owned):                                   # a writer that owns the whole folder: nothing can be said to be outside
             if mine is not None:
                 self._unchecked(tx, node, task_id, "another step may change the whole folder, so one step's files cannot be told from another's")
