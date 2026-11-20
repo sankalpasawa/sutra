@@ -124,3 +124,12 @@ def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(j2, make_run_dir)
 def test_a_run_without_a_node_is_not_metered(j2, make_run_dir):
     plain = make_run_dir(user_text=BREW_LAB, settings=QUIET)
     assert Running(plain, "--mock").wait() == 0 and "reached its" not in ended_of(plain)["outcome"]
+
+
+def test_the_host_marks_a_refusal_of_the_computer_with_the_word_the_orchestrator_reads():
+    from sutra_app.engine.host.loop import NEEDS_PERMISSION, permission_outcome
+    assert permission_outcome(PermissionError(1, "Operation not permitted", "/x")).startswith(NEEDS_PERMISSION + ": PermissionError")
+    assert permission_outcome("[Errno 13] Permission denied: '/Users/x/Desktop/a'").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("[WinError 5] Access is denied: 'C:\\\\work'").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("Crashed: PermissionError: [Errno 1] x").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("the model said permission denied") is None and permission_outcome(ValueError("x")) is None and permission_outcome("[Errno 2] No such file") is None

@@ -26,7 +26,6 @@ __all__ = ["Need", "Adapter", "MacAdapter", "WindowsAdapter", "NoAdapter", "adap
 
 ITEMS = ("files_folders", "full_disk", "controlled_folder", "elevated", "long_paths", "unknown")
 _PROTECTED_MAC = ("Desktop", "Documents", "Downloads")        # the folders macOS asks about (Files & Folders)
-_PERMISSION_WORDS = ("operation not permitted", "winerror 5", "access is denied", "eperm", "permission denied", "[errno 1]", "[errno 13]")
 
 
 @dataclass(frozen=True)
@@ -46,14 +45,17 @@ class Adapter(Protocol):
     def open_settings(self, need: Need) -> bool: ...
 
 
+NEEDS_PERMISSION = "needs_system_permission"     # the outcome prefix the engine host writes when the computer refused a file (engine/host/loop.py `permission_outcome`)
+
+
 def is_permission_failure(error: BaseException | str) -> bool:
-    """True for a refusal of the computer (EPERM, WinError 5, "Operation not permitted", "Access is denied"): a node that ends with one of these needs a permission, it did not fail."""
+    """True for a refusal of the computer: a real PermissionError (or an OSError with EPERM or EACCES), or an outcome that STARTS with the word the engine host writes for one. The words of a node
+    are never matched: a hand-off or a model that says "permission denied" is not a permission need (m5)."""
     if isinstance(error, PermissionError):
         return True
-    if isinstance(error, OSError) and error.errno in (errno.EPERM, errno.EACCES):
-        return True
-    text = str(error).lower()
-    return any(word in text for word in _PERMISSION_WORDS)
+    if isinstance(error, OSError):
+        return error.errno in (errno.EPERM, errno.EACCES)
+    return isinstance(error, str) and error.startswith(NEEDS_PERMISSION)
 
 
 def _can_list(folder: Path) -> bool:

@@ -19,7 +19,7 @@ def running(rig):
     return reservation, tasks
 
 
-@pytest.mark.parametrize("outcome", ["EPERM: operation not permitted, open '/Users/x/Desktop/site/index.html'", "PermissionError: [WinError 5] Access is denied: 'C:\\\\work\\\\a.txt'"])
+@pytest.mark.parametrize("outcome", ["needs_system_permission: [Errno 1] Operation not permitted: '/Users/x/Desktop/site/index.html'", "needs_system_permission: PermissionError"])
 def test_a_node_that_ends_on_a_refusal_of_the_computer_needs_a_permission_and_is_not_retried(rig, outcome):
     reservation, tasks = running(rig)
     rig.finish(tasks["a1"], status="crashed", outcome=outcome, handoff=False)
@@ -33,8 +33,8 @@ def test_a_node_that_ends_on_a_refusal_of_the_computer_needs_a_permission_and_is
 
 def test_a_second_refusal_in_the_same_project_raises_no_second_card(rig):
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
-    rig.finish(tasks["a2"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
+    rig.finish(tasks["a2"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     assert len([a for a in rig.store.approvals(reservation.project_id) if a.request.get("kind") == "system"]) == 1
     assert len(rig.audit("system.late_denied")) == 2 and len(rig.audit("system.asked")) == 1
     assert rig.sql("SELECT state FROM agent_nodes WHERE plan_ref = 'a3'").fetchone()[0] == "running"       # the step that was not refused goes on
@@ -57,7 +57,7 @@ def test_check_again_on_a_late_card_really_probes_and_stays_open_while_the_folde
     rig.projects._folder_of = lambda: str(tmp_path)
     rig.projects._adapter = adapter = Blocked(home=tmp_path)
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     snapshot = rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
     assert len(snapshot["system_cards"]) == 1 and [r["action"] for r in rig.audit("system.still_needed")] == ["system.still_needed"]
     adapter.blocked = False
@@ -83,7 +83,7 @@ def blocked_then_allowed(rig, tmp_path):
 def test_after_the_late_card_clears_the_failed_step_gets_one_fresh_attempt_that_does_not_spend_its_retry(rig, tmp_path):
     adapter = blocked_then_allowed(rig, tmp_path)
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     adapter.blocked = False
     rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
     node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
@@ -97,7 +97,7 @@ def test_after_the_late_card_clears_the_failed_step_gets_one_fresh_attempt_that_
 def test_the_late_restart_happens_once_for_each_node(rig, tmp_path):
     adapter = blocked_then_allowed(rig, tmp_path)
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     adapter.blocked = False
     rig.t.run(rig.projects.system_check(reservation.project_id, "unknown"))
     with rig.t.db.tx() as tx:
@@ -106,7 +106,7 @@ def test_the_late_restart_happens_once_for_each_node(rig, tmp_path):
 
 def test_a_late_card_that_runs_out_or_meets_a_sleep_does_not_stop_the_healthy_steps(rig):
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     rig.sql("UPDATE tasks SET last_event_at = ?", BASE_NOW + 5)
     rig.t.run(rig.projects.tick(now=BASE_NOW + 10))
     done = rig.t.run(rig.projects.tick(now=BASE_NOW + 5000))                                                        # a sleep with the late card open
@@ -121,7 +121,7 @@ def test_a_late_card_that_runs_out_or_meets_a_sleep_does_not_stop_the_healthy_st
 def test_the_generic_answer_route_refuses_a_permission_question_and_points_to_check_and_skip(rig, tmp_path):
     from sutra_app.orchestrator.errors import AppError
     reservation, tasks = running(rig)
-    rig.finish(tasks["a1"], status="crashed", outcome="EPERM: operation not permitted", handoff=False)
+    rig.finish(tasks["a1"], status="crashed", outcome="needs_system_permission: PermissionError", handoff=False)
     [asked] = [a for a in rig.store.approvals(reservation.project_id, status="open")]
     with pytest.raises(AppError) as error:
         rig.t.run(rig.projects.answer(reservation.project_id, asked.id, "allow_once"))
@@ -129,3 +129,9 @@ def test_the_generic_answer_route_refuses_a_permission_question_and_points_to_ch
 
 
 BASE_NOW = 1793786400
+
+
+def test_words_of_a_node_that_sound_like_a_refusal_are_not_a_permission_need(rig):
+    reservation, tasks = running(rig)
+    rig.finish(tasks["a1"], status="crashed", outcome="the model wrote: permission denied, EPERM, Access is denied", handoff=False)
+    assert rig.audit("system.late_denied") == [] and rig.sql("SELECT attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 2        # an ordinary crash: retried

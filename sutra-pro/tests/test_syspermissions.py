@@ -104,9 +104,10 @@ def test_the_probe_alone_never_opens_a_settings_page_or_changes_anything(tmp_pat
     assert adapter.probe(home / "Desktop" / "site", write=True) == []
 
 
-@pytest.mark.parametrize("failure,expected", [(PermissionError(1, "x"), True), (OSError(errno.EPERM, "x"), True), (OSError(errno.EACCES, "x"), True), ("WinError 5: Access is denied", True),
-                                              ("EPERM: operation not permitted, open '/Users/x/Desktop/a'", True), ("the model said no", False), (ValueError("bad"), False), ("", False)])
-def test_a_refusal_of_the_computer_is_told_from_any_other_failure(failure, expected):
+@pytest.mark.parametrize("failure,expected", [(PermissionError(1, "x"), True), (OSError(errno.EPERM, "x"), True), (OSError(errno.EACCES, "x"), True), ("needs_system_permission: [Errno 1] x", True),
+                                              ("WinError 5: Access is denied", False), ("EPERM: operation not permitted, open '/Users/x'", False), ("the model said no", False), (ValueError("bad"), False), ("", False),
+                                              ("a node wrote: needs_system_permission", False), (OSError(2, "gone"), False)])
+def test_a_refusal_of_the_computer_is_told_from_any_other_failure_by_the_word_the_host_writes(failure, expected):
     assert is_permission_failure(failure) is expected
 
 

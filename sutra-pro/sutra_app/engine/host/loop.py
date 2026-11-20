@@ -77,6 +77,21 @@ class StartFailed(Exception):
         self.reason, self.exit_code, self.chat = reason, exit_code, chat
 
 
+NEEDS_PERMISSION = "needs_system_permission"          # the outcome prefix of a run the computer refused a file to (MAN-15): written by the host, read by the orchestrator, nothing a node writes
+_OS_REFUSAL = re.compile(r"^(?:Crashed: )?(?:\[(?:Errno (?:1|13)|WinError 5)\]|(?:PermissionError)\b)")      # the start of the text of a Python OSError that the system refused
+
+
+def permission_outcome(exc_or_text: Any) -> Optional[str]:
+    """`needs_system_permission: ...` when `exc_or_text` is a refusal of the computer: a PermissionError (or an OSError with EPERM, EACCES, WinError 5), or the text a Python OSError of that kind makes
+    (J2 keeps only the text of the error that crashed a run). None otherwise. Only this prefix is read as a permission need: the words of a node are never matched (m5)."""
+    import errno
+    if isinstance(exc_or_text, PermissionError) or (isinstance(exc_or_text, OSError) and (exc_or_text.errno in (errno.EPERM, errno.EACCES) or getattr(exc_or_text, "winerror", None) == 5)):
+        return f"{NEEDS_PERMISSION}: {type(exc_or_text).__name__}"
+    if isinstance(exc_or_text, str) and _OS_REFUSAL.match(exc_or_text.strip()):
+        return f"{NEEDS_PERMISSION}: {clip(exc_or_text.strip(), 300)}"
+    return None
+
+
 def outcome_status(outcome: Optional[str]) -> str:
     """The `run.ended` status of a run that is over, by the rule of J2's `_write_summary`."""
     text = outcome or ""
@@ -181,7 +196,8 @@ class Host:
         _stderr("engine host: internal error\n" + "".join(traceback.format_exception(exc)))
         if self.run is not None:
             self.stopping.set()
-        self._emit_ended("crashed", clip(f"Crashed: {type(exc).__name__}: {exc}", 2000), "internal")
+        said = permission_outcome(exc)
+        self._emit_ended("crashed", clip(f"{said}. " if said else "", 100) + clip(f"Crashed: {type(exc).__name__}: {exc}", 1900), "internal")
         return EXIT_INTERNAL
 
     def _emit_ended(self, status: str, outcome: str, code: Optional[str]) -> None:
@@ -771,9 +787,13 @@ class Host:
         run = self.run
         status = outcome_status(run.outcome)
         code = None
+        outcome = run.outcome or ""
         if status == "crashed":
             code = getattr(self.hooks, "error_code", None) or "internal"
-        self._conclude(status, run.outcome or "", code)
+            said = permission_outcome(getattr(run, "error", None) or outcome)       # the computer refused a file: the outcome starts with the word the orchestrator reads (MAN-15)
+            if said and not outcome.startswith(NEEDS_PERMISSION):
+                outcome = f"{said}. {outcome}"
+        self._conclude(status, outcome, code)
         return EXIT_OK
 
     def _stop_run(self, outcome: str, exit_code: int) -> int:
