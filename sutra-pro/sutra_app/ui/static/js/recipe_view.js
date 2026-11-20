@@ -20,7 +20,7 @@
   function listHtml(recipes) {
     const list = arr(recipes).filter(r => isObj(r) && ID.test(clean(r.id)));
     const row = r => '<li data-id="' + esc(clean(r.id)) + '"><div class="rtop"><span class="rkind">' + (r.kind === "starter" ? "Starter" : "Recipe") + '</span><b>' + esc(clean(r.title)) + "</b>" +
-      '<span class="cnote">' + (r.kind === "starter" ? "ships with Sutra, read only" : r.version > 1 ? "version " + esc(r.version) : "") + "</span></div>" +
+      '<span class="cnote">' + (r.kind === "starter" ? "ships with Sutra, cannot be changed" : r.version > 1 ? "version " + esc(r.version) : "") + "</span></div>" +
       (clean(r.overview) ? '<span class="cnote">' + esc(clean(r.overview)) + "</span>" : "") +
       '<span class="rbtns"><button type="button" data-act="open" data-id="' + esc(clean(r.id)) + '">Open</button></span></li>';
     const own = list.filter(r => r.kind !== "starter"), starters = list.filter(r => r.kind === "starter");
@@ -68,6 +68,7 @@
         '<p class="cnote">This recipe asks you for nothing.</p>') +
       (s.error ? '<p class="cerr" role="alert">' + esc(clean(s.error)) + "</p>" : "") +
       '<p class="cnote">Starting writes a request in plain words and sends it to Sutra. Sutra plans it and asks you what it needs to ask, like any request.</p>' +
+      '<p class="cnote">What a recipe says, "Never do these" included, is told to Sutra as words. It is not a lock: the access you gave Sutra to your folder is the lock.</p>' +
       '<div class="rbtns"><button type="submit" class="rgo">Start</button><button type="button" data-act="start-cancel">Cancel</button></div></form>';
   }
 

@@ -28,7 +28,7 @@ from sutra_app.library.practice import clean_text
 from sutra_app.orchestrator.db import Database
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import iso_z
-from sutra_app.orchestrator.owner_words import refusal
+from sutra_app.orchestrator.owner_words import hidden_text_refusal, refusal
 from sutra_app.orchestrator.recipes_starter import STARTERS
 
 __all__ = ["RecipeService", "clean_body", "parse_markdown", "to_markdown", "TITLE_MAX", "LINE_MAX", "OVERVIEW_MAX", "REQUEST_MAX", "SECTION_LIMITS"]
@@ -40,7 +40,7 @@ BLANK_MAX = 9
 BLANK_VALUE_MAX = 300
 REQUEST_MAX = 7900                       # a chat line holds 8000 characters
 SECTION_LIMITS = {"procedure": 30, "specifications": 20, "advice": 20, "forbidden": 20}
-_BLANK = re.compile(r"\$([1-9])")
+_BLANK = re.compile(r"\$(\$|[1-9])")             # `$1` to `$9` are blanks; `$$` is one dollar sign (so "under $$5" can be written)
 _ID = re.compile(r"^rcp_[0-9a-f]{12}$")
 _STARTER = re.compile(r"^starter-[a-z0-9-]{1,60}$")
 
@@ -48,6 +48,9 @@ _STARTER = re.compile(r"^starter-[a-z0-9-]{1,60}$")
 def _line(text: Any, limit: int, redact: Callable[[str], str] | None, what: str) -> str:
     if not isinstance(text, str):
         raise AppError("validation", f"{what} is text")
+    hidden = hidden_text_refusal(text)                                  # on what was typed or pasted, before white space is tidied (DV-3 review 4)
+    if hidden is not None:
+        raise AppError("validation", f"{what}: {hidden}")
     line = clean_text(text)
     why = refusal(line, redact, limit=limit)
     if why is not None:
@@ -80,9 +83,29 @@ def clean_body(raw: Any, redact: Callable[[str], str] | None = None) -> dict[str
         raise AppError("validation", "A recipe needs at least one step in its procedure")
     for text in [body["overview"], *body["procedure"], *body["specifications"], *body["advice"], *body["forbidden"]]:
         for number in _BLANK.findall(text):
-            if int(number) > len(body["needs"]):
-                raise AppError("validation", f"${number} stands for something the recipe asks you for, but it asks for only {len(body['needs'])}")
+            if number != "$" and int(number) > len(body["needs"]):
+                raise AppError("validation", f"${number} stands for something the recipe asks you for, but it asks for only {len(body['needs'])}. To write a dollar sign, write $$")
     return body
+
+
+def _compose(title: str, body: dict[str, Any], values: list[str]) -> str:
+    """The request a recipe becomes, with `values` for the blanks (`$$` is one dollar sign)."""
+    def fill(text: str) -> str:
+        return _BLANK.sub(lambda m: "$" if m.group(1) == "$" else values[int(m.group(1)) - 1], text)
+    parts = [f"Use my recipe “{title}”. {fill(body['overview'])}".strip(), "Do these steps in order:"]
+    parts += [f"{i}. {fill(line)}" for i, line in enumerate(body["procedure"], 1)]
+    for part, head in (("specifications", "The result must be like this:"), ("advice", "Good to know:"), ("forbidden", "Never do these:")):
+        if body[part]:
+            parts.append(head)
+            parts += [f"- {fill(line)}" for line in body[part]]
+    return "\n".join(parts)
+
+
+def check_startable(title: str, body: dict[str, Any]) -> None:
+    """A recipe that could never be started is refused when it is saved: with every blank answered at its longest the request must still fit (REQUEST_MAX), or Start would fail for ever."""
+    longest = len(_compose(title, body, ["x" * BLANK_VALUE_MAX] * len(body["needs"])))
+    if longest > REQUEST_MAX:
+        raise AppError("validation", f"This recipe is too long to start: with its answers the request could be {longest:,} characters and the most is {REQUEST_MAX:,}. Shorten it or ask for shorter answers")
 
 
 def clean_title(raw: Any, redact: Callable[[str], str] | None = None) -> str:
@@ -144,9 +167,10 @@ class RecipeService:
         return {"id": recipe_id, "title": found["title"], "kind": "starter", "status": "active", "version": 1, "body": found["body"], "versions": [], "updated_at": None}
 
     def list(self, *, archived: bool = False) -> list[dict[str, Any]]:
-        """The owner's recipes (newest change first) then the starters. `archived` lists the archived ones instead of the active ones; starters are always active."""
-        rows = self.db.conn().execute("SELECT * FROM recipes WHERE status = ? ORDER BY updated_at DESC, id", ("archived" if archived else "active",)).fetchall()
-        own = [{"id": r["id"], "title": r["title"], "kind": "own", "status": r["status"], "version": r["current_version"], "overview": self._body(r["id"], r["current_version"]).get("overview", ""),
+        """The owner's recipes (newest change first) then the starters. `archived` lists the archived ones instead of the active ones; starters are always active. One query, the current body joined in."""
+        rows = self.db.conn().execute("SELECT r.id, r.title, r.status, r.current_version, r.updated_at, v.body_json FROM recipes r JOIN recipe_versions v ON v.recipe_id = r.id AND v.version = r.current_version "
+                                      "WHERE r.status = ? ORDER BY r.updated_at DESC, r.id", ("archived" if archived else "active",)).fetchall()
+        own = [{"id": r["id"], "title": r["title"], "kind": "own", "status": r["status"], "version": r["current_version"], "overview": json.loads(r["body_json"]).get("overview", ""),
                 "updated_at": iso_z(r["updated_at"])} for r in rows]
         starters = [] if archived else [{"id": k, "title": v["title"], "kind": "starter", "status": "active", "version": 1, "overview": v["body"]["overview"], "updated_at": None} for k, v in STARTERS.items()]
         return own + starters
@@ -176,6 +200,7 @@ class RecipeService:
 
     def create(self, title: Any, body: Any, note: str = "") -> dict[str, Any]:
         title, body = clean_title(title, self.redact), clean_body(body, self.redact)
+        check_startable(title, body)
         recipe_id = f"rcp_{secrets.token_hex(6)}"
         with self.db.tx() as tx:
             now = tx.now()
@@ -196,9 +221,10 @@ class RecipeService:
         body = clean_body(body, self.redact)
         title = clean_title(title, self.redact) if title is not None else None
         with self.db.tx() as tx:
-            row = tx.conn.execute("SELECT current_version FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
+            row = tx.conn.execute("SELECT current_version, title FROM recipes WHERE id = ?", (recipe_id,)).fetchone()
             if row is None:
                 raise NotFound("that recipe")
+            check_startable(title if title is not None else row["title"], body)
             version = int(row["current_version"]) + 1
             now = tx.now()
             self._version(tx, recipe_id, version, body, clean_text(note)[:120] or "changed", now)
@@ -250,15 +276,7 @@ class RecipeService:
             raise AppError("validation", f"This recipe asks you for {len(body['needs'])} thing{'s' if len(body['needs']) != 1 else ''}")
         values = [_line(v, BLANK_VALUE_MAX, self.redact, f"“{n['label'][:40]}”") for v, n in zip(blanks, body["needs"])]
 
-        def fill(text: str) -> str:
-            return _BLANK.sub(lambda m: values[int(m.group(1)) - 1], text)
-        parts = [f"Use my recipe “{found['title']}”. {fill(body['overview'])}".strip(), "Do these steps in order:"]
-        parts += [f"{i}. {fill(line)}" for i, line in enumerate(body["procedure"], 1)]
-        for part, head in (("specifications", "The result must be like this:"), ("advice", "Good to know:"), ("forbidden", "Never do these:")):
-            if body[part]:
-                parts.append(head)
-                parts += [f"- {fill(line)}" for line in body[part]]
-        text = "\n".join(parts)
+        text = _compose(found["title"], body, values)
         if len(text) > REQUEST_MAX:
             raise AppError("validation", "With those answers the request is too long. Shorten the recipe or the answers")
         return found["title"], text

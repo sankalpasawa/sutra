@@ -15,7 +15,7 @@ const starter = (over = {}) => Object.assign({id: "starter-explain-this-folder",
 
 test("the list has the owner's recipes first and the starters apart, each with Open", () => {
   const html = View.listHtml([own(), starter()]);
-  assert.match(html, /<h2>Recipes<\/h2>[\s\S]*aria-label="Your recipes"[\s\S]*<b>Menu<\/b>[\s\S]*<h2>Starters<\/h2>[\s\S]*ships with Sutra, read only/);
+  assert.match(html, /<h2>Recipes<\/h2>[\s\S]*aria-label="Your recipes"[\s\S]*<b>Menu<\/b>[\s\S]*<h2>Starters<\/h2>[\s\S]*ships with Sutra, cannot be changed/);
   assert.equal((html.match(/data-act="open"/g) || []).length, 2);
   assert.match(html, /data-act="new">New recipe</);
   assert.match(html, /Read a recipe file/);
@@ -88,4 +88,10 @@ test("everything from the wire is escaped and the page uses no jargon", () => {
   assert.equal(html.includes("<img"), false);
   const words = (View.listHtml([own(), starter()]) + View.detailHtml(own(), {}) + View.startHtml(own(), {}) + View.editHtml(own(), {}) + View.importHtml({})).replace(/<[^>]*>/g, " ");
   assert.equal(/\b(playbook|cron|node|nodes|lease|tier|grant|ledger|acu|api)\b/i.test(words), false, words);
+});
+
+test("the start form says that a recipe is words to the planner, not a lock", () => {                                       // architect ruling
+  const html = View.startHtml(own(), {});
+  assert.match(html, /It is not a lock: the access you gave Sutra to your folder is the lock\./);
+  assert.match(html, /"Never do these" included, is told to Sutra as words/);
 });

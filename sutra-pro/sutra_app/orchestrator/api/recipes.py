@@ -15,6 +15,7 @@
 Reads need no token; every write needs the launch token. Errors are the app's envelope.
 """
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -132,8 +133,10 @@ def build_router() -> APIRouter:
     async def export(request: Request, recipe_id: str) -> Response:
         service = _service(request)
         title, text = await run_blocking(lambda: service.export(recipe_id))
-        safe = "".join(ch if ch.isalnum() else "-" for ch in title.lower()).strip("-")[:60] or "recipe"
-        return Response(text, media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="{safe}.md"', "Cache-Control": "no-store"})
+        safe = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in title.lower())             # the plain name is ASCII only: a header holds nothing else
+        safe = "-".join(part for part in safe.split("-") if part)[:60] or "recipe"
+        named = quote(" ".join(title.split())[:80] + ".md", safe="")                                       # the real name, as RFC 5987 says it (any language)
+        return Response(text, media_type="text/markdown; charset=utf-8", headers={"Content-Disposition": f"attachment; filename=\"{safe}.md\"; filename*=UTF-8''{named}", "Cache-Control": "no-store"})
 
     @router.post("/api/recipes/{recipe_id}/start", summary="Start a recipe: it becomes a request, planned and asked as any request", dependencies=[Depends(require_token)])
     async def start(request: Request, recipe_id: str, body: StartIn) -> RedactedJSONResponse:
