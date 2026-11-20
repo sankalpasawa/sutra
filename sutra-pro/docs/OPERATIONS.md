@@ -68,7 +68,7 @@ and runs are the part that grows.
   agents/j2/                         engine-owned: the agent prompts a run reads
   connectors/policy.json             optional connector routing policy (the app ships a default)                 tiny
   connectors/slots/                  with SUTRA_NODES_SLOTS=1: one small empty file for each slot of each provider  tiny
-  nodes/tools/<run id>.jsonl         with SUTRA_NODES_V1=1: for each project step, its tool calls (names and kinds only), kept by the step's own host; a record, not a proof   at most about 200 KB each; `prune` does not remove them yet (F-3)
+  nodes/tools/<run id>.jsonl         with SUTRA_NODES_V1=1: for each project step, its tool calls (names and kinds only), kept by the step's own host; a record, not a proof   at most about 200 KB each; `prune` removes them with their run (D349)
   departments/<team>/
     department.json                  a readable mirror of the team; the database is the authority                 tiny
     engine.json                      optional per-team engine settings                                            tiny
