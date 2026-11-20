@@ -55,7 +55,7 @@ J2_FILES = (J2_PAGE, J2_RENDER, J2_LAYOUT, *(f"vendor/{name}" for name in J2_VEN
 
 # The modules the department page loads after its own script, in this order (E12); all under /ui/js/.
 MODULES = ("sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext")
+           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext")
 
 SANDBOX = "allow-scripts allow-forms allow-popups"      # the second layer behind the engine's sandbox header (S3-web-14)
 
@@ -243,25 +243,24 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E24e", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow',
          '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow', 1),
     Edit("E24f", 'const rtHref = (id, keys) => `/?view=simple&template=', 'const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=', 1),
-    # E25 (D251, D252): the start page's optional "Budget (work credits)", empty by default ("team default": the team's Settings budget, 100 if
-    # none is set); a typed number is sent with the first message as `budget` (the route makes it the task setting J2_BUDGET, within its limits),
-    # and a value that is not a whole number from 1 to 100000 stops the send and says so. No cap field.
+    # E25 (D257, amends D251 and D252): the start page's Budget chip (budget_chip.js) in dollars (API price): the team's own budget (GET
+    # /api/engine/settings?dept=, effective.usd_budget), drawn once that answers; half, double or a typed amount go with this request only as
+    # `usd_budget` (the route makes it the task setting J2_USD_BUDGET). Nothing is sent for the team default.
     Edit("E25a", '<div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit"',
-         '<div class="schips" id="schips"></div><label for="lbudget" style="display:flex;align-items:center;gap:6px;'
-         'font-size:13px;white-space:nowrap">Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" '
-         'max="100000" step="1" placeholder="team default" style="width:8em"></label><button class="sgo" id="lsend" type="submit"', 1),
-    Edit("E25b", "async function sendText(text){", "async function sendText(text, budget){", 1),
+         '<div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button class="sgo" id="lsend" type="submit"', 1),
+    Edit("E25b", "async function sendText(text){", "async function sendText(text, usdBudget){", 1),
     Edit("E25c", "body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})",
-         "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(budget ? {budget} : {})})", 1),
+         "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(usdBudget ? {usd_budget: usdBudget} : {})})", 1),
     Edit("E25d", '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; '
                  '$("lsend").disabled = true; sendText(t); });',
-         '// E25 (D251, D252): the Budget field: empty is the team default (undefined: no budget sent), else a whole number of work credits from 1\n'
-         '// to 100000 (the limits of the task setting J2_BUDGET); null stops the send\n'
-         'const lbudget = () => { const el = $("lbudget"); if (!el) return undefined; const v = String(el.value).trim(); if (v === ""){ el.setCustomValidity(""); return undefined; }\n'
-         '  const ok = /^[1-9][0-9]{0,5}$/.test(v) && +v <= 100000;\n'
-         '  el.setCustomValidity(ok ? "" : "Budget: a whole number of work credits from 1 to 100000, or empty for the team default"); if (!ok){ el.reportValidity(); return null; } return +v; };\n'
-         '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = lbudget(); if (b === null) return; '
-         '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); });', 1),
+         _lines(
+             "// E25 (D257): the Budget chip in dollars (API price); null is the team's own budget, so nothing is sent",
+             "let LCHIP = null;",
+             'document.addEventListener("DOMContentLoaded", () => { if (!window.BudgetChip || !$("lbudget")) return;',
+             '  SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept}).then(s => { const v = s && s.effective && s.effective.usd_budget;',
+             '    if (Number.isFinite(v)) LCHIP = BudgetChip.mount($("lbudget"), v, "team"); }).catch(() => {}); });',
+             '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = LCHIP ? LCHIP.value() : null; '
+             '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); if (LCHIP) LCHIP.reset(); });'), 1),
     # E26 (D254): the studio's send button is Stop while the team's run is live: always while it works (the box is disabled), and while it waits
     # for an answer until the owner types. Stop asks first, then calls the existing stop ladder (POST /api/tasks/{id}/stop, no force).
     Edit("E26a", '<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '

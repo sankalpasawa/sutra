@@ -36,7 +36,7 @@ _spec.loader.exec_module(port)
 
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
+           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext"]
 # The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
 # here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
 J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates", "run-template",
@@ -156,14 +156,13 @@ CASES = {
     "E24e": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow", 1)],
              ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow"]),
     "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
-    # E25 (D251): the start page's Budget (work credits), 100 by default, sent with the first message as `budget`
-    "E25a": ([('<div class="schips" id="schips"></div><label for="lbudget"', 1),
-              ('Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default"', 1)],
-             ['<div class="schips" id="schips"></div><button']),
-    "E25b": ([("async function sendText(text, budget){", 1)], ["async function sendText(text){"]),
-    "E25c": ([("...(budget ? {budget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
-    "E25d": ([("const b = lbudget(); if (b === null) return; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); });", 1),
-              ("const lbudget = () => {", 1)], ['$("lsend").disabled = true; sendText(t); });']),
+    # E25 (D257): the start page's Budget chip in dollars (API price), sent with the next request only as `usd_budget`
+    "E25a": ([('<div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button', 1)],
+             ['<div class="schips" id="schips"></div><button', "work credits) <input"]),
+    "E25b": ([("async function sendText(text, usdBudget){", 1)], ["async function sendText(text){"]),
+    "E25c": ([("...(usdBudget ? {usd_budget: usdBudget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
+    "E25d": ([("const b = LCHIP ? LCHIP.value() : null; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); if (LCHIP) LCHIP.reset(); });", 1),
+              ('SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})', 1)], ['$("lsend").disabled = true; sendText(t); });', "const lbudget"]),
     # E26 (D254): Stop on the studio's send button while the run is live, after a confirm, through the existing stop ladder
     "E26a": ([('<svg data-icon="send" width="15" height="15"', 1), ('<svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none">', 1)],
              ['<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15"']),
@@ -203,9 +202,11 @@ def test_there_are_forty_seven_edits_and_every_one_has_a_case_here():
 
 def test_the_retired_edits_left_nothing_behind():
     # E14 to E18 (Run settings: J2's own is native now) and E19a to E19c (the start select, OUTS and /api/output moved to a module)
-    for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", "/api/engine/settings", 'id="stitle"', 'id="sotype"',
+    for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", 'id="stitle"', 'id="sotype"',
                  "run-settings.css", "/api/output"):
         assert gone not in PAGE, gone
+    assert PAGE.count("/api/engine/settings") == 1 and 'SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})' in PAGE, \
+        "only E25's Budget chip reads the settings now (D257); the retired output select read them too"
     assert 'id="runlist"' in PAGE and 'id="runq"' in PAGE and 'class="rsec"' in PAGE            # J2's own Run settings is there instead
     assert not (UI / "static" / "css" / "run-settings.css").exists()
 

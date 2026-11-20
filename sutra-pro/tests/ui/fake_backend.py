@@ -1658,8 +1658,11 @@ def frame(event: str, data: Any, event_id: int | None) -> str:
 
 
 def _check_post(body: Any) -> list[dict]:
-    if not isinstance(body, dict) or set(body) - {"text", "choice", "budget"}:
-        return [violation("", "bad_body", "the body is {text, choice?, budget?}")]
+    if not isinstance(body, dict) or set(body) - {"text", "choice", "budget", "usd_budget"}:
+        return [violation("", "bad_body", "the body is {text, choice?, budget?, usd_budget?}")]
+    usd = body.get("usd_budget")      # D257: the Budget chip's dollars, as ChatPost takes them
+    if usd is not None and (isinstance(usd, bool) or not isinstance(usd, (int, float)) or not 1 <= usd <= 10_000 or round(usd, 2) != usd):
+        return [violation("usd_budget", "bad_usd_budget", "usd_budget must be dollars from 1 to 10000")]
     budget = body.get("budget")      # D252: the home box's Budget, as ChatPost takes it
     if budget is not None and (isinstance(budget, bool) or not isinstance(budget, int) or not 1 <= budget <= 100000):
         return [violation("budget", "bad_budget", "budget must be a whole number from 1 to 100000")]

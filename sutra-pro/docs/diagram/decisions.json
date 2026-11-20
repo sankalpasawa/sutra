@@ -1273,5 +1273,10 @@
   "id": "D256",
   "label": "P26 dollar mode: credits follow dollars, only the dollar limit asks",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D257",
+  "label": "Budget chip in dollars (API price); Settings in dollars; raise input on both cards",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

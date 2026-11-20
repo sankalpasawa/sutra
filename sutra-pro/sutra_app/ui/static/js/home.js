@@ -593,7 +593,7 @@
     renderChat();
     renderComposer();
     try {
-      const budget = isObj(opts) && Number.isInteger(opts.budget) ? {budget: opts.budget} : {};      // D252: the home box's Budget, a new request only
+      const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D257: the Budget chip's dollars, a new request only
       const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
@@ -876,23 +876,31 @@
     return true;
   }
 
+  // D257: the Budget chip beside Go, drawn once the team default is known (GET /api/engine/settings, effective.usd_budget); without it no
+  // budget is sent and the team's own applies
+  async function mountChip() {
+    const el = $("fdbudget");
+    if (!el || !root.BudgetChip) return;
+    try {
+      const s = await api.get("/api/engine/settings");
+      const v = isObj(s) && isObj(s.effective) ? s.effective.usd_budget : null;
+      if (Number.isFinite(v)) S.chip = root.BudgetChip.mount(el, v, "default");
+    } catch (e) { handleFetchError(e); }
+  }
+
   async function sendFront() {
     const box = $("fdbox");
     const body = text(box.value).trim();
     if (body === "" || S.sending) return false;
-    const field = $("fdbudget"), fdo = FD(), b = fdo ? fdo.budgetOf(field ? field.value : "") : {ok: true, budget: null, error: ""};      // D252: empty = the team's own budget
-    if (field) {
-      field.setCustomValidity(b.error);
-      if (!b.ok) { field.reportValidity(); return false; }
-    }
+    const usd = S.chip ? S.chip.value() : null;      // D257: the Budget chip; null is the team's own budget
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
     S.front.since = S.lastId;
     $("fdsend").disabled = true;
-    const ok = await send(body, null, {plan: true, budget: b.budget});
+    const ok = await send(body, null, {plan: true, usd_budget: usd});
     $("fdsend").disabled = false;
-    if (ok) { if (box.value.trim() === body) box.value = ""; if (field) field.value = ""; }
+    if (ok) { if (box.value.trim() === body) box.value = ""; if (S.chip) S.chip.reset(); }
     else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
     renderFrontLatest();
     return ok;
@@ -1832,6 +1840,7 @@
     const link = deepLink();
     wire();
     wireFind();
+    mountChip();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false, group: link.pane === "settings" ? "appearance" : ""});
     renderProgress();
     renderComposer();

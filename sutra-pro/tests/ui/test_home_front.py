@@ -157,21 +157,31 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
 
 
 @browser_only
-def test_the_box_sends_a_typed_budget_and_none_when_the_field_is_left_empty(browser, fake):
-    """D252: the Budget (work credits) field starts empty with "team default"; a typed number rides with the new request; a bad one stops the send."""
+def test_home_chip_sends_dollars_once_and_nothing_for_the_default(browser, fake):
+    """D257: the Budget chip shows the default in dollars (API price); nothing is sent for it; a pick or a typed amount rides with the next
+    request only as usd_budget; a bad amount marks the box and changes nothing."""
     load(browser, fake, stage="1")
-    assert browser.js("document.getElementById('fdbudget').value") == "" and \
-        browser.js("document.getElementById('fdbudget').placeholder") == "team default"
-    browser.type("#fdbudget", "0")
+    browser.wait_for("document.querySelector('#fdbudget summary') !== null")
+    line = texts(browser, "#fdbudget summary")[0]
+    assert line == "Budget: $20 API price (default) · change" and "credit" not in browser.js("document.querySelector('.fdcompose').innerText").lower()
+    browser.js("document.querySelector('#fdbudget details').open = true")
+    assert "nobody is billed this amount" in browser.js("document.querySelector('#fdbudget .bchipmenu').innerText")
+    browser.js("document.querySelector('#fdbudget .bchipown').value = '0.5'")
+    browser.click("#fdbudget .bchipuse")
+    assert browser.js("document.querySelector('#fdbudget .bchipown').getAttribute('aria-invalid')") == "true"
+    assert texts(browser, "#fdbudget summary")[0].startswith("Budget: $20 ")
     browser.type("#fdbox", "A website for my cafe")
     browser.click("#fdsend")
-    assert browser.js("document.getElementById('fdbudget').validationMessage") != "" and not posts(fake, "/api/chats/cs_org/messages")
-    browser.js("document.getElementById('fdbudget').value = '250'")
-    browser.click("#fdsend")
     browser.wait_for("document.querySelector('#fdlatest .fdlatest') !== null")
-    sent = posts(fake, "/api/chats/cs_org/messages")
-    assert sent and sent[0]["body"] == {"text": "A website for my cafe", "budget": 250}
-    browser.wait_for("document.getElementById('fdbudget').value === ''")
+    browser.wait_for("document.getElementById('fdbox').value === ''")
+    browser.js("document.querySelector('#fdbudget details').open = true")
+    browser.click('#fdbudget [data-usd="40"]')
+    assert texts(browser, "#fdbudget summary")[0] == "Budget: $40 API price (this request) · change"
+    browser.type("#fdbox", "A bakery page")
+    browser.click("#fdsend")
+    browser.wait_for("document.querySelectorAll('#fdbudget summary').length === 1 && document.querySelector('#fdbudget summary').textContent.indexOf('(default)') > 0")
+    sent = [r["body"] for r in posts(fake, "/api/chats/cs_org/messages")]
+    assert sent == [{"text": "A website for my cafe"}, {"text": "A bakery page", "usd_budget": 40}]
 
 
 @browser_only

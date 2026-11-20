@@ -153,27 +153,17 @@ test("a team's question says who asks in plain words: Asha needs one answer (or 
   assert.match(FD.needCard(approval(11), {}), /Asha needs your OK/);
 });
 
-test("budgetOf (D252): empty is the team default, a whole number from 1 to 100000 is sent, anything else stops the send with a sentence", () => {
-  for (const v of ["", "   ", null, undefined]) assert.deepEqual(FD.budgetOf(v), {ok: true, budget: null, error: ""});
-  for (const [v, n] of [["1", 1], ["100", 100], [" 250 ", 250], ["100000", 100000]]) assert.deepEqual(FD.budgetOf(v), {ok: true, budget: n, error: ""});
-  for (const v of ["0", "-3", "100001", "12.5", "1e3", "abc", "007"]) {
-    const got = FD.budgetOf(v);
-    assert.equal(got.ok, false, v);
-    assert.equal(got.budget, null);
-    assert.match(got.error, /whole number of work credits from 1 to 100000, or empty for the team default/);
-  }
-});
-
-test("the home box (D252): an empty Budget field with the team-default placeholder beside Go, and no cap field", () => {
+test("the home box (D257): an empty holder for the Budget chip beside Go, the chip script before home.js, no credits field", () => {
   const fs = require("node:fs");
   const html = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/pages/home.html"), "utf8");
   const box = html.slice(html.indexOf('<div class="fdcompose">'), html.indexOf('id="fdsend"'));
-  assert.match(box, /Budget \(work credits\) <input id="fdbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default"/);
-  assert.doesNotMatch(box.slice(box.indexOf('id="fdbudget"')).split(">")[0], /value=/);
-  assert.doesNotMatch(html, /cap/i);
+  assert.match(box, /<span id="fdbudget" style="margin-left:auto"><\/span>/);
+  assert.doesNotMatch(box, /work credits|type="number"/);
+  assert.ok(html.indexOf("/ui/js/budget_chip.js") > 0 && html.indexOf("/ui/js/budget_chip.js") < html.indexOf("/ui/js/home.js"));
+  assert.equal(FD.budgetOf, undefined);
   const js = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/static/js/home.js"), "utf8");
   assert.match(js, /choice \? \{text: body, choice\} : \{text: body, \.\.\.budget\}/);      // a budget never rides with a card answer
-  assert.match(js, /send\(body, null, \{plan: true, budget: b\.budget\}\)/);
+  assert.match(js, /send\(body, null, \{plan: true, usd_budget: usd\}\)/);
 });
 
 test("stopOf (D254): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {

@@ -1,7 +1,6 @@
-"""D251, D252 (port edit E25): a team page's optional "Budget (work credits)" field. It starts empty ("team default": the team's Settings
-budget, 100 if none is set) and an empty field sends no budget; a typed number is sent with the first message only as `budget` (the route
-makes it the task setting J2_BUDGET), and a value that is not a whole number from 1 to 100000 stops the send with a message on the field.
-There is no cap field. The page's own `lbudget` and `sendText` run in node with a stub `$`."""
+"""D257 (port edit E25, amends D251 and D252): a team page's Budget chip in dollars (API price). It shows the team's own budget once
+GET /api/engine/settings?dept= answers, and sends nothing for it; a choice (half, double, a typed amount) is sent with the next request only
+as `usd_budget`, then the chip shows the team default again. The page's own `sendText` and submit handler run in node with a stub `$`."""
 import json
 import re
 import shutil
@@ -10,55 +9,68 @@ from pathlib import Path
 
 import pytest
 
-PAGE = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "pages" / "j2_ui.html").read_text(encoding="utf-8")
-LBUDGET = re.search(r"const lbudget = \(\) => \{.*?return \+v; \};", PAGE, re.S).group(0)
-SEND = re.search(r"async function sendText\(text, budget\)\{.*?\n\}\n", PAGE, re.S).group(0)
+ROOT = Path(__file__).resolve().parents[2]
+PAGE = (ROOT / "sutra_app" / "ui" / "pages" / "j2_ui.html").read_text(encoding="utf-8")
+SEND = re.search(r"async function sendText\(text, usdBudget\)\{.*?\n\}\n", PAGE, re.S).group(0)
+E25 = PAGE[PAGE.index("// E25 (D257)"):PAGE.index("if (LCHIP) LCHIP.reset(); });") + len("if (LCHIP) LCHIP.reset(); });")]
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 
 
-def node(body: str):
-    js = ("const EL = {value: '', msg: null, reported: false, setCustomValidity(m){ this.msg = m; }, reportValidity(){ this.reported = true; }};\n"
-          "const $ = id => id === 'lbudget' ? EL : null; const SENT = []; let RTNEW = {id: '', keys: [], sent: false};\n"
+def node(body: str, *, usd=20):
+    js = ("const listeners = {}; const document = {addEventListener: (k, f) => { listeners[k] = f; }};\n"
+          "const mk = () => ({value: '', disabled: false, innerHTML: '', on: {}, addEventListener(k, f){ this.on[k] = f; }, contains: () => true,\n"
+          "  querySelector: () => null});\n"
+          "const EL = {lbox: mk(), lsend: mk(), lform: mk(), lbudget: mk()}; const $ = id => EL[id];\n"
+          "const SENT = []; let RTNEW = {id: '', keys: [], sent: false}; const GETS = [];\n"
           "const fetch = async (url, o) => { SENT.push([url, JSON.parse(o.body)]); return {}; };\n"
-          + LBUDGET + "\n" + SEND + "\n(async () => {" + body + "})().catch(e => { console.error(e); process.exit(1); });")
+          f"const SutraCtx = {{dept: 'web', api: {{get: async (p, q) => {{ GETS.push([p, q]); return {{effective: {{usd_budget: {json.dumps(usd)}}}}}; }}}}}};\n"
+          "const window = {BudgetChip: require(" + json.dumps(str(ROOT / "sutra_app" / "ui" / "static" / "js" / "budget_chip.js")) + ")};\n"
+          "const BudgetChip = window.BudgetChip;\n"
+          + SEND + "\n" + E25 + "\n"
+          "const ready = async () => { listeners.DOMContentLoaded(); await new Promise(r => setTimeout(r, 0)); };\n"
+          "const submit = async t => { EL.lbox.value = t; EL.lform.on.submit({preventDefault(){}}); await new Promise(r => setTimeout(r, 0)); };\n"
+          "const click = async attrs => { EL.lbudget.on.click({target: {closest: () => ({dataset: attrs, classList: {contains: () => false}})}}); };\n"
+          "(async () => {" + body + "})().catch(e => { console.error(e); process.exit(1); });")
     done = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
 
 
-def test_the_field_is_in_the_start_form_empty_with_the_team_default_placeholder_and_no_cap_field():
+def test_the_chip_holder_is_in_the_start_form_and_the_credit_field_is_gone():
     form = PAGE[PAGE.index('<form class="sbox" id="lform">'):PAGE.index("</form>", PAGE.index('id="lform"'))]
-    assert 'Budget (work credits) <input id="lbudget" name="budget" type="number"' in form
-    assert 'min="1" max="100000" step="1" placeholder="team default"' in form and "value=" not in form.split('id="lbudget"')[1].split(">")[0]
-    land = PAGE[PAGE.index('id="sland"'):PAGE.index('id="swork"')]
-    assert "cap" not in land.lower()
+    assert '<span id="lbudget" style="font-size:13px"></span>' in form
+    assert 'id="lbudget" name="budget"' not in PAGE and "work credits" not in form and "lbudget()" not in PAGE
 
 
 @needs_node
-@pytest.mark.parametrize("value, want", [("100", 100), (" 250 ", 250), ("1", 1), ("100000", 100000),
-                                         ("0", None), ("100001", None), ("12.5", None), ("-3", None), ("1e3", None), ("abc", None)])
-def test_lbudget_takes_a_whole_number_from_1_to_100000_and_stops_anything_else(value, want):
-    got = node(f"EL.value = {json.dumps(value)}; const b = lbudget(); console.log(JSON.stringify({{b, msg: EL.msg, reported: EL.reported}}));")
-    assert got["b"] == want
-    assert (got["msg"], got["reported"]) == (("", False) if want else ("Budget: a whole number of work credits from 1 to 100000, or empty for the team default", True))
+def test_chip_shows_team_default():
+    got = node("await ready(); console.log(JSON.stringify({gets: GETS, html: EL.lbudget.innerHTML}));")
+    assert got["gets"] == [["/api/engine/settings", {"dept": "web"}]]
+    text = re.sub(r"<[^>]+>", "", got["html"].split("</summary>")[0]).replace("&middot;", "·")
+    assert re.sub(r"\s+", " ", text).strip() == "Budget: $20 API price (team default) · change"
 
 
 @needs_node
-@pytest.mark.parametrize("value", ["", "   "])
-def test_an_empty_field_is_the_team_default_and_sends_no_budget(value):
-    got = node(f"EL.value = {json.dumps(value)}; const b = lbudget(); await sendText('a cafe site', b); "
-               "console.log(JSON.stringify({b: b === undefined ? 'undefined' : b, msg: EL.msg, reported: EL.reported, sent: SENT}));")
-    assert got == {"b": "undefined", "msg": "", "reported": False, "sent": [["/api/say", {"text": "a cafe site"}]]}
+def test_nothing_is_sent_for_the_team_default_and_a_pick_goes_with_one_request_only():
+    got = node("await ready(); await submit('a cafe site'); await click({usd: '40'}); await submit('a bigger site'); await submit('more please');"
+               "console.log(JSON.stringify({sent: SENT, html: EL.lbudget.innerHTML}));")
+    assert got["sent"] == [["/api/say", {"text": "a cafe site"}], ["/api/say", {"text": "a bigger site", "usd_budget": 40}],
+                           ["/api/say", {"text": "more please"}]]
+    assert "(team default)" in got["html"]                                        # back to the default after the send
 
 
 @needs_node
-def test_send_text_carries_the_budget_only_when_given_and_beside_a_run_template():
-    got = node("await sendText('a cafe site', 100); await sendText('more please'); RTNEW = {id: 'cafe-site', keys: ['W-1'], sent: false};"
-               "await sendText('use it', 40); console.log(JSON.stringify(SENT));")
-    assert got == [["/api/say", {"text": "a cafe site", "budget": 100}], ["/api/say", {"text": "more please"}],
-                   ["/api/say", {"text": "use it", "template": "cafe-site", "workflows": ["W-1"], "budget": 40}]]
+def test_without_the_settings_answer_there_is_no_chip_and_no_budget():
+    got = node("await submit('a cafe site'); console.log(JSON.stringify({sent: SENT, html: EL.lbudget.innerHTML}));")
+    assert got == {"sent": [["/api/say", {"text": "a cafe site"}]], "html": ""}
+
+
+@needs_node
+def test_send_text_carries_usd_budget_beside_a_run_template():
+    got = node("RTNEW = {id: 'cafe-site', keys: ['W-1'], sent: false}; await sendText('use it', 12.5); console.log(JSON.stringify(SENT));")
+    assert got == [["/api/say", {"text": "use it", "template": "cafe-site", "workflows": ["W-1"], "usd_budget": 12.5}]]
 
 
 def test_only_the_start_form_sends_a_budget():
     calls = re.findall(r"sendText\(([^)]*)\)", PAGE)
-    assert [c for c in calls if re.fullmatch(r"\w+, \w+", c)] == ["text, budget", "t, b"], calls      # the definition and the start form's submit
+    assert [c for c in calls if re.fullmatch(r"\w+, \w+", c)] == ["text, usdBudget", "t, b"], calls

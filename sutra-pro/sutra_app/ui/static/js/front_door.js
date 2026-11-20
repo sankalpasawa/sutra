@@ -16,8 +16,6 @@
      summary(state)                      "2 things need you" / "Nothing needs you right now" (the document title and the screen reader line)
      stopOf(state)                       D254: {show, taskId}: the box's Go is Stop while the box is empty and the card under it shows the work it
                                          just started ("Your project is set up") whose team has a live task
-     budgetOf(value)                     the box's "Budget (work credits)" (D252): {ok, budget, error}; empty is ok with budget null (the team's own
-                                         budget), a whole number from 1 to 100000 is that number, anything else is not ok with the sentence to show
 
    Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-approve and fd-decline (data-msg), fd-retry
    (data-task), fd-seen (data-task), fd-choose (data-msg, data-option), fd-more. A team link is a real <a href="/d/<dept>/">.
@@ -307,15 +305,7 @@
     return text(s.box).trim() === "" && TASK_ID.test(id) ? {show: true, taskId: id} : {show: false, taskId: ""};
   }
 
-  // D252: the Budget field, as POST /api/chats/cs_org/messages takes it (J2_BUDGET's limits); empty means the team's own budget
-  const BUDGET_SAID = "Budget: a whole number of work credits from 1 to 100000, or empty for the team default";
-  function budgetOf(value) {
-    const v = text(value).trim();
-    if (v === "") return {ok: true, budget: null, error: ""};
-    return /^[1-9][0-9]{0,5}$/.test(v) && Number(v) <= 100000 ? {ok: true, budget: Number(v), error: ""} : {ok: false, budget: null, error: BUDGET_SAID};
-  }
-
-  const FrontDoor = {ORG, budgetOf, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
+  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);
