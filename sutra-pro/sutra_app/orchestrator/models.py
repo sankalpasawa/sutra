@@ -273,6 +273,15 @@ class TaskCard(Value):
     dept_name: Name
     title: Name
     status: TaskStatus
+    project_id: ProjectId | None = None     # the project this task is a step of (nodes on): the card links to its page (D382); left out of the wire shape when there is none
+
+    @model_serializer(mode="wrap")
+    def _project_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A card of an ordinary task keeps the wire shape it always had: no `project_id` key."""
+        data = handler(self)
+        if data.get("project_id") is None:
+            data.pop("project_id", None)
+        return data
 
 
 class ApprovalCard(Value):

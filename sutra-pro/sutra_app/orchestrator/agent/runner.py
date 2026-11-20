@@ -477,6 +477,7 @@ class TurnRunner:
         task_ids: list[str] = []
         failure: str | None = None
         waits = ""
+        project_id = ""
         asked_system = False
         if drafts:
             self._phase(mid, "handing_off")
@@ -495,6 +496,8 @@ class TurnRunner:
                         except Exception:                                           # noqa: BLE001  (a probe that fails for any reason must not leave a reserved project with no tasks; a refusal found late is still caught)
                             log.exception("the permission probe of request %s failed", request.request_id)
                 task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
+                if reservation is not None and reservation.ok and task_ids:
+                    project_id = reservation.project_id                                       # D382: the reply ends with the project's address, whichever way the line came in
                 if reservation is not None:                                             # every question the owner has to answer is said in plain words, not only the estimate (D308, D317)
                     said = []
                     if reservation.waits is not None:
@@ -512,7 +515,7 @@ class TurnRunner:
                     await self.tasks.start_ready()
                 except Exception:                                           # noqa: BLE001  (a task that cannot start is that task's problem)
                     log.exception("start_ready failed after request %s", request.request_id)
-        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure, waits)
+        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure, waits, project_id)
         self._phase(mid, "done")
         await self._call_hook(self.hooks.on_done, mid)
 
@@ -651,11 +654,13 @@ class TurnRunner:
         return list(made.values())
 
     def _write_outcome(self, mid: int, plan: Plan, applied: _Applied | None, drafts: Sequence[AssignmentDraft], task_ids: Sequence[str],
-                       failure: str | None, waits: str = "") -> None:
+                       failure: str | None, waits: str = "", project_id: str = "") -> None:
         """T8: the template line, the chart card and a task card per task; the request is `ok`. `waits`: the sentence of a project that waits for the owner's OK (D308)."""
         sentences = self._sentences(plan, applied, drafts)
         if waits:
             sentences = sentences + [waits]
+        if project_id and failure is None:
+            sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]
         cards: list[dict] = []
@@ -665,8 +670,10 @@ class TurnRunner:
         cards.extend(self._started_cards(conn, applied))
         for task_id in task_ids:
             task = self.tasks.store.out_in(conn, task_id)
-            cards.append({"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title,
-                          "status": task.status})
+            card = {"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title, "status": task.status}
+            if project_id and failure is None:
+                card["project_id"] = project_id                                        # D382: a step's card links to the project's page
+            cards.append(card)
         self._write_cards(mid, sentences, cards, error=failure is not None)
         if failure is None:
             self._suggest_packs(applied)

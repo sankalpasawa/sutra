@@ -153,7 +153,7 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team is on it</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + (status ? ' <span class="cstat st-' + esc(status) + '">' + esc(taskWord(status)) + "</span>" : "") + "</p>" +
       '<div class="acts">' + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '"') +
-      (deptId !== "" ? ' <button type="button" class="lbtn" data-act="show-node" data-node="' + esc(deptId) + '">See it on the graph</button>' : "") + "</div></div>";
+      (deptId !== "" ? ' <button type="button" class="lbtn" data-act="show-node" data-node="' + esc(deptId) + '">See it on the graph</button>' : "") + "</div>" + projectLink(c.project_id) + "</div>";
   }
 
   // The lists of a chart_change card: {id, name, kind} added, {id, name, from_name, to_name} moved, {id, name, into_name} merged. A plain id is
@@ -510,7 +510,7 @@
       } else if (directReply(m) && root.ChatMarkdown) {
         inner = root.ChatMarkdown.render(text(m.text));                 // as the model wrote it: an "@name" at its start is not an agent's address
       } else {
-        inner = safeText(body);
+        inner = projectAddress(safeText(body));                        // D382: a reply that ends with a project's address links to its page; only that exact shape, any other text is as it was
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
