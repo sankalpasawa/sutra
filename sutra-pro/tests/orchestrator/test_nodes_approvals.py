@@ -5,7 +5,7 @@ import sqlite3
 import pytest
 
 from sutra_app.orchestrator.errors import AlreadyDecided, AppError, NotFound
-from sutra_app.orchestrator.nodes_store import NodeStore
+from sutra_app.orchestrator.nodes_store import ApprovalExpired, NodeStore
 from sutra_app.orchestrator.redact import Redactor
 
 PROJECT = "prj_" + "1" * 12
@@ -108,6 +108,7 @@ def test_a_bad_answer_or_a_bad_answerer_or_an_unknown_approval_is_refused(store)
     with pytest.raises(NotFound):
         answer(store, "ap_" + "0" * 12, "deny")
     assert store.get_approval(row.id).open
+    store.db.conn().execute("UPDATE projects SET decide_for_me = 1 WHERE id = ?", (PROJECT,))
     assert answer(store, row.id, "allow_once", by="rule:decide_for_me").decided_by == "rule:decide_for_me"
 
 
@@ -121,8 +122,11 @@ def test_an_approval_that_ran_out_is_expired_which_means_denied(store, clock):
     assert store.get_approval(later.id).open and store.approvals(PROJECT, status="open") == [store.get_approval(later.id)]
     with store.db.tx() as tx:
         assert store.expire_due(tx) == []                                                         # nothing left to expire
-    with pytest.raises(AlreadyDecided):
-        answer(store, soon.id, "allow_once")                                                      # it is decided: expired
+    for decision in ("allow_once", "allow_project", "deny"):                                      # expired stays expired: every answer is refused, in words that say so (m5)
+        with pytest.raises(ApprovalExpired) as refused:
+            answer(store, soon.id, decision)
+        assert refused.value.code == "already_decided" and "ran out of time" in refused.value.message and not isinstance(refused.value, AlreadyDecided)
+    assert store.get_approval(soon.id).status == "expired"
 
 
 def test_an_answer_that_comes_after_the_expiry_does_not_count(store, clock):
@@ -154,3 +158,20 @@ def test_the_table_still_refuses_what_the_store_would_not_store(store, db):
         db.conn().execute("INSERT INTO approvals(id, project_id, tier, expires_at, created_at) VALUES ('ap_" + "7" * 12 + "', ?, 9, 1, 1)", (PROJECT,))
     with pytest.raises(sqlite3.IntegrityError):
         db.conn().execute("INSERT INTO approvals(id, project_id, tier, expires_at, created_at) VALUES ('ap_" + "8" * 12 + "', 'prj_" + "f" * 12 + "', 4, 1, 1)")      # no such project
+
+
+def test_a_rule_can_answer_only_for_a_project_that_asked_for_decide_for_me(store, db):
+    """The check is in the store's decide(), the one place every answer goes through (m4): a rule's name cannot be used to answer for a project that did not switch it on."""
+    off, on = ask(store, 4), ask(store, 4, project=OTHER)
+    db.conn().execute("UPDATE projects SET decide_for_me = 1 WHERE id = ?", (OTHER,))
+    with pytest.raises(AppError) as refused:
+        answer(store, off.id, "allow_once", by="rule:decide_for_me")
+    assert refused.value.code == "validation" and store.get_approval(off.id).open
+    assert answer(store, on.id, "allow_project", by="rule:decide_for_me").decided_by == "rule:decide_for_me"
+    assert answer(store, off.id, "allow_once", by="owner").status == "allowed_once"                  # the owner may always answer
+    assert answer(store, ask(store, 4).id, "deny", by="system").status == "denied"
+
+
+def test_a_rule_that_is_a_repeat_of_the_owners_answer_is_still_a_no_op_not_an_error(store):
+    first = answer(store, ask(store, 4).id, "allow_once")
+    assert answer(store, first.id, "allow_once", by="rule:decide_for_me").duplicate

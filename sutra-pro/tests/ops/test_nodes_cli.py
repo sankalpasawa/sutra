@@ -105,3 +105,18 @@ def test_a_bad_setting_is_exit_2(capsys, tmp_path, monkeypatch):
     monkeypatch.setenv("SUTRA_NODES_V1", "maybe")
     code, out, err = call(capsys, *args(tmp_path, "status"))
     assert code == 2 and "SUTRA_NODES_V1" in err
+
+
+def test_the_command_module_does_not_import_the_orchestrator_until_a_command_runs():
+    import subprocess
+    import sys as _sys
+    code = "import sys, sutra_app.ops.nodes as n; assert 'sutra_app.orchestrator.killswitch' not in sys.modules, 'imported early'; print('light')"
+    done = subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0 and "light" in done.stdout, done.stderr
+
+
+def test_a_switch_file_that_cannot_be_written_is_exit_1_and_says_nothing_is_held_back(capsys, tmp_path, monkeypatch):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "nodes").write_text("a file where the folder should be")
+    code, out, err = call(capsys, *args(tmp_path, "kill"))
+    assert code == 1 and "could not write the KILL file" in err and "nothing is held back" in err and "Kill switch on" not in out

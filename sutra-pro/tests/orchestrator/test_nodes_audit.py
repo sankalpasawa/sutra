@@ -125,3 +125,22 @@ def test_the_names_for_a_closed_laptop_are_in_place_and_fit_the_audit(store):
     write(store, actor="system", action=ns.GATE_REFUSED_ACTION, decision="deny", reason=ns.GATE_REFUSED_SLEEP)
     write(store, actor="system", action=ns.PROJECT_STOPPED_ACTION, decision="n/a", reason=ns.GATE_REFUSED_CLOSED)
     assert [(r["action"], r["decision"], r["reason"]) for r in rows(store)] == [("gate.refused", "deny", ns.GATE_REFUSED_SLEEP), ("project.stopped", "n/a", ns.GATE_REFUSED_CLOSED)]
+
+
+def test_no_code_replaces_a_row_of_the_append_only_tables():
+    """`INSERT OR REPLACE` / `REPLACE INTO` deletes the conflicting old row and the append-only triggers do not see it: node_audit and node_messages are only ever inserted with a plain
+    INSERT (ON CONFLICT DO NOTHING where a conflict is possible). This fails the day somebody writes the other spelling (m1)."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2] / "sutra_app"
+    bad = re.compile(r"(?is)(INSERT\s+OR\s+REPLACE\s+INTO|REPLACE\s+INTO)\s+node_(audit|messages)\b|node_(audit|messages)[^;]{0,200}ON\s+CONFLICT[^;]{0,120}DO\s+UPDATE")
+    found = [str(path.relative_to(root)) for path in root.rglob("*.py") if bad.search(path.read_text(encoding="utf-8"))]
+    assert found == []
+    assert bad.search("INSERT OR REPLACE INTO node_audit(x) VALUES (1)") and bad.search("insert or replace into node_messages values (1)") and not bad.search("INSERT INTO node_audit(x) VALUES (1) ON CONFLICT DO NOTHING")
+
+
+def test_a_replace_would_silently_remove_a_message_which_is_why_the_spelling_is_forbidden(db):
+    db.conn().execute("INSERT INTO projects(id, created_at) VALUES ('prj_" + "1" * 12 + "', 1)")
+    db.conn().execute("INSERT INTO node_messages(project_id, seq, kind, src_ref, at) VALUES ('prj_" + "1" * 12 + "', 1, 'handoff', 'r', 1)")
+    db.conn().execute("INSERT OR REPLACE INTO node_messages(project_id, seq, kind, src_ref, body, at) VALUES ('prj_" + "1" * 12 + "', 2, 'handoff', 'r', 'changed', 1)")
+    assert db.conn().execute("SELECT seq, body FROM node_messages").fetchall()[0]["body"] == "changed"        # the trigger did not fire: the old row is gone and the new one has another seq

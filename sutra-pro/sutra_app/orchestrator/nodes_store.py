@@ -32,7 +32,7 @@ from sutra_app.orchestrator.ids import IdFactory, iso_z
 from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "ApprovalExpired", "NodeBlockError", "node_block_of", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
 # D296 (a closed laptop is a refusal), designed now and built in MAN-7 and MAN-8: the words a node is cancelled with, and the audit actions, so that every package uses the same ones.
@@ -53,6 +53,13 @@ _ROLE = re.compile(r"^(planner|worker|reviewer|conductor|gatekeeper|)$")
 _PROJECT_ID = re.compile(r"^prj_[0-9a-f]{12}$")
 _NODE_ID = re.compile(r"^nd_[0-9a-f]{12}$")
 DECIDERS = re.compile(r"^(owner|system|rule:[a-z][a-z0-9_]{0,40})$")      # who answered: the owner, the clock (expiry), or a named rule of the Gatekeeper's table (D294)
+
+
+class ApprovalExpired(AppError):
+    """A question that ran out was answered: it stays expired (which counts as denied). The words say so, so it is not read as "somebody else answered first"."""
+
+    def __init__(self) -> None:
+        super().__init__("already_decided", "That question ran out of time, so it counts as refused. Ask again to start over")
 
 
 class NodeBlockError(ValueError):
@@ -134,7 +141,7 @@ class NodeStore:
         if node_id is not None and not (isinstance(node_id, str) and _NODE_ID.fullmatch(node_id)):
             raise ValueError("an audit node is an nd_ id, or none")
         cursor = tx.conn.execute(
-            "INSERT INTO node_audit(at, project_id, node_id, role, actor, action, tier, target, decision, reason, ref, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO node_audit(at, project_id, node_id, role, actor, action, tier, target, decision, reason, ref, hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",         # never INSERT OR REPLACE on an append-only table: a replace deletes the old row without a trigger (m1)
             (tx.now(), project_id, node_id, role, actor, action, tier, self._text(target), decision, self._text(reason), self._text(ref), hash))
         return int(cursor.lastrowid)
 
@@ -199,10 +206,16 @@ class NodeStore:
         if row is None:
             raise NotFound("that approval")
         status = APPROVAL_DECISIONS[decision]
+        if row["status"] == "expired":                          # expired stays expired (it counts as denied): any answer to it is refused, in words that say so, never as a repeat (m5)
+            raise ApprovalExpired()
         if row["status"] != "open":
             if row["status"] == status:
                 return self._row(row, duplicate=True)
             raise AlreadyDecided(self._row(row, duplicate=True))
+        if decided_by.startswith("rule:"):                      # a rule of the Gatekeeper's table answers only for a project that asked for it (D294): the check is here, in the one place every answer goes through (m4)
+            on = tx.conn.execute("SELECT decide_for_me FROM projects WHERE id = ?", (row["project_id"],)).fetchone()
+            if on is None or int(on["decide_for_me"]) != 1:
+                raise AppError("validation", "A rule can answer only when Decide for me is on for the project")
         tier = int(row["tier"])
         if status != "denied" and tier == 6:
             raise AppError("validation", "Tier 6 can not be allowed")

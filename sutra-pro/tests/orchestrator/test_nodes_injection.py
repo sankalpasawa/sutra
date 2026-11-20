@@ -1,4 +1,7 @@
-"""Prompt-injection fixtures for the nodes work (MAN-2, guardrails 9; D281). Fixtures first: the planted texts and the planted hand-off that the later packages run against (the
+"""FIXTURES for MAN-6 (the hand-off intake) and MAN-11 (the reviewer): `INJECTIONS`, `INJECTED_HANDOFF`, `PLANTED_SECRET` and the two pytest fixtures are what those packages import and run against;
+the tests in this file only check what could be checked in MAN-2 (m11).
+
+Prompt-injection fixtures for the nodes work (MAN-2, guardrails 9; D281). Fixtures first: the planted texts and the planted hand-off that the later packages run against (the
 hand-off intake in MAN-6, the reviewer in MAN-11). What can already be asserted at this stage is asserted: text has no way into a grant, an edge or the audit's meaning, and a planted
 secret never reaches a stored row.
 

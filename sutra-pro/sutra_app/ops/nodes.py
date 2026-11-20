@@ -10,13 +10,15 @@ SUTRA_NODES_V1=1 looks for the KILL file every two seconds and runs the stop lad
 if the feature is turned on later, which is the safe way round. Exit codes: 0 done, 2 a bad setting.
 """
 import argparse
+import sys
 from typing import Any
 
 from sutra_app.config import Settings
 from sutra_app.ops.cli import common_parser, emit, load_settings
-from sutra_app.orchestrator.killswitch import REASON_MAX, KillSwitch
 
 __all__ = ["register"]
+
+REASON_MAX = 200               # the longest reason the switch files keep (killswitch.REASON_MAX; the orchestrator is imported only when a command runs, so `sutra-pro --help` stays light)
 
 
 def _flags(settings: Settings) -> dict[str, bool]:
@@ -31,6 +33,7 @@ def _status(args: argparse.Namespace) -> int:
     settings = load_settings(args)
     if settings is None:
         return 2
+    from sutra_app.orchestrator.killswitch import KillSwitch
     state = KillSwitch(settings.nodes_dir).status()
     payload: dict[str, Any] = {**state, "folder": str(settings.nodes_dir), "settings": _flags(settings)}
     words = {"none": "Agents may start.", "pause": "The PAUSE file is there: no new agent starts; the ones that run finish.", "kill": "The KILL file is there: a running Sutra stops every agent and starts none. (Look at the page or the log to see that they ended.)"}[state["level"]]
@@ -51,7 +54,12 @@ def _write(level: str):
         if settings is None:
             return 2
         reason = " ".join((args.reason or "").split())[:REASON_MAX]
-        KillSwitch(settings.nodes_dir).set(level, by="owner", reason=reason)
+        from sutra_app.orchestrator.killswitch import KillSwitch
+        try:
+            KillSwitch(settings.nodes_dir).set(level, by="owner", reason=reason)
+        except OSError as exc:
+            print(f"sutra-pro: could not write the {level.upper()} file in {settings.nodes_dir} ({type(exc).__name__}): nothing is held back", file=sys.stderr)
+            return 1
         done = ("Paused: no new agent starts; the ones that run finish." if level == "pause" else
                 "Kill switch on: a running Sutra stops every agent (all together, about 12 seconds at most), and none starts.")
         emit(args, {"level": level, "folder": str(settings.nodes_dir)}, [done, "Run `sutra-pro nodes resume` to remove it.", *_off_note(settings)])
@@ -63,6 +71,7 @@ def _resume(args: argparse.Namespace) -> int:
     settings = load_settings(args)
     if settings is None:
         return 2
+    from sutra_app.orchestrator.killswitch import KillSwitch
     removed = KillSwitch(settings.nodes_dir).clear()
     emit(args, {"removed": removed}, ["Resumed: " + ", ".join(removed) + " removed." if removed else "Nothing to resume: neither file was there."])
     return 0
