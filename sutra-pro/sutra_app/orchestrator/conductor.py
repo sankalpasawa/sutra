@@ -59,7 +59,7 @@ FOLDER_TTL_S = 2.0
 
 
 MONTH_REASON = "Your monthly limit was reached, so the project stopped."
-MONTH_START_REASON = "This project used what was left of your month when it started, so it stopped."          # D388: the frozen figure ran out while the month itself still has room (the owner raised the limit)          # D381: the one sentence for a project that ran into the owner's monthly dollar limit
+MONTH_START_REASON = "This project used what was left of your month when it started, so it stopped."          # D388: the frozen figure ran out while the month itself still has room (the owner raised the limit)
 
 
 def plain_refusal(text: Any) -> str:

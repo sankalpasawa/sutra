@@ -60,7 +60,7 @@ def world(tmp_path):
 def test_a_four_step_plan_makes_one_project_four_nodes_a_planner_and_four_tasks_with_the_plans_edges(world):
     client, services, connector, mid = world
     project = rows(services, "SELECT * FROM projects")
-    assert len(project) == 1 and project[0]["request_id"] == f"req-{mid}" and project[0]["title"] == "Page"
+    assert len(project) == 1 and project[0]["request_id"] == f"req-{mid}" and project[0]["title"] == "A site and a quote please", "the request's own short title, not the first step's (D394)"
     nodes = rows(services, "SELECT * FROM agent_nodes WHERE role <> 'planner' ORDER BY created_at, rowid")
     assert [n["plan_ref"] for n in nodes] == ["a1", "a2", "a3", "a4"] and all(n["task_id"] for n in nodes) and len(rows(services, "SELECT * FROM tasks")) == 4
     by_ref = {n["plan_ref"]: n for n in nodes}
@@ -184,7 +184,7 @@ def test_a_plan_over_the_confirm_threshold_makes_a_project_that_waits_and_the_re
         project = rows(services, "SELECT * FROM projects")[0]
         assert project["status"] == "awaiting_approval" and len(rows(services, "SELECT * FROM tasks")) == 5 and all(r["status"] != "running" for r in rows(services, "SELECT status FROM tasks"))
         said = [r["text"] for r in rows(services, "SELECT text FROM chat_messages WHERE role = 'agent' ORDER BY id")]
-        waits = line("project_waits", title="Step 1", credits="500", limit="400")
+        waits = line("project_waits", title="A lot of work", credits="500", limit="400")
         assert any(waits in text for text in said) and sum(text.count("waits for your OK") for text in said) == 1
         assert "project_waits" in NODE_LINES
 

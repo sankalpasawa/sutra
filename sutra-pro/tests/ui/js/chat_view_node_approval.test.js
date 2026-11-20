@@ -92,3 +92,12 @@ test("the reviewer's card says 'Send them back' and 'Leave as it is' (D393)", ()
   assert.ok(html.includes('data-decision="allow_once">Send them back</button>') && html.includes('data-decision="deny">Leave as it is</button>'));
   assert.equal(/Allow once|>No</.test(html), false);
 });
+
+test("the done card of a step of a project links to the project and offers no Try again of its own (D394)", () => {
+  const done = over => Object.assign({type: "done", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "crashed", outcome: "The kill switch was used"}, over || {});
+  const ctx = {retry: true};
+  const linked = ChatView.card(done({project_id: PROJECT}), ctx);
+  assert.ok(linked.includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
+  assert.equal(/data-act="retry/.test(linked), false);
+  assert.ok(/data-act="retry/.test(ChatView.card(done(), ctx)), "an ordinary task keeps its Try again");
+});

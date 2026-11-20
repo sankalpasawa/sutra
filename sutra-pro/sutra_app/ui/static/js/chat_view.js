@@ -308,8 +308,8 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
       receiptLine(c.receipt) +
-      '<div class="acts">' + retryButton(c, ctx) + reportLink(c.report, "Open the report") +
-      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + (projectLink(c.project_id) === "" ? retryButton(c, ctx) : "") + reportLink(c.report, "Open the report") +
+      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div>" + projectLink(c.project_id) + "</div>";      // a step of a project is tried again by its project, never by this card (D394)
   }
 
   // The finished deliverable of a run in the team's chat (D135, a `deliverable` card): the report as the team wrote it, the files git saw change in the owner's

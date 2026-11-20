@@ -317,7 +317,8 @@ class Grant:
         "output auto (decided in the run)" when the team's output is `auto`, because then the folder line is a reading, not a fact (G10, D307)."""
         scope = "whole folder" if self.writer and not self.scope else f"{len(self.scope)} path(s)" if self.scope else "none"
         built = f" ({builder_rights.words(builder_rights.NodeRights(self.tiers, self.commands))})" if self.run_tools == "engine" else ""      # D380: true, because the host narrows the tools to exactly this
-        line = (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; tools {self.tool_profile}; commands {self.commands}; run_tools {self.run_tools}{built}; "
+        apps = f"tools {self.tool_profile}; " if self.tool_profile != "none" else ""                 # "tools none" next to the run tools read as if the step had none (D394)
+        line = (f"tiers {','.join(str(t) for t in self.tiers)}; folder {self.folder}; scope {scope}; {apps}commands {self.commands}; run_tools {self.run_tools}{built}; "
                 f"calls {self.caps.calls}; wall {self.caps.wall_s}s")
         if output == "auto":
             line += "; output auto (decided in the run)"

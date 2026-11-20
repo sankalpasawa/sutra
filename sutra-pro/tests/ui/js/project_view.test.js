@@ -162,8 +162,7 @@ test("reasons that are not plain words are put into words or left out", () => {
   assert.equal(r("grant.issued", "tiers 0,1,2,3; folder edit; scope 1 path(s); tools none; commands git_reads; run_tools engine; calls 60; wall 1800s"), "");
   assert.equal(r("gate.decided", "decided_by rule:decide_for_me: tier_4_github: reads GitHub for this project only"), "Sutra answered for you: reads GitHub for this project only");
   assert.equal(r("gate.decided", "decided_by owner: allow_once"), "you answered");
-  assert.equal(r("handoff.accepted", "3 file(s), message 4"), "3 files");
-  assert.equal(r("handoff.accepted", "1 file(s), message 2"), "1 file");
+  assert.equal(r("handoff.accepted", "14 file(s), message 4"), "", "the count included the engine's own files");
   assert.equal(r("project.ended", "done_with_open_items"), "Done, but some steps did not finish");
   assert.equal(r("verdict.received", "changes"), "asks for changes");
   assert.equal(r("tool.used", "read a.txt, 2 times"), "", "a tool row says it all in its heading");
@@ -252,7 +251,7 @@ test("what the steps said is a plain line about what they produced, never the en
     files: [{path: "artifacts.json", sha256: "x", bytes: 1}, {path: "report.md", sha256: "x", bytes: 1}, {path: "project.md", sha256: "x", bytes: 1}, {path: "workflows.json", sha256: "x", bytes: 1}], claims: [], needs: []};
   const html = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap());
   const text = html.replace(/<[^>]*>/g, " ");
-  assert.match(text, /Step a1\s+handed in its work\. It made report\.md, project\.md\./);
+  assert.match(text, /Step a1\s+handed in its work\. It made project\.md\./);
   assert.equal(/rubric|done-when|necessary condition|artifacts\.json|workflows\.json/.test(text), false, text);
   const open = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: Object.assign({}, body, {status: "done_with_open_items", files: [], changes: ["a.py", "b.py"]})}], snap());
   assert.match(open.replace(/<[^>]*>/g, " "), /handed in its work, with some things left open\. It changed 2 files in your folder: a\.py, b\.py\./);
@@ -277,4 +276,22 @@ test("the reviewer's question is answered with 'Send them back' and 'Leave as it
   assert.ok(html.includes('data-decision="allow_once">Send them back</button>') && html.includes('data-decision="deny">Leave as it is</button>'));
   assert.equal(/Allow once|>No</.test(html), false);
   assert.ok(View.cardsHtml(snap({cards: [Object.assign({}, review, {kind: "tier"})]})).includes('data-decision="allow_once">Allow once</button>'));
+});
+
+test("the pseudo-tool of the engine, a step before that did not finish and the file count say nothing the owner cannot use (D394)", () => {
+  const rows = [{seq: 1, action: "tool.used", target: "PROPOSE", reason: "other, 1 time"}, {seq: 2, action: "tool.used", reason: "read a.txt, 2 times"},
+    {seq: 3, action: "node.cancelled", reason: "waiting task Describe what each file does did not finish"}, {seq: 4, action: "handoff.accepted", reason: "15 file(s), message 1"}];
+  const text = View.auditHtml(rows, {status: "failed"}).replace(/<[^>]*>/g, " ");
+  assert.equal(/used a tool|PROPOSE|waiting task|15 files/.test(text), false, text);
+  assert.match(text, /A step read a\.txt, 2 times/);
+  assert.match(text, /The step before it did not finish/);
+  assert.match(View.stepsHtml(snap({nodes: [node("nd_a", "a1", "cancelled", {failure_reason: "waiting task Describe what each file does did not finish"})]})), /The step before it did not finish\./);
+  assert.equal(/used a tool/.test(View.auditHtml([{seq: 1, action: "tool.used", reason: "other, 1 time"}], null)), false);
+  assert.equal(/written down when the step ends/.test(View.auditHtml([{seq: 1, action: "tool.used", reason: "other, 1 time"}], null)), false);
+});
+
+test("the engine's own run report is not named as something a step made", () => {
+  const body = {node_id: "nd_a", status: "done", files: [{path: "report.md"}, {path: "project.md"}]};
+  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap()).replace(/<[^>]*>/g, " "), /It made project\.md\./);
+  assert.equal(/report\.md/.test(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap())), false);
 });

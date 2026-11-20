@@ -19,6 +19,7 @@ NAME_MAX = 60
 TARGET_MAX = 80
 _PATH_KEYS = ("file_path", "path", "notebook_path")
 _NAME_OK = re.compile(r"[^A-Za-z0-9_.:-]+")
+_NOT_A_TOOL = frozenset({"StructuredOutput", "PROPOSE"})     # a reply returned as a tool call, and J2's own pseudo-tool for a proposal: neither is something a step did (D394)
 _MCP = "mcp__sutra__"                                  # the app's own tool server (`claude.py`: one server for the `sutra` and `github` tools)
 
 
@@ -45,7 +46,7 @@ def facts(data: Any, provider: str = "claude") -> Optional[tuple[str, str, str]]
             return None
         raw = data.get("name") or data.get("type")
         name = _name(raw)
-        if not name or name == "StructuredOutput":
+        if not name or name in _NOT_A_TOOL:
             return None
         if name.startswith(_MCP):
             kind = "github" if name[len(_MCP):].startswith("github") else "sutra"
