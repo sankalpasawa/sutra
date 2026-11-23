@@ -136,3 +136,12 @@ test("a heads up row has Open its chat for its team, beside Open team, and none 
   assert.equal((html.match(/data-act="open-team-chat"/g) || []).length, 1);
   assert.doesNotMatch(HV.laneHtml([row(3, "problem", {dept_id: '"><img src=x>'})], {}), /<img|open-team-chat/);
 });
+
+test("a row of a step of a project opens the project's page, beside the team's; an ordinary row has no project link (D412)", () => {
+  const html = HV.laneHtml([{kind: "finished", tone: "ok", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "done", text: "Web finished Page", at: "2026-11-23T10:00:00Z", since_s: 30, project_id: "prj_0123456789ab"}], {});
+  assert.match(html, /<a class="huopen" href="\/p\/prj_0123456789ab">Open the project<\/a>/);
+  assert.match(html, /<a class="huopen" href="\/d\/web\/\?view=simple">Open team<\/a>/, "both are offered");
+  const plain = HV.laneHtml([{kind: "finished", tone: "ok", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "Page", status: "done", text: "Web finished Page", at: "2026-11-23T10:00:00Z", since_s: 30}], {});
+  assert.equal(/Open the project/.test(plain), false);
+  assert.equal(/Open the project/.test(HV.laneHtml([{kind: "finished", tone: "ok", task_id: "tsk_0123456789ab", dept_id: "web", dept_name: "Web", title: "P", status: "done", text: "t", at: "2026-11-23T10:00:00Z", since_s: 3, project_id: '"><script>'}], {})), false);
+});
