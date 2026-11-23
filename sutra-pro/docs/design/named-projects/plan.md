@@ -643,7 +643,9 @@ All paths below are relative to `sutra-pro/`; every command runs from `sutra-pro
   5. Rename to "Pulse pilot"; delete a second test project, confirm, and its folder stays.
 - [ ] **Step 3:** `git fetch origin && git merge origin/main`, rerun every test file named in tasks 1 to 10, then
   `git push origin named-projects` (with `env -u GITHUB_TOKEN -u GH_TOKEN` if the push is refused).
-- [ ] **Step 4:** Stop. Report to the owner: the commit, the CUJ results, what was not verified, and that the beta try on
+- [ ] **Step 4:** Rollback note: migration v9 makes a plain revert unusable on a migrated database (an older app refuses a newer schema);
+  roll back by a revert that keeps `DDL_V9_HIDDEN_TEAMS` (D426).
+- [ ] **Step 5:** Stop. Report to the owner: the commit, the CUJ results, what was not verified, and that the beta try on
   the Mac (`scripts/py scripts/install_app.py beta`) gates the merge to `main` and Phase 2.
 
 ## Phase 2: the next prompt continues from the project folder

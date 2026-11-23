@@ -105,7 +105,7 @@ def export(host) -> dict:
     return export_module.step(host)
 
 
-STEPS: tuple[tuple[str, Step], ...] = (("agent_views", agent_views), ("catalog", catalog), ("export", export))
+STEPS: tuple[tuple[str, Step], ...] = (("agent_views", agent_views), ("export", export), ("catalog", catalog))      # export before the catalog: its lock may wait 30 s (D428)
 NODE_STEPS: tuple[tuple[str, Step], ...] = (("handoff", handoff),)       # added after `STEPS` for the run of a node only: any other run has the steps (and the trace lines) it always had (MAN-6)
 
 

@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import tempfile
+import threading
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -91,6 +92,7 @@ class TeamAdmin:
         self.db, self.chart, self.departments, self.clock, self.folders = db, chart, departments, clock, folders
         self.data_dir = Path(data_dir)
         self.documents = Path(documents) if documents is not None else oslayer.documents_dir()
+        self._lock = threading.RLock()
 
     @classmethod
     def of(cls, services: Any) -> "TeamAdmin":
@@ -121,6 +123,10 @@ class TeamAdmin:
 
     def create(self, name: Any, folder: str | None = None, access: str = "edit") -> TeamCreated:
         """Make the team (its five function agents, its home folder and page, through the chart) and its project folder."""
+        with self._lock:                                # one owner change at a time: two creates never pick the same name or folder
+            return self._create(name, folder, access)
+
+    def _create(self, name: Any, folder: str | None, access: str) -> TeamCreated:
         clean = clean_name(name)
         self._need_free(clean)
         access = self._access(access)
@@ -162,6 +168,10 @@ class TeamAdmin:
     # ---- rename and hide --------------------------------------------------------------------------------------------------------
 
     def rename(self, dept_id: str, name: Any) -> DepartmentOut:
+        with self._lock:
+            return self._rename_team(dept_id, name)
+
+    def _rename_team(self, dept_id: str, name: Any) -> DepartmentOut:
         clean = clean_name(name)
         self._visible(dept_id)
         self._need_free(clean, except_id=dept_id)
@@ -170,20 +180,25 @@ class TeamAdmin:
 
     def hide(self, dept_id: str) -> None:
         """Delete a project for the owner: refused while it works; else renamed "<name> (deleted <d Mon>)" and hidden. Nothing on disk goes."""
-        team = self._visible(dept_id)
-        marks = ",".join("?" * len(OPEN_STATUSES))
-        working = self.db.conn().execute(f"SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ({marks}) LIMIT 1", (dept_id, *OPEN_STATUSES)).fetchone()
-        if working is not None:
-            raise Busy(f"{team.name} is working. Stop it first.")
-        base = deleted_name(team.name, datetime.fromtimestamp(self.clock.now()).date())
-        taken = {name_key(r[0]) for r in self.db.conn().execute("SELECT name FROM org_nodes WHERE kind = 'department' AND id != ?", (dept_id,))}
-        hidden, n = base, 1
-        while name_key(hidden) in taken:
-            n += 1
-            hidden = f"{base[:NAME_CHARS - len(str(n)) - 1]} {n}"
-        self._rename(dept_id, hidden)
-        with self.db.tx() as tx:
-            tx.conn.execute("UPDATE departments SET hidden_at = ? WHERE id = ?", (tx.now(), dept_id))
+        with self._lock:
+            team = self._visible(dept_id)
+            marks = ",".join("?" * len(OPEN_STATUSES))
+            with self.db.tx() as tx:                    # the busy check and the mark in ONE transaction: no new work slips in between
+                if tx.conn.execute(f"SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ({marks}) LIMIT 1", (dept_id, *OPEN_STATUSES)).fetchone() is not None:
+                    raise Busy(f"{team.name} is working. Stop it first.")
+                tx.conn.execute("UPDATE departments SET hidden_at = ? WHERE id = ?", (tx.now(), dept_id))
+            try:
+                base = deleted_name(team.name, datetime.fromtimestamp(self.clock.now()).date())
+                taken = {name_key(r[0]) for r in self.db.conn().execute("SELECT name FROM org_nodes WHERE kind = 'department' AND id != ?", (dept_id,))}
+                hidden, n = base, 1
+                while name_key(hidden) in taken:
+                    n += 1
+                    hidden = f"{base[:NAME_CHARS - len(str(n)) - 1]} {n}"
+                self._rename(dept_id, hidden)
+            except BaseException:
+                with self.db.tx() as tx:                # the rename failed: the project is back as it was, visible under its own name
+                    tx.conn.execute("UPDATE departments SET hidden_at = NULL WHERE id = ?", (dept_id,))
+                raise
 
     def _rename(self, dept_id: str, name: str) -> None:
         for attempt in (1, 2):

@@ -286,7 +286,8 @@ class Recurring:
         return made.id
 
     def _team_active(self, conn: sqlite3.Connection, dept_id: str) -> bool:
-        return conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone() is not None
+        return conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active' AND d.hidden_at IS NULL",
+                            (dept_id,)).fetchone() is not None          # a project the owner deleted (D426) runs no schedule: the tick pauses it
 
     def run_now(self, rec_id: str) -> RunOut:
         """Start the standing task by hand, now. A team that is busy refuses (409): a manual run is the owner's own click, so it is told,

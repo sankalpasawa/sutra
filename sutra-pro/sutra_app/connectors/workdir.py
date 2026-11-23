@@ -261,11 +261,13 @@ class WorkFolder:
         return WorkFolder(self.data_dir, self.work_root, dept_id=dept_id)
 
     def team_grant(self, dept_id: str) -> Optional[Folder]:
-        """The folder a team's chats and runs use: its own while that is usable, else this store's own (the app-wide one). `""` is the app-wide one."""
+        """The folder a team's chats and runs use: its own when it has one (None while that one cannot be used: moved, deleted, refused),
+        else this store's own, the app-wide one. A project with a folder of its own never works in another folder (R1.6). `""` is the
+        app-wide one."""
         if dept_id:
-            own = self.for_team(dept_id).grant()
-            if own is not None:
-                return own
+            own = self.for_team(dept_id)
+            if own.stored() is not None:
+                return own.grant()
         return self.grant()
 
     # ---- reads -----------------------------------------------------------------------------------------------------------------

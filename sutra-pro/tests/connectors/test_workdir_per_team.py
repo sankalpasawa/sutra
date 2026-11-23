@@ -49,11 +49,12 @@ def test_a_team_without_a_folder_gets_the_app_wide_one(dirs):
     assert grant.edit is False
 
 
-def test_a_vanished_team_folder_falls_back(dirs):
+def test_a_vanished_team_folder_gives_no_folder_never_the_app_wide_one(dirs):
+    """R1.6: only a project WITHOUT a folder falls back; one whose folder vanished must not edit an unrelated folder."""
     WorkFolder(dirs.data).set(str(dirs.b))
     WorkFolder(dirs.data, dept_id="pulse").set(str(dirs.a))
     dirs.a.rmdir()
-    assert WorkFolder(dirs.data).team_grant("pulse") == real(dirs.b)
+    assert WorkFolder(dirs.data).team_grant("pulse") is None
 
 
 def test_blank_dept_is_the_app_wide_folder(dirs):

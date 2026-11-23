@@ -893,8 +893,11 @@ class TaskService:
         said = self.clean(body)                          # the answer, the follow-up and the team's chat line; the override is read from `body`
         refusal: AppError | None = None
         with self.db.tx() as tx:
-            if tx.conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone() is None:
+            team = tx.conn.execute("SELECT d.hidden_at FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone()
+            if team is None:
                 raise NotFound("that team")
+            if team["hidden_at"] is not None:                # a project the owner deleted takes no new work (D426)
+                raise ReadOnly("This project was deleted.")
             sid = self._dept_session(tx.conn, dept_id)
             live = self.store.live_in(tx.conn, dept_id)
             override = self._override_command(body)

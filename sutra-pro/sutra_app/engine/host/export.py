@@ -59,12 +59,36 @@ def _is_record(rel: str) -> bool:
     return (rel.endswith(_RECORD_SUFFIXES) or parts[0] in _RECORD_TOPS or any(p.startswith(".") for p in parts) or ".." in parts)
 
 
+def _walk(run_dir: Path, top: str) -> set[str]:
+    """Every file of a folder output, at any depth, with `/`: a built app keeps its configs (`package.json`, `config/*.json`). Dotfiles and
+    dot-folders (an app's `.env`, `.git`) and links are left out."""
+    found: set[str] = set()
+    base = run_dir / top
+    if not base.is_dir() or base.is_symlink():
+        return found
+    for here, dirs, files in os.walk(base, followlinks=False):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(here, d))]
+        for name in files:
+            path = Path(here) / name
+            if name.startswith(".") or path.is_symlink():
+                continue
+            found.add(path.relative_to(run_dir).as_posix())
+    return found
+
+
 def deliverable_files(run_dir: Path, rows: list[dict]) -> list[str]:
-    """The run's deliverables as relative paths with `/`, sorted: each row's file that is not a record, and the `.docx` beside a document."""
+    """The run's deliverables as relative paths with `/`, sorted: each row's file that is not a record, the `.docx` beside a document, and
+    the whole folder of a folder output (form `agent`). The record rules (`*.json`, `site/`, `out/`) are the run's top level only: inside an
+    app's folder a JSON file is the app's."""
     run_dir = Path(run_dir)
     out: set[str] = set()
     for row in rows or []:
         rel = str((row or {}).get("file") or "").replace("\\", "/").lstrip("/")
+        if (row or {}).get("form") == "agent":
+            top = rel.split("/")[0]
+            if top and not top.startswith(".") and top not in _RECORD_TOPS and ".." not in rel.split("/") and ":" not in top:
+                out |= _walk(run_dir, top)
+            continue
         if not rel or _is_record(rel):
             continue
         src = run_dir / rel
@@ -176,6 +200,14 @@ def _rows(run_dir: Path, own: Optional[str] = None) -> list[dict]:
     from .. import j2_artifacts
     listed = j2_artifacts.listing(str(run_dir))
     rows = list(listed.get("deliverables") or []) + [r for r in listed.get("records") or [] if r.get("form") == "agent"]
+    try:                                          # a folder output whose files all sit in subfolders has no row: find it from its type
+        types = j2_artifacts.load_types(str(run_dir))["types"]
+    except Exception:  # noqa: BLE001 - the types list is a courtesy here; the rows above still go
+        types = []
+    for t in types:
+        pattern = str(t.get("file") or "")
+        if t.get("form") == "agent" and pattern.endswith("/*") and (Path(run_dir) / pattern[:-2]).is_dir():
+            rows.append({"file": pattern[:-2], "form": "agent"})
     if not own:
         try:
             own = json.loads((Path(run_dir) / "deliverable.json").read_text(encoding="utf-8")).get("file")

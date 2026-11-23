@@ -171,8 +171,10 @@ def test_a_stopped_run_writes_nothing(run, folder, tmp_path, monkeypatch):
     assert list(folder.iterdir()) == [] and not (run / "export.json").exists()
 
 
-def test_export_is_a_finish_step():
-    assert "export" in [name for name, _ in finish.STEPS]
+def test_export_is_a_finish_step_before_the_catalog():
+    """The catalog may wait 30 s for the library lock, and a step over the limit skips every later one: export must not be one of them."""
+    names = [name for name, _ in finish.STEPS]
+    assert "export" in names and names.index("export") < names.index("catalog")
 
 
 # ---- a real (mock) run to Done ----------------------------------------------------------------------------------------------------
@@ -190,3 +192,25 @@ def test_a_finished_mock_run_writes_into_the_team_folder(j2, make_run_dir, data_
     record = json.loads((run_dir / "export.json").read_text())
     assert record["folder"] == os.path.realpath(team) and "project.md" in record["new"]
     assert [m for m in chat(run_dir) if m["text"].startswith(f"Saved to {os.path.realpath(team)}: ")]
+
+
+# ---- a built app reaches the folder whole: nested files and its own configs (review: Important 2) --------------------------------
+
+def test_a_folder_output_is_exported_whole_with_nested_files_and_configs(run, folder):
+    write(run / "pulse_app" / "src" / "digest.py", "def digest(): ...\n")
+    write(run / "pulse_app" / "config" / "pulse.json", '{"time": "08:00"}\n')
+    write(run / "pulse_app" / "package.json", "{}\n")
+    write(run / "pulse_app" / ".env", "SECRET=1\n")
+    files = export.deliverable_files(run, [{"file": "pulse_app/main.py", "form": "agent"}])
+    assert files == ["pulse_app/config.py", "pulse_app/config/pulse.json", "pulse_app/main.py", "pulse_app/package.json", "pulse_app/src/digest.py"]
+    result = export.export_run(run, folder, "j2-1", [{"file": "pulse_app/main.py", "form": "agent"}])
+    assert (folder / "pulse_app" / "config" / "pulse.json").read_text(encoding="utf-8") == '{"time": "08:00"}\n'
+    assert not (folder / "pulse_app" / ".env").exists() and len(result.new) == 5
+
+
+def test_a_folder_output_with_only_subfolders_is_found_from_its_type(run, monkeypatch):
+    from sutra_app.engine import j2_artifacts
+    write(run / "notes_app" / "lib" / "notes.py", "x = 1\n")
+    monkeypatch.setattr(j2_artifacts, "listing", lambda d: {"deliverables": [], "records": []})
+    monkeypatch.setattr(j2_artifacts, "load_types", lambda d=None: {"types": [{"name": "notes_app", "kind": "type", "form": "agent", "file": "notes_app/*"}]})
+    assert export.deliverable_files(run, export._rows(run)) == ["notes_app/lib/notes.py"]

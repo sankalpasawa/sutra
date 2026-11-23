@@ -65,7 +65,7 @@ def test_the_finish_step_writes_it_only_for_a_node_and_a_run_that_is_not_one_wri
     (plain / "out.txt").write_text("x")
     host = host_for(plain, node=False)
     assert finish.run_steps(host, "done", ()) == [] and not (plain / "handoff.json").exists()
-    assert [name for name, _ in finish.STEPS + (finish.NODE_STEPS if host.task.node is not None else ())] == ["agent_views", "catalog", "export"]
+    assert [name for name, _ in finish.STEPS + (finish.NODE_STEPS if host.task.node is not None else ())] == ["agent_views", "export", "catalog"]
     rows = finish.run_steps(host, "done", (("handoff", finish.handoff),))
     assert rows[0]["result"] == "skipped" and "not a node" in rows[0]["why"] and not (plain / "handoff.json").exists()
     node_dir = tmp_path / "node"

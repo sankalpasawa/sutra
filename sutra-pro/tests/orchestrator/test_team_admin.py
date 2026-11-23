@@ -265,3 +265,32 @@ def test_a_new_project_never_shares_a_deleted_ones_empty_folder(client, auth, do
     assert not any(os.scandir(first["folder"]))                         # still empty: the old project never ran
     again = made(client, auth, "Throwaway")
     assert again["folder"] == real(documents / "Sutra Pro" / "Throwaway 2")
+
+
+# ---- hide is all or nothing (review: Important 5) ---------------------------------------------------------------------------------
+
+def test_hide_marks_the_team_hidden_before_the_rename(client, auth, built, admin, monkeypatch):
+    team_id = made(client, auth)["team"]["id"]
+    seen = {}
+    original = admin._rename
+
+    def rename(dept_id, name):
+        seen["hidden_at"] = built.one("SELECT hidden_at FROM departments WHERE id = ?", dept_id)
+        return original(dept_id, name)
+
+    monkeypatch.setattr(admin, "_rename", rename)
+    admin.hide(team_id)
+    assert seen["hidden_at"] is not None                  # no moment where new work could reach a team being deleted
+
+
+def test_a_failed_rename_leaves_the_project_as_it_was(client, auth, built, admin, monkeypatch):
+    team_id = made(client, auth)["team"]["id"]
+
+    def broken(dept_id, name):
+        raise RuntimeError("the chart could not be saved")
+
+    monkeypatch.setattr(admin, "_rename", broken)
+    with pytest.raises(RuntimeError):
+        admin.hide(team_id)
+    assert built.one("SELECT hidden_at FROM departments WHERE id = ?", team_id) is None
+    assert built.one("SELECT name FROM org_nodes WHERE id = ?", team_id) == "Pulse"

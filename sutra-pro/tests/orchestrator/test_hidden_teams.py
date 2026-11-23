@@ -69,3 +69,42 @@ def test_chat_grounding_leaves_out_a_hidden_team(env):
 def test_without_hidden_keeps_the_chart_when_nothing_is_hidden(env):
     head = env.head()
     assert without_hidden(head, set()) is head
+
+
+# ---- a deleted project takes no new work, whatever the path (review: Important 1) ----------------------------------------------
+
+@pytest.fixture
+def convo(tmp_path):
+    from fastapi.testclient import TestClient
+    from orchestrator.test_scripted_conversation import Scenario, make_scenario
+    app, connector = make_scenario(tmp_path)
+    with TestClient(app, base_url="http://127.0.0.1:8780") as client:
+        yield Scenario(client, app, connector)
+
+
+def deleted_project(convo):
+    from orchestrator.test_scripted_conversation import HEADERS
+    team = convo.client.post("/api/teams", json={"name": "Pulse"}, headers=HEADERS).json()["team"]
+    assert convo.client.delete(f"/api/teams/{team['id']}", headers=HEADERS).status_code == 200
+    return team
+
+
+def test_a_deleted_projects_chat_refuses_new_work(convo):
+    from orchestrator.test_scripted_conversation import HEADERS
+    team = deleted_project(convo)
+    response = convo.client.post(f"/api/chats/{team['session_id']}/messages", json={"text": "build it"}, headers=HEADERS)
+    assert response.status_code == 403 and response.json()["error"]["message"] == "This project was deleted."
+    assert convo.one("SELECT count(*) FROM tasks WHERE dept_id = ?", team["id"]) == 0
+
+
+def test_a_deleted_projects_direct_chat_refuses(convo):
+    from orchestrator.test_scripted_conversation import HEADERS
+    team = deleted_project(convo)
+    response = convo.client.post(f"/api/chats/{team['session_id']}/direct", json={"text": "hello"}, headers=HEADERS)
+    assert response.status_code == 403 and response.json()["error"]["message"] == "This project was deleted."
+
+
+def test_a_deleted_projects_schedules_stop(env):
+    from sutra_app.orchestrator.recurring import Recurring as RecurringService
+    assert RecurringService._team_active(None, env.db.conn(), "sales") is True
+    assert RecurringService._team_active(None, env.db.conn(), "web") is False

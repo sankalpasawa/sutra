@@ -239,6 +239,7 @@ def build_router() -> APIRouter:
             raise ReadOnly("This chat was archived. Open the team's current chat to write.")
         if not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
+        _refuse_deleted(services, session)
         if len(body.text) > MAX_CHARS:
             sentence = f"Messages can be up to {MAX_CHARS} characters; this one has {len(body.text)}."
             raise validation_error([violation("text", "string_too_long", sentence)], sentence)
@@ -305,6 +306,7 @@ def build_router() -> APIRouter:
             raise ReadOnly("This chat was archived. Open the team's current chat to write.")
         if not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
+        _refuse_deleted(services, session)
         return await _retry_live(request, services, port, sid, body, session)
 
     # the same route as ever, in the same place (the order of /openapi.json is the order of registration); `AskRoute` is inert while the flag is off (orchestrator/ask_mode.py)
@@ -373,6 +375,17 @@ def _ground(services: Any, port: Any, sid: str, ask: bool = False) -> None:
         port.set_system(sid, ground(services, sid, ask=True) if ask else ground(services, sid))
     except Exception:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
+
+
+def _refuse_deleted(services: Any, session: Any) -> None:
+    """A project the owner deleted (hidden, D426) takes no new work: its chats stay readable, a new line is refused."""
+    kind = getattr(session, "kind", "")
+    dept = session.node_id if kind == "department" else None
+    if kind == "division":
+        found = services.db.conn().execute("SELECT department_id FROM graph_nodes WHERE id = ?", (session.node_id,)).fetchone()
+        dept = found["department_id"] if found is not None else None
+    if dept and services.db.conn().execute("SELECT 1 FROM departments WHERE id = ? AND hidden_at IS NOT NULL", (dept,)).fetchone() is not None:
+        raise ReadOnly("This project was deleted.")
 
 
 def _for_team(services: Any, sid: str, turn: ChatTurnIn) -> ChatTurnIn:
