@@ -1,6 +1,7 @@
 """The words and links of a step's own cards (D394): a done card of a project step links to the project and says how it was stopped in the owner's words; the engine's pseudo-tool is no tool row; the
 grant line has no 'tools none' next to the run tools; the project is titled by the request."""
 import json
+import re
 
 import pytest
 from orchestrator.projects_rig import PRig  # noqa: F401
@@ -155,10 +156,29 @@ def test_the_snapshot_carries_the_question_a_waiting_step_asked_and_none_when_no
     assert rig.projects.snapshot(reservation.project_id)["questions"] == [], "an answered question is gone"
 
 
-def test_decide_for_me_never_answers_an_engine_question_about_finishing_as_it_is():
-    from sutra_app.orchestrator.gatekeeper import decide_for_me_answer
-    for kind in ("question", "engine_question", "finish_as_is", "chat_question"):
-        assert decide_for_me_answer(kind, None) is None, kind
+def test_decide_for_me_never_answers_a_step_engine_question_through_the_real_path(rig):
+    """r-4: the guarantee is that Decide for me acts on `approvals` rows only and an engine question is a chat message. This opens a real step question, turns Decide for me on (the owner's switch and the
+    rule table's own pass) and shows the question still open, no message answered and the step still waiting."""
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], decide_for_me=True)
+    rig.start()
+    rig.go(tasks["a1"])
+    session = ask_in_step(rig, tasks["a1"])
+    team = rig.sql("SELECT node_id FROM chat_sessions WHERE id = ?", session).fetchone()[0]
+    rig.projects.owner_turned_on(team)                                                  # the owner's Decide for me switch, for the team the step belongs to
+    with rig.t.db.tx() as tx:
+        rig.projects._decide_by_rule(tx, reservation.project_id)                       # the rule table's own pass over every open question of the project
+    assert [q["message_id"] for q in rig.projects.snapshot(reservation.project_id)["questions"]] != [], "the engine question is still open"
+    assert rig.sql("SELECT count(*) FROM chat_messages WHERE kind = 'question' AND answered_by IS NULL").fetchone()[0] == 1
+    assert rig.sql("SELECT status FROM tasks WHERE id = ?", tasks["a1"]).fetchone()[0] == "waiting_user", "the step still waits for the owner"
+
+
+def test_the_rule_table_has_no_kind_an_engine_question_could_have():
+    """If anyone adds one, this fails: the table names kinds of a project's own approvals (tier, scope, plan estimate, a permission of the computer) and none that is a team's question about its work."""
+    import inspect
+    from sutra_app.orchestrator import gatekeeper
+    names = set(re.findall(r'"([a-z_]+)"', inspect.getsource(gatekeeper.decide_for_me_answer)))
+    assert {"plan_estimate", "scope", "scope_violation", "tier", "system"} <= names
+    assert not [n for n in names if "question" in n or "engine" in n or "finish" in n or "chat" in n], names
 
 
 # ---- the engine's "done with open items" in the owner's words (D402, run 3 item 3) -----------------------------------------------------------------
