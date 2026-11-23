@@ -97,9 +97,12 @@
   }
 
   /* ---------------------------------------------------------------- pieces */
+  // The steps that wait for an answer to a question of the engine itself (D401), as a set of step ids.
+  const asking = snap => { const ids = {}; arr(isObj(snap) ? snap.questions : []).filter(isObj).forEach(q => { ids[clean(q.node_id)] = true; }); return ids; };
   function header(snap) {
     const p = isObj(snap) && isObj(snap.project) ? snap.project : {};
-    const status = word(STATUS_WORDS, p.status, "Working");
+    const waiting = Object.keys(asking(snap)).length > 0 && (p.status === "running" || p.status === "reviewing");
+    const status = waiting ? "Waiting for your answer" : word(STATUS_WORDS, p.status, "Working");
     const final = FINAL.indexOf(p.status) >= 0;
     const paused = p.paused === true && !final;
     const held = paused && arr(isObj(snap) ? snap.cards : []).some(c => isObj(c) && c.kind === "scope_violation");          // a question about files nobody owns holds it: Continue would be refused (N-3)
@@ -151,7 +154,13 @@
         (affects.length ? '<p class="cnote">This holds up: ' + esc(affects.join(", ")) + ". The other steps go on.</p>" : "") +
         '<div class="opts">' + answerButtons(c.options && c.options.length ? c.options : ["check_again", "skip"], project, clean(c.approval_id), clean(c.item)) + "</div></div>";
     });
-    const all = asked.concat(system);
+    const engine = arr(s.questions).filter(isObj).map(q => {
+      const options = arr(q.options).map(clean).filter(Boolean).slice(0, 20);
+      const buttons = options.map((text, i) => '<button type="button" data-act="step-answer" data-session="' + esc(clean(q.session_id)) + '" data-text="Option ' + (i + 1) + '">' + esc(text.length > 160 ? text.slice(0, 159) + "\u2026" : text) + "</button>").join("");
+      return '<div class="ncard c-nodeapproval" data-card="step_question" data-message="' + esc(clean(q.message_id)) + '"><p class="sq">' + esc(clean(q.text).replace(/\s*Option \d+:.*$/, "")) + "</p>" +
+        (buttons ? '<div class="opts">' + buttons + "</div>" : '<p class="cnote">Answer it in that team\'s chat.</p>') + "</div>";
+    });
+    const all = asked.concat(system, engine);
     return all.length ? '<h2>Waiting for you</h2><div class="pcards">' + all.join("") + "</div>" : "";
   }
 
@@ -159,7 +168,7 @@
      bottom for a phone (CSS shows one of them), so the picture never needs a sideways scroll. */
   const BOX = freeze({w: 150, h: 42, gx: 50, gy: 16});
   const short = (text, n) => (text.length > n ? text.slice(0, n - 1).trimEnd() + "\u2026" : text);
-  function drawGraph(nodes, edges, deep, vertical) {
+  function drawGraph(nodes, edges, deep, vertical, ask) {
     const rows = {};
     const place = {};
     nodes.forEach(n => {
@@ -182,7 +191,7 @@
       const at = place[n.id];
       const name = Store().nodeName(n);
       return '<g class="pnode" data-state="' + esc(clean(n.state)) + '" transform="translate(' + at.x + "," + at.y + ')"><title>' + esc(name) + '</title><rect width="' + BOX.w + '" height="' + BOX.h + '" rx="8"/>' +
-        '<text x="10" y="18" class="pn1">' + esc(short(name, 21)) + '</text><text x="10" y="34" class="pn2">' + esc(word(STATE_WORDS, n.state, "")) + "</text></g>";
+        '<text x="10" y="18" class="pn1">' + esc(short(name, 21)) + '</text><text x="10" y="34" class="pn2">' + esc(ask[n.id] ? "Waiting for your answer" : word(STATE_WORDS, n.state, "")) + "</text></g>";
     }).join("");
     return {width, height, body: lines + boxes};
   }
@@ -194,7 +203,7 @@
     const deep = Store().depths(nodes, edges);
     const label = nodes.length + (nodes.length === 1 ? " step" : " steps") + " and the order they run in";
     const svg = (g, klass, hidden) => '<svg class="' + klass + '" ' + (hidden ? 'aria-hidden="true"' : 'role="img" aria-label="' + esc(label) + '"') + ' viewBox="0 0 ' + g.width + " " + g.height + '" width="' + g.width + '" height="' + g.height + '">' + g.body + "</svg>";
-    return '<h2>The steps</h2><div class="pgraph">' + svg(drawGraph(nodes, edges, deep, false), "pflow-h", false) + svg(drawGraph(nodes, edges, deep, true), "pflow-v", true) + "</div>" +
+    return '<h2>The steps</h2><div class="pgraph">' + svg(drawGraph(nodes, edges, deep, false, asking(s)), "pflow-h", false) + svg(drawGraph(nodes, edges, deep, true, asking(s)), "pflow-v", true) + "</div>" +
       (edges.some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
   }
 
@@ -211,13 +220,14 @@
     const s = isObj(snap) ? snap : {};
     const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
     const byId = {};
+    const ask = asking(s);
     nodes.forEach(n => { byId[n.id] = n; });
     const items = nodes.map(n => {
       const after = arr(n.depends_on).map(id => byId[id]).filter(Boolean).map(x => Store().nodeName(x));
       const waits = arr(s.edges).filter(e => isObj(e) && e.kind === "conflict" && e.to === n.id && byId[e.from]).map(e => Store().nodeName(byId[e.from]));
       const files = arr(n.scope).map(clean).filter(Boolean);
       return '<li class="pstep" data-state="' + esc(clean(n.state)) + '" data-node="' + esc(clean(n.id)) + '"><b>' + esc(Store().nodeName(n)) + "</b> " +
-        '<span class="pstate">' + esc(word(STATE_WORDS, n.state, "")) + "</span>" +
+        '<span class="pstate">' + esc(ask[n.id] ? "Waiting for your answer" : word(STATE_WORDS, n.state, "")) + "</span>" +
         (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") + usedHtml(n) +
         (after.length ? '<span class="cnote">Starts after: ' + esc(after.join(", ")) + "</span>" : "") +
         (waits.length ? '<span class="cnote">Shares files with, so waits for: ' + esc(waits.join(", ")) + "</span>" : "") +

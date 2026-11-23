@@ -126,3 +126,36 @@ def test_a_step_whose_project_is_over_keeps_its_done_card_with_the_link(rig):
     rig.finish(tasks["a1"], status="stopped", outcome="Stopped: stopped on request", handoff=False)
     [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
     assert card["project_id"] == reservation.project_id and card["outcome"] == "You stopped it"
+
+
+# ---- a step that waits for an answer to the engine's own question (D401, run 3 item 2) --------------------------------------------------------------
+
+QUESTION = ("The same mistake in the closing notes came back twice. Do you want the team to keep working on those notes, or take the report as it is now?\n"
+            "Option 1: keep working on the notes\nOption 2: take the report as it is now")
+
+
+def ask_in_step(rig, task_id):
+    session = rig.sql("SELECT id FROM chat_sessions WHERE kind = 'department' LIMIT 1").fetchone()[0]
+    rig.sql("UPDATE tasks SET status = 'waiting_user' WHERE id = ?", task_id)
+    rig.sql("INSERT INTO chat_messages(session_id, role, who, kind, text, task_id, state, at) VALUES (?, 'agent', 'Audit', 'question', ?, ?, 'ok', ?)", session, QUESTION, task_id, BASE + 9)
+    return session
+
+
+def test_the_snapshot_carries_the_question_a_waiting_step_asked_and_none_when_nothing_waits(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    assert rig.projects.snapshot(reservation.project_id)["questions"] == []
+    rig.start()
+    rig.go(tasks["a1"])
+    session = ask_in_step(rig, tasks["a1"])
+    [q] = rig.projects.snapshot(reservation.project_id)["questions"]
+    node = rig.node_of(tasks["a1"])
+    assert q["node_id"] == node["id"] and q["session_id"] == session and q["options"] == ["keep working on the notes", "take the report as it is now"]
+    assert q["text"].startswith("The same mistake in the closing notes")
+    rig.sql("UPDATE chat_messages SET answered_by = 1 WHERE kind = 'question'")
+    assert rig.projects.snapshot(reservation.project_id)["questions"] == [], "an answered question is gone"
+
+
+def test_decide_for_me_never_answers_an_engine_question_about_finishing_as_it_is():
+    from sutra_app.orchestrator.gatekeeper import decide_for_me_answer
+    for kind in ("question", "engine_question", "finish_as_is", "chat_question"):
+        assert decide_for_me_answer(kind, None) is None, kind

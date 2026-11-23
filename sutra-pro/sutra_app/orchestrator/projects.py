@@ -884,7 +884,19 @@ class ProjectService:
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
                 "spend": {"calls": calls, "usd": round(usd, 6) if calls or usd else None, "unpriced": unpriced}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
-                "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
+                "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last,
+                "questions": self._step_questions(conn, project_id)}
+
+    @staticmethod
+    def _step_questions(conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
+        """The questions the ENGINE of a step asked the owner (J2's own: "keep working on those notes, or take the report as it is?") and nobody answered yet, for the steps of this project that wait for
+        an answer (D401). They are chat questions of the step's team, answered through the chat route; the project page shows them so the owner need not find them on Home. The rule table never answers
+        one of these: Decide for me answers questions of the project (a tier, a scope, an estimate), not the engine's own about its work."""
+        from sutra_app.orchestrator.chats import parse_options
+        rows = conn.execute("SELECT n.id AS node, m.id AS message_id, m.session_id AS session_id, m.text AS text FROM agent_nodes n JOIN tasks t ON t.id = n.task_id "
+                            "JOIN chat_messages m ON m.task_id = n.task_id AND m.kind = 'question' AND m.answered_by IS NULL "
+                            "WHERE n.project_id = ? AND t.status = 'waiting_user' ORDER BY m.id", (project_id,)).fetchall()
+        return [{"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": r["text"][:1500], "options": parse_options(r["text"])} for r in rows]
 
     @staticmethod
     def _with_usage(conn: sqlite3.Connection, node: NodeOut, now: int) -> NodeOut:
