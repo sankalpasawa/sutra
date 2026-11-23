@@ -233,8 +233,8 @@
     if (S.settings) paintEngine();
   }
 
-  // ---- where the start box sends (named projects, R1.9 and R1.10): the heading's project, or "Let Sutra choose" (the org chat). The pick
-  // starts on the last one used, kept on the server (GET/PUT /api/teams/last): a browser's storage belongs to one port.
+  // ---- where the start box sends (named projects, R1.9 and R1.10): the heading's project; only with no project at all, the org chat. The pick
+  // starts on the last one used (else the first project), kept on the server (GET/PUT /api/teams/last): a browser's storage belongs to one port.
   const pickState = {mounted: null, pick: "", loaded: false};
   function renderPick() {
     const el = $("fd-new-h");
@@ -288,11 +288,10 @@
     renderNeeds();
     renderRail();
     renderChat();
-    nameAfterSend();
   }
 
-  // Named projects (D427): the org chat never makes a project by itself. A project it would start is named in the Create project box: opened
-  // by "Name it…" on the card, and by itself once per change after the owner sent a request from the start box with "Let Sutra choose".
+  // Named projects (D427): the org chat never makes a project by itself. A project it would start is named in the Create project box, opened
+  // by "Name it…" on its card; the box never opens by itself (the owner's call, 23 Nov: only a click opens it).
   const named = {};
   function nameAdd(changeId, ref, name) {
     if (!root.CreateProject || !changeId || !ref) return false;
@@ -303,12 +302,6 @@
     }});
     return true;
   }
-  function nameAfterSend() {
-    if (!S.front || !S.front.sent || !root.FrontDoor || typeof root.FrontDoor.addToName !== "function") return;
-    const next = root.FrontDoor.addToName(S.needs, named);
-    if (next) nameAdd(next.change_id, next.ref, next.name);
-  }
-
   // GET /api/heads-up: crashed or app-stopped work (Try again), teams gone quiet, work finished in 24 h. A failed read keeps the lane it had.
   async function fetchHeads() {
     try {

@@ -180,3 +180,17 @@ body.has-prail #dview .maphead .mappill { border-color: transparent; background:
 .cppicked { margin: 0; }
 .cperr { margin: 2px 0 0; color: var(--pr-bad); }
 @media (max-width: 600px) { .cpwrap { align-items: stretch; } .cpbox { width: 100vw; min-height: 100vh; border-radius: 0; } }
+
+/* ---- the start heading's project picker (project_pick.js): the name is part of the heading, underlined as in Codex, never a box */
+.pp-head { position: relative; }
+.pp-name { all: unset; font: inherit; color: inherit; letter-spacing: inherit; cursor: pointer; text-decoration: underline; text-decoration-thickness: .06em;
+  text-underline-offset: .14em; text-decoration-color: var(--pr-muted); border-radius: 4px; }
+.pp-name:hover, .pp-name[aria-expanded="true"] { text-decoration-color: currentColor; }
+.pp-name:focus-visible { outline: 2px solid var(--pr-accent); outline-offset: 3px; }
+.pp-wrap { position: absolute; left: 0; top: 100%; margin-top: 8px; z-index: 50; }
+.pp-menu { display: flex; flex-direction: column; min-width: 220px; max-height: 60vh; overflow-y: auto; padding: 6px; border: 1px solid var(--pr-line); border-radius: 12px;
+  background: var(--pr-surface); box-shadow: 0 12px 32px var(--pr-shadow); font: 500 15px/1.35 var(--pr-body); color: var(--pr-ink); letter-spacing: normal; }
+.pp-item { all: unset; display: block; padding: 8px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-item:hover, .pp-item:focus-visible { background: var(--pr-hover); }
+.pp-item[aria-checked="true"] { font-weight: 700; }
+.pp-new { margin-top: 4px; border-top: 1px solid var(--pr-line); border-radius: 0 0 8px 8px; color: var(--pr-muted); }

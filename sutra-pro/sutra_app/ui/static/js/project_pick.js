@@ -1,12 +1,13 @@
 /* The start heading's project picker (named projects, R1.8 to R1.10). One classic script, one global: ProjectPick.
 
-   A team page reads "What should we make in <Project>?"; the project name is a button that opens the list of projects (picking another one
-   opens its page) and "+ New project…" (the Create project box). Attention reads the same, starting on the last project picked, and its list
-   also offers "Let Sutra choose": then the heading is "What should we make?" and the prompt goes to the org chat, which picks the team.
+   A team page reads "What should we make in <Project>?"; the project name, underlined (no box, as in Codex), opens the list of projects
+   (picking another one opens its page) and "+ New project…" (the Create project box). Attention reads the same, starting on the last project
+   picked, else the first one. There is no "Let Sutra choose" (the owner's call, 23 Nov): only with no project at all is the heading plain
+   "What should we make?", and then a prompt goes to the org chat.
 
    heading(projects, pick, opts), menuHtml(projects, pick, opts), pickOf(projects, pick), refusal(status, name) are pure (the node tests);
-   mount(el, {projects, pick, attention, onPick}) draws the heading into `el` and opens the list under it. `onPick(id)` gets a project id,
-   "" for Let Sutra choose, "+new" for New project. */
+   mount(el, {projects, pick, attention, onPick}) draws the heading into `el` and opens the list under it. `onPick(id)` gets a project id
+   or "+new" for New project. */
 (function (root) {
   "use strict";
 
@@ -17,10 +18,11 @@
   const clean = v => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim() : "");
   const list = projects => (Array.isArray(projects) ? projects : []).filter(p => isObj(p) && clean(p.id));
 
-  // The pick as shown: a project that is not in the list (deleted since, or never there) is Let Sutra choose.
+  // The pick as shown: the picked project while it is in the list, else the first project (deleted since, or never picked); "" with none.
   function pickOf(projects, pick) {
     const id = clean(pick);
-    return id && list(projects).some(p => p.id === id) ? id : "";
+    const all = list(projects);
+    return id && all.some(p => p.id === id) ? id : (all[0] ? all[0].id : "");
   }
 
   function heading(projects, pick, opts) {
@@ -29,7 +31,7 @@
     if (found) {
       return 'What should we make in <button type="button" class="pp-name" aria-haspopup="menu" aria-expanded="false">' + esc(clean(found.name) || found.id) + "</button>?";
     }
-    return 'What should we make? <button type="button" class="pp-name pp-let" aria-haspopup="menu" aria-expanded="false">Let Sutra choose</button>';
+    return "What should we make?";
   }
 
   function menuHtml(projects, pick, opts) {
@@ -38,7 +40,6 @@
     const item = (value, label, on) => '<button type="button" class="pp-item" role="menuitemradio" aria-checked="' + String(on) + '" data-pp="' + esc(value) + '">' + label + "</button>";
     return '<div class="pp-menu" role="menu" aria-label="Where this goes">' +
       list(projects).map(p => item(p.id, esc(clean(p.name) || p.id), p.id === id)).join("") +
-      (o.attention === true ? item("", "Let Sutra choose", id === "") : "") +
       '<button type="button" class="pp-item pp-new" role="menuitem" data-pp="' + NEW + '">+ New project&hellip;</button></div>';
   }
 

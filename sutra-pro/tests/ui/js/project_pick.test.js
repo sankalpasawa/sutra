@@ -10,30 +10,31 @@ const ProjectPick = require(path.resolve(__dirname, "../../../sutra_app/ui/stati
 const P = [{id: "pulse", name: "Pulse"}, {id: "web", name: "Web <shop>"}];
 const text = html => html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
 
-test("a project heading names it as a button that opens the projects", () => {
+test("a project heading names it as an underlined name that opens the projects (no box)", () => {
   const html = ProjectPick.heading(P, "pulse", {attention: true});
   assert.match(html, /^What should we make in <button type="button" class="pp-name" aria-haspopup="menu" aria-expanded="false">Pulse<\/button>\?$/);
   assert.equal(text(html), "What should we make in Pulse?");
 });
 
-test("Let Sutra choose reads What should we make?", () => {
-  const html = ProjectPick.heading(P, "", {attention: true});
-  assert.match(html, /^What should we make\? <button type="button" class="pp-name pp-let" aria-haspopup="menu" aria-expanded="false">Let Sutra choose<\/button>$/);
+test("there is no Let Sutra choose: an unknown or empty pick is the first project", () => {
+  assert.equal(ProjectPick.pickOf(P, ""), "pulse");
+  assert.equal(ProjectPick.pickOf(P, "gone"), "pulse");
+  assert.equal(ProjectPick.pickOf(P, "web"), "web");
+  assert.equal(text(ProjectPick.heading(P, "gone", {attention: true})), "What should we make in Pulse?");
+  assert.doesNotMatch(ProjectPick.heading(P, "", {attention: true}) + ProjectPick.menuHtml(P, "", {attention: true}), /Let Sutra choose/);
 });
 
-test("the menu lists every project, then Let Sutra choose on Attention only, then New project", () => {
+test("with no project at all the heading is plain words and has no button", () => {
+  assert.equal(ProjectPick.heading([], "", {attention: true}), "What should we make?");
+  assert.equal(ProjectPick.pickOf(null, "web"), "");
+});
+
+test("the menu lists every project, then New project, on Attention and on a team page alike", () => {
   const items = html => (html.match(/data-pp="[^"]*"/g) || []).map(x => x.slice(9, -1));
-  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: true})), ["pulse", "web", "", "+new"]);
+  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: true})), ["pulse", "web", "+new"]);
   assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: false})), ["pulse", "web", "+new"]);
   assert.match(ProjectPick.menuHtml(P, "pulse", {}), /role="menuitemradio" aria-checked="true" data-pp="pulse">Pulse</);
   assert.match(ProjectPick.menuHtml(P, "pulse", {}), /data-pp="\+new">\+ New project&hellip;</);
-});
-
-test("a deleted or unknown last pick reads as Let Sutra choose", () => {
-  assert.equal(ProjectPick.pickOf(P, "gone"), "");
-  assert.equal(ProjectPick.pickOf(P, "web"), "web");
-  assert.equal(ProjectPick.pickOf(null, "web"), "");
-  assert.equal(text(ProjectPick.heading(P, "gone", {attention: true})), "What should we make? Let Sutra choose");
 });
 
 test("names are escaped", () => {
