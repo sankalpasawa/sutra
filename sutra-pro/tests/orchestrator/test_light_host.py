@@ -1,7 +1,6 @@
 """The light node host (MAN-11): the same files and events as an engine run, one model call, a typed verdict; only the enum and the refs matter, words are plain text; a stop ends it; it writes nothing
 but its own files."""
 import json
-import os
 import signal
 from types import SimpleNamespace
 
@@ -80,7 +79,7 @@ def test_a_verdict_that_is_not_the_typed_object_is_a_crash_not_a_verdict(tmp_pat
 
 def test_a_stop_ends_it_stopped_with_no_verdict(tmp_path):
     run = make_run(tmp_path)
-    port = FakePort({"verdict": "approve", "summary": "fine", "needs_work": [], "points": []}, hook=lambda: os.kill(os.getpid(), signal.SIGTERM))
+    port = FakePort({"verdict": "approve", "summary": "fine", "needs_work": [], "points": []}, hook=lambda: signal.raise_signal(signal.SIGTERM))     # not os.kill: on Windows that ends the whole test run instead of calling the handler
     assert run_it(run, port) == host.EXIT_STOPPED and events(run)[-1]["status"] == "stopped" and not (run / "verdict.json").exists()
 
 

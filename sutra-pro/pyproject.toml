@@ -67,4 +67,5 @@ markers = [
     "live: talks to the real claude or codex CLI; runs only with SUTRA_LIVE=1",
     "slow: long engine suites (legacy J2 scripts, prompt goldens); runs only with SUTRA_SLOW=1",
     "browser: drives a real headless Chrome over CDP; runs only with SUTRA_BROWSER=1",
+    "real_elevation: reads the real administrator check (every other test sees a process that is not elevated, as on a developer's machine)",
 ]
