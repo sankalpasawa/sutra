@@ -216,13 +216,16 @@ def test_without_a_found_request_the_snapshot_says_nothing_rather_than_guessing(
 
 # ---- the repository's own files are not a step's tool rows (D405, run 3 item 6) ----------------------------------------------------------------------
 
-def test_a_read_inside_dot_git_is_no_tool_row_and_an_ordinary_file_still_is():
-    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.git/HEAD"}}) is None
-    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.git/COMMIT_EDITMSG"}}) is None
-    assert tool_audit.facts({"name": "Glob", "input": {"path": "C:\\work\\proj\\.git\\refs"}}) is None
-    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.github/ci.yml"}}) == ("Read", "read", "ci.yml"), ".github is not .git"
-    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/HEAD"}}) == ("Read", "read", "HEAD"), "a file of the owner's own called HEAD is a file"
+def test_the_audit_keeps_every_tool_call_including_those_with_a_dot_git_in_the_path():
+    """R-1 (D405 corrected): the page rewords a read of the repository's own files for the owner; the AUDIT records everything. A step could hide any call by naming its path x/.git/../y."""
+    for name, path in (("Write", "/w/p/.git/hooks/pre-commit"), ("Edit", "/w/p/.git/config"), ("Write", "/w/p/x/.git/../src/evil.py"), ("Read", "./.git/../secrets.txt"),
+                       ("Glob", "/w/p/.git/.."), ("Read", "/work/proj/.git/HEAD"), ("Read", "C:\\work\\proj\\.git\\refs")):
+        key = "path" if name == "Glob" else "file_path"
+        found = tool_audit.facts({"name": name, "input": {key: path}})
+        assert found is not None and found[0] == name, (name, path)
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.git/HEAD"}}) == ("Read", "read", "HEAD")
     assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/README.md"}}) == ("Read", "read", "README.md")
+
 
 
 # ---- no engine jargon on a step's done card (D410, run 4 item 1) ------------------------------------------------------------------------------------
