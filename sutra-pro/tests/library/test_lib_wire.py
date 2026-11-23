@@ -784,3 +784,13 @@ def test_a_summary_missing_a_key_j2_always_writes_is_refused():
 def test_the_summary_budget_is_the_model_l3_points_at():
     budget_model = W.SummaryBudget.model_validate({"start": 100, "granted": 100, "used": 5, "raises": []})
     assert budget_model.model_dump() == {"start": 100, "granted": 100, "used": 5, "raises": [], "usd": None}
+
+
+def test_a_summary_with_keyed_rejections_is_accepted_and_keeps_its_keys():
+    """D431 (P22 amended): each validator rejection carries the code-set key of the rule that made it, a rule name and its code-made ids."""
+    rows = [{"cycle": 1, "workflow": "Stories", "reason": "r", "key": ["missing", ["inputs", "done_when"]]},
+            {"cycle": 2, "workflow": "Menu", "reason": "r", "key": ["real_run_covers", [1, "R-2"]]},
+            {"cycle": 2, "workflow": "Menu", "reason": "r", "key": ["audit_job"]},
+            {"cycle": 3, "workflow": "Old", "reason": "r"}]
+    doc = passes("run_summary", changed(SUMMARY, validator_rejections=rows))
+    assert [r.key for r in doc.validator_rejections] == [["missing", ["inputs", "done_when"]], ["real_run_covers", [1, "R-2"]], ["audit_job"], None]

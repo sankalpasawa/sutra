@@ -1147,6 +1147,7 @@ class SummaryRejection(Value):
     cycle: Optional[int] = None
     workflow: Line
     reason: Text
+    key: Optional[seq(Union[Id, int, seq(Union[Id, int])], 20)] = None    # D431: the code-set key of the rule that rejected it ("missing", [fields]); older runs have none
 
 
 class SummaryHold(Value):
