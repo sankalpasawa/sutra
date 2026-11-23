@@ -1657,14 +1657,15 @@ def test_p25_decide_for_me_never_approves_a_raise(j2, make_run, kind):
     assert run._auto_pick() is None                                     # but only the Requester answers it
 
 
-def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_one_that_does_not(j2, make_run):
+def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_since_p29_on_every_limit(j2, make_run):
     run = make_run()
     run.auto = True
     run.paused = {"kind": "limit", "questions": [dict(LIMIT_Q)], "handoff": {"choices": ["continue", "ship"]}, "msg": 1}
     assert run._auto_pick() is None
     run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                   "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
-    assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)
+    assert run._auto_pick() is None                                     # P29 (D425): a limit question is the Requester's own
+    assert run._auto_choice(run.paused)[:2] == ("Option 1", "Leave out the stories")      # still what the Simple view suggests
 
 
 # ---- P26 (D421, D422): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
@@ -2184,3 +2185,21 @@ def test_p29_identity_cannot_declare_a_document_done_with_nothing_built(make_run
                         if fn == "identity" else real(fn, *a, **kw))
     run._identity_audit({})
     assert run.turn == "adaptation" and not str(run.outcome or "").startswith("Done"), (run.turn, run.outcome)
+
+
+def test_p29_decide_for_me_never_answers_a_limit_question_nor_the_repeat_question(replay_17e1, nothing_built):
+    """Decide for me answered a second limit question with its last option (run 17e1: drop everything with nothing built).
+    A limit question, the P28 repeat question among them, waits for the Requester, as the dollar question does (P26)."""
+    run, add, fault, _ = replay_17e1
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    run._identity_limit(run.handoff)
+    run.auto = True
+    assert run.paused["kind"] == "limit" and run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
+    second = nothing_built(failing=[DONE_17E1[2]])
+    second.auto, second.auto_log = True, [{"kind": "limit"}]       # a second limit question: it took the last option
+    assert second._auto_pick() is None and second.snapshot()["paused"]["auto_waits"] is True
+    second.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
+                     "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
+    assert second._auto_pick() is None
