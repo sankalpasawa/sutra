@@ -481,6 +481,7 @@ Why: every graceful quit posted "Your Web team stopped: Stopped: stopped on requ
 Why: run 3 showed Home "needs one answer" while the project page said "Working". Rejected: letting Decide for me take "finish as it is" (it is the owner's call about quality). Package: MAN-13.
 
 **D402. The engine's "Done with open items: shipped as is on the Requester's decision (...). Still not workable: document rubric PJ-4 (NEEDS_REVISION) ..." is said on a step's done card as "Done, with some things still open. You chose to take it as it is. Still open: ..." with no rubric id, no code word and no "Requester". The record keeps the engine's words.**
+*(Completed by D419: the engine's real `workable()` shapes and the possessive.)*
 Package: MAN-13.
 
 **D403. A step that finished in a project that was stopped or could not finish is not "just finished" on Home.**
@@ -490,6 +491,7 @@ Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 
 Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13.
 
 **D405. The page's words for what a step did are the owner's: "wrote its report", "looked at the folder's history", "It wrote its report"; a read inside a repository's own `.git` folder is no tool row at all (a bare name such as `config` or `HEAD` without a `.git` in its path is never guessed at). Known limit (m-5): the page hides a tool row of no kind (`other`); the audit table keeps it.**
+*(Corrected by D417: the audit keeps EVERY tool call, `.git` paths included; only the page rewords a read of the repository's own files. The server filter this decision described is removed.)*
 Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13, MAN-14.
 
 **D406. The minors of the code review, as built. (a) The marker half of the close rule is pinned: the owner's stop of the project, of one step and the kill switch cancel even when the engine answers its stock sentence (m-1). (b) A close of the app while the reviewer runs gives the review a fresh attempt (m-2). (c) The resume audit row is written before the marker is removed, once however often it is read (its ref is the moment the command wrote), and a resume written meanwhile is kept (m-3). (d) The owner's stop always wins over the app's or the system's mark in `_stopped_by` (m-4). (e) A step whose calls carry no price shows "no price yet", not "about $0.00" (m-6).**
@@ -502,6 +504,7 @@ Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 
 Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13, MAN-4.
 
 **D409. Steps that start together share the dollar remainder: a step's cap is what the project and the month have left divided by the steps of the project that run or are ready (the first, alone, gets all of it; two ready, half each), so together they cannot pass the limit by steps times the remainder before the tick sees it (m-13). Rejected: holding the extra step (it would idle for money it may not spend).**
+*(Reworked by D418: the cap is not shared once at the step's start; it is read on every builder call.)*
 Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-9.
 
 ## The fourth real run (run 4, build `6091bf6`) and its fixes (D410 to D414)
@@ -522,3 +525,22 @@ Why: it stayed after the project was done, stopped or failed. Package: MAN-13.
 
 **D414. Each step of a project is told to do ONLY its own job. The step-request prompt (`nodeplan.md`, a stage only a project runs, so every flag-off prompt is byte for byte what it was) says so, and the framing of each step's task names its number, its own job and the other steps' jobs and says not to do, start or answer any of them. A single request keeps its framing.**
 Why: in run 4 step 1's report already named the one improvement that was step 2's job, so the money was spent twice. Package: MAN-13.
+
+
+## The review of D398 to D409 (D415 to D419), with the release candidate
+
+**D415. The buttons of a step's own question are the host's, and a stale answer is refused (r-2, r-11). Only the closing run of numbered lines (`Option 1:`, `Option 2:` ... to the end of the text, counting up from 1) is buttons; an `Option N:` line anywhere else is just text, and the page always shows the whole real question. The page answers through `POST /api/projects/{id}/questions/{message id}/answer` with the number of the button; the route takes the answer only while that question is still one of the project's open step questions and the option is one of its buttons, otherwise a plain 409 ("That question is not open any more"), and it delivers as an ANSWER only (`TaskService.answer_waiting`), never as a follow-up: a stale card, a second tab or a double click cannot become a new ordinary task with no grant. The page reads the project again after a refusal.**
+Why: a step's own text could forge the buttons, and a bare "Option N" sent to the team chat made a new ordinary task when the step had ended (the M-A class). Rejected: sending the text to the team chat route (it follows up). Package: MAN-13.
+
+**D416. A hand-made KILL file is enforced first and the resume audit second.**
+A failing audit write is logged, the marker stays for the next look, and neither the kill nor the app's start is ever stopped by it (r-3).
+Why: the audit row used to come first, so a locked or full database kept a kill from being enforced. Package: MAN-4.
+
+**D417. The tool audit records every call (R-1, corrects D405). There is no server-side filter: a call whose path has a `.git` in it (`.git/hooks/pre-commit`, `Edit .git/config`, `x/.git/../src/evil.py`) is a row like any other. Only the page rewords a read of a repository's own files ("looked at the folder's history") for the owner. Known limit: whether the real program lets a step write under `.git` depends on its own protected-path rules and was not tried.**
+Why: the filter let a step hide any file tool from the audit by naming its path `x/.git/../y`. Package: MAN-14.
+
+**D418. What one builder call may spend is read on EVERY call, never frozen at the step's start (R-2, reworks D409). Before each builder call a step's own process reads, read-only, the database and the owner's limits file and takes `min(the step's own remainder, what is left of the month, what is left of the project's own dollars divided by the steps of the project that RUN at that moment, this one included)`; a step held for an answer takes no share, a share is given back when a sibling ends, and a step that began alone is lowered when a sibling starts. The same arithmetic (`orchestrator/livecap.py`) is the server's. It is a bound on one call, not a promise: steps that run at the same time can pass the limit by up to one call's worth each before the Conductor's tick sees the ledger; steps of different projects each divide only their own project's dollars and share the month's remainder; Codex calls carry no dollar figure, so nothing here can stop a project that runs on Codex. OPERATIONS says so.**
+Why: the first version froze a share at the start (staggered starts passed the limit, a step could be cut below what it needed) and no test failed without it. Package: MAN-9.
+
+**D419. The rest of the review of D398 to D409. (a) D402 completed: the engine's real `workable()` shapes (`done-when item N (F-N VERDICT)`, `design rubric D-2`, `document rubric`, `rubrics PJ-4, PJ-5`, `necessary condition NC-1 not met: ... (evidence: ...)`, the render check, "finished as it is") lose their ids and code words, one open item at a time, and "the Requester's decision" is "your decision" (r-1). (b) Decide for me is shown never to answer a step's engine question by a test through the real path (a real open question, the owner's switch, the rule table's own pass), and a second test fails if the rule table ever names a kind such a question could have (r-4). (c) A step that finished with open items in a project that still runs has no Try again, tested (r-5). (d) A file called `constructor` or `__proto__` is shown by its name; the tool rows say "a project file" for a name that may be the owner's own, and "its report" is said only in the hand-off line (r-6). (e) A project title is never empty, never ends on a run of connectors, is not split at "e.g.", is not cut inside a glyph, and the runner's use of it is pinned (r-7).**
+Why: each answers a finding of the code review of D398 to D409. Package: MAN-13.
