@@ -79,3 +79,50 @@ def test_the_grant_line_has_no_tools_none_beside_the_run_tools_and_keeps_the_app
     assert "tools none" not in plain and plain.startswith("tiers 0,1; folder read; scope none; commands none; run_tools engine (")
     with_apps = intersect("worker", StepRequest(tool_profile="sutra"), "edit", "edit").describe()
     assert "tools sutra;" in with_apps
+
+
+# ---- the card of an attempt the project replaced (D400, M-C, run 3) --------------------------------------------------------------------------------
+
+def org_lines(rig):
+    out = []
+    for r in rig.sql("SELECT kind, text, card_json FROM chat_messages WHERE session_id = 'cs_org' ORDER BY id").fetchall():
+        out.append((r["kind"], r["text"], json.loads(r["card_json"]) if r["card_json"] else None))
+    return out
+
+
+def test_a_graceful_quit_posts_no_stopped_card_for_the_attempt_the_project_restarts_and_the_next_card_links(rig):
+    from orchestrator.test_reconcile_projects import engine_answers_the_stop, running
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.run(rig.t.service.shutdown())
+    node = rig.sql("SELECT * FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert node["attempt"] == 2 and node["task_id"] != tasks["a1"] and rig.project(reservation.project_id)["status"] == "running"
+    lines = org_lines(rig)
+    stopped_cards = [c for kind, _, c in lines if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
+    assert stopped_cards == [], "no 'Your Web team stopped' for an attempt that starts again"
+    notes = [text for kind, text, _ in lines if kind == "note" and "starts again" in text]
+    assert len(notes) == 1 and "The app was closed" in notes[0] and f"/p/{reservation.project_id}" in notes[0] and "stopped on request" not in notes[0]
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], outcome="Done: the page is built")
+    [card] = [c for kind, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == node["task_id"]]
+    assert card["project_id"] == reservation.project_id and card["outcome"] == "Done: the page is built"
+
+
+def test_an_attempt_the_project_retries_has_a_link_and_no_stopped_card_either(rig):
+    from orchestrator.test_reconcile_projects import running
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    rig.finish(tasks["a1"], status="crashed", outcome="it really crashed", handoff=False)          # the project's one retry makes attempt 2
+    assert rig.sql("SELECT attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0] == 2
+    lines = org_lines(rig)
+    assert [c for _, _, c in lines if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]] == []
+    assert any(kind == "note" and "This try ended, so" in text and reservation.project_id in text for kind, text, _ in lines)
+
+
+def test_a_step_whose_project_is_over_keeps_its_done_card_with_the_link(rig):
+    from orchestrator.test_reconcile_projects import running
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.sql("UPDATE projects SET status = 'stopped', stop_reason = 'stopped by you' WHERE id = ?", reservation.project_id)
+    rig.finish(tasks["a1"], status="stopped", outcome="Stopped: stopped on request", handoff=False)
+    [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
+    assert card["project_id"] == reservation.project_id and card["outcome"] == "You stopped it"
