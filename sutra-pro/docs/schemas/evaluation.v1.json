@@ -551,6 +551,24 @@
           "title": "Accepted",
           "type": "array"
         },
+        "after_real_run": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 600,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 200,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Real Run"
+        },
         "all_pass": {
           "title": "All Pass",
           "type": "boolean"
@@ -665,7 +683,7 @@
           "title": "Screenshot"
         },
         "version": {
-          "minimum": 1,
+          "minimum": 0,
           "title": "Version",
           "type": "integer"
         }

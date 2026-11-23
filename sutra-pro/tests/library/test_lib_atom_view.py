@@ -191,7 +191,7 @@ def test_how_constraints_context_notes_and_details_pass_through():
     a = opened(constraints=[{"text": "Keep the nav"}], context=["charter item 1"], work=work("llm", agent="W-1 Builder", steps="Make it"))
     a = a.evolve(notes="This adds a contact form.", details={"selectors": ["#contact"], "section": "W-1"})
     v = atom_view(a)
-    assert v.how.model_dump() == {"kind": "AI", "agent": "W-1 Builder", "steps": "Make it"} and v.owner == "W-1 Builder"
+    assert v.how.model_dump(exclude_none=True) == {"kind": "AI", "agent": "W-1 Builder", "steps": "Make it"} and v.owner == "W-1 Builder"
     assert (v.constraints, v.context, v.notes, v.details) == (["Keep the nav"], ["charter item 1"], "This adds a contact form.",
                                                               {"selectors": ["#contact"], "section": "W-1"})
     assert atom_view(opened(kind="bash")).how.kind == "code" and atom_view(opened(work=work("bash", agent=None))).owner is None

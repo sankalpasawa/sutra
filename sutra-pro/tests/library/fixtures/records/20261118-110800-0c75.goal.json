@@ -1,0 +1,54 @@
+{
+ "statement": "Sort the files in ~/sutra-demo/sort-me into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/), with a test, and run it on that folder.",
+ "product_name": "file_copy_script",
+ "audience": "The Requester, who wants the files in ~/sutra-demo/sort-me sorted by extension",
+ "facts": [
+  "~/sutra-demo/sort-me",
+  "a.pdf into pdf/",
+  "b.jpg into jpg/",
+  "c.txt into txt/",
+  "d.csv into csv/"
+ ],
+ "may_touch": [
+  "the files in ~/sutra-demo/sort-me",
+  "the subfolders named for each file's extension (pdf/, jpg/, txt/, csv/)"
+ ],
+ "never_do": [],
+ "files": [
+  "sort_files.py",
+  "test_sort_files.py"
+ ],
+ "test": "test_sort_files.py",
+ "done_when": [
+  "sort_files.py sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/).",
+  "test_sort_files.py is an automated test that checks sort_files.py puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/, and passes.",
+  "Run on ~/sutra-demo/sort-me, the script leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/."
+ ],
+ "to_be_confirmed": [],
+ "dropped_from_brief": [],
+ "charter_items": [
+  "sort_files.py sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/).",
+  "test_sort_files.py is an automated test that checks sort_files.py puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/, and passes.",
+  "Run on ~/sutra-demo/sort-me, the script leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/."
+ ],
+ "core_items": [
+  "sort_files.py sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/).",
+  "test_sort_files.py is an automated test that checks sort_files.py puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/, and passes.",
+  "Run on ~/sutra-demo/sort-me, the script leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/."
+ ],
+ "exact_facts": [
+  {
+   "fact": "~/sutra-demo/sort-me",
+   "item": "sort_files.py sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/)."
+  },
+  {
+   "fact": "a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/",
+   "item": "sort_files.py sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/)."
+  },
+  {
+   "fact": "a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/",
+   "item": "Run on ~/sutra-demo/sort-me, the script leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/."
+  }
+ ],
+ "confirmed_facts": []
+}

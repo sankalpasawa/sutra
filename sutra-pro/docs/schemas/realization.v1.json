@@ -284,9 +284,9 @@
       "additionalProperties": false,
       "properties": {
         "item": {
-          "maxLength": 100000,
+          "minimum": 1,
           "title": "Item",
-          "type": "string"
+          "type": "integer"
         },
         "until": {
           "maxLength": 100000,
@@ -655,6 +655,24 @@
           "minimum": 0,
           "title": "Score",
           "type": "number"
+        },
+        "second_look": {
+          "anyOf": [
+            {
+              "items": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 2,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Second Look"
         },
         "weakest": {
           "anyOf": [

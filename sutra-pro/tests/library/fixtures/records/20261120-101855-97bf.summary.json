@@ -1,0 +1,70 @@
+{
+ "run": "20261120-101855-97bf",
+ "output_type": null,
+ "j2_fixes": 0,
+ "realization": {
+  "applied": false
+ },
+ "provider": "claude",
+ "sections": [],
+ "conditions": null,
+ "necessary_conditions": null,
+ "force_audit_fail": null,
+ "test_lessons": false,
+ "force_question": null,
+ "has_board": false,
+ "model": "sonnet",
+ "mock": false,
+ "brief": "A landing page for Leaf & Loaf, a bakery at 2 Example Lane. Open 8am-4pm, closed Mondays. Menu: sourdough £4.50, cinnamon bun £2.80, flat white £3.00.",
+ "change_requests": [],
+ "status": "stopped",
+ "outcome": "Stopped: stopped on request",
+ "budget": {
+  "start": 100,
+  "granted": 100,
+  "used": 0,
+  "raises": []
+ },
+ "ai_calls": 1,
+ "cycles": 0,
+ "links": {},
+ "verification": {
+  "passed": 0,
+  "failed": 0,
+  "escalated": 0,
+  "could_not_run": 0,
+  "checks_run": 0
+ },
+ "identity_to_requester_decisions": 0,
+ "identity_to_requester_facts": 0,
+ "priority_rulings": {
+  "grant": 0,
+  "counter": 0,
+  "refuse": 0
+ },
+ "questions_to_user": [],
+ "conflicts": [],
+ "validator_rejections": [],
+ "holds": [],
+ "audits": [],
+ "site_versions": 0,
+ "workable": null,
+ "to_be_confirmed": [],
+ "dropped_by_requester": [],
+ "workflow_agents": [],
+ "limits_hit": [],
+ "lessons": {
+  "memory": true,
+  "saved": [],
+  "used": []
+ },
+ "playbooks": {
+  "saved": null,
+  "used": []
+ },
+ "business_type": null,
+ "style_guide": false,
+ "rubric": [],
+ "done_when": [],
+ "route_check_violations": []
+}

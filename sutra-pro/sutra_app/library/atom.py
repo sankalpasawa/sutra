@@ -60,19 +60,20 @@ Id64 = Annotated[str, StringConstraints(min_length=1, max_length=64)]
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Problem = tuple[tuple[str | int, ...], str]       # (place inside the model, what is wrong)
 
-# ---- the 26 check names -------------------------------------------------------------------------------------------
+# ---- the 28 check names -------------------------------------------------------------------------------------------
 CheckTemplate = Literal[
     # the plugin's templates (SA:185, bin/verify-templates) and J2's check types (J2:321-323, atom-schema.md)
     "file-exists", "grep-count", "named-test",
     "element-count", "facts-present", "tap-targets", "behavior-steps", "heading-present", "section-not-empty",
-    "ids-unique", "lld-slice", "deed-send",
+    "ids-unique", "lld-slice", "deed-send", "test-passed", "inside-folder",       # the last two: the agent form's (D430)
     # the engine's verify registry: one pure function each (function-nodes.md section 4, S4-fnodes-02)
     "reply-valid", "turn-posted", "charter-stamp", "workable", "audience-split", "atom-rules", "judge-gate", "price-kept",
     "within-budget", "order-registered", "finding-per-item", "pass-needs-proof", "code-measure-wins", "answer-recorded",
 ]
 PLUGIN_CHECKS: Final = ("file-exists", "grep-count", "named-test")
 J2_CHECKS: Final = ("element-count", "facts-present", "tap-targets", "behavior-steps", "heading-present", "section-not-empty",
-                    "ids-unique", "lld-slice", "deed-send")
+                    "ids-unique", "lld-slice", "deed-send", "test-passed", "inside-folder")
+# J2's own names are bound to the engine by tests/library/test_lib_engine_parity.py (artifacts/types.json, D430)
 REGISTRY_CHECKS: Final = ("reply-valid", "turn-posted", "charter-stamp", "workable", "audience-split", "atom-rules",
                           "judge-gate", "price-kept", "within-budget", "order-registered", "finding-per-item",
                           "pass-needs-proof", "code-measure-wins", "answer-recorded")
@@ -81,9 +82,11 @@ CHECK_NAMES: Final = (*PLUGIN_CHECKS, *J2_CHECKS, *REGISTRY_CHECKS)
 # (fewest, most) arguments. The plugin's three: grep-count is (pattern, file, min), the other two take paths. J2's nine
 # take their target(s). The registry's: reply-valid is [family, kind] ("a|b" lists kinds), answer-recorded is [question
 # message id], the other twelve take none (S4-fnodes-02).
+MAX_CHECK_ARGS: Final = 40        # J2 wrote a check with 13 targets (D430)
+MAX_CHECKS: Final = 40            # J2 wrote 15 checks on one atom (D430)
 _ARITY: Final = {
     "file-exists": (1, 8), "grep-count": (3, 3), "named-test": (1, 8),
-    **{name: (0, 8) for name in J2_CHECKS},
+    **{name: (0, MAX_CHECK_ARGS) for name in J2_CHECKS},
     "reply-valid": (2, 2), "answer-recorded": (1, 1),
     **{name: (0, 0) for name in REGISTRY_CHECKS if name not in ("reply-valid", "answer-recorded")},
 }
@@ -193,7 +196,7 @@ class Check(Value):
     not given: `open_atom` fills in a default); `results` has one entry per close run."""
 
     template: CheckTemplate
-    args: Annotated[list[Line500], Field(max_length=8)] = []
+    args: Annotated[list[Line500], Field(max_length=MAX_CHECK_ARGS)] = []
     text: Text300 = ""
     expect: Union[bool, int, None] = None
     relevance: Text300 | None = None
@@ -211,7 +214,7 @@ class Check(Value):
 
 
 class Verify(Value):
-    checks: Annotated[list[Check], Field(max_length=12)] = []
+    checks: Annotated[list[Check], Field(max_length=MAX_CHECKS)] = []
 
 
 class AtomEdge(Value):
@@ -822,6 +825,8 @@ class ViewHow(Value):
     kind: Literal["AI", "code"]
     agent: Annotated[str, StringConstraints(max_length=80)] | None = None
     steps: Text2000 = ""
+    date_control: Text600 | None = None      # the selector that sets the date for a date-rule item (J2 ATOM_FMT, D430)
+    date_case: Text600 | None = None         # the test case that covers it when the output has no page
 
 
 class ViewCheck(Value):
@@ -858,11 +863,14 @@ class AtomView(Value):
     rechecked: Annotated[str, StringConstraints(min_length=1, max_length=40)] | None = None
 
     def wire(self) -> dict[str, Any]:
-        """J2's JSON for this view: the keys of atom/1, with `stale` and `rechecked` only when set."""
+        """J2's JSON for this view: the keys of atom/1, with `stale`, `rechecked` and the date keys of `how` only when set."""
         data = self.model_dump(mode="json", by_alias=True)
         for key in ("stale", "rechecked"):
             if data[key] is None:
                 del data[key]
+        for key in ("date_control", "date_case"):
+            if data["how"][key] is None:
+                del data["how"][key]
         return data
 
 

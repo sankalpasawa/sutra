@@ -55,7 +55,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 8,
+          "maxItems": 40,
           "title": "Args",
           "type": "array"
         },
@@ -132,6 +132,8 @@
             "ids-unique",
             "lld-slice",
             "deed-send",
+            "test-passed",
+            "inside-folder",
             "reply-valid",
             "turn-posted",
             "charter-stamp",
@@ -383,7 +385,7 @@
           "items": {
             "$ref": "#/$defs/Check"
           },
-          "maxItems": 12,
+          "maxItems": 40,
           "title": "Checks",
           "type": "array"
         }

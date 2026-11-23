@@ -1,0 +1,109 @@
+{
+ "statement": "Build a one-page website for a coffee shop that lets visitors see the menu with prices, opening hours, the address with a map and how to contact the shop.",
+ "site_name": "Bean There",
+ "audience": "Local people and passers-by looking for a coffee shop who want to know what is on offer, when it is open and how to find or contact it.",
+ "standards": [
+  "Consistent styling across all sections",
+  "Readable text contrast",
+  "Clear visual hierarchy",
+  "Tap targets big enough on phones",
+  "Plain HTML, CSS and JavaScript in one file"
+ ],
+ "rules": [
+  "Never invent a fact the Requester has not given: address, hours, phone, email, menu items and prices show a visible 'to be confirmed' placeholder until supplied",
+  "Where the Requester said to decide, use typical choices for a coffee shop and list each one on the page's assumptions list or in the delivery notes for the Requester to check",
+  "No real files of the Requester are touched"
+ ],
+ "done_when": [],
+ "business_type": "coffee shop",
+ "visitor_needs": [
+  "See the menu with prices",
+  "See opening hours",
+  "Find the address with a map",
+  "Contact the shop"
+ ],
+ "to_be_confirmed": [],
+ "dropped_from_brief": [],
+ "facts": [],
+ "charter_items": [
+  "The page header shows the shop's name and a one-line description of the coffee shop.",
+  "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+  "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+  "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+  "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+  "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+  "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.",
+  "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.",
+  "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+ ],
+ "core_items": [
+  "The page header shows the shop's name and a one-line description of the coffee shop.",
+  "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+  "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+  "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+  "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+  "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+  "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+ ],
+ "item_kinds": {
+  "The page header shows the shop's name and a one-line description of the coffee shop.": "page_section",
+  "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.": "page_section",
+  "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.": "page_section",
+  "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.": "page_section",
+  "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.": "page_section",
+  "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.": "interactive_feature",
+  "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.": "interactive_feature",
+  "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.": "styling",
+  "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.": "styling"
+ },
+ "confirmed_facts": [],
+ "dropped_by_requester": [
+  "The page header shows the shop's name and a one-line description of the coffee shop.",
+  "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+  "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+  "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+  "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+  "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+  "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.",
+  "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.",
+  "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+ ],
+ "dropped_reasons": [
+  {
+   "criterion": "The page header shows the shop's name and a one-line description of the coffee shop.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  },
+  {
+   "criterion": "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+   "reason": "The Requester chose to leave it out (Adaptation asked: The builder keeps changing agent_live.json, events.jsonl and snapshot.json whatever the workflow says, so no page can be built this way. Do you rule that the Requester is told this is a fault in the build setup and asked whether to stop or ship as is, or do you want one more attempt, and if so with what change to the run folder or builder setup?): Option 2"
+  }
+ ]
+}
