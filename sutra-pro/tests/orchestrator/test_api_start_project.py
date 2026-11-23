@@ -213,3 +213,25 @@ def test_no_address_and_no_project_key_when_the_project_is_not_there(tmp_path, m
         wait_idle(services)
         texts, tasks = _reply_and_cards(services)
         assert all("/p/prj_" not in t for t in texts) and all("project_id" not in card for card in tasks) and tasks
+
+
+def test_the_tasks_of_a_project_carry_the_do_only_your_own_job_rule_and_a_single_request_does_not(tmp_path):
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        framings = {r["title"]: r["framing"] for r in rows(services, "SELECT title, framing FROM tasks")}
+        assert "STEP 1 OF 2" in framings["Page"] and "Do ONLY this step's own job: Page" in framings["Page"] and "Quote" in framings["Page"]
+        assert "STEP 2 OF 2" in framings["Quote"] and "Do ONLY this step's own job: Quote" in framings["Quote"]
+
+
+def test_an_ordinary_one_step_request_has_no_such_rule(tmp_path):
+    app, connector = make_app(tmp_path)
+    connector.push(decide(change="reuse", reuse=("web",), why="one"), assignments(draft("a1", "web", title="Page")))
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post(f"/api/chats/{ORG}/messages", json={"text": "A page"}, headers=HEADERS)
+        wait_idle(services)
+        assert all("THIS IS STEP" not in r["framing"] for r in rows(services, "SELECT framing FROM tasks"))
