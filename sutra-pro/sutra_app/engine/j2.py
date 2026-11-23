@@ -852,9 +852,10 @@ class BuilderToolFault(RuntimeError):
     nothing from it is used and its workflow is not tried again. kind "limits": its folder is over a limit set in the
     settings; the attempt fails like a failed check."""
 
-    def __init__(self, kind, detail):
+    def __init__(self, kind, detail, files=()):
         super().__init__(detail)
         self.kind = kind
+        self.files = sorted(files)      # P28 (D425): every file outside the folder (the message names five), for build_failure
 
 
 def file_states(root):
@@ -3183,6 +3184,20 @@ def failure_signature(audit):
         + sorted(f"{c['id']}|{c['evidence']}" for c in audit.get("conditions") or [] if blocks(c))
 
 
+def build_failure(w):
+    """P28 (D425): what a finished build failed on, judged on the failure, never on the workflow's name or words: a failed
+    workflow gives (kind, detail) as code set them at the failure site (w["failure"]; an older record without one gives
+    ("failed", "")); a built one whose atoms' latest receipts failed gives ("checks", sorted (check type, evidence) pairs),
+    without the check's own wording or id; anything else (a pass) gives None."""
+    w = w or {}
+    if w.get("status") == "failed":
+        kind, detail = (list(w.get("failure") or []) + ["failed", ""])[:2] if w.get("failure") else ("failed", "")
+        return str(kind), tuple(sorted(map(str, detail))) if isinstance(detail, (list, tuple)) else str(detail)
+    bad = {(str(r.get("type")), str(r.get("evidence"))) for a in w.get("atoms") or [] for r in a.get("results") or []
+           if isinstance(r, dict) and r.get("pass") is False}
+    return ("checks", tuple(sorted(bad))) if bad else None
+
+
 # ---- Adaptation's memory: lessons from fixes Audit confirmed, kept across runs in memory/lessons.jsonl
 def memory_on():
     return os.getenv("J2_MEMORY", "1") != "0"
@@ -3668,6 +3683,7 @@ class J2Run:
         self.playbooks_used, self.playbook_saved = [], None
         self.lessons_used, self.lessons_saved = [], []
         self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
+        self.last_failure, self.repeat_steps = None, []      # P28 (D425): the last finished build's failure; the two that repeated it
         self.last_limit = None       # the last limit question: state then and the Requester's decision
         self.adapt_idle = None       # _adapt_state() when Adaptation last proposed nothing for lack of budget
         # J2_REALIZATION=1: the judged realization plan, its decisions, whether its blocking facts were asked, the record
@@ -4768,7 +4784,7 @@ class J2Run:
             self._event(fn, "outside_write", f"{fn}: changed outside its folder: {where}")
             self.post("system", f"{fn} changed files outside its folder ({where}). Nothing from that call is used, and "
                                 "it is not tried again.", warning=True)
-            raise BuilderToolFault("outside", f"changed outside its folder: {where}")
+            raise BuilderToolFault("outside", f"changed outside its folder: {where}", files=rec["outside"])      # P28 (D425)
         if rec["over_limits"]:
             self._event(fn, "tool_limits", f"{fn}: " + "; ".join(rec["over_limits"]))
             raise BuilderToolFault("limits", "; ".join(rec["over_limits"]))
@@ -5531,6 +5547,7 @@ class J2Run:
         self.proposed_fields, self.v_refused, self.v_refused_secs, self.item_secs = {}, {}, {}, {}
         self.fail_floor, self.feedback, self.drop_answer, self.adapt_idle, self.last_limit = 0, None, None, None, None
         self.write_lock = self.atom = None
+        self.last_failure, self.repeat_steps = None, []      # P28 (D425): a new stage's builds start fresh
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
@@ -9805,6 +9822,7 @@ class J2Run:
             if got is None:      # code writes the failure report, so the unusable reply isn't route-checked
                 self.write_lock = self.atom = None
                 w["status"] = "failed"
+                w["failure"] = ["unusable_reply", w.get("last_check") or ""]      # P28 (D425): code's own last parse error
                 self._say(fn, f"@Coordination {fn} failed: {stop}. My section is unchanged.", "coordination", None,
                           workflow=fn)
                 self._event(fn, "limit_fail", f"{fn}: {stop}")
@@ -10008,6 +10026,7 @@ class J2Run:
         self.write_lock = self.atom = None
         if text is None:
             w["status"] = "failed"
+            w["failure"] = ["no_artifact", evidence]      # P28 (D425): code's last evidence
             self._say(fn, f"@Coordination {fn} failed: no usable artifact after {attempt} attempt(s). {f} was not "
                           "written.", "coordination", None, workflow=fn)
             self._event(fn, "limit_fail", f"{fn}: no usable artifact")
@@ -10179,6 +10198,7 @@ class J2Run:
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
         attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
+        fault = None      # P28 (D425): the outside-write fault, for the failure's signature
         reused = self._reuse_folder(w, cwd)
         if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
             reused, evidence = None, leak
@@ -10203,7 +10223,7 @@ class J2Run:
                         lambda: self._mock_tools(w, cwd), max_tokens=4000, timeout=builder_timeout(), tools=tools)
                 except BuilderToolFault as e:
                     if e.kind == "outside":
-                        stop = f"it changed files outside its folder ({e})"
+                        stop, fault = f"it changed files outside its folder ({e})", e      # P28 (D425)
                         break
                     evidence = f"- {e}"
                     continue
@@ -10230,6 +10250,9 @@ class J2Run:
         if stop or not self.sites:
             w["status"] = "failed"
             why = stop or f"no usable build after {attempt} attempt(s)"
+            # P28 (D425): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
+            # check always published a build first, so it never ends here)
+            w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
             self.post("system", f"{fn} failed: {why}.", warning=True)
             self._say(fn, f"@Coordination {fn} failed: {why}.", "coordination", None, workflow=fn)
             self._event(fn, "limit_fail", f"{fn}: {why}")

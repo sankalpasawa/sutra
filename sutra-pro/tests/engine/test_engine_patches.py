@@ -1852,3 +1852,49 @@ def test_p26_spec_fields_bounds_and_old_credit_keys(tmp_path):
         with pytest.raises(ValidationError):
             EngineSettings(**bad)
     assert EngineSettings(budget=250, budget_cap=500, limit_add=40).budget == 250       # stored credit settings stay valid
+
+
+# ---- P28 (D425): the same build failure twice in a row, across workflows, stops the cycle -------------------------------------
+# Beta run j2-20261118-071410-17e1 (Bean There): every builder failed with "changed outside its folder: agent_live.json,
+# events.jsonl, snapshot.json", and Adaptation replaced the failed workflow six times (W-1, W-6, W-7, W-11, W-12, W-13).
+OUTSIDE_17E1 = ["agent_live.json", "events.jsonl", "snapshot.json"]
+
+
+def failed_receipts(*pairs, text="a check"):
+    """A built workflow whose one atom's latest receipts fail with these (type, evidence) pairs; `text` is the check's own wording."""
+    return [{"id": "a1", "results": [{"check": f"{text} {n}", "type": t, "evidence": e, "pass": False}
+                                     for n, (t, e) in enumerate(pairs)] + [{"check": "ok", "type": "file-exists", "evidence": "x", "pass": True}]}]
+
+
+def test_p28_build_failure_outside_write_in_any_order_is_the_same_and_another_file_set_is_not(j2):
+    one = {"id": "W-1", "name": "Write the exact copy sheet", "status": "failed", "failure": ["outside_write", list(OUTSIDE_17E1)]}
+    six = {"id": "W-6", "name": "Write the copy sheet again", "status": "failed", "failure": ["outside_write", OUTSIDE_17E1[::-1]]}
+    other = {"id": "W-7", "name": "Write the exact copy sheet", "status": "failed", "failure": ["outside_write", ["notes.txt"]]}
+    assert j2.build_failure(one) == j2.build_failure(six) == ("outside_write", tuple(OUTSIDE_17E1))
+    assert j2.build_failure(other) != j2.build_failure(one)          # the same name, another cause: not the same failure
+
+
+def test_p28_build_failure_of_failed_checks_reads_type_and_evidence_never_the_name_or_check_text(j2):
+    a = {"id": "W-2", "name": "Build the menu", "status": "done", "atoms": failed_receipts(("file-exists", "index.html not found"))}
+    b = {"id": "W-5", "name": "Rebuild the menu section", "status": "done",
+         "atoms": failed_receipts(("file-exists", "index.html not found"), text="the menu page is there")}
+    c = {**b, "atoms": failed_receipts(("file-exists", "menu.html not found"))}
+    assert j2.build_failure(a) == j2.build_failure(b) == ("checks", (("file-exists", "index.html not found"),))
+    assert j2.build_failure(c) != j2.build_failure(a)
+
+
+def test_p28_build_failure_is_none_for_a_pass_and_failed_for_a_record_from_before(j2):
+    passed = {"id": "W-3", "status": "done", "atoms": [{"id": "a1", "results": [{"type": "file-exists", "evidence": "x", "pass": True}]}]}
+    assert j2.build_failure(passed) is None and j2.build_failure({"id": "W-4", "status": "registered"}) is None
+    assert j2.build_failure({"id": "W-1", "status": "failed"}) == ("failed", "")
+
+
+def test_p28_a_builder_tool_fault_keeps_every_outside_file_sorted(j2, make_run):
+    assert j2.BuilderToolFault("outside", "x", files=["b", "a"]).files == ["a", "b"]
+    assert j2.BuilderToolFault("limits", "x").files == []
+    run = make_run()
+    run.post("user", "go")
+    names = {f"n{i}.txt": "x" for i in range(7)}                     # the message names 5 of them; the fault keeps all 7
+    with pytest.raises(j2.BuilderToolFault) as e:
+        tools_call(j2, run, extra=names)
+    assert e.value.files == sorted(names) and "and 2 more" in str(e.value)
