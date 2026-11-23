@@ -223,3 +223,50 @@ def test_a_read_inside_dot_git_is_no_tool_row_and_an_ordinary_file_still_is():
     assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.github/ci.yml"}}) == ("Read", "read", "ci.yml"), ".github is not .git"
     assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/HEAD"}}) == ("Read", "read", "HEAD"), "a file of the owner's own called HEAD is a file"
     assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/README.md"}}) == ("Read", "read", "README.md")
+
+
+# ---- no engine jargon on a step's done card (D410, run 4 item 1) ------------------------------------------------------------------------------------
+
+def engine_outcomes():
+    """Every outcome sentence the engine can end a run with (J2's own `Done...` and `Stopped...` strings, read from its source), with a placeholder where it puts a value."""
+    import ast
+    import re
+    from pathlib import Path
+    tree = ast.parse((Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8"))
+
+    def render(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.JoinedStr):
+            return "".join(v.value if isinstance(v, ast.Constant) else "X" for v in node.values)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = render(node.left), render(node.right)
+            return None if left is None or right is None else left + right
+        return None
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Constant, ast.JoinedStr, ast.BinOp)):
+            text = render(node)
+            if text and re.match(r"^(Done|Stopped)", text) and len(text) > 12:
+                found.add(text)
+    return sorted(found)
+
+
+def test_no_engine_outcome_reaches_a_steps_done_card_in_the_engines_own_words():
+    from sutra_app.orchestrator.stopwords import JARGON
+    corpus = engine_outcomes()
+    assert len(corpus) >= 10, "the scan found the engine's outcome sentences"
+    assert any("workable" in text for text in corpus) and any("Stopped" in text for text in corpus)
+    for text in corpus:
+        shown = plain_outcome(text.replace("X", "the document"))
+        assert not JARGON.search(shown), (text, shown)
+    assert plain_outcome("Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.") == "Done. Every check passed."
+
+
+def test_the_done_card_of_a_step_says_every_check_passed_in_plain_words(rig):
+    from orchestrator.test_reconcile_projects import running
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.finish(tasks["a1"], outcome="Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes.")
+    [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
+    assert card["outcome"] == "Done. Every check passed."
+    assert rig.t.row(tasks["a1"]).outcome.startswith("Done: the project work report"), "the record keeps the engine's words"
