@@ -274,20 +274,21 @@ def test_a_team_with_no_folder_and_no_project_words_gets_a_page_the_planner_chos
     assert not [m for m in chat(run_dir) if m["text"].startswith(("Working on this as", "Treating this as"))]
 
 
-def test_a_folder_that_is_set_turns_an_unclear_request_into_project_work(j2, make_run_dir, data_dir, tmp_path):
+def test_a_folder_that_is_set_leaves_an_unclear_request_to_the_planner(j2, make_run_dir, data_dir, tmp_path):
+    """D425: a working folder says where the team works; it never turns a brief into project work, so the planner still plans."""
     from sutra_app.connectors.workdir import WorkFolder
     folder = tmp_path / "myproject"
     folder.mkdir()
     WorkFolder(data_dir).set(str(folder), access="read")
-    brief = ("Check the details of the app and update the J2 prototype so that its settings page matches the app: look at the settings "
-             "page, list what differs, change the prototype page to match, and say what you verified and what is left to do.")
-    run_dir = make_run_dir(user_text=brief, settings=QUIET)
-    go(run_dir)
+    run_dir = make_run_dir(user_text="build a florist site", settings=QUIET)
+    running = Running(run_dir, "--mock")
+    from test_engine_host import Answerer, VAGUE
+    answerer = Answerer(run_dir, VAGUE[1:])
+    assert running.wait(60) == 0
+    answerer.stop()
     record = json.loads((run_dir / "output.json").read_text())
-    assert record == {"choice": "auto", "output": "project", "rule": "folder",
-                      "reason": "a working folder is set and the request is about it", "folder": True}
-    assert (run_dir / "project.md").exists()
-    assert [m for m in chat(run_dir) if "in your folder" in m["text"]]
+    assert record == {"choice": "auto", "output": None, "rule": "planner", "reason": "the team's planner chooses", "folder": True}
+    assert not [m for m in chat(run_dir) if "project work" in m["text"]]
 
 
 def test_the_owners_choice_in_the_team_settings_beats_the_words(j2, make_run_dir, data_dir):

@@ -8,9 +8,9 @@ prompt and no waiting. The host decides once, before J2 is imported, when the ow
     3 followup  `seed_output`: the brief continues a finished run, so the run keeps its output ("fix the bug in the form" on a website
                 follow-up stays a website run: "bug" and "source" are weak words, looked at after this rule)
     3b weak     the weak project words (bug, source) -> project work
-    4 folder    a working folder is set and nothing above matched ("check the app and update the J2 prototype") -> project
-    5 planner   nothing above matched: no output (None); J2's planner chooses the type from the brief (D165). There is no default type and no
-                phrase list that names deliverables: "agents decide, code validates"
+    4 planner   nothing above matched: no output (None); J2's planner chooses the type from the brief (D165). There is no default type and no
+                phrase list that names deliverables: "agents decide, code validates". A working folder selects nothing (D425): it
+                says where the team works, so a team with a folder still gets stages and charters
 
 `choose_output(brief, has_folder, seed_output, choice)` returns a `Selection(output, rule, reason)`. `reason` is a clause of plain words:
 it goes into `<run>/output.json` and, for project work, into the run's chat ("... (you asked about a repository; choose another kind of
@@ -29,7 +29,7 @@ from .project import DATA, TYPE
 __all__ = ["choose_output", "RULES", "STRONG_PROJECT_WORDS", "WEAK_REASONS", "WORDS_FILE", "load_words", "chat_line"]
 
 RULE_PROJECT = "project"                         # a rule id of the table below, not an output type: the type is `project.TYPE`
-RULES = ("owner", RULE_PROJECT, "followup", "weak", "folder", "planner")
+RULES = ("owner", RULE_PROJECT, "followup", "weak", "planner")        # no `folder` rule: a folder says where the team works (D425)
 WORDS_FILE = DATA / "project.words.json"
 _WORD_KEYS = {"pattern", "reason", "weak"}
 
@@ -89,8 +89,6 @@ def choose_output(brief: str, has_folder: bool, seed_output: Optional[str] = Non
     why = _project_word(text, weak=True)
     if why:
         return Selection(TYPE, "weak", f"you asked about {why}")
-    if has_folder:
-        return Selection(TYPE, "folder", "a working folder is set and the request is about it")
     return Selection(None, "planner", "the team's planner chooses")
 
 

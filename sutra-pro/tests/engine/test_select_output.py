@@ -3,6 +3,7 @@ once by the host before J2 starts. No model call, so the table is tested as a ta
 import pytest
 
 from sutra_app.engine import capabilities
+from sutra_app.engine.capabilities.base import Selection
 import json
 
 from sutra_app.engine.capabilities.select import RULES, STRONG_PROJECT_WORDS, WEAK_REASONS, WORDS_FILE, chat_line, choose_output, load_words
@@ -14,9 +15,9 @@ TABLE = [
     # the owner's own sentences
     ("check the details of the app and update the J2 prototype in the repo", True, None, "auto", "project", "project"),
     ("check the details of the app and update the J2 prototype in the repo", False, None, "auto", "project", "project"),
-    ("check the details of the app and update the J2 prototype", True, None, "auto", "project", "folder"),
+    ("check the details of the app and update the J2 prototype", True, None, "auto", None, "planner"),
     ("build a florist site", False, None, "auto", None, "planner"),
-    ("build a florist site", True, None, "auto", "project", "folder"),          # the folder rule is all that is left to claim a brief
+    ("build a florist site", True, None, "auto", None, "planner"),             # a folder says where the team works, not what it makes (D425)
     ("update the PRD in the repo", True, None, "auto", "project", "project"),
     ("update the PRD in the repo", False, None, "auto", "project", "project"),
     # named documents with no folder: the planner decides which types they are
@@ -25,14 +26,14 @@ TABLE = [
     ("Create design docs for a yoga studio website", False, None, "auto", None, "planner"),
     # the start page's own examples, with and without a folder
     ("A website for my cafe", False, None, "auto", None, "planner"),
-    ("A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery", True, None, "auto", "project", "folder"),
+    ("A website for Petal & Stem, a florist in Jaipur: bouquets, same-day delivery", True, None, "auto", None, "planner"),
     # nothing about a project and no folder: no type, J2's planner chooses
     ("a cafe called Brew Lab with a menu and opening hours", False, None, "auto", None, "planner"),
     ("hello", False, None, "auto", None, "planner"),
     ("", False, None, "auto", None, "planner"),
-    # a folder is set and the request is not a make-a-thing request
-    ("look at the app and tell me what is missing", True, None, "auto", "project", "folder"),
-    ("update the J2 prototype", True, None, "auto", "project", "folder"),
+    # a folder is set and the request is not a make-a-thing request: still the planner's (D425)
+    ("look at the app and tell me what is missing", True, None, "auto", None, "planner"),
+    ("update the J2 prototype", True, None, "auto", None, "planner"),
     # strong project words, each on its own
     ("fix the bug in checkout", False, None, "auto", "project", "weak"),
     ("refactor the login module", False, None, "auto", "project", "project"),
@@ -84,7 +85,10 @@ def test_a_word_that_only_contains_a_strong_word_does_not_count(brief):
 def test_the_reason_says_what_the_owner_asked_about():
     assert choose_output("update the repo", False).reason == "you asked about a repository"
     assert choose_output("fix the bug", False).reason == "you asked about a bug"
-    assert "working folder" in choose_output("look around", True).reason
+
+
+def test_a_folder_alone_leaves_the_choice_to_the_planner():
+    assert choose_output("look around", True) == Selection(None, "planner", "the team's planner chooses")
 
 
 def test_the_table_is_pure_and_the_same_every_time():
