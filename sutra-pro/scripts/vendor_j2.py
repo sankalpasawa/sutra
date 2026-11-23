@@ -1804,7 +1804,8 @@ def build_failure(w):
         """P28 (D431): the build that just finished failed exactly as the previous finished build did (build_failure: the
         failure's kind and code-made detail, never a workflow's name or words), also when it is another workflow (a
         replacement, a reworded copy): another attempt would likely repeat it, so the cycle stops and Identity asks the
-        Requester (a safety limit, as P22's _repeat_stop), resuming at Adaptation's hand-off when the build had one. The two
+        Requester (a safety limit, as P22's _repeat_stop), resuming at Adaptation's hand-off when the build had one, else
+        at Coordination's queue when work waits (review R1-5). The two
         workflows become repeat_steps. A passing build clears the memory; the Requester's answer does not, so after "keep
         going" the next identical failure asks again (run 17e1 went on to W-12 and W-13). True when it stopped."""
         w = self._wf(wid)
@@ -1824,7 +1825,8 @@ def build_failure(w):
                             "Requester before another attempt.")
         self._handoff("identity", kind="limit", reason=f"The same failure came back twice in a row: {prev['wid']} and {wid} "
                                                        f"both failed ({words}), so another attempt would likely repeat it.",
-                      **({"resume": {"to": "adaptation", "handoff": dict(self.handoff)}} if self.turn == "adaptation" else {}))
+                      **({"resume": {"to": "adaptation", "handoff": dict(self.handoff)}} if self.turn == "adaptation" else
+                         {"resume": {"to": "coordination", "handoff": {"kind": "schedule"}}} if self._waiting_work() else {}))
         return True
 
     @staticmethod

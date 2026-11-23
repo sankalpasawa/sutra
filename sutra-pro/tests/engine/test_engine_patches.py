@@ -2330,3 +2330,19 @@ def test_p29_with_nothing_built_a_lone_stop_here_is_asked_never_applied(make_run
     assert not str(run.outcome or "").startswith("Stopped")
     run.auto = True
     assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
+
+
+def test_p28_keep_going_after_a_repeat_stop_builds_the_waiting_queue(replay_17e1):
+    """Review R1-5: when the stopped build had handed back to Coordination and other workflows wait, "keep going" resumes
+    there and builds them, as P22's repeat does, instead of a fresh Adaptation cycle."""
+    run, add, fault, calls = replay_17e1
+    add("W-2", "Build the opening hours section", covers=[2], covers_text=[DONE_17E1[1]], outputs=["index.html"])     # waits
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    assert run.handoff["kind"] == "limit" and run.handoff["resume"] == {"to": "coordination", "handoff": {"kind": "schedule"}}
+    run._identity_limit(run.handoff)
+    p = run.paused
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Option 1"})
+    assert run.turn == "coordination" and run.handoff["kind"] == "schedule", (run.turn, run.handoff)
