@@ -197,7 +197,7 @@ def test_a_step_of_a_project_that_still_runs_keeps_its_row(db, clock):
     task = put(world, 20, "web", "crashed", ended=NOW - HOUR, outcome="The team stopped unexpectedly.")
     _step_of(world, task, "running")
     [item] = HeadsUp(db, nodes=True).items(NOW)
-    assert item.task_id == task and item.retry is True
+    assert item.task_id == task and item.retry is False, "a step is tried again by its project, never from here (D398)"
 
 
 def test_no_step_of_an_ended_project_is_listed_with_try_again_whatever_the_project_ended_as(db, clock):
@@ -220,3 +220,24 @@ def test_a_step_that_finished_with_open_items_in_an_ended_project_has_no_try_aga
     [item] = HeadsUp(db, nodes=True).items(NOW)
     assert item.kind == "finished" and item.retry is False
     assert HeadsUp(db).items(NOW)[0].retry is True
+
+
+# ---- a step is never tried again by hand (D398, M-A) ----------------------------------------------------------------------------------------------
+
+def test_a_failed_step_of_a_project_that_still_runs_is_listed_without_try_again(db, clock):
+    world = World(db, clock)
+    task = put(world, 50, "web", "crashed", ended=NOW - HOUR, outcome="it crashed for good")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.task_id == task and item.kind == "problem" and item.retry is False
+    assert HeadsUp(db).items(NOW)[0].retry is True, "flag off: what it was"
+
+
+def test_an_earlier_attempt_of_a_step_is_a_step_too(db, clock):
+    world = World(db, clock)
+    first = put(world, 51, "web", "crashed", ended=NOW - 2 * HOUR, outcome="the first try crashed")
+    second = put(world, 52, "web", "stopped", ended=NOW - HOUR, outcome="Stopped: stopped on request", parent=first, stopped_by="app")
+    world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A', 'running', ?)", NOW - 3 * HOUR)
+    world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'failed', ?)", second, NOW)
+    for item in HeadsUp(db, nodes=True).items(NOW):
+        assert item.retry is False, (item.task_id, item.kind)
