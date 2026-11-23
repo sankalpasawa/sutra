@@ -226,3 +226,32 @@ def test_a_verdict_that_names_no_step_asks_nothing_and_approve_is_worded_as_an_o
     rig.finish(node2["task_id"], files=verdict_files("approve", [], "Looks right."))
     [approve] = rig.sql("SELECT text FROM chat_messages WHERE src_ref LIKE ?", f"project:{reservation2.project_id}#opinion:%").fetchall()
     assert "approves of the work" in approve["text"] and "only its opinion, and you decide" in approve["text"]
+
+
+def test_a_close_of_the_app_while_the_reviewer_runs_gives_it_a_fresh_attempt_and_the_project_goes_on_reviewing(rig):
+    """D406 (m-2): it used to end the review as failed and the project as done with 'the review could not run'. A real failure of the reviewer still does."""
+    reservation, tasks = two_done(rig)
+    node = reviewer(rig)
+    rig.start()
+    rig.go(node["task_id"])
+    rig.sql("UPDATE tasks SET status = 'crashed', outcome = 'the app was closed while it ran' WHERE id = ?", node["task_id"])
+    from orchestrator.test_reconcile_projects import reconcile
+    reconcile(rig)
+    again = reviewer(rig)
+    assert again["attempt"] == 2 and again["state"] == "queued" and again["task_id"] != node["task_id"]
+    assert rig.project(reservation.project_id)["status"] == "reviewing"
+    assert [r["action"] for r in rig.audit("node.restarted")] == ["node.restarted"]
+    rig.start()
+    rig.go(again["task_id"])
+    rig.finish(again["task_id"], files=verdict_files("approve"))
+    assert rig.project(reservation.project_id)["status"] in ("done", "reviewing")
+
+
+def test_a_real_crash_of_the_reviewer_still_ends_the_review_as_could_not_run(rig):
+    reservation, tasks = two_done(rig)
+    node = reviewer(rig)
+    rig.start()
+    rig.go(node["task_id"])
+    rig.finish(node["task_id"], status="crashed", outcome="it really crashed", handoff=False)
+    project = rig.project(reservation.project_id)
+    assert project["status"] == "done" and project["stop_reason"] == "The review could not run, so nobody has checked the work"
