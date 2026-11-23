@@ -1655,7 +1655,7 @@ def parse_usd(text):
                                                   "propose only the workflows the change plan names", ("change_plan",)))
 '''),
     Edit("P22", "j2.py", r'''            why = [self._reject(n, "; ".join(m)) for n, m in bad.items()]
-''', r'''            why = [self._reject(n, "; ".join(m), ("atoms",)) for n, m in bad.items()]      # key: P22 (D431)
+''', r'''            why = [self._reject(n, "; ".join(m), ("atoms_checked",)) for n, m in bad.items()]      # key: P22 (D431)
 '''),
     Edit("P22", "j2.py", r'''                self._reject(f"{a['id']} corrected check", "; ".join(probs))
 ''', r'''                self._reject(f"{a['id']} corrected check", "; ".join(probs), ("corrected_check", a["id"]))      # key: P22 (D431)
@@ -1674,25 +1674,30 @@ def parse_usd(text):
                 # P22 amended (D431): the rule that fired, in the order of the reason above, with code-made ids only (the
                 # done-when items of a real-run clash, the required fields); names, sections, dependencies, LLD ids, parts
                 # and the judge's words stay out of the key
-                key = next(k for k, on in (
-                    (("audit",), w.get("kind") == "audit"),
+                # P22 amended (D431): the rule that fired, one entry per test of the reason chain above, with the same test in
+                # the same order (tests/engine/test_engine_patches.py checks it from the code), and code-made ids only (the
+                # done-when items of a real-run clash, the required fields); names, sections, dependencies, LLD ids, parts and
+                # the judge's words stay out of the key. A reason no entry names gets its own ("unkeyed",) bucket.
+                key_rules = (
+                    (("audit_job",), w.get("kind") == "audit"),
                     (("real_run_covers", tuple(self._no_at(i) for i in clash.get(id(w), ()))), id(w) in clash),
-                    (("missing", tuple(missing)), bool(missing)),
-                    (("atoms",), bool(no_atom)),
-                    (("dependencies",), bool(self._unknown_deps(w, batch) and self._dep_names(batch))),
-                    (("lld",), bool(unknown_lld)),
-                    (("sections",), bool(bad_secs)),
-                    (("no_section",), bool(no_sec)),
+                    (("missing", tuple(missing)), missing),
+                    (("atom_problems",), no_atom),
+                    (("dependencies",), (odd := self._unknown_deps(w, batch)) and (names := self._dep_names(batch))),
+                    (("lld",), unknown_lld),
+                    (("sections",), bad_secs),
+                    (("no_section",), no_sec),
                     (("priority_refused",), name in self.p_refused),
-                    (("counter_limit",), bool(counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0)),
-                    (("no_price",), bool(RATES and rc is None)),
-                    (("parts",), bool(unknown)),
+                    (("counter_limit",), counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0),
+                    (("no_price",), RATES and rc is None),
+                    (("parts",), unknown),
                     (("floor",), rc is not None and c < rc),
                     (("judge",), (w.get("judge") or {}).get("ready") is False),
                     (("sections_cost",), c < sec_min),
                     (("cost_zero",), c <= 0),
                     (("over_budget",), reason == f"it costs {c}, over the {remaining} left in the budget"),
-                    (("underpriced",), True)) if on)
+                    (("underpriced",), RATES))
+                key = next((k for k, on in key_rules if on), ("unkeyed",))
                 refused.append(self._reject(name, reason, key))
                 self._refused_for(w, reason)
 '''),
@@ -2160,7 +2165,7 @@ PATCH_NOTES = {
     "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file (anchored on the delay lines of `call` only, `if self.calls and call_delay():`; the two other `call_delay()` sites, in `_summarize` and the reviewer call, are not under a patch)",
     "P10": "`store`, `mark_used`, `note_version` and `mark_run_template_used` (sync 6, D181: four writers) of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store`, `_mark_used`, `_note_version` and `_mark_run_template_used` (a wrapper never calls another wrapper: the lock is not reentrant); `save_run_template`, `move_versions` and the module's `__main__` commands are developer tools and stay unpatched",
     "P21": "`_tool_record` (D245, builder tools live): a file outside the builder's folder that changed during a tools call is not the builder's write when it is one of the host's own run files (`rehydrate.HOST_FILES`: the live view, the snapshot, the event log) or the atomic-write temp file of one (`oslayer.temp_target` maps it back), unless the CLI's tool calls (`LAST_META[\"tool_calls\"]`) name it, so a builder that touches a host file is still stopped",
-    "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (amended in D431: the same code-set key, which `_reject` now takes from every caller: the rule and code-made ids only, never a name, an agent's or the judge's words; the worded reason is kept for display) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
+    "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (amended in D431: the same code-set key, which `_reject` now takes from every caller: the rule and code-made ids only, never a name, an agent's or the judge's words; in `_register` the key comes from `key_rules`, one entry per test of the reason chain with the same test in the same order, each its own rule name, and a reason no entry names gets its own `(\"unkeyed\",)`, never another rule's; `test_p22_every_rejection_path_in_the_validator_sets_its_own_key` checks this from j2.py's code; the worded reason is kept for display) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
     "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",

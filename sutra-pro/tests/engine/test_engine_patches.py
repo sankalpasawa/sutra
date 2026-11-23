@@ -2346,3 +2346,42 @@ def test_p28_keep_going_after_a_repeat_stop_builds_the_waiting_queue(replay_17e1
     run.paused = None
     run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Option 1"})
     assert run.turn == "coordination" and run.handoff["kind"] == "schedule", (run.turn, run.handoff)
+
+
+def test_p22_every_rejection_path_in_the_validator_sets_its_own_key():
+    """D431 (R1-2 follow-up): every rejection carries a key set by code, distinct per rule, so a rule added later without
+    one fails here instead of sharing another rule's bucket. Derived from the code, not from a hand-kept list:
+    - every `self._reject(...)` call in j2.py passes a third argument, the key: a tuple literal naming its rule, or the
+      rule chain's `key`;
+    - in `_register`, `key_rules` has one entry per test of the reason chain (`reason = (... if ... else ...) or
+      (budget)`), with the same test, in the same order (plus `over_budget` for the `or` tail);
+    - the rule names are distinct across all of them."""
+    import ast
+    src = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "_reject"]
+    assert len(calls) >= 7, len(calls)
+    names = []
+    for c in calls:
+        assert len(c.args) == 3, f"line {c.lineno}: _reject without a key"
+        k = c.args[2]
+        if isinstance(k, ast.Name):
+            assert k.id == "key", f"line {c.lineno}: key {k.id}"
+            continue
+        assert isinstance(k, ast.Tuple) and k.elts and isinstance(k.elts[0], ast.Constant) and isinstance(k.elts[0].value, str) \
+            and k.elts[0].value, f"line {c.lineno}: the key must be a tuple naming its rule"
+        names.append(k.elts[0].value)
+    reg = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_register")
+    chain = next(n.value for n in ast.walk(reg) if isinstance(n, ast.Assign) and [getattr(t, "id", None) for t in n.targets] == ["reason"]
+                 and isinstance(n.value, ast.BoolOp))
+    tests, node = [], chain.values[0]
+    while isinstance(node, ast.IfExp):
+        tests.append(ast.dump(node.test))
+        node = node.orelse
+    entries = next(n.value for n in ast.walk(reg) if isinstance(n, ast.Assign)
+                   and [getattr(t, "id", None) for t in n.targets] == ["key_rules"]).elts
+    rules = [(e.elts[0].elts[0].value, ast.dump(e.elts[1])) for e in entries]
+    assert [t for r, t in rules if r != "over_budget"] == tests, "the key list must follow the reason chain test by test"
+    assert "over_budget" in [r for r, _ in rules] and len(tests) >= 17
+    names += [r for r, _ in rules]
+    assert len(names) == len(set(names)), sorted(x for x in names if names.count(x) > 1)

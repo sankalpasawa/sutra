@@ -8079,7 +8079,7 @@ class J2Run:
             bad = {w.get("name") or "?": m for w in pool if (m := self._kind_problem(w) + self._atom_problems(w, pool))}
             if not bad:
                 break
-            why = [self._reject(n, "; ".join(m), ("atoms",)) for n, m in bad.items()]      # key: P22 (D431)
+            why = [self._reject(n, "; ".join(m), ("atoms_checked",)) for n, m in bad.items()]      # key: P22 (D431)
             if retry:
                 r = self.call("adaptation", fmt, task + "\nTHE VALIDATOR REJECTED: " + "; ".join(why) + ". Send your "
                               "reply again with every field of every work atom filled in.", mock)
@@ -9235,25 +9235,30 @@ class J2Run:
                 # P22 amended (D431): the rule that fired, in the order of the reason above, with code-made ids only (the
                 # done-when items of a real-run clash, the required fields); names, sections, dependencies, LLD ids, parts
                 # and the judge's words stay out of the key
-                key = next(k for k, on in (
-                    (("audit",), w.get("kind") == "audit"),
+                # P22 amended (D431): the rule that fired, one entry per test of the reason chain above, with the same test in
+                # the same order (tests/engine/test_engine_patches.py checks it from the code), and code-made ids only (the
+                # done-when items of a real-run clash, the required fields); names, sections, dependencies, LLD ids, parts and
+                # the judge's words stay out of the key. A reason no entry names gets its own ("unkeyed",) bucket.
+                key_rules = (
+                    (("audit_job",), w.get("kind") == "audit"),
                     (("real_run_covers", tuple(self._no_at(i) for i in clash.get(id(w), ()))), id(w) in clash),
-                    (("missing", tuple(missing)), bool(missing)),
-                    (("atoms",), bool(no_atom)),
-                    (("dependencies",), bool(self._unknown_deps(w, batch) and self._dep_names(batch))),
-                    (("lld",), bool(unknown_lld)),
-                    (("sections",), bool(bad_secs)),
-                    (("no_section",), bool(no_sec)),
+                    (("missing", tuple(missing)), missing),
+                    (("atom_problems",), no_atom),
+                    (("dependencies",), (odd := self._unknown_deps(w, batch)) and (names := self._dep_names(batch))),
+                    (("lld",), unknown_lld),
+                    (("sections",), bad_secs),
+                    (("no_section",), no_sec),
                     (("priority_refused",), name in self.p_refused),
-                    (("counter_limit",), bool(counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0)),
-                    (("no_price",), bool(RATES and rc is None)),
-                    (("parts",), bool(unknown)),
+                    (("counter_limit",), counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0),
+                    (("no_price",), RATES and rc is None),
+                    (("parts",), unknown),
                     (("floor",), rc is not None and c < rc),
                     (("judge",), (w.get("judge") or {}).get("ready") is False),
                     (("sections_cost",), c < sec_min),
                     (("cost_zero",), c <= 0),
                     (("over_budget",), reason == f"it costs {c}, over the {remaining} left in the budget"),
-                    (("underpriced",), True)) if on)
+                    (("underpriced",), RATES))
+                key = next((k for k, on in key_rules if on), ("unkeyed",))
                 refused.append(self._reject(name, reason, key))
                 self._refused_for(w, reason)
                 if self.change and name in self.change["allowed"] and name not in self.p_refused \
