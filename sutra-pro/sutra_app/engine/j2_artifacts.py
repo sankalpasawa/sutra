@@ -138,7 +138,7 @@ def rows(d, types=None):
     for t in types["types"]:
         if t["name"] in pages and t["name"] not in mine and pages & mine:
             continue
-        files = [os.path.relpath(p, d) for p in sorted(glob.glob(os.path.join(d, t["file"])), key=_num)] \
+        files = [os.path.relpath(p, d) for p in sorted(glob.glob(os.path.join(d, t["file"])), key=_num) if os.path.isfile(p)] \
             if "*" in t["file"] else [t["file"]] if os.path.isfile(os.path.join(d, t["file"])) else []
         wf = []
         if t["kind"] == "type":
