@@ -74,7 +74,7 @@ class KillSwitch:
         self.directory = Path(directory)
         self._consume = consume                    # False for the command line: it only LOOKS. Only the running app takes the resume marker and writes its audit row (D391)
         self._clock = clock or SystemClock()
-        self._by_hand: list[str] = []              # the texts of the resume markers the command line left, not yet audited (D384)
+        self._marker_read = 0                      # how many bytes of the resume marker `pending_resumes` last read (D406)
         self._latched = ""                         # "kill" or "pause" when the file could not be written: the switch is on in memory until it is cleared (Minor 3: a full or read-only disk must not open the gate)
 
     # ---- reading ---------------------------------------------------------------------------------------------------------------
@@ -91,26 +91,44 @@ class KillSwitch:
         return True
 
     def _released(self) -> None:
-        """A `nodes resume` of the command line (a separate process) leaves a RESUME file: a switch held in memory because its file could not be written is let go, and the marker is removed."""
-        if not self._consume:
-            return
-        marker = self.resume_marker()
-        if os.path.lexists(marker):
+        """A `nodes resume` of the command line (a separate process) leaves a RESUME file: a switch held in memory because its file could not be written is let go. The marker itself stays until the
+        app has written its audit row (`pending_resumes`, then `finish_resumes`): the row first, the unlink after, so a crash between the two loses nothing (D406, m-3)."""
+        if self._consume and os.path.lexists(self.resume_marker()):
             self._latched = ""
-            try:
-                said = Path(marker).read_text(encoding="utf-8", errors="replace")[:2000]
-            except OSError:
-                said = ""
-            self._by_hand.append(said)                                      # what the command said it removed: the one that has the database writes an audit row for it (D384)
-            try:
-                os.unlink(marker)
-            except OSError:
-                pass
 
-    def take_resumed_by_hand(self) -> list[str]:
-        """The words of every `nodes resume` of the command line that was found since the last call (each is the marker file's text), and forget them."""
-        found, self._by_hand = self._by_hand, []
-        return found
+    def pending_resumes(self) -> list[tuple[str, str]]:
+        """`(ref, what was removed)` for each `nodes resume` of the command line the marker holds, oldest first, and how much of the file that was (for `finish_resumes`). The ref is the moment the command
+        wrote (`at <ns>`), so the audit row can be written once however often this is read. A command that removed nothing wrote no `removed:` line."""
+        if not self._consume:
+            return []
+        try:
+            raw = Path(self.resume_marker()).read_bytes()[:20000]
+        except OSError:
+            return []
+        self._marker_read = len(raw)
+        out = []
+        for line in raw.decode("utf-8", "replace").splitlines():
+            if line.startswith("removed:"):
+                said, _, at = line[len("removed:"):].partition("| at ")
+                if said.strip():
+                    out.append((f"resume:{at.strip() or hash(line)}", said.strip()))
+        return out
+
+    def finish_resumes(self) -> None:
+        """Take what `pending_resumes` read out of the marker, after its rows are written: the file goes when nothing was added since; bytes a newer `nodes resume` appended meanwhile stay."""
+        marker = self.resume_marker()
+        read, self._marker_read = self._marker_read, 0
+        try:
+            raw = Path(marker).read_bytes()
+        except OSError:
+            return
+        try:
+            if len(raw) <= read:
+                os.unlink(marker)
+            else:
+                Path(marker).write_bytes(raw[read:])
+        except OSError:
+            pass
 
     def resume_marker(self) -> Path:
         """Where the command line leaves its word (a sibling of the switch's folder, so the folder holds only the two switch files)."""
@@ -405,15 +423,23 @@ class NodeControl:
         """Which KILL file this is, for the audit's once-only rule: its stamp, or a fixed word for a file that cannot be looked at."""
         return self.switch.stamp() or ("unreadable",)
 
+    def _audit_resume_once(self, ref: str, removed: str) -> None:
+        """The audit row of one `nodes resume`, once however often it is asked for (its ref is the moment the command wrote)."""
+        if self.db.conn().execute("SELECT 1 FROM node_audit WHERE action = 'resume' AND ref = ?", (ref,)).fetchone() is not None:
+            return
+        with self.db.tx() as tx:
+            self.store.audit(tx, actor="owner", action="resume", project_id=None, node_id=None, decision="n/a", reason="resumed by hand with the command line: " + removed[:150], ref=ref, target="nodes")
+
     async def enforce(self) -> int:
         """While a KILL file is there, run the stop ladder for every live node, on EVERY call: a node that started after the file appeared (a start that was under way, a retry) is
         stopped at the next tick, so nothing keeps running behind a kill (M1). Only the audit row `kill` is once per file (by its stamp). Returns how many it stopped. Costs one `lstat`
         when there is no file, and one query while there is."""
         killed = await run_blocking(lambda: self.switch.killed)                  # this look also finds a `nodes resume` left by the command line
-        for said in await run_blocking(self.switch.take_resumed_by_hand):
-            for removed in (line.split(":", 1)[1].strip() for line in said.splitlines() if line.startswith("removed:")):
-                if removed:                                                       # the command only writes the words when it removed a file: a row for each resume, never for a look
-                    await run_blocking(lambda removed=removed: self._audit("resume", reason="resumed by hand with the command line: " + removed, actor="owner"))
+        pending = await run_blocking(self.switch.pending_resumes)
+        for ref, removed in pending:                                              # the command only writes the words when it removed a file: a row for each resume, never for a look
+            await run_blocking(lambda ref=ref, removed=removed: self._audit_resume_once(ref, removed))
+        if pending or self.switch._marker_read:
+            await run_blocking(self.switch.finish_resumes)                        # the unlink comes after the rows (D406)
         if not killed:
             self._enforced = None
             return 0
