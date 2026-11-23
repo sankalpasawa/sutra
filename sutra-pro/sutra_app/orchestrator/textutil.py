@@ -76,20 +76,52 @@ def parse_yes_no(text: str) -> bool | None:
     return None
 
 
+_CONNECTOR = re.compile(r"\s+(?:and|then|after|before|or|to|of|in|on|for|with|the|a|an)$", re.I)
+
+
+def _first_sentence(line: str) -> str:
+    """The text up to the first sentence end: a full stop, `!` or `?` followed by a space, unless the word before it holds another dot (e.g., i.e., a.m., v1.2): that is an abbreviation, not an end."""
+    for match in re.finditer(r"[.!?](?=\s)", line):
+        word = re.search(r"(\S+)$", line[: match.end()]).group(1)
+        if "." in word[:-1] and match.group() == ".":
+            continue
+        return line[: match.start()]
+    return line
+
+
+def _whole_graphemes(line: str, cut: str) -> str:
+    """`cut` (the start of `line`) without a half of a glyph at its end: a joiner, a variation selector, a combining mark or a skin tone that belongs to the character before the cut is not left behind, and a
+    character whose rest was cut off goes too."""
+    import unicodedata
+
+    def joins(ch: str) -> bool:
+        return unicodedata.category(ch) in ("Mn", "Me", "Cf") or "\U0001F3FB" <= ch <= "\U0001F3FF"
+    while cut and (cut[-1] == "\u200d" or (len(cut) < len(line) and joins(line[len(cut)]))):
+        cut = cut[:-1]
+    return cut
+
+
 def project_title(text: str, limit: int = 60) -> str:
-    """A short title for a project from the owner's request (D404): the first sentence when it fits, else the text cut at a word boundary with an ellipsis. Never cut inside a word, never ends on a
-    dangling "and", "then" or "after"; the whole request is on the project page."""
+    """A short title for a project from the owner's request (D404, r-7): the first sentence when it fits, else the text cut at a word boundary with an ellipsis. Never cut inside a word or a glyph, never ends on
+    a dangling "and", "then", "after" and the like (however many), never empty for a request that has words (it falls back to the first characters), never split at "e.g." or "i.e.". The whole request is on
+    the project page."""
     line = " ".join(str(text).split())
-    first = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0].rstrip(".!?:; ")
+    if not line:
+        return ""
+    first = _first_sentence(line).rstrip(".!?:; ")
     if 0 < len(first) <= limit:
         return first
     if len(line) <= limit:
-        return line.rstrip(".!?:; ")
-    cut = line[:limit + 1]
-    cut = cut[:cut.rfind(" ")] if " " in cut else line[:limit]
+        return line.rstrip(".!?:; ") or line
+    cut = line[: limit + 1]
+    cut = cut[: cut.rfind(" ")] if " " in cut else _whole_graphemes(line, line[:limit])
     cut = re.sub(r"[\s,;:\-]+$", "", cut)
-    cut = re.sub(r"\s+(?:and|then|after|before|or|to|of|in|on|for|with|the|a|an)$", "", cut, flags=re.I)
-    return cut + "\u2026"
+    while True:
+        stripped = _CONNECTOR.sub("", cut)
+        if stripped == cut:
+            break
+        cut = re.sub(r"[\s,;:\-]+$", "", stripped)
+    return (cut or _whole_graphemes(line, line[:limit]).strip() or line[:limit]) + "\u2026"
 
 
 def one_line_title(text: str, limit: int = 60) -> str:

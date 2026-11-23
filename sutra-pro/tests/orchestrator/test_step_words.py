@@ -384,3 +384,36 @@ def test_the_route_refuses_a_stale_answer_with_a_409_and_makes_no_task(tmp_path)
         assert client.post(f"/api/projects/{project}/questions/12345/answer", json={"option": 0}, headers=HEADERS).status_code == 422
         assert client.post(f"/api/projects/{project}/questions/12345/answer", json={"option": 1, "text": "x"}, headers=HEADERS).status_code == 422, "closed body"
         assert len(rows(services, "SELECT id FROM tasks")) == before
+
+
+# ---- the title of a project, the odd cases (r-7) --------------------------------------------------------------------------------------------------------
+
+def test_a_title_is_never_empty_never_dangles_on_a_connector_never_splits_an_abbreviation_and_never_cuts_a_glyph():
+    from sutra_app.orchestrator.textutil import project_title
+    assert project_title("???") == "???" and project_title("...") == "..." and project_title("") == ""
+    dangling = project_title("Review every file and then write what each is for and then what is missing and then after that and then")
+    assert dangling.endswith("…") and not re.search(r"\b(and|then|after|or|of)…$", dangling), dangling
+    assert not re.search(r"\b(and|then)\s*…$", project_title("x " * 20 + "and then and then and then and then and then and then"))
+    assert project_title("Use e.g. the old one. Then more") == "Use e.g. the old one"
+    assert project_title("I.e. do it. Then more") == "I.e. do it"
+    family = "\U0001F468‍\U0001F469‍\U0001F467‍\U0001F466"
+    cut = project_title(family * 30)
+    assert cut.endswith("…") and not cut[:-1].endswith("‍") and cut[:-1] == family * (len(cut[:-1]) // len(family)), "a family emoji is whole or gone"
+    assert project_title("x" * 100).endswith("…") and len(project_title("x" * 100)) <= 61
+
+
+def test_the_project_the_runner_makes_is_titled_by_project_title(tmp_path):
+    """If the runner went back to cutting the request at 80 characters, this fails."""
+    from fastapi.testclient import TestClient
+    from orchestrator.test_api_start_project import CLIENT, script, wait_idle
+    from orchestrator.test_projects_adopt import BASE as APP_BASE, HEADERS, make_app, rows
+    from sutra_app.orchestrator.textutil import project_title
+    text = "Do two separate read-only jobs in this folder and change nothing. Step 1: list the files and say what each one is for. Run them as two steps."
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=APP_BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": text}, headers=HEADERS)
+        wait_idle(services)
+        title = rows(services, "SELECT title FROM projects")[0]["title"]
+    assert title == project_title(text) == "Do two separate read-only jobs in this folder and change…"
