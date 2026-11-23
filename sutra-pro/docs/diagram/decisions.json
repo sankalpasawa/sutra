@@ -2053,5 +2053,25 @@
   "id": "D424",
   "label": "projects: P26 off per step; chip $ = project's own; Home Stop stops the project",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D425",
+  "label": "folder = where a team works, not project work; one folder per team",
+  "anchor": "Department records"
+ },
+ {
+  "id": "D426",
+  "label": "projects = teams: make, rename, hide by code; folder per project",
+  "anchor": "One global org chart"
+ },
+ {
+  "id": "D427",
+  "label": "a team the org chat would add waits for the owner's name",
+  "anchor": "Chat agent (orchestrator)"
+ },
+ {
+  "id": "D428",
+  "label": "a run's results go to its project folder; manifest guards the owner's files",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

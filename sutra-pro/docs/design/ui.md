@@ -677,3 +677,14 @@ Risks and unverified points:
 - R11 A graph above 500 nodes falls back to the List view; no virtualisation.
 - R12 Decided OUT of v1 and accepted: drag-to-pin in the new views and `?embed=1` (the Simple view inside Home; the later key is `sutra:pins:<graph|chart>:<dept|all>`, and `frame-ancestors 'self'` already allows a same-origin frame), font vendoring and chart editing. [S3-web-11]
 - R13 J2's stdlib server compares POST paths exactly (j2_server.py:250-263); the app never serves the page from it (S3-web-07); the engine's adapter routes on the parsed path. [S3-web-07]
+
+## Named projects (D425 to D428)
+
+| Place | What the owner sees | Code |
+|---|---|---|
+| Sidebar "+ New project" | the Create project box: Project name (required, 1 to 80 characters), Source folder (desktop: Add opens the folder dialog; browser: a path field), the trust question "Allow Sutra Pro's team to read and edit files in <path>?" with Read and edit, Read only, Cancel; with no folder "Saved in Documents\Sutra Pro\<name>" | `create_project.js`, styles in `project_rail.css` |
+| A project's ⋯ menu | Rename (the name becomes a field in place, Enter saves, Esc cancels), Delete (asks first; disabled with "Working. Stop it first." while it works; its runs and files stay), then Move to section | `project_rail.js` `projectMenuHtml` |
+| Team page start heading | "What should we make in <Project>?", the name a dropdown of projects and "+ New project…" | `project_pick.js`, filled from `dept_ext.js` (J2's `#sgreet`) |
+| Attention start heading | the same, starting on the last project picked (kept on the server), plus "Let Sutra choose" ("What should we make?"); a project pick sends straight to it ("Pulse is working. Wait for it or stop it." when busy) and opens its page | `project_pick.js`, `home.js` |
+| Org chat card for a new project | "I'd start a new project for this: <name>. Name it to create it, or say no." with "Name it…" (the Create project box, name filled in) and No; on Attention the box opens by itself after a Let Sutra choose send | `front_door.js`, `chat_view.js`, `home.js` |
+| Run chat | "Saved to <folder>: 12 files (3 new, 9 updated)." and "Not updated: <file> was changed outside Sutra" | `engine/host/export.py` |
