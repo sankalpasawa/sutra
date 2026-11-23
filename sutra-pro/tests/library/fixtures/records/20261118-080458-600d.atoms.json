@@ -1,0 +1,400 @@
+{
+ "schema": "atom/1",
+ "atoms": [
+  {
+   "schema": "atom/1",
+   "id": "W-2.a1",
+   "workflow": "W-2",
+   "name": "Page header, address and hours",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "The page shows the shop name, the address and the opening hours exactly as given in the charter.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Create index.html with doctype, head, viewport meta and a body. Add section #hero holding h1 #shop-name (Bean There), p #address (1 Example Road) and p #hours (7am-6pm daily).",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Create only #hero, #shop-name, #address and #hours",
+    "Show only facts from the charter; no phone, email or extra items",
+    "Include doctype, head and viewport meta"
+   ],
+   "context": [
+    "charter item 1",
+    "charter item 2"
+   ],
+   "defined_output": [
+    {
+     "text": "The hero section",
+     "kind": "section",
+     "target": "#hero"
+    },
+    {
+     "text": "The shop name heading",
+     "kind": "element",
+     "target": "#shop-name",
+     "count": 1
+    },
+    {
+     "text": "Name, address and hours are shown",
+     "kind": "facts",
+     "target": [
+      "Bean There",
+      "1 Example Road",
+      "7am-6pm daily"
+     ]
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {
+    "elements": [
+     "#shop-name"
+    ]
+   }
+  },
+  {
+   "schema": "atom/1",
+   "id": "W-3.a1",
+   "workflow": "W-3",
+   "name": "Menu section",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "The page lists espresso £2.50, flat white £3.20 and croissant £2.80 as a menu.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Add section #menu after #hero with a heading and a list of exactly three li.menu-item entries. Each shows the item name and its price together as espresso £2.50, flat white £3.20 and croissant £2.80.",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Create only #menu and the .menu-item entries",
+    "Exactly three items; no invented items",
+    "Prices in pounds exactly as given",
+    "Other sections stay unchanged"
+   ],
+   "context": [
+    "charter item 3",
+    "section page-header"
+   ],
+   "defined_output": [
+    {
+     "text": "The menu section",
+     "kind": "section",
+     "target": "#menu"
+    },
+    {
+     "text": "Three menu items",
+     "kind": "element",
+     "target": ".menu-item",
+     "count": 3
+    },
+    {
+     "text": "The three prices are shown",
+     "kind": "facts",
+     "target": [
+      "£2.50",
+      "£3.20",
+      "£2.80"
+     ]
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {
+    "elements": [
+     ".menu-item"
+    ]
+   }
+  },
+  {
+   "schema": "atom/1",
+   "id": "W-4.a1",
+   "workflow": "W-4",
+   "name": "Responsive layout styles",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "The page has no horizontal overflow at 360px and 1280px and is readable on phones and desktop.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Add one style element #page-style in the head. Wrap the body content in div.page-wrap with max-width and padding. Use box-sizing border-box, fluid widths, overflow-wrap and readable type sizes so nothing exceeds the viewport.",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Create only style block #page-style and wrapper .page-wrap",
+    "Use box-sizing border-box, fluid widths and wrapping",
+    "Do not change any text or facts"
+   ],
+   "context": [
+    "charter item 4",
+    "section page-header",
+    "section menu-section"
+   ],
+   "defined_output": [
+    {
+     "text": "The single style block",
+     "kind": "element",
+     "target": "#page-style",
+     "count": 1
+    },
+    {
+     "text": "The page wrapper",
+     "kind": "element",
+     "target": ".page-wrap",
+     "count": 1
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {
+    "elements": [
+     "#page-style",
+     ".page-wrap"
+    ]
+   }
+  },
+  {
+   "schema": "atom/1",
+   "id": "W-5.a1",
+   "workflow": "W-5",
+   "name": "Navigation and script integrity",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "Every in-page link points to an existing section and the page runs with no JavaScript errors.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Add nav #site-nav with three links to #hero, #hours and #menu, each at least 44px tall. Add a minimal script #page-script that does nothing that can throw. Keep ids #hero, #hours and #menu in place.",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Create only nav #site-nav and script #page-script",
+    "Links only to #hero, #hours and #menu",
+    "Script minimal and error-free",
+    "No horizontal overflow at 360px or 1280px",
+    "Nav links at least 44px tall"
+   ],
+   "context": [
+    "charter item 5",
+    "section page-header",
+    "section menu-section"
+   ],
+   "defined_output": [
+    {
+     "text": "The navigation",
+     "kind": "section",
+     "target": "#site-nav"
+    },
+    {
+     "text": "Nav links are big enough to tap",
+     "kind": "tap",
+     "target": "#site-nav"
+    },
+    {
+     "text": "All in-page links resolve",
+     "kind": "test",
+     "target": "links-resolve"
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {}
+  },
+  {
+   "schema": "atom/1",
+   "id": "W-6.a1",
+   "workflow": "W-6",
+   "name": "Page header, address and hours",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "The page shows the shop name, the address and the opening hours exactly as given in the charter.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Create index.html with doctype, head, viewport meta and a body. Add section #hero holding h1 #shop-name (Bean There), p #address (1 Example Road) and p #hours (7am-6pm daily). Write no file other than index.html.",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Write only index.html in the workflow's own folder; touch no other file",
+    "Create only #hero, #shop-name, #address and #hours",
+    "Show only facts from the charter; no phone, email or extra items",
+    "Include doctype, head and viewport meta"
+   ],
+   "context": [
+    "charter item 1",
+    "charter item 2"
+   ],
+   "defined_output": [
+    {
+     "text": "The hero section",
+     "kind": "section",
+     "target": "#hero"
+    },
+    {
+     "text": "The shop name heading",
+     "kind": "element",
+     "target": "#shop-name",
+     "count": 1
+    },
+    {
+     "text": "Name, address and hours are shown",
+     "kind": "facts",
+     "target": [
+      "Bean There",
+      "1 Example Road",
+      "7am-6pm daily"
+     ]
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {
+    "elements": [
+     "#shop-name"
+    ]
+   }
+  },
+  {
+   "schema": "atom/1",
+   "id": "W-7.a1",
+   "workflow": "W-7",
+   "name": "Complete landing page",
+   "owner": "Builder",
+   "status": "abandoned",
+   "attempt": null,
+   "goal": "One page shows the shop name, address, opening hours and a three-item menu with prices exactly as given, with working in-page navigation, no script errors and no horizontal overflow at 360px or 1280px.",
+   "how": {
+    "kind": "AI",
+    "agent": "Builder",
+    "steps": "Create index.html only, with doctype, head, viewport meta and one style element #page-style. In the body add div.page-wrap holding nav #site-nav with three links to #hero, #hours and #menu, each at least 44px tall. Add section #hero with h1 #shop-name (Bean There) and p #address (1 Example Road). Add section #hours with p #hours-text (7am-6pm daily) and give the element with id #hours as that section. Add section #menu with a heading and a list of exactly three li.menu-item entries: espresso £2.50, flat white £3.20, croissant £2.80. Style with fluid widths, max-width, padding, overflow-wrap and readable contrast. Add a minimal script #page-script that cannot throw. Write no other file.",
+    "date_control": null,
+    "date_case": null
+   },
+   "constraints": [
+    "Write only index.html in the workflow's own folder; touch no other file",
+    "Create only #hero, #shop-name, #address, #hours, #menu, .menu-item, #site-nav, #page-style, .page-wrap and #page-script",
+    "Show only facts from the charter; no phone, email or extra menu items",
+    "Exactly three .menu-item entries; prices in pounds exactly as given",
+    "Nav links go only to #hero, #hours and #menu, each at least 44px tall",
+    "Script minimal and unable to throw",
+    "Use box-sizing border-box, fluid widths and wrapping so nothing overflows at 360px or 1280px"
+   ],
+   "context": [
+    "charter item 1",
+    "charter item 2",
+    "charter item 3",
+    "charter item 4",
+    "charter item 5"
+   ],
+   "defined_output": [
+    {
+     "text": "The hero section",
+     "kind": "section",
+     "target": "#hero"
+    },
+    {
+     "text": "The shop name heading",
+     "kind": "element",
+     "target": "#shop-name",
+     "count": 1
+    },
+    {
+     "text": "The hours section",
+     "kind": "section",
+     "target": "#hours"
+    },
+    {
+     "text": "The menu section",
+     "kind": "section",
+     "target": "#menu"
+    },
+    {
+     "text": "Three menu items",
+     "kind": "element",
+     "target": ".menu-item",
+     "count": 3
+    },
+    {
+     "text": "The navigation",
+     "kind": "section",
+     "target": "#site-nav"
+    },
+    {
+     "text": "The style block",
+     "kind": "element",
+     "target": "#page-style",
+     "count": 1
+    },
+    {
+     "text": "The page wrapper",
+     "kind": "element",
+     "target": ".page-wrap",
+     "count": 1
+    },
+    {
+     "text": "All facts and prices are shown",
+     "kind": "facts",
+     "target": [
+      "Bean There",
+      "1 Example Road",
+      "7am-6pm daily",
+      "£2.50",
+      "£3.20",
+      "£2.80"
+     ]
+    },
+    {
+     "text": "Nav links are big enough to tap",
+     "kind": "tap",
+     "target": "#site-nav"
+    },
+    {
+     "text": "All in-page links resolve",
+     "kind": "test",
+     "target": "links-resolve"
+    }
+   ],
+   "verification": [],
+   "output": [],
+   "depends_on": [],
+   "used_by": [],
+   "notes": "",
+   "details": {
+    "elements": [
+     "#shop-name",
+     ".menu-item",
+     "#page-style",
+     ".page-wrap"
+    ]
+   }
+  }
+ ],
+ "warnings": []
+}

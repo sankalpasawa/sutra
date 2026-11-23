@@ -32,17 +32,17 @@ def said(vs, code, *words):
     return any(v.code == code and all(w in v.message for w in words) for v in vs)
 
 
-# ---- the 26 names --------------------------------------------------------------------------------------------------------
+# ---- the 28 names --------------------------------------------------------------------------------------------------------
 
-def test_there_are_26_check_names_twelve_old_and_fourteen_from_the_registry():
-    assert len(CHECK_NAMES) == 26 and len(set(CHECK_NAMES)) == 26
-    assert CHECK_NAMES[:12] == (*PLUGIN_CHECKS, *J2_CHECKS) and CHECK_NAMES[12:] == REGISTRY_CHECKS
-    assert len(PLUGIN_CHECKS) == 3 and len(J2_CHECKS) == 9 and len(REGISTRY_CHECKS) == 14
+def test_there_are_28_check_names_fourteen_old_and_fourteen_from_the_registry():
+    assert len(CHECK_NAMES) == 28 and len(set(CHECK_NAMES)) == 28
+    assert CHECK_NAMES[:14] == (*PLUGIN_CHECKS, *J2_CHECKS) and CHECK_NAMES[14:] == REGISTRY_CHECKS
+    assert len(PLUGIN_CHECKS) == 3 and len(J2_CHECKS) == 11 and len(REGISTRY_CHECKS) == 14     # the agent form's two (D430)
     assert get_args(CheckTemplate) == CHECK_NAMES
 
 
 @pytest.mark.parametrize("name,limits", [
-    ("grep-count", (3, 3)), ("file-exists", (1, 8)), ("named-test", (1, 8)), ("element-count", (0, 8)), ("facts-present", (0, 8)),
+    ("grep-count", (3, 3)), ("file-exists", (1, 8)), ("named-test", (1, 8)), ("element-count", (0, 40)), ("facts-present", (0, 40)),
     ("reply-valid", (2, 2)), ("answer-recorded", (1, 1)), ("turn-posted", (0, 0)), ("charter-stamp", (0, 0)), ("workable", (0, 0)),
     ("audience-split", (0, 0)), ("atom-rules", (0, 0)), ("judge-gate", (0, 0)), ("price-kept", (0, 0)), ("within-budget", (0, 0)),
     ("order-registered", (0, 0)), ("finding-per-item", (0, 0)), ("pass-needs-proof", (0, 0)), ("code-measure-wins", (0, 0)),
@@ -115,7 +115,7 @@ def test_check_fields_and_bounds():
     assert Check(template="element-count", args=["#a"], expect=True).expect is True and Check(template="element-count", expect=2).expect == 2
     assert said(violations(lambda: Check(template="element-count", expect="1")), "int_type")
     assert said(violations(lambda: Check(template="named-test", args=["t.sh"], target_sha256="XYZ")), "string_pattern_mismatch")
-    assert said(violations(lambda: Check(template="file-exists", args=["a"] * 9)), "too_long")
+    assert said(violations(lambda: Check(template="file-exists", args=["a"] * 41)), "too_long")
     assert said(violations(lambda: Check(template="lint")), "literal_error")
     assert said(violations(lambda: Check(template="file-exists", args=[""])), "string_too_short")
     assert said(violations(lambda: Check(template="file-exists", args=["a"], results=[CheckResult(attempt=1, exit_code=0, ts=1)] * 4)), "too_long")
@@ -133,8 +133,8 @@ def test_registry_checks_with_their_arguments_are_fine():
     assert all(Check(template=n).args == [] for n in REGISTRY_CHECKS if n not in ("reply-valid", "answer-recorded"))
 
 
-def test_verify_holds_at_most_12_checks_and_edges_and_refusals_are_closed():
-    assert said(violations(lambda: Verify(checks=[check()] * 13)), "too_long")
+def test_verify_holds_at_most_40_checks_and_edges_and_refusals_are_closed():
+    assert said(violations(lambda: Verify(checks=[check()] * 41)), "too_long")
     assert violations(lambda: AtomEdge(atom="atom-1", why="x")) and violations(lambda: AtomEdge(atom=ATOM_ID, why=""))
     assert AtomEdge(atom="W-2.a1", why="its section was listed").atom == "W-2.a1"
     assert violations(lambda: Refusal(code="", message="x")) and violations(lambda: Refusal(code="x", message="y" * 601))

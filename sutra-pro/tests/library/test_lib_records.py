@@ -716,3 +716,18 @@ def test_every_meta_key_j2_attaches_to_a_message_is_in_message_meta():
             used |= {k.arg for k in n.keywords if k.arg and (k.arg in META_KEYS or k.arg not in params[n.func.attr])}
     assert len(used) > 40, "the scan found too few calls: it is not looking at the right code"
     assert used - set(META_KEYS) - set(BASE_KEYS) == set(), "J2 attaches a meta key that MessageMeta does not know"
+
+
+# ---- records J2 really wrote (D430, SUT-11) --------------------------------------------------------------------------------
+REAL = sorted((Path(__file__).parent / "fixtures" / "records").glob("*.json"))
+
+
+@pytest.mark.parametrize("path", REAL, ids=[p.name for p in REAL])
+def test_real_j2_records_pass(path):
+    """Files from beta runs that the catalogue refused (`record_rejected` in run.stderr.log), home paths written as `~`.
+    workflows.json keeps only the rows that were refused."""
+    R.check_record(path.name.split(".", 1)[1], json.loads(path.read_text(encoding="utf-8")))
+
+
+def test_real_j2_records_cover_every_fix():
+    assert len(REAL) == 12

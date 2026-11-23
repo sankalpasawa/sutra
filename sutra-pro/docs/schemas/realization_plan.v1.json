@@ -130,9 +130,9 @@
       "additionalProperties": false,
       "properties": {
         "item": {
-          "maxLength": 100000,
+          "minimum": 1,
           "title": "Item",
-          "type": "string"
+          "type": "integer"
         },
         "until": {
           "maxLength": 100000,

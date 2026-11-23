@@ -165,7 +165,7 @@ class ResultEvaluation(Evaluation):
 
     kind: Literal["result"] = "result"
     cycle: Annotated[int, Field(ge=1)]
-    version: Annotated[int, Field(ge=1)]
+    version: Annotated[int, Field(ge=0)]          # the site version audited: 0 when the output has no site (a folder, D430)
     results: Annotated[list[Finding], Field(max_length=200)]
     extra_issues: Annotated[list[Finding], Field(max_length=100)] = []
     rubric: Annotated[list[RubricResult], Field(max_length=20)] = []
@@ -174,6 +174,8 @@ class ResultEvaluation(Evaluation):
     screenshot: Annotated[str, StringConstraints(min_length=1, max_length=500)] | None = None
     all_pass: bool
     accepted: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=600)]], Field(max_length=200)] = []
+    # items only the approved real run meets (D430); None when the run has no real run
+    after_real_run: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=600)]], Field(max_length=200)] | None = None
     output: ArtifactName | None = None                                         # set for a document's audit (a name by shape)
     read: Evidence | None = None                                               # what Audit says it read (a document)
     lld: LldComparison | None = None
@@ -202,7 +204,8 @@ class ResultEvaluation(Evaluation):
                        f"these conditions are not met: {', '.join(blocking[:5])}" if blocking and not withdrawn else
                        "there is no result at all")
                 problems.append((("all_pass",), f"all_pass is true, but {why}"))
-            else:
+            elif self.after_real_run is None:
+                # with a real run, its receipt turns rows to pass after the entry is made and J2 leaves all_pass as it was (D430)
                 problems.append((("all_pass",), "all_pass is false, but every result and rubric row passes and no condition blocks"))
         if problems:
             _raise("ResultEvaluation", problems)

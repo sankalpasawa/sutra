@@ -1,0 +1,2406 @@
+[
+ {
+  "id": "W-2",
+  "proposal_id": "p2",
+  "name": "Write design guide",
+  "covers": [],
+  "fixes": [],
+  "covers_text": [],
+  "purpose": "No shared palette, type scale or tap rules exist for the build workflows.",
+  "cost": 4,
+  "estimate": 4,
+  "envelope": {
+   "money_limit": 4,
+   "model_call_limit": 3,
+   "time_limit_minutes": 5,
+   "retry_limit": 1,
+   "stop_loss": "Stop if design-guide.md is missing or has no 44px rule after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "design-guide.md"
+  ],
+  "completion_check": "design-guide.md exists and states the 44px tap rule and the 360px and 1280px layout rules.",
+  "dependencies": [
+   "Plan page sections and placeholders"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-2.a1",
+    "goal": "design-guide.md gives a warm palette with contrast ratios of at least 4.5:1, scales, a 44px tap rule and responsive rules.",
+    "constraints": [
+     "Create only design-guide.md",
+     "Body text contrast at least 4.5:1"
+    ],
+    "context": [
+     "charter item 8",
+     "charter item 9",
+     "site-plan.md"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Write design-guide.md with at least five colour values and the contrast ratio of each text and background pair, an h1, h2 and body type scale, a spacing scale, the rule that every button and link is at least 44px tall, and layout rules for 360px (single column, no overflow) and 1280px (centred container with a maximum width)."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The design guide file",
+      "kind": "file",
+      "target": "design-guide.md"
+     }
+    ],
+    "verification": [
+     {
+      "text": "design-guide.md exists",
+      "type": "file-exists",
+      "target": "design-guide.md",
+      "expect": true,
+      "item": 1
+     }
+    ]
+   }
+  ],
+  "section": "W-2",
+  "revises": null,
+  "stage": "design",
+  "stage_from": "plan",
+  "certainty": "analyze",
+  "certainty_from": "plan",
+  "agent": "W-2 Builder",
+  "superseded_by": "W-21"
+ },
+ {
+  "id": "W-3",
+  "proposal_id": "p3",
+  "name": "Build page shell and header",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page header shows the shop's name and a one-line description of the coffee shop."
+  ],
+  "purpose": "No page exists, so there is no header with the shop name and description.",
+  "cost": 10,
+  "estimate": 10,
+  "envelope": {
+   "money_limit": 10,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html does not parse after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "The header #site-header shows an h1 and a one-line coffee shop description, with no invented facts.",
+  "dependencies": [
+   "Plan page sections and placeholders",
+   "Write design guide"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-3.a1",
+    "goal": "The page opens with shared styles and a header showing the shop name placeholder and a one-line coffee shop description.",
+    "constraints": [
+     "Single file with one style block and a viewport meta tag",
+     "Create only #site-header and #shop-name",
+     "No email, phone or price in the header",
+     "Use classes j2-btn and j2-card for buttons and cards"
+    ],
+    "context": [
+     "charter item 1",
+     "site-plan.md",
+     "design-guide.md"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create index.html with a valid skeleton, a viewport meta tag, one style block with CSS variables from design-guide.md, and header #site-header holding h1 #shop-name reading 'to be confirmed' and one line describing the shop as a coffee shop."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The page file",
+      "kind": "file",
+      "target": "index.html"
+     },
+     {
+      "text": "The header",
+      "kind": "section",
+      "target": "#site-header"
+     },
+     {
+      "text": "The shop name element",
+      "kind": "element",
+      "target": "#shop-name"
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "One #site-header is on the page",
+      "type": "element-count",
+      "target": "#site-header",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 4
+     },
+     {
+      "text": "The shop name element",
+      "type": "element-count",
+      "expect": 1,
+      "item": 3,
+      "target": "#shop-name"
+     }
+    ]
+   }
+  ],
+  "section": "W-3",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-3 Builder",
+  "superseded_by": "W-21"
+ },
+ {
+  "id": "W-4",
+  "proposal_id": "p4",
+  "name": "Build menu section",
+  "covers": [
+   2
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see drinks, food or prices.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #menu is missing or any other section changed after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#menu has Drinks and Food groups whose names and prices read 'to be confirmed'.",
+  "dependencies": [
+   "Build page shell and header"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-4.a1",
+    "goal": "The menu lists Drinks and Food rows, each with a name and a price reading 'to be confirmed'.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #menu, .menu-group and .menu-row",
+     "Invent no price, digit or currency symbol"
+    ],
+    "context": [
+     "charter item 2",
+     "section W-3"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #menu with a Drinks .menu-group and a Food .menu-group, each holding at least three .menu-row rows with a name element and a price element, all reading 'to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "The menu rows",
+      "kind": "element",
+      "target": ".menu-row",
+      "count": 6
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The menu rows",
+      "type": "element-count",
+      "expect": 6,
+      "item": 2,
+      "target": ".menu-row"
+     }
+    ]
+   }
+  ],
+  "section": "W-4",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-4 Builder",
+  "superseded_by": "W-13"
+ },
+ {
+  "id": "W-5",
+  "proposal_id": "p5",
+  "name": "Build opening hours section",
+  "covers": [
+   3
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see opening days or hours.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #hours lacks seven rows after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#hours has seven rows, Monday to Sunday, each with hours reading 'to be confirmed'.",
+  "dependencies": [
+   "Build page shell and header"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-5.a1",
+    "goal": "The hours section shows each day of the week with hours reading 'to be confirmed'.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #hours and .hours-row",
+     "Invent no times"
+    ],
+    "context": [
+     "charter item 3",
+     "section W-3"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #hours with seven .hours-row rows, Monday to Sunday in order, each with a day name and an hours cell reading 'to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hours section",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The day rows",
+      "kind": "element",
+      "target": ".hours-row",
+      "count": 7
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #hours section is on the page",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "The day rows are on the page",
+      "type": "element-count",
+      "target": ".hours-row",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-5",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-5 Builder",
+  "superseded_by": "W-14"
+ },
+ {
+  "id": "W-6",
+  "proposal_id": "p6",
+  "name": "Build location section with map",
+  "covers": [
+   4
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see the address or a map.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #location or #map-area is missing, or an address is invented, after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#location shows address and town as 'to be confirmed' and a labelled map placeholder.",
+  "dependencies": [
+   "Build page shell and header"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-6.a1",
+    "goal": "The location section shows the street address and town and a map area.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #location and #map-area",
+     "Invent no street, town or coordinates",
+     "Use no map embed without a real address"
+    ],
+    "context": [
+     "charter item 4",
+     "section W-3"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #location with a street address line and a town line reading 'to be confirmed', and a visible box #map-area labelled 'Map: to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The location section",
+      "kind": "section",
+      "target": "#location"
+     },
+     {
+      "text": "The map area",
+      "kind": "element",
+      "target": "#map-area"
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #location section is on the page",
+      "type": "element-count",
+      "target": "#location",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "One #map-area is on the page",
+      "type": "element-count",
+      "target": "#map-area",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-6",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-6 Builder",
+  "superseded_by": "W-15"
+ },
+ {
+  "id": "W-7",
+  "proposal_id": "p7",
+  "name": "Build hero main action",
+  "covers": [
+   6
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section."
+  ],
+  "purpose": "No prominent main action exists near the top.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if the button does not reach #location or is under 44px after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "One .main-action link to #location is the largest control and is visible without scrolling.",
+  "dependencies": [
+   "Build page shell and header",
+   "Build location section with map"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-7.a1",
+    "goal": "One most prominent main action button near the top takes visitors to the location section.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #hero and .main-action",
+     "Exactly one .main-action",
+     "Larger than every other link and button, at least 44px tall, contrast at least 4.5:1"
+    ],
+    "context": [
+     "charter item 6",
+     "section W-3",
+     "section W-6"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add below the header a block #hero holding one a.main-action reading 'Find us' with href '#location', styled with class j2-btn, larger than all other controls."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hero block",
+      "kind": "section",
+      "target": "#hero"
+     },
+     {
+      "text": "The main action",
+      "kind": "element",
+      "target": ".main-action"
+     },
+     {
+      "text": "Clicking the button shows the location",
+      "kind": "behavior",
+      "target": "#location",
+      "steps": [
+       "click .main-action",
+       "wait 1",
+       "expect-visible #location"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One .main-action is on the page",
+      "type": "element-count",
+      "target": ".main-action",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "The button is big enough to tap",
+      "type": "tap-targets",
+      "target": "#hero",
+      "expect": 44
+     },
+     {
+      "text": "Links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true
+     },
+     {
+      "text": "The hero block",
+      "type": "element-count",
+      "expect": 1,
+      "item": 1,
+      "target": "#hero"
+     },
+     {
+      "text": "Clicking the button shows the location",
+      "type": "behavior-steps",
+      "expect": true,
+      "item": 3,
+      "target": [
+       "click .main-action",
+       "wait 1",
+       "expect-visible #location"
+      ]
+     }
+    ]
+   }
+  ],
+  "section": "W-7",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-7 Builder",
+  "superseded_by": "W-16"
+ },
+ {
+  "id": "W-8",
+  "proposal_id": "p8",
+  "name": "Build contact section",
+  "covers": [
+   5
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see how to contact the shop.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #contact is missing or holds an invented value after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#contact shows a phone line and an email line reading 'to be confirmed', with no tel: or mailto: link.",
+  "dependencies": [
+   "Build page shell and header"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-8.a1",
+    "goal": "The contact section shows a phone number and an email address reading 'to be confirmed'.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #contact",
+     "Build no tel: or mailto: link from an invented value"
+    ],
+    "context": [
+     "charter item 5",
+     "section W-3"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #contact with one phone line and one email line, each reading 'to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The contact section",
+      "kind": "section",
+      "target": "#contact"
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #contact section is on the page",
+      "type": "element-count",
+      "target": "#contact",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 2
+     }
+    ]
+   }
+  ],
+  "section": "W-8",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-8 Builder",
+  "superseded_by": "W-17"
+ },
+ {
+  "id": "W-9",
+  "proposal_id": "p9",
+  "name": "Build navigation menu",
+  "covers": [
+   7
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link."
+  ],
+  "purpose": "Visitors have no way to jump to each section.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if any nav href is broken after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#site-nav links to #menu, #hours, #location and #contact, and every href resolves.",
+  "dependencies": [
+   "Build menu section",
+   "Build opening hours section",
+   "Build location section with map",
+   "Build contact section",
+   "Build hero main action"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-9.a1",
+    "goal": "A navigation menu links to every section and each link scrolls to its section.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Create only #site-nav and .nav-link",
+     "Every href matches an existing id",
+     "Links at least 44px tall"
+    ],
+    "context": [
+     "charter item 7",
+     "sections W-4 to W-8"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add nav #site-nav with one a.nav-link each to #menu, #hours, #location and #contact. Add CSS smooth scrolling and scroll-margin-top so a sticky nav hides no heading."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The navigation",
+      "kind": "section",
+      "target": "#site-nav"
+     },
+     {
+      "text": "The nav links",
+      "kind": "element",
+      "target": ".nav-link",
+      "count": 4
+     },
+     {
+      "text": "A nav link scrolls to its section",
+      "kind": "behavior",
+      "target": "#menu",
+      "steps": [
+       "click .nav-link",
+       "wait 1",
+       "expect-visible #menu"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #site-nav is on the page",
+      "type": "element-count",
+      "target": "#site-nav",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true
+     },
+     {
+      "text": "Nav links are big enough to tap",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44
+     },
+     {
+      "text": "The nav links",
+      "type": "element-count",
+      "expect": 4,
+      "item": 2,
+      "target": ".nav-link"
+     },
+     {
+      "text": "A nav link scrolls to its section",
+      "type": "behavior-steps",
+      "expect": true,
+      "item": 3,
+      "target": [
+       "click .nav-link",
+       "wait 1",
+       "expect-visible #menu"
+      ]
+     }
+    ]
+   }
+  ],
+  "section": "W-9",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-9 Builder",
+  "superseded_by": "W-18"
+ },
+ {
+  "id": "W-10",
+  "proposal_id": "p10",
+  "name": "Apply responsive layout and tap size styling",
+  "covers": [
+   8
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones."
+  ],
+  "purpose": "The page is not yet confirmed to fit 360px and 1280px or to have readable text and tappable controls.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if overflow or a tap target under 44px remains after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "No horizontal overflow at 360px and 1280px, contrast at least 4.5:1, every button and link at least 44px tall.",
+  "dependencies": [
+   "Build navigation menu"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-10.a1",
+    "goal": "The finished page fits 360px and 1280px, text is readable and every button and link is at least 44px tall.",
+    "constraints": [
+     "Change only styling",
+     "Keep every existing id and class",
+     "Use class j2-card for section cards"
+    ],
+    "context": [
+     "charter item 8",
+     "design-guide.md",
+     "sections W-3 to W-9"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Apply the media queries, colours and a min-height of 44px from design-guide.md to #site-header, #hero, #menu, #hours, #location, #contact and #site-nav, with a centred container and a maximum width at 1280px."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "Nav controls big enough to tap",
+      "kind": "tap",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Hero controls big enough to tap",
+      "kind": "tap",
+      "target": "#hero"
+     },
+     {
+      "text": "The page parses",
+      "kind": "test",
+      "target": "page-parses"
+     }
+    ],
+    "verification": [
+     {
+      "text": "Nav controls are at least 44px",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44,
+      "item": 1
+     },
+     {
+      "text": "Hero controls are at least 44px",
+      "type": "tap-targets",
+      "target": "#hero",
+      "expect": 44,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-10",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-10 Builder",
+  "superseded_by": "W-19"
+ },
+ {
+  "id": "W-11",
+  "proposal_id": "p11",
+  "name": "Build script and resolve anchors",
+  "covers": [
+   9
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "purpose": "The page script and the in-page links are not yet proven error-free.",
+  "cost": 10,
+  "estimate": 10,
+  "envelope": {
+   "money_limit": 10,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if a JavaScript error or a broken in-page link remains after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "No JavaScript errors, #nav-toggle flips aria-expanded, every in-page href resolves and nothing overflows.",
+  "dependencies": [
+   "Apply responsive layout and tap size styling"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-11.a1",
+    "goal": "The page loads and responds to clicks without errors, and every in-page link points to an existing section.",
+    "constraints": [
+     "Create only #nav-toggle and one script block",
+     "Keep every existing id and class",
+     "No horizontal overflow at 360px and 1280px",
+     "Toggle button at least 44px tall"
+    ],
+    "context": [
+     "charter item 9",
+     "section W-9",
+     "section W-10"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add button #nav-toggle that sets aria-expanded to 'true' or 'false' and shows or hides #site-nav on narrow screens, in one script block with no errors. Make every href beginning with '#' point to an existing id."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The toggle button",
+      "kind": "element",
+      "target": "#nav-toggle"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     },
+     {
+      "text": "Clicking the toggle flips its state",
+      "kind": "behavior",
+      "target": "#nav-toggle",
+      "steps": [
+       "click #nav-toggle",
+       "wait 1",
+       "click #nav-toggle",
+       "expect-visible #nav-toggle"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #nav-toggle is on the page",
+      "type": "element-count",
+      "target": "#nav-toggle",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Clicking the toggle flips its state",
+      "type": "behavior-steps",
+      "expect": true,
+      "item": 3,
+      "target": [
+       "click #nav-toggle",
+       "wait 1",
+       "click #nav-toggle",
+       "expect-visible #nav-toggle"
+      ]
+     }
+    ]
+   }
+  ],
+  "section": "W-11",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-11 Builder",
+  "superseded_by": "W-20"
+ },
+ {
+  "id": "W-12",
+  "proposal_id": "p12",
+  "name": "Plan page sections and placeholders (reshaped)",
+  "covers": [],
+  "fixes": [],
+  "covers_text": [],
+  "purpose": "Write site-plan.md in this workflow's own output folder. It fixes the section list and order, the section ids, the nav link list, the one main action and its target, the exact placeholder wording for every missing fact, an acceptance criterion per section tied to the done-when items, and the assumptions list. Builders and the design guide read it.",
+  "cost": 4,
+  "estimate": 4,
+  "envelope": {
+   "money_limit": 4,
+   "model_call_limit": 3,
+   "time_limit_minutes": 5,
+   "retry_limit": 1,
+   "stop_loss": "Stop if site-plan.md is missing or lacks 'to be confirmed' after one retry, or if any file other than site-plan.md is changed."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "site-plan.md"
+  ],
+  "completion_check": "Checked by reading site-plan.md and listing the files written. (1) Exactly one file was written, site-plan.md, and its path is inside this workflow's own output folder. No file outside that folder was created or changed, and none of the Requester's files was touched. (2) site-plan.md lists these sections in this order, each with an id: header (id 'header'), menu (id 'menu'), hours (id 'hours'), location (id 'location'), contact (id 'contact'). (3) It has a nav link list with exactly four entries, #menu, #hours, #location and #contact, and every href matches an id from item (2). (4) It names exactly one main action, labelled 'Find us', that targets '#location', and says it sits near the top of the page below the header. (5) It states the exact text 'to be confirmed' as the placeholder for each of these: shop name, each menu item name, each menu price, each of the seven weekdays' hours, street address, town, phone and email. (6) It sets must, should and could scope for each section and gives one pass/fail acceptance criterion per section that cites its done-when item number (1 to 9). (7) It has an assumptions list of at least five entries. These include the 'Find us' button text, the Drinks and Food menu grouping, the Monday to Sunday hours order, the warm neutral palette with system fonts, the map placeholder until an address exists, and the limit of the script to a menu toggle and smooth scrolling. (8) The file contains no invented fact: no digit string that looks like a phone number, no '@' address, no currency amount, no clock time and no street or town name.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-12.a1",
+    "goal": "site-plan.md fixes the section list, ids, main action, placeholder wording and at least five assumptions.",
+    "constraints": [
+     "Write only site-plan.md in the workflow's own folder",
+     "Do not touch agent_live.json, events.jsonl or snapshot.json",
+     "Invent no facts"
+    ],
+    "context": [
+     "charter item 1",
+     "charter item 6",
+     "charter item 7"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Write site-plan.md only. List the sections header, menu, hours, location and contact with ids #site-header, #menu, #hours, #location and #contact. List the nav links to #menu, #hours, #location and #contact. State one main action 'Find us' targeting #location. State the placeholder wording 'to be confirmed'. Add an assumptions list with at least five entries. Write no other file."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The plan file",
+      "kind": "file",
+      "target": "site-plan.md"
+     },
+     {
+      "text": "The placeholder wording",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "site-plan.md exists",
+      "type": "file-exists",
+      "target": "site-plan.md",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "The placeholder text is in the plan",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 2
+     }
+    ]
+   }
+  ],
+  "section": "W-12",
+  "revises": null,
+  "judge": {
+   "score": 0.89,
+   "weakest": "done_test",
+   "missing": [
+    "Item (8) asks for 'no street or town name' and item (6) asks for 'one pass/fail acceptance criterion per section'. Code can't check either without a judgement call. The main-action position ('near the top, below the header') and the content of each assumption entry are also checked by reading."
+   ],
+   "rounds": [
+    0.27,
+    0.89
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-12 Builder"
+ },
+ {
+  "id": "W-13",
+  "proposal_id": "p14",
+  "name": "Build menu section",
+  "covers": [
+   2
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see drinks, food or prices.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #menu is missing or any other section changed after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#menu has six .menu-row rows whose names and prices read 'to be confirmed'.",
+  "dependencies": [
+   "Build page shell, design tokens, header and assumptions"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-13.a1",
+    "goal": "The menu lists Drinks and Food rows, each with a name and a price reading 'to be confirmed'.",
+    "constraints": [
+     "Edit only index.html",
+     "Other sections stay unchanged",
+     "Create only #menu, .menu-group and .menu-row",
+     "Invent no price, digit or currency symbol",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 2",
+     "section p13"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #menu with a Drinks .menu-group and a Food .menu-group. Each holds three .menu-row rows with a name element and a price element, all reading 'to be confirmed'. Use j2-card for the groups."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The menu",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "The rows",
+      "kind": "element",
+      "target": ".menu-row",
+      "count": 6
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Six .menu-row rows",
+      "type": "element-count",
+      "target": ".menu-row",
+      "expect": 6,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-13",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-13 Builder"
+ },
+ {
+  "id": "W-14",
+  "proposal_id": "p15",
+  "name": "Build opening hours section",
+  "covers": [
+   3
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see opening days or hours.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #hours lacks seven rows after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#hours has seven .hours-row rows, Monday to Sunday, with hours reading 'to be confirmed'.",
+  "dependencies": [
+   "Build page shell, design tokens, header and assumptions"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-14.a1",
+    "goal": "The hours section shows each day of the week with hours reading 'to be confirmed'.",
+    "constraints": [
+     "Edit only index.html",
+     "Other sections stay unchanged",
+     "Create only #hours and .hours-row",
+     "Invent no times",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 3",
+     "section p13"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #hours with seven .hours-row rows, Monday to Sunday in order. Each has a day name and an hours cell reading 'to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hours",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The day rows",
+      "kind": "element",
+      "target": ".hours-row",
+      "count": 7
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #hours",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Seven .hours-row rows",
+      "type": "element-count",
+      "target": ".hours-row",
+      "expect": 7,
+      "item": 2
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-14",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-14 Builder"
+ },
+ {
+  "id": "W-15",
+  "proposal_id": "p16",
+  "name": "Build location section with map",
+  "covers": [
+   4
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see the address or a map.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #location or #map-area is missing, or an address is invented, after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#location shows address and town as 'to be confirmed' and a labelled #map-area.",
+  "dependencies": [
+   "Build page shell, design tokens, header and assumptions"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-15.a1",
+    "goal": "The location section shows the street address and town and a map area.",
+    "constraints": [
+     "Edit only index.html",
+     "Other sections stay unchanged",
+     "Create only #location and #map-area",
+     "Invent no street, town or coordinates",
+     "Use no map embed without a real address",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 4",
+     "section p13"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #location with a street address line and a town line reading 'to be confirmed', and a visible box #map-area labelled 'Map: to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The location",
+      "kind": "section",
+      "target": "#location"
+     },
+     {
+      "text": "The map area",
+      "kind": "element",
+      "target": "#map-area"
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #location",
+      "type": "element-count",
+      "target": "#location",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "One #map-area",
+      "type": "element-count",
+      "target": "#map-area",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-15",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-15 Builder"
+ },
+ {
+  "id": "W-16",
+  "proposal_id": "p18",
+  "name": "Build hero main action",
+  "covers": [
+   6
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section."
+  ],
+  "purpose": "No prominent main action exists near the top.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if the button does not reach #location or is under 44px after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "One .main-action link to #location is the largest control, visible near the top and at least 44px tall.",
+  "dependencies": [
+   "Build page shell, design tokens, header and assumptions",
+   "Build location section with map"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-16.a1",
+    "goal": "One most prominent main action button near the top takes visitors to the location section.",
+    "constraints": [
+     "Edit only index.html",
+     "Other sections stay unchanged",
+     "Create only #hero and .main-action",
+     "Exactly one .main-action",
+     "Larger than every other control, at least 44px tall, contrast at least 4.5:1",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 6",
+     "section p13",
+     "section p16"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add below #site-header a block #hero holding one a.main-action reading 'Find us' with href '#location', styled with class j2-btn and larger than all other controls."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hero",
+      "kind": "section",
+      "target": "#hero"
+     },
+     {
+      "text": "The main action",
+      "kind": "element",
+      "target": ".main-action"
+     },
+     {
+      "text": "Clicking it shows the location",
+      "kind": "behavior",
+      "target": "#location",
+      "steps": [
+       "click .main-action",
+       "wait 1",
+       "expect-visible #location"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One .main-action",
+      "type": "element-count",
+      "target": ".main-action",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #hero",
+      "type": "element-count",
+      "target": "#hero",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Hero tap size",
+      "type": "tap-targets",
+      "target": "#hero",
+      "expect": 44
+     },
+     {
+      "text": "Links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true
+     },
+     {
+      "text": "Clicking it shows the location",
+      "type": "behavior-steps",
+      "expect": true,
+      "item": 3,
+      "target": [
+       "click .main-action",
+       "wait 1",
+       "expect-visible #location"
+      ]
+     }
+    ]
+   }
+  ],
+  "section": "W-16",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-16 Builder"
+ },
+ {
+  "id": "W-17",
+  "proposal_id": "p17",
+  "name": "Build contact section",
+  "covers": [
+   5
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'."
+  ],
+  "purpose": "Visitors cannot see how to contact the shop.",
+  "cost": 8,
+  "estimate": 8,
+  "envelope": {
+   "money_limit": 8,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #contact is missing or holds an invented value after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#contact shows a phone line and an email line reading 'to be confirmed', with no tel: or mailto: link.",
+  "dependencies": [
+   "Build page shell, design tokens, header and assumptions"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-17.a1",
+    "goal": "The contact section shows a phone number and an email address reading 'to be confirmed'.",
+    "constraints": [
+     "Edit only index.html",
+     "Other sections stay unchanged",
+     "Create only #contact",
+     "Build no tel: or mailto: link from an invented value",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 5",
+     "section p13"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #contact with one phone line and one email line, each reading 'to be confirmed'."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The contact",
+      "kind": "section",
+      "target": "#contact"
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #contact",
+      "type": "element-count",
+      "target": "#contact",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 2
+     }
+    ]
+   }
+  ],
+  "section": "W-17",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-17 Builder"
+ },
+ {
+  "id": "W-20",
+  "proposal_id": "p21",
+  "name": "Build script and resolve anchors",
+  "covers": [
+   9
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "purpose": "The page script and in-page links are not yet proven error-free.",
+  "cost": 10,
+  "estimate": 10,
+  "envelope": {
+   "money_limit": 10,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if a JavaScript error or a broken in-page link remains after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "No JavaScript errors, #nav-toggle flips aria-expanded, every in-page href resolves and nothing overflows.",
+  "dependencies": [
+   "Apply responsive layout and tap size styling"
+  ],
+  "status": "held",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-20.a1",
+    "goal": "The page loads and responds to clicks without errors, and every in-page link points to an existing section.",
+    "constraints": [
+     "Edit only index.html",
+     "Create only #nav-toggle and one script block",
+     "Keep every existing id and class",
+     "No horizontal overflow at 360px and 1280px",
+     "Toggle at least 44px tall",
+     "Never touch agent_live.json, events.jsonl or snapshot.json"
+    ],
+    "context": [
+     "charter item 9",
+     "section p19",
+     "section p20"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add button #nav-toggle that sets aria-expanded to 'true' or 'false' and shows or hides #site-nav on narrow screens, in one script block with no errors. Make every href beginning with '#' point to an existing id."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The toggle",
+      "kind": "element",
+      "target": "#nav-toggle"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     },
+     {
+      "text": "Clicking the toggle flips its state",
+      "kind": "behavior",
+      "target": "#nav-toggle",
+      "steps": [
+       "click #nav-toggle",
+       "wait 1",
+       "click #nav-toggle",
+       "expect-visible #nav-toggle"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #nav-toggle",
+      "type": "element-count",
+      "target": "#nav-toggle",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Links resolve",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Toggle tap size",
+      "type": "tap-targets",
+      "target": "#nav-toggle",
+      "expect": 44
+     },
+     {
+      "text": "Clicking the toggle flips its state",
+      "type": "behavior-steps",
+      "expect": true,
+      "item": 3,
+      "target": [
+       "click #nav-toggle",
+       "wait 1",
+       "click #nav-toggle",
+       "expect-visible #nav-toggle"
+      ]
+     }
+    ]
+   }
+  ],
+  "section": "W-20",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-20 Builder"
+ },
+ {
+  "id": "W-21",
+  "proposal_id": "p13",
+  "name": "Build page shell, design tokens, header and assumptions",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page header shows the shop's name and a one-line description of the coffee shop."
+  ],
+  "purpose": "Create site/index.html with a valid skeleton and a :root block of design tokens copied from design-guide.md. Add a header (#site-header) with the shop-name placeholder (h1#shop-name) and a one-line coffee shop description (p#shop-description). Add an assumptions section (#assumptions) listing the typical choices from site-plan.md.",
+  "cost": 12,
+  "estimate": 12,
+  "envelope": {
+   "money_limit": 12,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html does not parse, or any file other than index.html is changed, after one retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "Measured in a browser at 360x640 and at 1280x800, plus a file read, with JavaScript errors counted: (1) site/index.html exists, has balanced tags, a viewport meta tag and exactly one style block. The :root rule of that block defines a custom property for every colour value, every type-scale size (h1, h2, body) and every spacing step listed in design-guide.md, and each hex value equals the one in design-guide.md. (2) #site-header contains an h1#shop-name and a p#shop-description, both with a non-zero bounding box and computed visibility 'visible'. The text of h1#shop-name is exactly 'to be confirmed'. The text of p#shop-description is one sentence of 5 to 20 words containing the word 'coffee', and it has no digit, no currency symbol and no '@'. (3) #assumptions contains a list with at least 5 li items, and the number of li items is at least the number of entries in the assumptions list of site-plan.md. Every entry from that list appears in it, and one li mentions the shop name placeholder. The list is visible, and its text and background colours have a contrast ratio of at least 4.5:1. (4) Loading the page raises 0 JavaScript errors, and the document scroll width equals the viewport width at both 360px and 1280px.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-21.a1",
+    "goal": "The page has shared warm styles, a header showing the shop name placeholder and a one-line coffee shop description, and an assumptions list.",
+    "constraints": [
+     "Write only index.html in the run's own output folder",
+     "Never touch agent_live.json, events.jsonl or snapshot.json",
+     "Create only #site-header, #shop-name, #assumptions and .assumption-item",
+     "Invent no phone, email, price, address or time",
+     "Body text contrast at least 4.5:1, buttons and links at least 44px tall",
+     "Define classes j2-btn and j2-card"
+    ],
+    "context": [
+     "charter item 1",
+     "charter item 8"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create index.html with a valid skeleton, a viewport meta tag and one style block. The style block has CSS variables for a warm neutral palette, system fonts, a type scale, a spacing scale, .j2-btn with min-height 44px, .j2-card, and a centred container with a maximum width. Add header #site-header holding h1 #shop-name reading 'to be confirmed' and one line describing a coffee shop. Add at the end a section #assumptions with at least five .assumption-item entries: the 'Find us' button text, the Drinks and Food grouping, the Monday to Sunday order, the warm palette with system fonts, and the map placeholder until an address exists."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The page file",
+      "kind": "file",
+      "target": "index.html"
+     },
+     {
+      "text": "The header",
+      "kind": "section",
+      "target": "#site-header"
+     },
+     {
+      "text": "The shop name",
+      "kind": "element",
+      "target": "#shop-name"
+     },
+     {
+      "text": "The assumptions",
+      "kind": "element",
+      "target": ".assumption-item",
+      "count": 5
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "One #site-header",
+      "type": "element-count",
+      "target": "#site-header",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #shop-name",
+      "type": "element-count",
+      "target": "#shop-name",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "Five assumption items",
+      "type": "element-count",
+      "target": ".assumption-item",
+      "expect": 5,
+      "item": 4
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 5
+     }
+    ]
+   }
+  ],
+  "section": "W-21",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build page shell and header",
+  "certainty": "operate",
+  "certainty_from": "covers as Build page shell and header",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-21 Builder"
+ },
+ {
+  "id": "W-22",
+  "proposal_id": "p22",
+  "name": "Build page shell, design tokens, header and assumptions",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page header shows the shop's name and a one-line description of the coffee shop."
+  ],
+  "purpose": "Create site/index.html with a valid skeleton, a :root block of design tokens copied from the design guide, a header showing the shop name placeholder and a one-line coffee shop description, and an assumptions list copied from the plan.",
+  "cost": 12,
+  "estimate": 12,
+  "envelope": {
+   "money_limit": 12,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html does not parse, or any file other than index.html is changed, after one retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "Checked by parsing site/index.html and measuring it in a browser at 360x640 and 1280x800: (1) the file exists, has balanced tags, one meta viewport tag, exactly one style block, exactly one script block, and no link or script element with an external src or href; (2) the :root rule declares at least five colour custom properties (--color-bg, --color-text, --color-surface, --color-accent, --color-accent-text), and each value equals the hex value of the same colour in design-guide.md; it also declares --font-size-h1, --font-size-h2 and --font-size-body, and at least three --space-* properties, all equal to the values in design-guide.md; the computed contrast ratio of --color-text on --color-bg is at least 4.5:1; (3) header#site-header exists and contains exactly one h1#shop-name whose text is exactly 'to be confirmed', and exactly one p#shop-description whose text is 30 to 120 characters long, contains the word 'coffee', contains no br element, no digit, no '@' and no currency symbol; (4) an element with id 'assumptions' exists with at least five li.assumption-item entries, and the number of entries is at least the number of entries in the assumptions list of site-plan.md, with one entry stating that the shop name is to be confirmed; (5) loading the file raises 0 JavaScript errors and the document scroll width equals the viewport width at 360px and at 1280px.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-22.a1",
+    "goal": "The page has shared warm styles, a header showing the shop name placeholder and a one-line coffee shop description, and an assumptions list.",
+    "constraints": [
+     "Write only index.html and nothing else",
+     "Run no shell commands and write no log, state or helper file",
+     "Never open or touch agent_live.json, events.jsonl or snapshot.json",
+     "Create only #site-header, #shop-name, #shop-description, #assumptions and .assumption-item",
+     "Invent no phone, email, price, address or time",
+     "Body text contrast at least 4.5:1, buttons and links at least 44px tall",
+     "Define classes j2-btn and j2-card"
+    ],
+    "context": [
+     "charter item 1",
+     "charter item 8"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Write index.html with a valid skeleton, a viewport meta tag and one style block. The style block has CSS variables for a warm neutral palette, system fonts, a type scale and a spacing scale, a .j2-btn class with min-height 44px, a .j2-card class, and a centred container with a maximum width. Add header #site-header holding h1 #shop-name reading 'to be confirmed' and p #shop-description with one sentence describing a coffee shop. At the end add section #assumptions with five .assumption-item entries: the 'Find us' button text, the Drinks and Food menu grouping, the Monday to Sunday hours order, the warm palette with system fonts, and the map placeholder until an address exists."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The page file",
+      "kind": "file",
+      "target": "index.html"
+     },
+     {
+      "text": "The header",
+      "kind": "section",
+      "target": "#site-header"
+     },
+     {
+      "text": "The shop name",
+      "kind": "element",
+      "target": "#shop-name"
+     },
+     {
+      "text": "The assumptions",
+      "kind": "element",
+      "target": ".assumption-item",
+      "count": 5
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "One #site-header is on the page",
+      "type": "element-count",
+      "target": "#site-header",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #shop-name is on the page",
+      "type": "element-count",
+      "target": "#shop-name",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "Five assumption items",
+      "type": "element-count",
+      "target": ".assumption-item",
+      "expect": 5,
+      "item": 4
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 5
+     }
+    ]
+   }
+  ],
+  "section": "W-22",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build page shell and header",
+  "certainty": "operate",
+  "certainty_from": "covers as Build page shell and header",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-22 Builder"
+ },
+ {
+  "id": "W-23",
+  "proposal_id": "p23",
+  "name": "Build page shell, design tokens, header and assumptions",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page header shows the shop's name and a one-line description of the coffee shop."
+  ],
+  "purpose": "Create site/index.html with a valid skeleton, the design tokens from design-guide.md as CSS variables, a header showing the shop name and a one-line description of the coffee shop, and a visible assumptions list taken from site-plan.md.",
+  "cost": 10,
+  "estimate": 10,
+  "envelope": {
+   "money_limit": 10,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 0,
+   "stop_loss": "Stop if index.html does not parse, or any file other than index.html is changed. No retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "Checked by code and by loading site/index.html in a browser at 360x640 and 1280x800: (1) the file parses with balanced tags, has one viewport meta tag and exactly one style block, and loading it raises 0 JavaScript errors at both sizes. (2) :root defines a custom property for every colour value, every type-scale size (h1, h2, body) and every spacing step listed in design-guide.md, with the same values (at least 5 colour variables); the body's computed text colour against its background colour has a contrast ratio of at least 4.5:1. (3) header#site-header contains h1#shop-name whose text is exactly 'to be confirmed', and p#shop-description whose text is one sentence: it ends with one full stop and has no other '.', '!' or '?', is 5 to 25 words long, contains the word 'coffee', and has no digit and no '@'. (4) #assumptions contains at least 5 .assumption-item elements, each with non-empty text, and at least as many as the entries in the assumptions list of site-plan.md. (5) The document scroll width equals the viewport width at 360px and at 1280px.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 3,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-23.a1",
+    "goal": "index.html exists with shared styles, a header showing the shop name placeholder and a one-line coffee shop description, and an assumptions list.",
+    "constraints": [
+     "Make a single write of index.html in the run's output folder and nothing else",
+     "Run no shell commands and create no log, state or helper file",
+     "Never open, read or change agent_live.json, events.jsonl or snapshot.json",
+     "Create only #site-header, #shop-name, #shop-description, #assumptions and .assumption-item",
+     "Invent no phone, email, price, address or time",
+     "Body text contrast at least 4.5:1, buttons and links at least 44px tall",
+     "Define classes j2-btn and j2-card"
+    ],
+    "context": [
+     "charter item 1",
+     "charter item 8"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Write index.html once, with a valid skeleton, a viewport meta tag and one style block. The style block holds :root CSS variables for a warm neutral palette, system fonts, a type scale and a spacing scale, a .j2-btn class with min-height 44px, a .j2-card class, and a centred container with a max-width and no horizontal overflow. Add header #site-header holding h1 #shop-name reading 'to be confirmed' and p #shop-description with one sentence describing a coffee shop. At the end add section #assumptions with five .assumption-item entries: the 'Find us' button text, the Drinks and Food menu grouping, the Monday to Sunday hours order, the warm palette with system fonts, and the map placeholder until an address exists. Write no other file."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The page file",
+      "kind": "file",
+      "target": "index.html"
+     },
+     {
+      "text": "The header",
+      "kind": "section",
+      "target": "#site-header"
+     },
+     {
+      "text": "The shop name",
+      "kind": "element",
+      "target": "#shop-name"
+     },
+     {
+      "text": "The shop description",
+      "kind": "element",
+      "target": "#shop-description"
+     },
+     {
+      "text": "The assumptions",
+      "kind": "element",
+      "target": ".assumption-item",
+      "count": 5
+     },
+     {
+      "text": "The placeholder",
+      "kind": "facts",
+      "target": [
+       "to be confirmed"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true,
+      "item": 1
+     },
+     {
+      "text": "One #site-header is on the page",
+      "type": "element-count",
+      "target": "#site-header",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #shop-name is on the page",
+      "type": "element-count",
+      "target": "#shop-name",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "One #shop-description is on the page",
+      "type": "element-count",
+      "target": "#shop-description",
+      "expect": 1,
+      "item": 4
+     },
+     {
+      "text": "Five assumption items",
+      "type": "element-count",
+      "target": ".assumption-item",
+      "expect": 5,
+      "item": 5
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "The placeholder is shown",
+      "type": "facts-present",
+      "target": [
+       "to be confirmed"
+      ],
+      "expect": true,
+      "item": 6
+     }
+    ]
+   }
+  ],
+  "section": "W-23",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build page shell and header",
+  "certainty": "operate",
+  "certainty_from": "covers as Build page shell and header",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-23 Builder"
+ }
+]

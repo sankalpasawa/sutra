@@ -2078,5 +2078,10 @@
   "id": "D429",
   "label": "follow-up continues any finished run; starts from the folder, writes back changes",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D430",
+  "label": "records: models take what J2 writes (second look, superseded, agent checks, usd)",
+  "anchor": "Department records"
  }
 ]
