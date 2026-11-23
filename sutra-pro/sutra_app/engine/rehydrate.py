@@ -199,6 +199,48 @@ def _sites(src: Path, tag: str = "") -> list:
         raise RehydrateRefused("a site version of the earlier run cannot be read") from None
 
 
+def _output_info(kind, src: Path | None = None) -> dict | None:
+    """What decides whether a run without a document chain can be continued: the type's `output` ("file" or "folder"), its folder and file,
+    and the capability's `single` flag (project work). None for no known output type."""
+    if not kind:
+        return None
+    _, j2_types = _types()
+    if kind not in j2_types.names():
+        return None
+    info = j2_types.info(kind)
+    from .capabilities import SPECS
+    spec = SPECS.get(kind)
+    return {"output": info.get("output"), "folder": info.get("folder"), "file": info.get("file"), "single": bool(spec and spec.single)}
+
+
+def _continuable(kind, src: Path | None = None) -> bool:
+    """Named projects, R2.1: a run with no page and no document chain is continued when its output never builds a chain: a single-file
+    capability output (project work) or a folder output (an app). A plain document run that lost its chain is not."""
+    info = _output_info(kind, src)
+    return bool(info) and (info["single"] or info["output"] == forms.FOLDER)
+
+
+def _output_files(src: Path, kind) -> list:
+    """The files of a single or folder output to bring into the follow-up (relative, POSIX): the type's file (and its .docx), or every file
+    of its folder at any depth. Dotfiles, dot-folders and links are left out."""
+    info = _output_info(kind, src) or {}
+    found = []
+    if info.get("output") == forms.FOLDER and _plain_name(info.get("folder")):
+        base = src / info["folder"]
+        if base.is_dir() and not base.is_symlink():
+            for root, dirs, names in os.walk(base, followlinks=False):
+                dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(root, d)))
+                found += [Path(root, n).relative_to(src).as_posix() for n in sorted(names)
+                          if not n.startswith(".") and not Path(root, n).is_symlink()]
+        return sorted(found)
+    name = info.get("file")
+    if _plain_name(name):
+        for candidate in (name, os.path.splitext(name)[0] + ".docx"):
+            if (src / candidate).is_file() and not (src / candidate).is_symlink():
+                found.append(candidate)
+    return found
+
+
 def _plain_name(value) -> bool:
     return isinstance(value, str) and bool(value) and value == os.path.basename(value) and value not in (".", "..")
 
@@ -265,16 +307,22 @@ def check_source(src_dir) -> dict:
     if not chat or not chat[0].get("meta"):
         raise RehydrateRefused("the earlier run's chat.jsonl has no header")
     has_chain = (src / "documents.json").exists() or any(src.glob("stage-*.json"))
-    if not has_chain:                       # a single stage: it must be a page (a document run leaves a chain; a run with no type leaves neither)
+    single = None
+    if not has_chain:                       # a single stage: a page, or (R2.1) an output that never builds a chain: project work, an app's folder
         j2, _ = _types()
-        if not j2.is_page(j2.saved_output(str(src))):
-            raise RehydrateRefused("the earlier run has no page and no document chain")
+        kind = j2.saved_output(str(src))
+        if not j2.is_page(kind):
+            if not _continuable(kind, src):
+                raise RehydrateRefused("the earlier run has no page and no document chain")
+            single = kind
     goal = _json(src, "goal.json", "the earlier run has no charter (goal.json)", dict)
     workflows = _json(src, "workflows.json", "the earlier run has no workflows (workflows.json)", list)
     chain = _chain(src, summary, workflows) if has_chain else None
     files = _files(src)
     if chain:
         files += [f for f in chain["files"] if f not in files]
+    if single:
+        files += [f for f in _output_files(src, single) if f not in files]
     audits = _optional(src, "audits.json", [], list)
     return {
         "summary": summary, "chat": [m for m in chat if not m.get("meta")], "goal": goal, "workflows": workflows,
