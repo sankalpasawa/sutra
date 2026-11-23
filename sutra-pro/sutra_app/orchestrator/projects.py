@@ -207,6 +207,15 @@ class ProjectService:
                 return None
         return float(project["budget_usd"])
 
+    def step_cap(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
+        """The dollar cap a step that starts now is given (D409, m-13): what the project and the month have left, SHARED among the steps of the project that run or are ready to run, so that steps which
+        run at the same time cannot together pass the limit by (steps x remainder) before the tick sees it. The first to start alone gets all of it; with two ready, each half. Never below 0."""
+        left = self.usd_left(conn, project_id, now)
+        if left is None:
+            return None
+        alive = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND role <> 'planner' AND state IN ('leased','running','handing_off','queued','ready')", (project_id,)).fetchone()[0]
+        return left / max(1, int(alive))
+
     def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
         """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when
         nothing limits it. Never below 0."""
