@@ -445,21 +445,32 @@ class NodeControl:
         stopped at the next tick, so nothing keeps running behind a kill (M1). Only the audit row `kill` is once per file (by its stamp). Returns how many it stopped. Costs one `lstat`
         when there is no file, and one query while there is."""
         killed = await run_blocking(lambda: self.switch.killed)                  # this look also finds a `nodes resume` left by the command line
-        pending = await run_blocking(self.switch.pending_resumes)
-        for ref, removed in pending:                                              # the command only writes the words when it removed a file: a row for each resume, never for a look
-            await run_blocking(lambda ref=ref, removed=removed: self._audit_resume_once(ref, removed))
-        if pending or self.switch._marker_read:
-            await run_blocking(self.switch.finish_resumes)                        # the unlink comes after the rows (D406)
-        if not killed:
-            self._enforced = None
-            return 0
-        marker = await run_blocking(self._marker)
-        first = marker != self._enforced
-        self._enforced = marker
-        stopped = await self._sweep(KILL_OUTCOME)
-        if first:
-            await run_blocking(lambda: self._audit("kill", reason="the KILL file was found", count=stopped, actor="system"))
-        return stopped
+        stopped = 0
+        try:
+            if not killed:
+                self._enforced = None
+                return 0
+            marker = await run_blocking(self._marker)
+            first = marker != self._enforced
+            self._enforced = marker
+            stopped = await self._sweep(KILL_OUTCOME)                             # the stop comes FIRST: nothing the record does can keep a kill from being enforced (D416, r-3)
+            if first:
+                await run_blocking(lambda: self._audit("kill", reason="the KILL file was found", count=stopped, actor="system"))
+            return stopped
+        finally:
+            await self._audit_resumes()
+
+    async def _audit_resumes(self) -> None:
+        """The rows of the `nodes resume` the command line left, then the marker goes. A failure (a locked or full database) is logged and the marker stays for the next look: it never stops `enforce` and never
+        keeps the app from starting (D416, r-3)."""
+        try:
+            pending = await run_blocking(self.switch.pending_resumes)
+            for ref, removed in pending:                                          # the command only writes the words when it removed a file: a row for each resume, never for a look
+                await run_blocking(lambda ref=ref, removed=removed: self._audit_resume_once(ref, removed))
+            if pending or self.switch._marker_read:
+                await run_blocking(self.switch.finish_resumes)                    # the unlink comes after the rows (D406)
+        except Exception:                                                         # noqa: BLE001
+            log.exception("the audit row of a resume made by hand could not be written; the marker stays")
 
     def spawn_guard(self, conn: Any, row: Any) -> str:
         """`TaskService.spawn_guard`, asked just before a process is started and just after: the outcome sentence when this task is a node and the KILL file is there, else "". A start

@@ -2819,6 +2819,7 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: each closes a gap the code showed.
 - Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
 - Diagram: label "open items said plainly", key only.
+- Corrected by: D419 (the engine's real shapes and the possessive).
 
 ## D403 — A stopped project's finished step is not 'just finished'
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2840,6 +2841,7 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13, MAN-14.
 - Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
 - Diagram: label "owner words; no .git tool rows", key only.
+- Corrected by: D417 (the audit keeps every call; only the page rewords).
 
 ## D406 — The review's minors as built
 - Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
@@ -2868,3 +2870,74 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-9.
 - Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
 - Diagram: label "parallel steps share the remainder", key only.
+- Corrected by: D418 (the cap is read on every call).
+
+## D410 — Every engine outcome sentence in plain words
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Every outcome sentence the engine can end a step with is said in plain words on the step's card ("Done. Every check passed." for "Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes."; the stop sentences of Identity, Adaptation and the dry run likewise). Anything else of the engine's that still has its words is said by how it began, never in them. A test reads the engine's own `Done` and `Stopped` sentences from its source and scans what each becomes for the engine's jargon. Package: MAN-13.
+- Why: D402 had covered only the open-items sentence.
+- Rejected: rewriting the stored outcome (the record keeps the engine's words).
+- Diagram: label "engine outcomes plain; scanned for jargon", key only.
+
+## D411 — A step's own files are 'its own notes'
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A read of the step's own output or of an engine file reads "its own notes" or "its own working files" on the page, never a file name the owner does not know. Package: MAN-13.
+- Why: "A step read project.md, 9 times". Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "reads of own output = its own notes", key only.
+
+## D412 — Home opens the project page for a step
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Home's row of a step of a project carries the project (`project_id`, left out of the wire shape for an ordinary task) and opens the project's page, with the team's page beside it. Package: MAN-13.
+- Why: Home's Open for a step went to the team page. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "Home step row opens /p/id", key only.
+
+## D413 — Live badge only while the project runs
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The "Live" badge of the project page shows only while the project runs. Package: MAN-13.
+- Why: it stayed after the project was done, stopped or failed. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "Live only while running", key only.
+
+## D414 — Each step does only its own job
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Each step of a project is told to do ONLY its own job. The step-request prompt (`nodeplan.md`, a stage only a project runs, so every flag-off prompt is byte for byte what it was) says so, and the framing of each step's task names its number, its own job and the other steps' jobs and says not to do, start or answer any of them. A single request keeps its framing. Package: MAN-13.
+- Why: in run 4 step 1's report already named the one improvement that was step 2's job, so the money was spent twice. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "step prompt + framing: only its own job", key only.
+
+## D415 — Host-parsed buttons and a refused stale answer
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The buttons of a step's own question are the host's, and a stale answer is refused (r-2, r-11). Only the closing run of numbered lines (`Option 1:`, `Option 2:` ... to the end of the text, counting up from 1) is buttons; an `Option N:` line anywhere else is just text, and the page always shows the whole real question. The page answers through `POST /api/projects/{id}/questions/{message id}/answer` with the number of the button; the route takes the answer only while that question is still one of the project's open step questions and the option is one of its buttons, otherwise a plain 409 ("That question is not open any more"), and it delivers as an ANSWER only (`TaskService.answer_waiting`), never as a follow-up: a stale card, a second tab or a double click cannot become a new ordinary task with no grant. The page reads the project again after a refusal. Package: MAN-13.
+- Why: a step's own text could forge the buttons, and a bare "Option N" sent to the team chat made a new ordinary task when the step had ended (the M-A class).
+- Rejected: sending the text to the team chat route (it follows up).
+- Diagram: label "step-question buttons host-parsed; stale answer 409", key only.
+
+## D416 — Kill first, resume audit second
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A hand-made KILL file is enforced first and the resume audit second. Package: MAN-4.
+- Why: the audit row used to come first, so a locked or full database kept a kill from being enforced. Package: MAN-4.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "kill enforced first; audit never blocks", key only.
+
+## D417 — The tool audit records every call
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The tool audit records every call (R-1, corrects D405). There is no server-side filter: a call whose path has a `.git` in it (`.git/hooks/pre-commit`, `Edit .git/config`, `x/.git/../src/evil.py`) is a row like any other. Only the page rewords a read of a repository's own files ("looked at the folder's history") for the owner. Known limit: whether the real program lets a step write under `.git` depends on its own protected-path rules and was not tried. Package: MAN-14.
+- Why: the filter let a step hide any file tool from the audit by naming its path `x/.git/../y`. Package: MAN-14.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "audit keeps all calls incl. .git paths", key only.
+
+## D418 — The per-call dollar cap is read on every call
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: What one builder call may spend is read on EVERY call, never frozen at the step's start (R-2, reworks D409). Before each builder call a step's own process reads, read-only, the database and the owner's limits file and takes `min(the step's own remainder, what is left of the month, what is left of the project's own dollars divided by the steps of the project that RUN at that moment, this one included)`; a step held for an answer takes no share, a share is given back when a sibling ends, and a step that began alone is lowered when a sibling starts. The same arithmetic (`orchestrator/livecap.py`) is the server's. It is a bound on one call, not a promise: steps that run at the same time can pass the limit by up to one call's worth each before the Conductor's tick sees the ledger; steps of different projects each divide only their own project's dollars and share the month's remainder; Codex calls carry no dollar figure, so nothing here can stop a project that runs on Codex. OPERATIONS says so. Package: MAN-9.
+- Why: the first version froze a share at the start (staggered starts passed the limit, a step could be cut below what it needed) and no test failed without it. Package: MAN-9.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "per-call cap read live, shared by running steps", key only.
+
+## D419 — The rest of the review of D398 to D409
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The rest of the review of D398 to D409. (a) D402 completed: the engine's real `workable()` shapes (`done-when item N (F-N VERDICT)`, `design rubric D-2`, `document rubric`, `rubrics PJ-4, PJ-5`, `necessary condition NC-1 not met: ... (evidence: ...)`, the render check, "finished as it is") lose their ids and code words, one open item at a time, and "the Requester's decision" is "your decision" (r-1). (b) Decide for me is shown never to answer a step's engine question by a test through the real path (a real open question, the owner's switch, the rule table's own pass), and a second test fails if the rule table ever names a kind such a question could have (r-4). (c) A step that finished with open items in a project that still runs has no Try again, tested (r-5). (d) A file called `constructor` or `__proto__` is shown by its name; the tool rows say "a project file" for a name that may be the owner's own, and "its report" is said only in the hand-off line (r-6). (e) A project title is never empty, never ends on a run of connectors, is not split at "e.g.", is not cut inside a glyph, and the runner's use of it is pinned (r-7). Package: MAN-13.
+- Why: each answers a finding of the code review of D398 to D409. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "D402 completed; tests; titles; names", key only.

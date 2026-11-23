@@ -509,7 +509,24 @@ A minimal read-only job cost **$1.10 to $2.60 per step, 26 to 42 model calls and
 The reviewer's reading of the written text (D393) and the "project done" path with a real model: run 4 must see both. Also not seen: a question card of a writer, a Mac window, slots, lanes, Codex as a builder, Windows.
 
 ### N85. Known limits recorded, not fixed
-m-5: the page hides a tool row of no kind (`other`); the audit table keeps it, so a step that calls an unexpected tool is not visible on the page. m-11: the absolute-path spellings of the confining rule (`//c/...`, backslash escapes, `\\?\` and UNC paths) are the code's belief and unproven against the real program; `Edit(./**)` is the rule that confines and it works. The reviewer's text goes through the egress scan but not through the app's value redactor (the reviewer's host has no database). Steps read `.git` internals (D405 hides them from the page; they are still read).
+m-5: the page hides a tool row of no kind (`other`); the audit table keeps it, so a step that calls an unexpected tool is not visible on the page. m-11: the absolute-path spellings of the confining rule (`//c/...`, backslash escapes, `\\?\` and UNC paths) are the code's belief and unproven against the real program; `Edit(./**)` is the rule that confines and it works. The reviewer's text goes through the egress scan but not through the app's value redactor (the reviewer's host has no database). Steps read `.git` internals (the page rewords a read of the repository's own files for the owner, D405; the audit records every call, D417, which corrects the first wording of D405).
 
 ### N86. Decisions of this round the next reviewer may challenge
 D398 refuses the retry of ANY node task, also of a step whose project ended, because the project is what tries a step again. D401 lets the page answer an engine question with "Option N" through the chat route (the same route Home uses); the page accepts nothing else. D406 (d) lets the owner's stop win over the app's mark in `_stopped_by` (a stop of a step the shutdown had marked). D409 divides the remainder by the steps that are ready or running, not by those that will run at once: a step waiting for a slot takes a share it may not use (the safe side).
+
+## After the fourth real run (run 4, build `6091bf6`; D410 to D414)
+
+### N87. Run 4 results
+PASSED. A project reached DONE and ended with a real model. The numbers: step 1, 27 calls, 4.4 minutes, $1.41; step 2, 31 calls, 5.6 minutes, $1.68; the reviewer, 1 Codex call (read-only, independent, it read the steps' written text and approved with a verdict that fitted); the planner, 5 calls, $0.12; **total $3.22** (peak $3.22). No `Bash` and no web tool; the per-call dollar clamp held; the owner's folder was untouched. A trivial 3-file job therefore costs about $3.2, so a $5 monthly limit is tight (OPERATIONS says so).
+
+### N88. What run 4 did NOT see
+A send-back with a real model (the reviewer asking for changes and the owner saying "Send them back"); an engine question answered from the project page; Decide for me on a project; steps that run at the same time (parallel steps); Windows; the Mac permission window; slots; lanes; a writer step (a step that changes the owner's folder). All of these are unproven with a real model and stay so in the release.
+
+### N89. What shipped, and how it is to be read
+The release carries the feature OFF by default (`SUTRA_NODES_V1`, `SUTRA_WORK_V1`, `SUTRA_RECIPES_V1`, `SUTRA_ASK_V1` all `0`), for a read-only trial on a throw-away folder with a low dollar limit. The release note and OPERATIONS say so plainly, and name the unproven paths above.
+
+### N90. Found in run 4 and fixed
+The chat done card's engine sentence (D410), "A step read project.md, 9 times" (D411), Home's Open going to the team page for a step (D412), the Live badge after the end (D413), and step 1 doing step 2's job (D414).
+
+### N91. Known limits recorded after the review of D398 to D409 (not fixed)
+r-8: the reviewer's "(N more files)" counts names that were skipped for a slash, a dot, a link or a non-regular file, so it can be too high; the file name (a step's own string, up to 120 characters) sits on the header line outside the fence, and no test checks that two prompts carry different fence words. r-9: the sentence for a stop-switch folder that is a file still holds the absolute folder path (a home folder name), and no test fails if `held()` uses `resume_command` instead of `resume_words`. r-10: the done card's chain query seeds from every node and runs for every finished task while projects are on, and the "starts again" note puts the step's title through the page's address link (same-origin, harmless; D389's scrub is not applied to it).

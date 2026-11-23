@@ -116,3 +116,74 @@ def test_with_nothing_left_no_program_is_started(fake, tmp_path):
         assert not fake.model_calls("claude")
     finally:
         router.close()
+
+
+# ---- the cap is read on every builder call, from the database, read-only (D409, R-2) ------------------------------------------------------------------
+
+@pytest.fixture
+def project_world(tmp_path):
+    """A migrated database with a project of two steps, the owner's $3 month with $0.60 spent."""
+    settings = Settings.load({}, data_dir=tmp_path / "data", token="t" * 24, env_file=tmp_path / "none.env", live_v1=False)
+    clock = FakeClock()
+    db = Database(settings.db_path, EventCollector(), clock=clock)
+    db.migrate()
+    limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {}, clock=clock)
+    now = int(time.time())
+    limits.update(monthly_usd=3.0, now=now)
+    with db.tx() as tx:
+        tx.conn.execute("INSERT INTO usage_ledger(at, provider, purpose, usd) VALUES (?, 'claude', 'agent_turn', 0.6)", (now,))
+        tx.conn.execute("INSERT INTO projects(id, title, status, created_at, budget_usd, caps_json) VALUES ('prj_0123456789ab', 'P', 'running', ?, 2.4, '{\"usd_from_month\": true}')", (now - 5,))
+        for n, state in (("a", "running"), ("b", "planned")):
+            tx.conn.execute("INSERT INTO agent_nodes(id, project_id, role, runtime, plan_ref, state, created_at) VALUES (?, 'prj_0123456789ab', 'worker', 'engine', ?, ?, ?)", (f"nd_{n * 12}", n, state, now))
+
+    def set_state(state):
+        with db.tx() as tx:
+            tx.conn.execute("UPDATE agent_nodes SET state = ? WHERE plan_ref = 'b'", (state,))
+    yield settings.data_dir, set_state
+    db.close()
+
+
+def test_the_reader_gives_the_project_and_month_remainder_divided_by_the_steps_that_run_now(project_world):
+    from sutra_app.connectors.engine_port import live_cap_reader
+    data_dir, set_state = project_world
+    read = live_cap_reader(str(data_dir), "prj_0123456789ab")
+    assert read() == pytest.approx(2.4), "alone: the project's 2.4 (the month has 2.4 left too)"
+    set_state("running")
+    assert read() == pytest.approx(1.2), "a sibling runs now: half, read again, not frozen"
+    set_state("awaiting_approval")
+    assert read() == pytest.approx(2.4), "held: no share"
+    assert live_cap_reader(str(data_dir), "prj_ffffffffffff")() == pytest.approx(2.4), "a project the database does not know: the month alone"
+
+
+def test_the_reader_never_raises_and_says_none_when_there_is_no_database(tmp_path):
+    from sutra_app.connectors.engine_port import live_cap_reader
+    assert live_cap_reader(str(tmp_path / "nothing"), "prj_0123456789ab")() is None
+
+
+def test_a_builder_call_is_started_with_the_live_cap_when_it_is_lower_than_the_steps_own_remainder(fake, tmp_path, project_world):
+    from sutra_app.connectors.engine_port import live_cap_reader
+    data_dir, set_state = project_world
+    fake.sequence("ok_plain").reply(text="built")
+    router = router_for(fake, tmp_path)
+    router.live_cap = live_cap_reader(str(data_dir), "prj_0123456789ab")
+    set_state("running")
+    try:
+        router.complete(CompletionRequest(system="s", user="build", tag=TAG, run_tools=grant(tmp_path), allowance=NodeMeter(max_usd=50.0).begin()))
+        argv = fake.model_calls("claude")[-1]["argv"]
+    finally:
+        router.close()
+    assert float(value(argv, "--max-budget-usd")) == pytest.approx(1.2, abs=0.001), "min(engine $2, step remainder $50, live cap $1.2)"
+
+
+def test_the_port_of_a_node_installs_the_reader_and_a_port_of_an_ordinary_run_does_not(fake, tmp_path, project_world):
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    data_dir, _ = project_world
+    node = engine_port.port_from_config(PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(data_dir), node=True, project_id="prj_0123456789ab"),
+                                        ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    ordinary = engine_port.port_from_config(PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-bbbb", dept_id="web", data_dir=str(data_dir)), ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert node.router.live_cap is not None and ordinary.router.live_cap is None
+    finally:
+        node.close()
+        ordinary.close()

@@ -876,6 +876,14 @@ class TaskService:
         return self.deliver_to_department(dept["department_id"], text, scope_id=found["node_id"])
 
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None) -> Delivery:
+        return self._deliver(dept_id, text, scope_id=scope_id, settings=settings)
+
+    def answer_waiting(self, dept_id: str, text: str) -> Delivery:
+        """An ANSWER to the team's open question and nothing else (D415): when the team has no task that waits for the owner this raises Busy ("not open any more") and makes no task, where
+        `deliver_to_department` would make a follow-up. The engine's protocol keeps its own signature."""
+        return self._deliver(dept_id, text, answer_only=True)
+
+    def _deliver(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, answer_only: bool = False) -> Delivery:
         """What the engine's `POST /api/say` calls. Strips the text. A team waiting for the owner gets it as an answer (or as an
         override when it starts with the override key); a working team is 409 `busy`; with no live task a follow-up is created
         and scheduled. Raises `Busy`."""
@@ -900,6 +908,8 @@ class TaskService:
                     result = self._answer(tx, live, sid, "Owner override sent", {"kind": "override", "cmd": override}, answered=False)
             elif live is not None and live.status == "waiting_user":
                 result = self._answer(tx, live, sid, said, {"kind": "user", "text": said}, answered=True)
+            elif answer_only:
+                raise Busy("That question is not open any more")                  # an answer is never turned into a new task (D415)
             elif live is not None:
                 raise Busy()
             elif tx.conn.execute("SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():

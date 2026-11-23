@@ -39,18 +39,6 @@ def _target(kind: str, tool_input: Any) -> str:
     return ""
 
 
-def _in_git(tool_input: Any) -> bool:
-    """True when the call is about a path inside a repository's own `.git` folder (its HEAD, index, COMMIT_EDITMSG): the repository's plumbing, which says nothing the owner can use (D405). Only a path
-    with a `.git` component counts; a bare name is never guessed at."""
-    if not isinstance(tool_input, dict):
-        return False
-    for key in _PATH_KEYS:
-        value = tool_input.get(key)
-        if isinstance(value, str) and ".git" in value.replace("\\", "/").split("/"):
-            return True
-    return False
-
-
 def facts(data: Any, provider: str = "claude") -> Optional[tuple[str, str, str]]:
     """`(name, kind, target)` for a `tool_call` event's data, or None when it is not a tool call worth a line (no name at all, or Claude's own way of returning a reply). Never raises."""
     try:
@@ -58,7 +46,7 @@ def facts(data: Any, provider: str = "claude") -> Optional[tuple[str, str, str]]
             return None
         raw = data.get("name") or data.get("type")
         name = _name(raw)
-        if not name or name in _NOT_A_TOOL or _in_git(data.get("input")):
+        if not name or name in _NOT_A_TOOL:
             return None
         if name.startswith(_MCP):
             kind = "github" if name[len(_MCP):].startswith("github") else "sutra"

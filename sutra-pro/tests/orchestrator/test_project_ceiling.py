@@ -343,3 +343,80 @@ def test_a_step_does_not_start_when_the_project_has_no_dollars_left(rig):
     spend(rig, 2.5, tasks["a1"])                                                              # the project's 2.5 are gone, the month is at 3.0
     assert rig.projects.gate(conn, BASE + 50, rig.t.row(tasks["a1"])) == "Waiting: the dollars for this project are used up"
     assert rig.start() == [], "no step is started with a token cap"
+
+
+# ---- what one call may spend, read now and shared by the steps that run (D409, R-2) ------------------------------------------------------------------
+
+def cap_of(rig, project_id, now=None):
+    import sqlite3
+    from sutra_app.orchestrator.livecap import call_cap
+    conn = sqlite3.connect(f"file:{rig.t.settings.db_path}?mode=ro", uri=True)
+    try:
+        return call_cap(conn, project_id, rig.limits.monthly_limit(), BASE + 100 if now is None else now)
+    finally:
+        conn.close()
+
+
+def set_state(rig, ref, state):
+    rig.sql("UPDATE agent_nodes SET state = ? WHERE plan_ref = ?", state, ref)
+
+
+def test_two_siblings_that_run_together_each_get_half_of_the_project(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    for ref in ("a1", "a2"):
+        set_state(rig, ref, "running")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(1.5)
+
+
+def test_the_cap_is_read_on_every_call_a_step_that_started_alone_is_lowered_when_a_sibling_starts_and_given_back_when_it_ends(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    set_state(rig, "a1", "running")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(3.0), "alone: all of it"
+    set_state(rig, "a2", "running")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(1.5), "the sibling started: lowered, though a1 began with the whole"
+    set_state(rig, "a2", "done")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(3.0), "the share is given back"
+
+
+def test_a_step_held_for_an_answer_takes_no_share_until_it_runs(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", []), ("a3", "ops", [])])
+    set_state(rig, "a1", "running")
+    set_state(rig, "a2", "running")
+    set_state(rig, "a3", "awaiting_approval")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(1.5)
+    set_state(rig, "a3", "running")
+    assert cap_of(rig, reservation.project_id) == pytest.approx(1.0), "the owner answered: three run, a third each, for the very next call"
+
+
+def test_the_month_bounds_every_project_and_two_projects_divide_their_own_dollars_only(rig):
+    month_limit(rig, 3.0)
+    first, _ = rig.request([("a1", "web", []), ("a2", "sales", [])], request_id="req-1")
+    second, _ = rig.request([("b1", "ops", []), ("b2", "hr", ["b1"])], request_id="req-2")
+    for ref in ("a1", "a2", "b1"):
+        set_state(rig, ref, "running")
+    assert cap_of(rig, first.project_id) == pytest.approx(1.5) and cap_of(rig, second.project_id) == pytest.approx(3.0), "each divides its own"
+    spend(rig, 2.5, at=LATER)                                                                 # the month is nearly gone: 0.5 left, for every project
+    assert cap_of(rig, first.project_id, LATER + 5) == pytest.approx(0.5) and cap_of(rig, second.project_id, LATER + 5) == pytest.approx(0.5)
+
+
+def test_without_a_limit_nothing_caps_a_call_and_a_removed_limit_lifts_a_month_figure(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    set_state(rig, "a1", "running")
+    assert cap_of(rig, reservation.project_id) is None
+    month_limit(rig, 3.0)
+    reservation2, _ = rig.request([("b1", "ops", []), ("b2", "hr", ["b1"])], request_id="req-9")
+    set_state(rig, "b1", "running")
+    assert cap_of(rig, reservation2.project_id) == pytest.approx(3.0)
+    month_limit(rig, None)
+    assert cap_of(rig, reservation2.project_id) is None
+
+
+def test_the_start_cap_of_a_step_is_what_the_project_and_month_have_left_the_per_call_cap_does_the_sharing(rig):
+    month_limit(rig, 3.0)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    caps = [json.loads((rig.t.run_dir(task_id) / "task.json").read_text())["node"]["caps"]["usd"] for task_id in tasks.values() if (rig.t.run_dir(task_id) / "task.json").exists()]
+    assert caps and all(c == 3.0 for c in caps)

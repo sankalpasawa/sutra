@@ -59,6 +59,32 @@ _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MU
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
 
 
+_OPTION_NUMBERED = re.compile(r"^[ \t]*Option[ \t]+([0-9]+):[ \t]*(.+?)[ \t]*$")
+
+
+def trailing_options(text: str) -> tuple[str, list[str]]:
+    """`(the question, its options)` for a question whose options are the LAST lines of the text, numbered 1, 2, 3 ... in order, as J2 writes them. Only that closing run counts: an `Option N:` line in the
+    middle of the text, or a run that does not start at 1 and count up, is just text (the model's words are not to be trusted to shape the buttons, D401, r-2). The question is everything before the run, so
+    the owner always reads the real text. Option i of the list is the one that is called `Option i`."""
+    lines = (text or "").rstrip().split("\n")
+    run: list[tuple[int, str]] = []
+    k = len(lines)
+    while k > 0:
+        found = _OPTION_NUMBERED.match(lines[k - 1])
+        if found is None:
+            break
+        run.insert(0, (int(found.group(1)), found.group(2)[:500]))
+        k -= 1
+    start = None
+    for i in range(len(run)):                                    # the last place from which the numbers read 1, 2, 3 ... to the end
+        if [n for n, _ in run[i:]] == list(range(1, len(run) - i + 1)):
+            start = i
+    if start is None:
+        return (text or "").rstrip(), []
+    options = [label for _, label in run[start:]][:20]
+    return "\n".join(lines[: len(lines) - (len(run) - start)]).rstrip(), options
+
+
 def parse_options(text: str) -> list[str]:
     """The answer options in a question's text: the `Option N: ...` lines J2 writes (`j2.numbered`), in order, at most 20,
     each cut to 500 characters."""

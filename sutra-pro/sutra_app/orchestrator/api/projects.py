@@ -53,6 +53,13 @@ class AnswerBody(BaseModel):
     decision: Literal["allow_once", "allow_project", "deny"]
 
 
+class StepAnswerBody(BaseModel):
+    """The answer to a step's own question (D415): the number of one of its buttons. Closed."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    option: int = Field(ge=1, le=20)
+
+
 class StartBody(BaseModel):
     """`POST /api/projects` (MAN-13, D310 c, D326). The owner's request in their own words, how the project fails and the same two switches the home screen has. Closed."""
 
@@ -181,6 +188,13 @@ def build_router() -> APIRouter:
     @router.post("/api/projects/{project_id}/system/{item}/skip", summary="Skip: cancel only the steps that need that permission", dependencies=[Depends(require_token)])
     async def system_skip(request: Request, project_id: str, item: str, body: EmptyBody) -> RedactedJSONResponse:
         return _json(request, await _projects(request).system_skip(project_id, item))
+
+    @router.post("/api/projects/{project_id}/questions/{message_id}/answer", summary="Answer a question a step's own team asked, while it is still open (409 when it is not)", dependencies=[Depends(require_token)])
+    async def answer_step_question(request: Request, project_id: str, message_id: int, body: StepAnswerBody) -> RedactedJSONResponse:
+        services = request.app.state.services
+        dept, text = await run_blocking(lambda: _projects(request).answer_step_question(project_id, message_id, body.option))
+        delivered = await run_blocking(lambda: services.tasks.answer_waiting(dept, text))
+        return _json(request, {"delivered": delivered.delivered})
 
     @router.post("/api/projects/{project_id}/pause", summary="Pause or resume one project: no agent of it starts while it is paused", dependencies=[Depends(require_token)])
     async def pause_project(request: Request, project_id: str, body: PauseBody) -> RedactedJSONResponse:

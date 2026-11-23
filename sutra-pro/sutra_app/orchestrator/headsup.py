@@ -18,15 +18,15 @@ starts the stop ladder; the owner's words of the server's own ending ('stopped b
 """
 import json
 import sqlite3
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import StringConstraints
+from pydantic import StringConstraints, model_serializer
 
 from sutra_app.library.base import Value
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.db import Database
 from sutra_app.orchestrator.ids import iso_z
-from sutra_app.orchestrator.nodes_store import is_node_task
+from sutra_app.orchestrator.nodes_store import is_node_task, project_of_task
 from sutra_app.orchestrator.models import Count, Iso, Name, NodeId, TaskId, TaskStatus
 from sutra_app.orchestrator.waiting import age_words
 
@@ -54,6 +54,15 @@ class HeadsUpOut(Value):
     at: Iso                                                             # when it ended (quiet: its last sign of life)
     since_s: Count
     retry: bool = False                                                 # Try again is offered
+    project_id: Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")] | None = None     # the project this task is a step of (nodes on): the row opens the project's page (D412)
+
+    @model_serializer(mode="wrap")
+    def _project_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A row of an ordinary task keeps the wire shape it always had: no `project_id` key."""
+        data = handler(self)
+        if data.get("project_id") is None:
+            data.pop("project_id", None)
+        return data
 
 
 def _one_line(value: str | None, limit: int) -> str:
@@ -118,6 +127,8 @@ class HeadsUp:
         title = _one_line(r["title"], 200)
         outcome = _one_line(r["outcome"], 300)
         base = dict(task_id=r["id"], dept_id=r["dept_id"], dept_name=team, title=title, status=status, outcome=outcome)
+        if self.nodes:
+            base["project_id"] = project_of_task(conn, r["id"])
         if status in _WORKING:
             seen = r["last_event_at"] or r["started_at"] or r["created_at"]
             since = max(0, now - int(seen))

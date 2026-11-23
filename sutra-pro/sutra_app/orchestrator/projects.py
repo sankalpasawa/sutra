@@ -32,6 +32,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
+from sutra_app.orchestrator.livecap import frozen_limit
 from sutra_app.orchestrator.budgets import DEFAULT_SLICE, chain_spend, make_slices, project_cost, project_spend
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
@@ -197,24 +198,8 @@ class ProjectService:
         return max(0.0, round(float(limit) - float(spend_status(conn, limit, now)["spent"]), 6))
 
     def frozen_limit(self, project: Any, now: float) -> float | None:
-        """The dollars a project was given at its start, while that still means something (D388): the owner's own number for the project always; the month's leftover only while the owner still has a monthly
-        limit and the month it was taken from is still the month (a removed limit, or a new month, makes the old figure meaningless: the live month check governs). None when there is none."""
-        if project is None or project["budget_usd"] is None:
-            return None
-        if json.loads(project["caps_json"] or "{}").get("usd_from_month"):
-            from sutra_app.orchestrator.limits import month_start
-            if not self._limit_seen[1] or month_start(float(project["created_at"])) != month_start(now):
-                return None
-        return float(project["budget_usd"])
-
-    def step_cap(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
-        """The dollar cap a step that starts now is given (D409, m-13): what the project and the month have left, SHARED among the steps of the project that run or are ready to run, so that steps which
-        run at the same time cannot together pass the limit by (steps x remainder) before the tick sees it. The first to start alone gets all of it; with two ready, each half. Never below 0."""
-        left = self.usd_left(conn, project_id, now)
-        if left is None:
-            return None
-        alive = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND role <> 'planner' AND state IN ('leased','running','handing_off','queued','ready')", (project_id,)).fetchone()[0]
-        return left / max(1, int(alive))
+        """The dollars a project was given at its start while that still means something (D388): `livecap.frozen_limit` with the owner's limit as this service last read it."""
+        return frozen_limit(project, self._limit_seen[1], now)
 
     def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
         """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when
@@ -905,16 +890,33 @@ class ProjectService:
         row = conn.execute("SELECT text FROM chat_messages WHERE id = ? AND role = 'user'", (int(rid[4:]),)).fetchone()
         return (row["text"] if row is not None else "")[:2000]
 
+    def answer_step_question(self, project_id: str, message_id: int, option: int) -> tuple[str, str]:
+        """The team and the words for an answer to a step's engine question, ONLY while that question is still open (D415, r-11): it must be one of this project's open step questions and the option one of its
+        buttons. Raises Busy (a plain 409) when it is not: a stale card or a second tab must never become a new ordinary task. Returns `(dept id, "Option N")` as a tuple."""
+        from sutra_app.orchestrator.errors import Busy
+        conn = self.db.conn()
+        found = next((q for q in self._step_questions(conn, project_id) if q["message_id"] == message_id), None)
+        if found is None or not 1 <= option <= len(found["options"]):
+            raise Busy("That question is not open any more")
+        dept = conn.execute("SELECT node_id FROM chat_sessions WHERE id = ? AND kind = 'department'", (found["session_id"],)).fetchone()
+        if dept is None:
+            raise Busy("That question is not open any more")
+        return dept["node_id"], f"Option {option}"
+
     @staticmethod
     def _step_questions(conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         """The questions the ENGINE of a step asked the owner (J2's own: "keep working on those notes, or take the report as it is?") and nobody answered yet, for the steps of this project that wait for
         an answer (D401). They are chat questions of the step's team, answered through the chat route; the project page shows them so the owner need not find them on Home. The rule table never answers
         one of these: Decide for me answers questions of the project (a tier, a scope, an estimate), not the engine's own about its work."""
-        from sutra_app.orchestrator.chats import parse_options
+        from sutra_app.orchestrator.chats import trailing_options
         rows = conn.execute("SELECT n.id AS node, m.id AS message_id, m.session_id AS session_id, m.text AS text FROM agent_nodes n JOIN tasks t ON t.id = n.task_id "
                             "JOIN chat_messages m ON m.task_id = n.task_id AND m.kind = 'question' AND m.answered_by IS NULL "
                             "WHERE n.project_id = ? AND t.status = 'waiting_user' ORDER BY m.id", (project_id,)).fetchall()
-        return [{"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": r["text"][:1500], "options": parse_options(r["text"])} for r in rows]
+        out = []
+        for r in rows:
+            question, options = trailing_options(r["text"])                       # only the closing run of numbered lines is buttons; the question is all that comes before it (D401, r-2)
+            out.append({"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": question[:1500], "options": options})
+        return out
 
     @staticmethod
     def _with_usage(conn: sqlite3.Connection, node: NodeOut, now: int) -> NodeOut:
