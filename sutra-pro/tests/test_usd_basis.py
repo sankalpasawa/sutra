@@ -92,6 +92,7 @@ def test_opens_read_only_and_refuses_the_stable_folder(data, tmp_path, monkeypat
     (home / ".sutra-pro").mkdir(parents=True)
     (home / "link").symlink_to(home / ".sutra-pro")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))                              # Path.home() on Windows
     for refused in (home / ".sutra-pro", home / "link", home / ".sutra-pro" / "departments"):
         assert ub.main(["--data", str(refused)]) == 2
         assert "~/.sutra-pro" in capsys.readouterr().err
