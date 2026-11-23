@@ -27,7 +27,7 @@ from pydantic import ConfigDict, StringConstraints
 from sutra_app.connectors.attachments import clean_name as _clean_file_name
 from sutra_app.library.base import Value
 
-__all__ = ["Ending", "finished", "stopped", "failed", "switch_notice", "earlier_note", "attached_line", "clean_name", "ref_of", "owner_ref", "valid_client_id",
+__all__ = ["Ending", "CardEnding", "finished", "stopped", "failed", "switch_notice", "earlier_note", "attached_line", "clean_name", "ref_of", "owner_ref", "valid_client_id",
            "STOPPED", "STOPPED_EMPTY", "NO_REPLY", "MAX_TEXT", "MAX_ATTEMPT", "DIRECT_ASK", "CLIENT_ID_RE"]
 
 STOPPED = "Stopped. What was written is kept."
@@ -52,6 +52,17 @@ class Ending(Value):
     blocks: list[dict[str, Any]] = []
     ordered: bool = False                    # `blocks` is the whole turn in order, text included (D212): stored as a sibling key of the meta, read back as `ChatMessageOut.ordered`
     via: dict[str, Any] | None = None        # {provider, model} of the reply (a sibling key of the meta, read back as `ChatMessageOut.via`): the header says it the same live and settled
+
+
+class CardEnding(Ending):
+    """The card that follows a cited answer (DV-1, Ask mode): a message of kind `card` with no text, stored in the same transaction as the reply, with the ref
+    `direct-sources:<owner line>[.N]`, so that `chats._turn_of` names the line it belongs to and a later try supersedes it with the reply. Only the Ask mode makes
+    one: a turn without a mode ends exactly as it always did."""
+
+    kind: Literal["card"] = "card"
+    text: Annotated[str, StringConstraints(max_length=0)] = ""
+    src_ref: Annotated[str, StringConstraints(pattern=r"^direct-sources:[1-9][0-9]{0,15}(\.([2-9]|[1-9][0-9]))?$")]
+    card: dict[str, Any]
 
 
 def ref_of(user_id: int, tail: str = "", attempt: int = 1) -> str:

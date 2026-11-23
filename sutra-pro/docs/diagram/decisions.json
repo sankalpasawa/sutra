@@ -1873,5 +1873,50 @@
   "id": "D397",
   "label": "graceful close = fresh attempt, project goes on",
   "anchor": null
+ },
+ {
+  "id": "D350",
+  "label": "Ask: read-only cited answer (DV-1)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D351",
+  "label": "sources checked by code, never by the model",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D352",
+  "label": "Ask off: mode refused, no new field",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D353",
+  "label": "sources card + draft-only Turn this into work",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D354",
+  "label": "Ask mode stored with the line; a retry only narrows",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D355",
+  "label": "Codex: one thread per mode; Ask read-only even with no folder",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D356",
+  "label": "Ask $ cap: Claude yes, Codex a check; limit as for Do",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D357",
+  "label": "path refused by spelling before any file call",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D358",
+  "label": "flag off: OpenAPI bytes and bad bodies unchanged",
+  "anchor": "Chat sessions"
  }
 ]

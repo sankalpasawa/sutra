@@ -10,7 +10,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from .model_catalog import ModelOption
-from .models import CallTag, Effort, Provider, Quota
+from .models import Allowance, CallTag, Effort, Provider, Quota
 
 __all__ = ["AttachmentRef", "ProviderPill", "Choice", "CarryPlan", "ChatTurnIn", "ChatTurnOut", "ChatEvent", "BlockType", "BlockKind",
            "EVENT_KINDS"]
@@ -81,6 +81,8 @@ class ChatTurnIn(M):
     text: str
     attachments: list[AttachmentRef] = []
     tag: CallTag = Field(default_factory=CallTag)
+    # what ONE turn may spend (calls, dollars, a deadline): None, the default, adds nothing to the port's own context. The Ask mode of the direct chat (DV-1) sets it
+    allowance: Optional[Allowance] = None
 
 
 class ChatEvent(M):

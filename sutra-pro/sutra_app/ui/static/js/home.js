@@ -452,6 +452,7 @@
     const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
     ctx.paint(el, html);
     el.hidden = html === "";
+    if (askExists() || (S.cc && S.cc.state().ask === "ask")) renderBar();            // DV-1: the pill is where the page learns that Ask exists, so the bar is drawn again once it is known (never with the flag off)
   }
 
   // A turn that ended may have moved the chat to the other model (the router switches on a failure): read the pill again, keeping what it shows until the answer comes.
@@ -495,13 +496,16 @@
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
   const providersOf = () => (S.pillData ? S.pillData.providers : []);
   const askBlocked = () => (directOn() && S.pillData ? root.ChatComposer.askBlock(providersOf()) : "");
+  // Ask (DV-1): the server says so in the pill (`ask`, only with SUTRA_ASK_V1 on). Without it the switch is never drawn and the bar is what it was.
+  const askExists = () => !!(S.pillData && S.pillData.ask === true);
 
   function renderBar() {
     const c = composer();
     const bar = $("sbar");
     if (!c || !bar) return;
     const CC = root.ChatComposer;
-    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
+    c.enableAsk(askExists());
+    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}, ask: askExists()});
     ctx.paint(bar, html);
     bar.hidden = html === "";
     if (liveOn()) $("sstream").hidden = true;                                       // the reply is a node of the transcript now (renderLive)
@@ -535,10 +539,23 @@
     if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
     clearBanner();
     const said = root.ChatView.attachedOf(line.text);
-    const out = await c.retry(line.id, said.text, {files: said.names.length});
+    const out = await c.retry(line.id, said.text, {files: said.names.length, mode: line.mode === "ask" ? "ask" : "do"});          // DV-1: the line's own mode, as the server stored it
     if (!out.ok) return false;
     S.own = true;
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+    return true;
+  }
+
+  // "Turn this into work" on a sources card (DV-1): the request is DRAFTED in the box, with Send pointing at "Plan with Sutra"; the owner edits it and presses Send. Nothing is sent here.
+  function askToWork(draft) {
+    const c = composer();
+    const box = $("sbox");
+    if (!c || !box) return false;
+    const words = c.draft(draft);                   // leaves Ask first: the box may have been closed only because no model can answer an Ask
+    renderBar();
+    renderComposer();
+    if (box.disabled) { c.say("The message box is closed right now, so the draft was not written. Try again when it opens."); return false; }          // closed for another reason: the owner is told, the words are not forced in
+    root.ChatComposer.fillBox(box, words);
     return true;
   }
 
@@ -724,6 +741,8 @@
       retryDirect(b.dataset.turn);
     } else if (act === "composer-stop") {
       stopDirect();
+    } else if (act === "ask-to-work") {
+      askToWork(b.dataset.draft || "");
     } else if (act === "copy-reply" || act === "copy-code") {
       if (root.ChatLiveView) root.ChatLiveView.copy(b, {fallback: copyFallback});
     }
@@ -1853,6 +1872,7 @@
       const c = composer();
       if (!b || !c) return;
       if (b.dataset.act === "composer-mode") c.setMode(b.dataset.mode);
+      else if (b.dataset.act === "composer-ask") c.setAsk(b.dataset.ask);
       else if (b.dataset.act === "composer-attach") { const input = $("sbar").querySelector(".ccinput"); if (input) input.click(); }
       else if (b.dataset.act === "composer-remove") c.removeFile(b.dataset.key);
     });

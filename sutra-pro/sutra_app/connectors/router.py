@@ -227,6 +227,11 @@ class _Request(Hooks):
             return self.ctx
         return self.ctx.model_copy(update={"allowance": a.model_copy(update={"max_usd": max(0.0, a.max_usd - self.usd_spent)})})
 
+    def money_left(self) -> Optional[float]:
+        """What the allowance still lets the request's NEXT process spend (the limit less what earlier processes of the request cost), or None when the allowance has no dollar limit."""
+        limit = self.ctx.allowance.max_usd
+        return None if limit is None else max(0.0, limit - self.usd_spent)
+
     def timeout_s(self) -> float:
         """The call timeout, cut to the time left until the envelope's deadline (at least one second)."""
         timeout = self.resolved.timeout_s
@@ -1062,6 +1067,7 @@ class Router:
         fresh.turns = old.turns if old is not None else 0
         fresh.switches = (old.switches + (1 if replaces else 0)) if old is not None else 0
         fresh.pinned = pinned          # type: ignore[assignment]
+        fresh.thread_mode = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""       # the mode this thread's first turn (its system text) was written for
         save_session_state(fresh)
         window = carry_chars(provider, fresh.model)
         carry = render_carry_over(self._transcript(sid, m), from_provider=old.provider if old is not None else None, to_provider=provider,
@@ -1073,6 +1079,8 @@ class Router:
         sid = state.ctx.session_id or ""
         lost = False
         folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
+        if folder and getattr(state.ctx.tag, "workspace", "none") == "read":
+            folder = Folder(str(folder), edit=False)       # a turn that asks for `read` (the Ask mode, DV-1) never gets more than the file tools that look: the owner's "edit" is capped here
         for round_no in (1, 2):
             self._check_cancel(state, provider)
             old = load_session_state(self._workdir(sid))
@@ -1081,6 +1089,12 @@ class Router:
             # a provider session belongs to the folder it began in (Claude stores and resumes it per working directory): in another folder
             # it starts a new one with the carry-over below, and the chat's transcript, which is the app's own, is untouched
             moved = old is not None and old.provider == provider and old.provider_session_id is not None and old.work_folder != folder
+            # Codex keeps the system text of a thread's first turn and never reads it again, so a thread is one mode (DV-1, D350): a turn of the other mode starts a new thread, with the
+            # carry-over, and what the Ask words said (or did not say) can never be stale. Claude is given the text on every turn and keeps its thread.
+            mode_now = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""
+            mode_moved = (not moved and provider == "codex" and old is not None and old.provider == provider and old.provider_session_id is not None
+                          and old.thread_mode != mode_now)
+            moved = moved or mode_moved
             if old is not None and not lost and old.provider == provider and old.provider_session_id is not None and not moved:
                 session = connector.resume(old)
                 if session.provider_session_id is None:         # the work dir was lost: the provider session went with it
@@ -1101,6 +1115,11 @@ class Router:
             token_kw: dict[str, Any] = {} if state.cancel is None else {"cancel": state.cancel}
             try:
                 self._check_cancel(state, provider)
+                left = state.money_left()                         # DV-1: what this turn may still spend (None: no limit, nothing is passed, as it always was)
+                if left is not None:
+                    token_kw = {**token_kw, "max_usd": left}
+                if mode_now == "ask" and not folder:              # an Ask with no folder at all is still read only (Codex's policy sandbox may allow writing in its private work dir)
+                    token_kw = {**token_kw, "read_only": True}
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
                                               timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder, **token_kw):
                     if event.kind == "turn_done":
@@ -1117,18 +1136,18 @@ class Router:
                     if self._chat_active.get(sid, (None, None))[1] is session:
                         del self._chat_active[sid]
             assert turn is not None
-            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, moved and not lost)
+            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, ("the Ask mode changed" if mode_moved else True) if moved and not lost else False)
             return turn
         raise AssertionError("unreachable")       # pragma: no cover
 
     def _after_turn(self, state: _Request, provider: str, old: Optional[SessionState], session: SessionState,
-                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: bool = False) -> None:
+                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: "bool | str" = False) -> None:
         sid = state.ctx.session_id or ""
         if replaces and old is not None:
             if lost:
                 reason = "session lost"
             elif folder_moved:
-                reason = "working folder changed"
+                reason = folder_moved if isinstance(folder_moved, str) else "working folder changed"
             elif state.failures:
                 reason = fallback_phrase(state.failures[-1][1].code)
             elif old.pinned == provider:

@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, node_approval, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, node_approval, needs_you, team_chat, done, deliverable, answer_sources and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -12,7 +12,11 @@
    script is on the page: escaped first too, then paragraphs, lists, code blocks, tables, headings and quotes, and still no link and no HTML.
    Every other line (the owner's, a team's, Sutra's, a note, an error, a card) keeps safeText.
 
-   Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
+   An `answer_sources` card (DV-1, Ask mode) follows a cited answer: every source the answer named with the label code gave it ("checked" or "could not find"; the page never makes one),
+   a sentence that says what "checked" covers, and "Turn this into work", a button whose data-draft holds a request the page puts in the box for the owner to finish and send. An answer
+   that named no source says so ("No sources given"); one whose sources are all wrong says none could be found. workDraft(card) is that request, a pure function.
+
+   Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct, ask-to-work) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
    The finished report of a run (D135) is a `deliverable` card in the team's chat: the report as markdown (ChatMarkdown, folded by ChatFold.longText when long),
    the files git saw change in the owner's folder (nothing at all when git could not say) and "Open the full report", a real link to the team page's Preview tab
@@ -345,6 +349,62 @@
       (href !== "" ? '<div class="acts"><a class="lbtn" data-act="open-team" href="' + esc(href) + '">Open the full report</a></div>' : "") + "</div>";
   }
 
+  // The sources of a cited answer (DV-1, an `answer_sources` card), drawn from what code decided: a label is "checked" only when the wire says exactly that, anything else is "could not
+  // find". Words that came with the card (a path, a quote, a reason) are escaped; the words that say what a label means are ours.
+  const MISSING = "could not find";
+  const isChecked = src => clean(src.label) === "checked";
+  const linesOf = src => {
+    const a = count(src.start);
+    const b = count(src.end);
+    if (a === null) return "";
+    return b === null || b === a ? "line " + a : "lines " + a + " to " + b;
+  };
+  const sentence = reason => { const r = clean(reason); return r === "" ? "It could not be found." : "It could not be found: " + r.charAt(0).toLowerCase() + r.slice(1) + (/[.!?]$/.test(r) ? "" : "."); };
+
+  function sourceLine(src) {
+    const ok = isChecked(src);
+    const how = clean(src.how);
+    const why = ok ? (how === "quote" ? "The file is there and the quoted words are on those lines." : "The file and those lines are there.") : sentence(src.reason);
+    const quote = clean(src.quote) !== "" ? ' <q class="asq">' + esc(clean(src.quote)) + "</q>" : "";
+    return '<li class="asrc ' + (ok ? "st-checked" : "st-missing") + '" data-label="' + (ok ? "checked" : MISSING) + '"><code class="aspath">' + esc(clean(src.path)) + "</code>" +
+      (linesOf(src) !== "" ? ' <span class="asln">' + esc(linesOf(src)) + "</span>" : "") + quote + ' <span class="aslabel">' + (ok ? "checked" : MISSING) + "</span>" +
+      '<small class="ashow">' + esc(why) + "</small></li>";
+  }
+
+  // "Turn this into work": the request the owner finishes in the box. It starts a sentence and stops, so it cannot be sent by habit as a finished request: it names the question that
+  // was asked and the sources that were checked (up to five), and leaves the rest to the owner. At most 8000 characters, like any message.
+  function workDraft(c) {
+    const card = isObj(c) ? c : {};
+    const question = clean(card.question).slice(0, 200);
+    const files = (Array.isArray(card.sources) ? card.sources : []).filter(isObj).filter(isChecked).filter(s => clean(s.path) !== "");
+    const seen = [];
+    files.forEach(s => { const name = clean(s.path) + (linesOf(s) !== "" ? " (" + linesOf(s) + ")" : ""); if (!seen.includes(name)) seen.push(name); });
+    const named = seen.slice(0, 5).join(", ") + (seen.length > 5 ? " and " + (seen.length - 5) + " more" : "");
+    const from = question !== "" ? 'Based on my question "' + question + '"' + (named !== "" ? " and what you found in " + named : "") : (named !== "" ? "Based on what you found in " + named : "");
+    return Array.from(from !== "" ? from + ", please " : "Please ").slice(0, 8000).join("");
+  }
+
+  function answerCard(c) {
+    const list = (Array.isArray(c.sources) ? c.sources : []).filter(isObj);
+    const ok = list.filter(isChecked).length;
+    const bad = list.length - ok;
+    const more = count(c.more) || 0;
+    let tone = "mixed";
+    let head;
+    if (list.length === 0) { tone = "none"; head = "No sources given. Nothing in this answer points to a file, so none of it was checked."; }
+    else if (ok === 0) { tone = "bad"; head = (list.length === 1 ? "The source could not be found" : "None of the " + list.length + " sources could be found") + ". Do not rely on this answer until you have looked yourself."; }
+    else if (bad === 0) { tone = "ok"; head = (list.length === 1 ? "The source was checked." : "All " + list.length + " sources were checked."); }
+    else head = ok + " of " + list.length + " sources checked; " + bad + " could not be found.";
+    const tried = count(c.tried) || 0;
+    const refused = tried > 0 ? '<p class="asnote asrefused">This answer also tried ' + (tried === 1 ? "one action that changes something or reaches the web" : tried + " actions that change something or reach the web") + ". Ask does not allow that.</p>" : "";
+    const what = list.length === 0 ? "" : '<p class="asnote">Checked means Sutra looked: the file and the lines are there, and so are the quoted words when there are any. It does not mean the answer is right.</p>';
+    return '<div class="ncard c-answer t-' + tone + '" data-card="answer_sources" data-tone="' + tone + '" data-checked="' + ok + '" data-missing="' + bad + '">' +
+      '<h2 class="cdtitle">Sources</h2><p class="ashead">' + esc(head) + "</p>" +
+      (list.length ? '<ul class="assrcs">' + list.map(sourceLine).join("") + "</ul>" : "") +
+      (more > 0 ? '<p class="asmore">and ' + more + " more marks that were not checked.</p>" : "") + refused + what +
+      '<div class="acts"><button type="button" class="lbtn" data-act="ask-to-work" data-draft="' + esc(workDraft(c)) + '" title="This only writes a request in the box for you to change and send.">Turn this into work</button></div></div>';
+  }
+
   // The receipt of a finished task, evidence only (GAP-model-quality): "Attempt 2 . Took 6 min . about $0.42 . 7 of 8 items passed their checks".
   // No dollar figure under half a cent (the old rule) and "about", because the ledger's figure is a floor (a failed call has no cost); without
   // one, the tokens (a Codex-only task); no atoms, no checks part, so the card never gives a verdict it was not given. No receipt, nothing.
@@ -403,6 +463,7 @@
       case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);
       case "deliverable": return deliverableCard(value);
+      case "answer_sources": return answerCard(value);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
     }
@@ -571,7 +632,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, BUSY, ONE_AT_A_TIME, ASK_WORDS,
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, workDraft, BUSY, ONE_AT_A_TIME, ASK_WORDS,
     PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;

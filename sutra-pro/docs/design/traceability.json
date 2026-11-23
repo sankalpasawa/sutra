@@ -1,7 +1,7 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 375,
+  "decisions": 384,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
@@ -539,6 +539,15 @@
     "D347",
     "D348",
     "D349",
+    "D350",
+    "D351",
+    "D352",
+    "D353",
+    "D354",
+    "D355",
+    "D356",
+    "D357",
+    "D358",
     "D360",
     "D361",
     "D362",
@@ -5847,6 +5856,173 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"graceful close = fresh attempt, project goes on\", key only."
+  },
+  {
+   "id": "D350",
+   "title": "Ask: the direct chat answers read only, with the limits of a function's question (DV-1, `SUTRA_ASK_V1`)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Ask: read-only cited answer (DV-1)\", pill on Connector router."
+  },
+  {
+   "id": "D351",
+   "title": "The sources of an answer are checked by code, and \"checked\" says only what code looked at",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"sources checked by code, never by the model (citations.py)\", pill on Chat sessions."
+  },
+  {
+   "id": "D352",
+   "title": "With `SUTRA_ASK_V1` off nothing of Ask exists: the word `mode` is refused as before, no answer has a new key, no switch is drawn",
+   "packages": [
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-8"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Ask off: mode refused, no new field\", pill on Chat sessions."
+  },
+  {
+   "id": "D353",
+   "title": "The sources are one card after the answer; \"Turn this into work\" drafts a request and never sends it",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"sources card + draft-only Turn this into work\", pill on Chat sessions."
+  },
+  {
+   "id": "D354",
+   "title": "The mode is stored with the owner's line, and a retry can only narrow it (amends D350; DV-1 review M2)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Ask mode stored with the line; a retry only narrows\", pill on Chat sessions."
+  },
+  {
+   "id": "D355",
+   "title": "A Codex thread is one mode; an Ask with no folder is read only too (amends D350; DV-1 review M3, m3, m4)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Codex: one thread per mode; Ask read-only even with no folder\", pill on Connector router."
+  },
+  {
+   "id": "D356",
+   "title": "The dollars of an Ask are a ceiling for Claude only; Ask follows Do on the monthly limit (amends D350; DV-1 review M4, m9)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"Ask $ cap: Claude yes, Codex a check; limit as for Do\", pill on Connector router."
+  },
+  {
+   "id": "D357",
+   "title": "A path is refused by its spelling before any file-system call; only path-shaped text is a citation (amends D351; DV-1 review M1, m6, m7)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"path refused by spelling before any file call\", pill on Chat sessions."
+  },
+  {
+   "id": "D358",
+   "title": "Flag off holds in two more places: a body nobody can encode, and the order of the OpenAPI paths (amends D352; DV-1 review m1, m2)",
+   "packages": [
+    "ABS-1",
+    "ABS-7",
+    "ABS-15",
+    "CN-1",
+    "CN-3",
+    "CN-7",
+    "GAP-CONSOLE",
+    "GAP-W1",
+    "ORCH-1",
+    "ORCH-3",
+    "ORCH-8",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"flag off: OpenAPI bytes and bad bodies unchanged\", pill on Chat sessions."
   }
  ],
  "packages": [
