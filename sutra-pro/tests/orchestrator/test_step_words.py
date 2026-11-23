@@ -159,3 +159,28 @@ def test_decide_for_me_never_answers_an_engine_question_about_finishing_as_it_is
     from sutra_app.orchestrator.gatekeeper import decide_for_me_answer
     for kind in ("question", "engine_question", "finish_as_is", "chat_question"):
         assert decide_for_me_answer(kind, None) is None, kind
+
+
+# ---- the engine's "done with open items" in the owner's words (D402, run 3 item 3) -----------------------------------------------------------------
+
+OPEN = ("Done with open items: shipped as is on the Requester's decision (the owner chose to finish). "
+        "Still not workable: document rubric PJ-4 (NEEDS_REVISION) the closing notes repeat a mistake.")
+
+
+def test_the_engines_open_items_sentence_is_said_in_plain_words():
+    said = plain_outcome(OPEN)
+    assert said == "Done, with some things still open. You chose to take it as it is. Still open: the closing notes repeat a mistake."
+    for engine_word in ("rubric", "PJ-4", "NEEDS_REVISION", "Requester", "shipped as is"):
+        assert engine_word not in said
+    assert plain_outcome("Done with open items: shipped as is on the Requester's decision (x).") == "Done, with one thing still open. You chose to take it as it is."
+    assert plain_outcome("Done with open items: Still not workable: site rubric W-2 (FAILED_CHECK)") == "Done, with one thing still open."
+    assert plain_outcome("Done: everything is in") == "Done: everything is in" and plain_outcome("Done with some things left") == "Done with some things left"
+
+
+def test_the_done_card_of_a_step_that_finished_with_open_items_says_it_plainly(rig):
+    from orchestrator.test_reconcile_projects import running
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    rig.finish(tasks["a1"], status="done_with_open_items", outcome=OPEN)
+    [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
+    assert card["outcome"].startswith("Done, with some things still open.") and "rubric" not in card["outcome"] and card["project_id"] == reservation.project_id
+    assert rig.t.row(tasks["a1"]).outcome.startswith("Done with open items"), "the record keeps the engine's words"
