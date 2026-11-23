@@ -112,3 +112,15 @@ def test_the_raise_input_is_only_on_a_live_dollar_question():
                      "console.log(JSON.stringify([sRaise({paused: p}, 'limit', false), sRaise({paused: p}, 'fact', true), sRaise({paused: c}, 'limit', true),"
                      "sRaise({paused: {...p, questions: [{...p.questions[0], budget: [0, 0]}]}}, 'limit', true)]));")
     assert got == ["", "", "", ""]
+
+
+@needs_node
+def test_the_ruling_card_takes_a_typed_amount_too():
+    """R2-2: the ruling's dollar question (an approval card) shows the same raise input, its amount filled in."""
+    ruling = {"kind": "ruling_budget", "questions": [{"question": "This run has used $0.15 of $0.64 (API price). Add $1,020 so Identity's ruling is "
+                                                                  "funded in full? So far: $0.64 approved.",
+                                                      "options": ["Add $1,020 so the ruling is funded in full: Loyalty card",
+                                                                  "Go with Priority's final answer (REFUSE): nothing"], "budget": [1020, 0]}]}
+    got = raise_node(f"const p = {json.dumps(ruling)}; console.log(JSON.stringify(sRaise({{paused: p}}, 'ruling_budget', true)));")
+    assert 'value="$1,020"' in got and "Add and keep going" in got
+    assert "sRaise(s, kind, live) + `<div class=\"acts\">" in PAGE      # on the approval card, above Approve / Not now

@@ -238,3 +238,163 @@ def test_a_stated_need_the_dollars_cover_is_not_asked_for(tmp_path):
         p = run.paused
         assert p and p["kind"] == "limit" and not p["handoff"].get("usd"), p and p["handoff"]
         assert run.budget - run.spent >= 40 and not CREDIT.search(" ".join(asked(run)))
+
+
+# ---- review round 2 (R2-1): an approved dollar raise funds the work it was priced for, in a run cheaper or dearer per credit than
+# USD_PER_CREDIT ($0.0187): one rate prices the raise and turns the approved dollars into credits ------------------------------------
+RUN_RATES = pytest.mark.parametrize("rate", [0.01, 0.03], ids=["cheap", "expensive"])
+
+
+def priced_at(j2, run, rate, left=0.5):
+    """Give the run a measured rate of `rate` dollars per credit (its dollars used become its credits spent times `rate`) and
+    `left` dollars to spend, far too few for the work under test, and no credit beyond what is spent (code tops credits up from
+    the dollars left). Its calls are already enough for its own rate to count (USD_RATE_MIN_CALLS, new with the fix: 8)."""
+    assert run.spent and len(run.call_log) >= getattr(j2, "USD_RATE_MIN_CALLS", 8), (run.spent, len(run.call_log))
+    run.usd_used = run.spent * rate
+    run.usd_limit = round(run.usd_used + left, 2)
+    run.budget = run.spent
+
+
+def credits_after_raise(run):
+    """The credits free right after each dollar raise is applied (before any of them is spent)."""
+    seen, add = [], run._usd_add
+
+    def recorded(*a, **k):
+        out = add(*a, **k)
+        seen.append(run.budget - run.spent)
+        return out
+    run._usd_add = recorded
+    return seen
+
+
+def funds_exactly(seen, need, rate):
+    """One raise, and it bought the credits it was priced for: at least the need, and no more than the need plus what rounding
+    the dollars up (to $1 at most) buys, so the dollars and the credits stay one rate (an over-grant spends dollars nobody priced)."""
+    assert len(seen) == 1 and need <= seen[0] <= need + 2 / rate, (seen, need, rate)
+
+
+@RUN_RATES
+def test_approval_raise_funds_the_workflow(tmp_path, rate):
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        priced_at(j2, run, rate)
+        w = next(w for w in run.workflows if not w.get("approval_asked"))
+        w.update(cost=100_000, charged=False)
+        resume_at(run, "priority", {"kind": "envelope", "wid": w["id"]})
+        say(run, "Go on")
+        assert run.paused and run.paused["handoff"].get("usd") is True, run.outcome
+        seen = credits_after_raise(run)
+        say(run, "Option 1")
+        funds_exactly(seen, 100_000, rate)
+        assert w.get("status") != "unfunded" and w.get("charged"), ({k: w.get(k) for k in ("status", "charged")}, run.outcome)
+
+
+def priced_ruling(j2, run, credits=2000):
+    """A ruled workflow the validator can price and register: W-1's fields, with rate-card parts worth about `credits`."""
+    w0 = run.workflows[0]
+    k = (w0.get("parts") or [next(iter(j2.RATES))])[0]
+    n = -(-credits // j2.RATES[k])
+    c = n * j2.RATES[k]
+    return {**w0, "id": "W-90", "name": "Loyalty card", "parts": [k] * n, "cost": c, "charged": False,
+            "envelope": {**w0["envelope"], "money_limit": c}}
+
+
+@RUN_RATES
+def test_ruling_raise_funds_the_ruling(tmp_path, rate):
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        priced_at(j2, run, rate)
+        wf = priced_ruling(j2, run)
+        c = run._open_conflict("scope", ["adaptation", "priority"], "W-90", "the loyalty card")
+        c.update(identity=[{"say": "The loyalty card is in the charter."}], pending_winner="adaptation", ruled_wfs=[wf])
+        resume_at(run, "priority", {"kind": "ruling", "table": [wf], "conflict": c["id"]})
+        say(run, "Go on")
+        assert run.paused and run.paused["kind"] == "ruling_budget", run.outcome
+        seen = credits_after_raise(run)
+        say(run, "Option 1")
+        funds_exactly(seen, wf["cost"], rate)
+        w = next((x for x in run.workflows if x["name"] == "Loyalty card"), None)
+        assert w and w.get("status") != "unfunded" and w.get("charged"), (w and {k: w.get(k) for k in ("status", "charged")}, run.outcome)
+
+
+@RUN_RATES
+def test_chain_raise_funds_the_documents(tmp_path, rate):
+    """The first document fits; before the second, the dollars left are cut to a cent at `rate`, so the chain's gate asks."""
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET="8") as j2:
+        run = j2.J2Run(run_dir=tmp_path / "runs" / "j2-20261104-100002-7f3a")
+        advance, asked_at = run._advance, {}
+
+        def cut(i):
+            if i == 1 and not asked_at:
+                priced_at(j2, run, rate, left=0.01)
+                asked_at.update(need=sum(run._stage_cost(k) for k in run.stages[i:]), stages=list(run.stages))
+            return advance(i)
+        run._advance = cut
+        say(run, DESIGN_BRIEF)
+        h = run.paused and run.paused["handoff"]
+        assert asked_at and h and h.get("kind") == "stage_decision" and h["stage_i"] == 1, run.outcome
+        seen = credits_after_raise(run)
+        say(run, "Option 1")
+        funds_exactly(seen, asked_at["need"], rate)
+        assert run.stages == asked_at["stages"] and not (run.paused and run.paused["handoff"].get("kind") == "stage_decision"), run.outcome
+
+
+def test_the_envelope_check_tops_up_before_a_hold(tmp_path):
+    """R2-1 probe, second half: after a raise the envelope check ran again with approval already asked, and Priority held the
+    workflow unfunded although the dollars left funded it. Code tops up at the check itself, so it runs."""
+    limit = limit_of(cost(tmp_path), 0.5)
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit) as j2:
+        run = start(j2, tmp_path)
+        priced_at(j2, run, 0.01, left=0.5)      # $0.50 at $0.01 buys 50 credits
+        w = run.workflows[-1]
+        w.update(cost=40, charged=False, approval_asked=True, status="waiting")
+        resume_at(run, "priority", {"kind": "envelope", "wid": w["id"]})
+        say(run, "Go on")
+        assert w.get("charged") and w.get("status") != "unfunded", ({k: w.get(k) for k in ("status", "charged")}, run.outcome)
+
+
+# ---- R2-2: the ruling's dollar question takes a typed amount, as the other dollar questions do ----------------------------------------
+def at_ruling(j2, run):
+    priced_at(j2, run, 0.01)
+    wf = priced_ruling(j2, run)
+    c = run._open_conflict("scope", ["adaptation", "priority"], "W-90", "the loyalty card")
+    c.update(identity=[{"say": "The loyalty card is in the charter."}], pending_winner="adaptation", ruled_wfs=[wf])
+    resume_at(run, "priority", {"kind": "ruling", "table": [wf], "conflict": c["id"]})
+    say(run, "Go on")
+    assert run.paused and run.paused["kind"] == "ruling_budget", run.outcome
+    return wf
+
+
+def test_the_ruling_question_takes_a_typed_amount(tmp_path):
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
+        run = start(j2, tmp_path)
+        at_ruling(j2, run)
+        assert "[adds $" in next(m["text"] for m in run.chat if m["id"] == run.paused["msg"])      # the cards read the amount from it
+        old = run.usd_limit
+        typed = round(old * 2, 2)      # not the amount offered, and under BIG_RAISE times the limit
+        assert typed != run.paused["handoff"]["usd"]
+        say(run, f"Add ${typed:g} and keep going")
+        assert run.usd_limit == pytest.approx(old + typed), (old, typed, run.usd_limit)
+        assert run.usd_raises[-1]["asked"] == pytest.approx(typed)
+
+
+def test_the_ruling_question_asks_again_for_zero_and_confirms_a_big_amount(tmp_path):
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
+        run = start(j2, tmp_path)
+        at_ruling(j2, run)
+        old = run.usd_limit
+        say(run, "Add $0")
+        assert run.paused and run.paused["kind"] == "ruling_budget" and run.usd_limit == old, run.outcome
+        big = round(old * 6 + 1, 2)
+        say(run, f"Add ${big:g} and keep going")
+        p = run.paused
+        assert p and p["kind"] == "ruling_budget" and run.usd_limit == old, run.outcome
+        assert p["questions"][0]["options"][0].startswith(f"Add {run_fmt(j2, big)} ") and p["handoff"]["usd"] == big
+        say(run, "Yes, approve it.")
+        assert run.usd_limit == pytest.approx(old + big), (old, big, run.usd_limit)
+
+
+def run_fmt(j2, x):
+    return j2.fmt_usd(x)

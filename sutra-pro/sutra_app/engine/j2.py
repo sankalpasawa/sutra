@@ -100,6 +100,7 @@ USD_PER_CREDIT = 0.0187          # D255: measured on the beta's runs (median dol
 USD_PER_MTOK_FALLBACK = 3.18     # D255: dollars per million tokens for a call with no price before any priced call in the run
 USD_RAISE_SHARE = 0.5            # the suggested raise without a stated need: half the run's limit
 BIG_RAISE = 5                    # a typed raise above this many times the limit is asked back
+USD_RATE_MIN_CALLS = 8           # D256: a run's own dollars per credit counts from its 8th call (the opening, 7 calls, spends none)
 if USD_BUDGET:
     BUDGET = math.ceil(USD_BUDGET / USD_PER_CREDIT)      # P26 (D256): the starting credits follow the dollar limit; J2_BUDGET is ignored
 
@@ -4561,12 +4562,24 @@ class J2Run:
                         "approved": [start, *(r["to"] - r["from"] for r in self.usd_raises)],
                         "estimated_calls": self.usd_estimated_calls}}
 
+    def _usd_rate(self):
+        """P26 (D256): the run's one rate between dollars and work credits, used both ways: to price a raise (`_usd_raise`) and to
+        turn dollars into credits (`_usd_credits`). Its own dollars per credit (dollars used / credits spent) once it has spent
+        credits and made USD_RATE_MIN_CALLS calls, else USD_PER_CREDIT."""
+        if self.spent > 0 and self.usd_used > 0 and len(self.call_log) >= USD_RATE_MIN_CALLS:
+            return self.usd_used / self.spent
+        return USD_PER_CREDIT
+
+    def _usd_credits(self, usd, rate=None):
+        """P26 (D256): the whole work credits `usd` dollars buy at `rate` (the rate a question was priced at), else the run's."""
+        return math.floor(max(0.0, usd) / (rate or self._usd_rate()) + 1e-9)
+
     def _top_up(self, need=0):
-        """P26 (D256): in dollar mode the credits follow the dollars left: code raises the budget to what they buy at
-        USD_PER_CREDIT (no question, no cap) and says so. True when `need` credits are free now; always False when off."""
+        """P26 (D256): in dollar mode the credits follow the dollars left: code raises the budget to what they buy at the run's
+        rate (`_usd_rate`; no question, no cap) and says so. True when `need` credits are free now; always False when off."""
         if not USD_BUDGET:
             return False
-        want = self.spent + math.floor(max(0.0, self.usd_limit - self.usd_used) / USD_PER_CREDIT)
+        want = self.spent + self._usd_credits(self.usd_limit - self.usd_used)
         if want > self.budget:
             old, self.budget = self.budget, want
             self.raises.append({"cycle": self.cycle, "asked": want - old, "from": old, "to": want,
@@ -4575,11 +4588,11 @@ class J2Run:
             self.post("system", f"Code added {want - old} work credits from the dollars left.")
         return self.budget - self.spent >= need
 
-    def _usd_raise(self, budget_needed=None):
-        """P26 (D256): the dollars the raise question suggests: the credits needed at this run's own dollars per credit, else
+    def _usd_raise(self, budget_needed=None, rate=None):
+        """P26 (D256): the dollars the raise question suggests: the credits needed at `rate` (the run's, `_usd_rate`), else
         USD_RAISE_SHARE of the limit; to the cent (to $1 above $10), at least $1, at most the cap's room. 0: no raise."""
         if budget_needed:
-            x = as_int(budget_needed) * (self.usd_used / self.spent if self.spent else USD_PER_CREDIT)
+            x = as_int(budget_needed) * (rate or self._usd_rate())
         else:
             x = self.usd_limit * USD_RAISE_SHARE
         x = max(1.0, math.ceil(x) if x > 10 else math.ceil(x * 100) / 100)
@@ -4600,8 +4613,10 @@ class J2Run:
             out += f" {n} call{'s' if n != 1 else ''} estimated: {who} reports no price."
         return out
 
-    def _usd_add(self, add, answer):
-        """P26 (D256): the Requester's dollar raise: the limit goes up (to the cap when one is set), then credits follow."""
+    def _usd_add(self, add, answer, rate=None):
+        """P26 (D256): the Requester's dollar raise: the limit goes up (to the cap when one is set), and the dollars it adds buy
+        credits at `rate`, the rate the question was priced at (`usd_rate` in its handoff), so an approved raise funds exactly what
+        it was priced for; then the dollars left top credits up as usual."""
         old = self.usd_limit
         new = round(min(old + add, USD_CAP) if USD_CAP is not None else old + add, 2)
         if new <= old:
@@ -4611,6 +4626,13 @@ class J2Run:
         self.usd_raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": f"the Requester's answer: {answer}"})
         self._event("identity", "usd_raise", f"{fmt_usd(old)} -> {fmt_usd(new)} (asked +{fmt_usd(add)})")
         self.post("system", f"Budget raised on the Requester's approval: {fmt_usd(old)} -> {fmt_usd(new)} (API price).")
+        rate = rate or self._usd_rate()
+        got = self._usd_credits(new - max(old, self.usd_used), rate)      # dollars already spent past the limit buy nothing
+        if got:
+            was, self.budget = self.budget, self.budget + got
+            self.raises.append({"cycle": self.cycle, "asked": got, "from": was, "to": self.budget,
+                                "why": f"the Requester's dollar raise at ${rate:.4f} per credit", "code": True})
+            self._event("system", "budget_raise", f"{was} -> {self.budget} (the Requester's dollar raise at ${rate:.4f} per credit)")
         self._top_up()
 
     def _usd_confirm(self, q, h, typed):
@@ -4625,6 +4647,24 @@ class J2Run:
                        "Pick it to confirm, or choose another option.",
                        [{**q, "question": question, "options": opts, "budget": budget}], "limit",
                        handoff={**{k: v for k, v in h.items() if k not in ("answer", "asked")}, "confirm_usd": typed})
+
+    def _usd_ruling_reask(self, c, h, typed):
+        """P26 (D256, R2-2): the ruling's dollar question asked again: "Add $0" adds nothing; a typed raise above BIG_RAISE times the
+        limit comes back with that amount as its first option, and Approve (or the same amount sent again) confirms it."""
+        q = c["user_question"]
+        if typed:
+            q = {**q, "question": re.sub(r"Add \$[\d,.]+ so", f"Add {fmt_usd(typed)} so", q["question"], count=1),
+                 "options": [re.sub(r"^Add \$[\d,.]+", f"Add {fmt_usd(typed)}", q["options"][0]), *q["options"][1:]],
+                 "budget": [typed, 0]}
+            c["user_question"] = q
+            self._save_conflicts()
+            self._event("identity", "usd_big_raise", f"typed {fmt_usd(typed)}, limit {fmt_usd(self.usd_limit)}")
+        say = (f"You typed {fmt_usd(typed)}, more than {BIG_RAISE} times this run's limit of {fmt_usd(self.usd_limit)}. Approve it to "
+               "confirm, or choose another option." if typed else "Add $0 adds nothing. Approve the amount offered, type another, "
+               "or go with Priority's final answer.")
+        self._ask_user(say, [q], "ruling_budget", conflict=c["id"], auto=True,
+                       handoff={**{k: v for k, v in h.items() if k not in ("answer", "asked")},
+                                **({"usd": typed, "confirm_usd": typed} if typed else {})})
 
     def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
         meta = dict(llm.LAST_META)
@@ -4814,7 +4854,8 @@ class J2Run:
         if kind != "limit":
             # Adding budget is offered only by the decision question (_identity_limit), whose options code builds
             # and applies. Approval and ruling_budget apply their own amount after the answer.
-            questions = [{k: v for k, v in q.items() if k != "budget"} for q in questions]
+            questions = [{k: v for k, v in q.items() if k != "budget" or (kind == "ruling_budget" and USD_BUDGET)}
+                         for q in questions]
         m = self.post("identity", "@Requester " + say + ("\n" + numbered(questions, options_only) if questions else ""),
                       act="ASK_REQUESTER", to_user=True, next="user", pause=kind, **meta)
         self.paused = {"kind": kind, "questions": questions, "to": to, "handoff": handoff or {}, "msg": m["id"]}
@@ -5339,8 +5380,9 @@ class J2Run:
         need = sum(c for _, c, _ in rows) - left
         room = budget_room(self.budget)
         add = min(max(need, 1), room) if room > 0 else 0
+        usd_rate = self._usd_rate() if USD_BUDGET else None      # P26 (D256): the rate this question is priced at, carried to its answer
         if USD_BUDGET:
-            add = self._usd_raise(need)      # P26 (D256): the raise is dollars
+            add = self._usd_raise(need, usd_rate)      # P26 (D256): the raise is dollars
         opts, budget, choices = [], [], []
         if add and USD_BUDGET:
             opts.append(f"Add {fmt_usd(add)} and keep going: you get more of what you asked for built. Or type your own amount")
@@ -5377,7 +5419,7 @@ class J2Run:
                        f"{sum(c for _, c, _ in rows)} work credits; {left} are left.", [q], "limit", gaps=shown,
                        gaps_title="What you asked for",
                        handoff={"kind": "stage_decision", "stage_i": i, "started": started, "choices": choices,
-                                "unfunded": short, "limit": "stages", **({"usd": True} if USD_BUDGET else {})})
+                                "unfunded": short, "limit": "stages", **({"usd": True, "usd_rate": usd_rate} if USD_BUDGET else {})})
         return True
 
     def _picked(self, answer, q, choices):
@@ -5423,12 +5465,12 @@ class J2Run:
         d = self._read_decision(answer, q, choices, dict(enumerate(labels, 1)), "THE STAGES STILL TO MAKE (by number)")
         decision = d.get("decision")
         if decision not in choices:
-            return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit", "usd", "confirm_usd"))
+            return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit", "usd", "confirm_usd", "usd_rate"))
         add = d.get("add") or (q.get("budget")[choices.index("continue")] if decision == "continue" and q.get("budget") else None)
         if h.get("usd"):      # P26 (D256): a typed dollar amount, else the option's own; never the model's credits
             typed = None if ONLY_PICK.fullmatch(answer) else parse_usd(answer)
             if typed == 0:      # "Add $0" is no raise: asked again
-                return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit", "confirm_usd", "usd"))
+                return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit", "confirm_usd", "usd", "usd_rate"))
             add = typed or (q["budget"][choices.index("continue")] if decision == "continue" and q.get("budget") else None)
             if typed and decision == "continue" and typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd"):
                 return self._usd_confirm(q, h, typed)      # over 5x the limit: asked back once
@@ -5453,7 +5495,7 @@ class J2Run:
             self.post("system", f"Left out on the Requester's decision: {and_list(self._sw(k) for k in gone)}.")
             self.decisions[-1]["left_out"] = gone
         if add and h.get("usd"):
-            self._usd_add(add, answer)      # P26 (D256)
+            self._usd_add(add, answer, h.get("usd_rate"))      # P26 (D256)
         elif add:
             self._raise_budget(add, f"the Requester's answer: {answer}")
         if decision == "continue":
@@ -6334,7 +6376,7 @@ class J2Run:
                 # Asked again each time, never a default: each re-ask waits for a new Requester message, and Decide
                 # for me answers with a bare option number, which always names an option (ONLY_PICK above).
                 return self._reask(q, h, ("kind", "limit", "choices", "failing_items", "resume", "drop_texts",
-                                          "drop_named", "usd", "confirm_usd"))
+                                          "drop_named", "usd", "confirm_usd", "usd_rate"))
         confirmed = self._tbc(r.get("confirmed"), crit)
         done_facts = {t["criterion"] for t in confirmed}
         g["confirmed_facts"] = (g.get("confirmed_facts") or []) + confirmed
@@ -6375,7 +6417,7 @@ class J2Run:
             self.post("system", f"Left out on the Requester's decision: {names}.")
         if add and decision != "ship":
             if h.get("usd"):
-                self._usd_add(add, answer)      # P26 (D256)
+                self._usd_add(add, answer, h.get("usd_rate"))      # P26 (D256)
             else:
                 self._raise_budget(add, f"the Requester's answer: {answer}")
         if decision == "ship" and limit and self.doc and self.stages and self.stage_i + 1 < len(self.stages):
@@ -6600,7 +6642,8 @@ class J2Run:
                 need = None      # the dollars left fund what was asked for: no raise to ask
             short = bool(h.get("usd")) or not self._top_up(cheapest)
             usd = short or bool(need)
-            add = want = self._usd_raise(need) if usd else 0
+            usd_rate = self._usd_rate()      # the rate this question is priced at, carried to its answer (usd_rate)
+            add = want = self._usd_raise(need, usd_rate) if usd else 0
         # Keep working only when it can do something: with no money left it needs a raise the cap allows. And after
         # "keep working" changed nothing (same site, audits, spend), the same option isn't offered again.
         state = (len(self.sites), len(self.workflows), self.spent)   # an audit alone changes nothing
@@ -6709,7 +6752,7 @@ class J2Run:
         resume = h.get("resume") or ({"to": "adaptation", "handoff": {"kind": "propose", "why": "The Requester added "
                                       f"credits for the items left out: {json.dumps(left, ensure_ascii=False)}"}}
                                      if left else None)
-        handoff = {"kind": "requester_answered", "limit": reason, "choices": choices, "resume": resume, **({"usd": True} if usd else {}),
+        handoff = {"kind": "requester_answered", "limit": reason, "choices": choices, "resume": resume, **({"usd": True, "usd_rate": usd_rate} if usd else {}),
                    "failing_items": drop, "drop_texts": [t for r in named for t in r.get("texts", [r["text"]])],
                    "drop_named": [r["name"] for r in named for _ in r.get("texts", [r["text"]])],
                    **({"after_ruling": True} if left and not h.get("at_audit") else {})}
@@ -8742,7 +8785,8 @@ class J2Run:
             self.p_refused = {}
             self._settle(c, c["pending_winner"], "Code funded Identity's ruling from the dollars left: it goes to the validator.")
             return self._agree(c["ruled_wfs"])
-        usd = self._usd_raise(cost - (self.budget - self.spent)) if USD_BUDGET and cost > remaining else 0
+        usd_rate = self._usd_rate() if USD_BUDGET else None      # P26 (D256): the rate this question is priced at, carried to its answer
+        usd = self._usd_raise(cost - (self.budget - self.spent), usd_rate) if USD_BUDGET and cost > remaining else 0
         if cost > remaining and (usd or not USD_BUDGET):      # P26: at the dollar cap nothing can be added; Priority's answer stands
             need = cost - remaining
             q = {"question": f"Identity's ruling on {c['id']} costs {cost}, but only {remaining} is left. What should happen?",
@@ -8753,12 +8797,12 @@ class J2Run:
                 q = {"question": f"This run has used {fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} (API price). Add "
                                  f"{fmt_usd(usd)} so Identity's ruling is funded in full?",
                      "options": [f"Add {fmt_usd(usd)} so the ruling is funded in full: {names(table)}",
-                                 f"Go with Priority's final answer ({dec.upper()}): {names(wfs)}"]}
+                                 f"Go with Priority's final answer ({dec.upper()}): {names(wfs)}"], "budget": [usd, 0]}
             c.update(user_question=q, escalated_to_user=True)
             self._save_conflicts()
             return self._ask_user(f"Priority's final answer on Identity's ruling was {dec.upper()}, and the ruling is over "
                                   "budget.", [q], "ruling_budget", handoff={"kind": "ruling_budget", "conflict": c["id"],
-                                                                            "need": need, **({"usd": usd} if USD_BUDGET else {})},
+                                                                            "need": need, **({"usd": usd, "usd_rate": usd_rate} if USD_BUDGET else {})},
                                   conflict=c["id"], auto=True)
         self._settle(c, "priority", f"Priority's final answer on Identity's ruling: {dec.upper()} {brief_list(wfs)}.")
         if wfs:
@@ -8770,6 +8814,12 @@ class J2Run:
         """J2_FIXES=1: the Requester answered whether to add budget for Identity's ruling."""
         self.step = 4
         c, answer, need = self._conflict(h.get("conflict")), h.get("answer"), as_int(h.get("need"))
+        # P26 (D256, R2-2): a typed dollar amount is the raise; "Add $0" is asked again, over BIG_RAISE times the limit is asked back once
+        typed = parse_usd(answer) if h.get("usd") and not ONLY_PICK.fullmatch(answer or "") else None
+        if typed == 0 or (typed and typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd")):
+            return self._usd_ruling_reask(c, h, typed)
+        if typed:
+            h = {**h, "usd": typed}
         c["user_answer"] = answer
         r = self.call("identity", '{' + REPLY_FMT + ', "choice": 1|2}',
                       f"YOU ASKED THE REQUESTER: {json.dumps(c.get('user_question'))}\nTHE REQUESTER ANSWERED: {answer}\n"
@@ -8780,9 +8830,9 @@ class J2Run:
                                           "choice": 1 if re.search(r"\b1\b|add|yes|fund", answer, re.I) else 2}))
         self._reply(r, None, conflict=c["id"], decision=True)
         c["resolved_by"] = "identity_after_user"
-        if as_int(r.get("choice")) == 1:
+        if as_int(r.get("choice")) == 1 or typed:      # P26 (D256): a typed amount is a raise, whatever the model read
             if h.get("usd"):
-                self._usd_add(h["usd"], answer)      # P26 (D256)
+                self._usd_add(h["usd"], answer, h.get("usd_rate"))      # P26 (D256)
             else:
                 self._raise_budget(need, f"{c['id']} ruling")
             self.p_refused = {}              # the Requester funded the ruling, so nothing in it counts as refused
@@ -9495,6 +9545,8 @@ class J2Run:
         if not w:
             self.post("system", f"Priority was handed unknown workflow {h.get('wid')}. Back to Coordination.")
             return self._handoff("coordination", kind="schedule")
+        if USD_BUDGET and not w.get("charged"):      # P26 (D256): the dollars left fund it before Priority can hold it (R2-1)
+            self._top_up(w["cost"])
         env, remaining = w.get("envelope") or {}, self.budget - self.spent
         calls = as_int(env.get("model_call_limit"), 1)
         over = ([f"money: needs {w['cost']}, {remaining} left"] if not w.get("charged") and w["cost"] > remaining else []) \

@@ -1142,7 +1142,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
     if (ok) h += q.opts.length ? `<p class="qnote">${esc(q.opts.map(plain).join(" · "))}</p>` : "";
     else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
-  if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
+  if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
   else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
     + `<div class="acts"><button type="button" class="ghost" data-later>Answer later</button></div>`;
   if (later) h += `<p class="qnote">Saved for later. The team waits for your answer. <button type="button" class="ghost" data-now>Answer now</button></p>`;
@@ -1156,7 +1156,7 @@ function sQText(t){      // a question that asks several things ("Please send th
 }
 // a click on a card (Asha's panel or the copy on the work): an option, your own words, Answer later / now, an approval
 function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars
-  const q = live && kind === "limit" && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \$/.test(o));
+  const q = live && (kind === "limit" || kind === "ruling_budget") && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \$/.test(o));
   const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;
   return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }
 function sCardClick(e){

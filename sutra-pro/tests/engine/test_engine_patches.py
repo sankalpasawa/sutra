@@ -1772,6 +1772,7 @@ def test_p26_ruling_over_budget_is_funded_by_code(usd_j2, tmp_path, monkeypatch)
 def test_p26_raise_from_need_at_run_ratio_half_without_need_and_cap_room(usd_j2, tmp_path, monkeypatch):
     run = usd_run(usd_j2, tmp_path)
     run.spent, run.usd_used = 100, 4.0                                       # $0.04 per credit in this run
+    run.call_log = run.call_log + [{}] * usd_j2.USD_RATE_MIN_CALLS           # its own rate counts from its 8th call (R2-1)
     assert run._usd_raise(50) == 2.0
     assert run._usd_raise(None) == 10.0                                     # half of $20
     run.usd_limit = 31

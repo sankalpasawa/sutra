@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 51 edits (E1 to E13, E19 to E27; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c and E27a to E27d count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 52 edits (E1 to E13, E19 to E27; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c and E27a to E27e count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 51 edits
+    pages/j2_ui.html            the page after the 52 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -295,7 +295,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E27a", '  else h += `<div class="own"><input aria-label="Your answer"', '  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer"', 1),
     Edit("E27b", "function sCardClick(e){",
          _lines("function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars",
-                '  const q = live && kind === "limit" && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \\$/.test(o));',
+                '  const q = live && (kind === "limit" || kind === "ruling_budget") && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \\$/.test(o));',
                 "  const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;",
                 '  return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }',
                 "function sCardClick(e){"), 1),
@@ -304,6 +304,9 @@ PAGE_EDITS: tuple[Edit, ...] = (
                 '    if (n === null){ if (i) i.setAttribute("aria-invalid", "true"); return; } return sendText("Add $" + n + " and keep going"); }',
                 '  const inp = c.querySelector(".own input");', ""), 1),
     Edit("E27d", r"\[adds \d+ (?:units|work credits)[^\]]*\]", r"\[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]", 2),
+    # E27e (D256 R2-2): the ruling's dollar question is an approval card; it takes a typed amount too, above Approve / Not now
+    Edit("E27e", '  if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">',
+         '  if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
