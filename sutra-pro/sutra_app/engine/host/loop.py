@@ -550,7 +550,27 @@ class Host:
             self.trace("seed.refused", {"seed_from": task.seed_from, "reason": refused.reason})
             self._copy_seed_files(source, paths.upstream_dir / task.seed_from)
             return "fresh", [rh.fresh_line(task.seed_from, refused.reason)]
-        return "rehydrated", [rh.continuing_line(task.seed_from)]
+        return "rehydrated", [rh.continuing_line(task.seed_from)] + self._start_from_folder()
+
+    def _start_from_folder(self) -> list[str]:
+        """Named projects, R2.2: a continued run starts from the files Sutra wrote into the team's own folder (its manifest), so an edit the
+        owner made by hand there is what the team works on. With edit access the manifest takes those bytes as Sutra's, so the run's changes
+        can be written back at its end. A team with no folder of its own, or one that cannot be used, starts from the earlier run as before."""
+        try:
+            from sutra_app.connectors.workdir import WorkFolder
+            from . import export
+            grant = WorkFolder(self.paths.data_dir, dept_id=self.task.dept_id).grant() if self.task.dept_id else None
+            if grant is None:
+                return []
+            edited = export.import_from_folder(Path(str(grant)), self.paths.run_dir, rebase=bool(getattr(grant, "edit", False)))
+        except Exception as exc:  # noqa: BLE001 - the folder is a courtesy here: the run still starts from the earlier run
+            self.trace("seed.folder", {"error": clip(f"{type(exc).__name__}: {exc}", 300), "edited": []})
+            return []
+        self.trace("seed.folder", {"folder": str(grant), "edited": edited[:50], "count": len(edited)})
+        if not edited:
+            return []
+        shown = ", ".join(edited[:10]) + (f" and {len(edited) - 10} more" if len(edited) > 10 else "")
+        return [f"Starting from your edits in {grant}: {shown}"]
 
     def _copy_seed_files(self, source: Path, dest: Path) -> None:
         """The old run's site, documents and key records go to `upstream/<old run id>/` (symbolic links are never followed)."""

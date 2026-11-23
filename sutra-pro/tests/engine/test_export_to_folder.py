@@ -214,3 +214,60 @@ def test_a_folder_output_with_only_subfolders_is_found_from_its_type(run, monkey
     monkeypatch.setattr(j2_artifacts, "listing", lambda d: {"deliverables": [], "records": []})
     monkeypatch.setattr(j2_artifacts, "load_types", lambda d=None: {"types": [{"name": "notes_app", "kind": "type", "form": "agent", "file": "notes_app/*"}]})
     assert export.deliverable_files(run, export._rows(run)) == ["notes_app/lib/notes.py"]
+
+
+# ---- Phase 2, task 13 (R2.2 to R2.6): a follow-up starts from the folder and writes back only what changed -------------------------
+
+def second_run(run, tmp_path):
+    import shutil
+    d = tmp_path / "run2"
+    shutil.copytree(run, d)                                          # what rehydrate brought back from the earlier run
+    return d
+
+
+def test_a_follow_up_starts_from_the_owners_edit(run, folder, tmp_path):
+    export.export_run(run, folder, "j2-1", ROWS)
+    write(folder / "pulse_app" / "main.py", "print('digest at 08:30, edited by hand')\n")
+    run2 = second_run(run, tmp_path)
+    edited = export.import_from_folder(folder, run2, rebase=True)
+    assert edited == ["pulse_app/main.py"]
+    assert (run2 / "pulse_app" / "main.py").read_text(encoding="utf-8") == "print('digest at 08:30, edited by hand')\n"
+    assert manifest(folder)["files"]["pulse_app/main.py"] == export._sha(folder / "pulse_app" / "main.py")
+
+
+def test_files_sutra_never_wrote_are_never_read(run, folder, tmp_path):
+    export.export_run(run, folder, "j2-1", ROWS)
+    write(folder / "secret.txt", "the owner's own file")
+    write(folder / "notes" / "todo.md", "mine")
+    run2 = second_run(run, tmp_path)
+    export.import_from_folder(folder, run2, rebase=True)
+    assert not (run2 / "secret.txt").exists() and not (run2 / "notes").exists()
+
+
+def test_a_read_only_folder_is_read_but_its_manifest_is_not_rewritten(run, folder, tmp_path):
+    export.export_run(run, folder, "j2-1", ROWS)
+    before = (folder / ".sutra" / "manifest.json").read_bytes()
+    write(folder / "prd.md", "# PRD edited\n")
+    run2 = second_run(run, tmp_path)
+    assert export.import_from_folder(folder, run2, rebase=False) == ["prd.md"]
+    assert (folder / ".sutra" / "manifest.json").read_bytes() == before
+
+
+def test_only_changed_files_are_written_back_and_nothing_is_deleted(run, folder, tmp_path):
+    export.export_run(run, folder, "j2-1", ROWS)
+    write(folder / "pulse_app" / "main.py", "print('edited by hand')\n")
+    write(folder / "keep.txt", "the owner's")
+    run2 = second_run(run, tmp_path)
+    export.import_from_folder(folder, run2, rebase=True)
+    write(run2 / "pulse_app" / "config.py", "TIME = '08:30'\n")
+    (run2 / "prd.docx").unlink()                                     # gone from the run: stays in the folder
+    before = {p: export._sha(folder / p) for p in ("prd.md", "pulse_app/main.py", "prd.docx")}
+    result = export.export_run(run2, folder, "j2-2", ROWS)
+    assert result.updated == ["pulse_app/config.py"] and result.outside == [] and result.new == []
+    assert {p: export._sha(folder / p) for p in before} == before
+    assert (folder / "keep.txt").exists() and (folder / "prd.docx").exists()
+
+
+def test_the_chat_names_the_changed_files():
+    result = export.ExportResult(updated=["pulse_app/digest.py", "config/pulse.json"])
+    assert "Changed in Pulse: pulse_app/digest.py, config/pulse.json" in export.lines("/w/Pulse", result, "Pulse")

@@ -28,7 +28,7 @@ from sutra_app import oslayer
 
 from .finish import Skip
 
-__all__ = ["ExportResult", "Manifest", "deliverable_files", "export_run", "step", "MANIFEST_PARTS", "RECORD"]
+__all__ = ["ExportResult", "Manifest", "deliverable_files", "export_run", "import_from_folder", "lines", "step", "MANIFEST_PARTS", "RECORD"]
 
 log = logging.getLogger(__name__)
 MANIFEST_PARTS = (".sutra", "manifest.json")
@@ -193,6 +193,44 @@ def export_run(run_dir: Path, folder: Path, run_id: str, rows: list[dict]) -> Ex
     return result
 
 
+def import_from_folder(folder: Path, run_dir: Path, *, rebase: bool) -> list[str]:
+    """Phase 2 (R2.2, R2.4): before a follow-up starts, the files Sutra wrote into the project folder (the manifest's paths, nothing else)
+    are copied from the folder into the new run, so an edit the owner made by hand is what the team starts from. Returns the paths whose
+    bytes differed from the run's copy (the owner's edits), sorted. With `rebase` (the team may change the folder) the manifest takes the
+    folder's bytes as Sutra's: the follow-up's changes can then be written back over the owner's edit it started from."""
+    folder, run_dir = Path(folder), Path(run_dir)
+    manifest = Manifest.load(folder)
+    edited: list[str] = []
+    changed = False
+    for rel in sorted(manifest.files):
+        source = _inside(folder, rel)
+        target = _inside(run_dir, rel)
+        if source is None or target is None or not source.is_file() or source.is_symlink():
+            continue
+        try:
+            data = source.read_bytes()
+        except OSError:
+            continue
+        fresh = hashlib.sha256(data).hexdigest()
+        if _sha(target) != fresh:
+            try:
+                _write_bytes(target, data)
+            except OSError:
+                log.info("could not bring %s back from the project folder", rel)
+                continue
+            if target.exists():
+                edited.append(rel)
+        if rebase and manifest.files.get(rel) != fresh:
+            manifest.files[rel] = fresh
+            changed = True
+    if changed:
+        try:
+            manifest.save(folder)
+        except OSError:
+            log.warning("could not update the project folder's manifest", exc_info=True)
+    return edited
+
+
 def _rows(run_dir: Path, own: Optional[str] = None) -> list[dict]:
     """What the run made for the owner: the Artifacts tab's deliverable rows, every file of a folder output (form `agent`, the app a team
     built), and the run's own result (`own`, from the run's output; else the one `deliverable.json` names): a single-output run such as
@@ -227,12 +265,15 @@ def _post(host: Any, text: str) -> None:
             log.warning("could not post %r", text, exc_info=True)
 
 
-def lines(folder: str, result: ExportResult) -> list[str]:
-    """The run chat's lines about the save (R1.12, R1.14)."""
+def lines(folder: str, result: ExportResult, name: str = "") -> list[str]:
+    """The run chat's lines about the save (R1.12, R1.14) and, for a follow-up, which files it changed (R2.6)."""
     out = []
     saved = len(result.new) + len(result.updated)
     if saved:
         out.append(f"Saved to {folder}: {saved} file{'s' if saved != 1 else ''} ({len(result.new)} new, {len(result.updated)} updated).")
+    if result.updated:
+        shown = ", ".join(result.updated[:NAMED]) + (f" and {len(result.updated) - NAMED} more" if len(result.updated) > NAMED else "")
+        out.append(f"Changed in {name or folder}: {shown}")
     out += [f"Not updated: {rel} was changed outside Sutra" for rel in result.outside[:NAMED]]
     if len(result.outside) > NAMED:
         out.append(f"and {len(result.outside) - NAMED} more not updated")
@@ -268,6 +309,6 @@ def step(host: Any) -> dict:
         _write_bytes(run_dir / RECORD, (json.dumps(record, indent=2) + "\n").encode("utf-8"))
     except OSError:
         log.warning("could not write %s", RECORD, exc_info=True)
-    for text in lines(str(grant), result):
+    for text in lines(str(grant), result, str(getattr(getattr(host, "task", None), "dept_label", "") or "")):
         _post(host, text)
     return {key: len(value) for key, value in asdict(result).items()}
