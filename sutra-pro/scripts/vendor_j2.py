@@ -760,7 +760,7 @@ def saved_snapshot_dir(d, name, since=0):
 ''', r'''                          + (f" The planning documents {', '.join(docs)} are not revised, so they no longer match "
                              "what is built." if docs else ""), change=c["id"])
         # P22 (D246): a rejection the validator's last call also made (the same reason, whatever the workflow is called:
-        # amended in D425) is a repeated failure
+        # amended in D431) is a repeated failure
         now = [(x["workflow"], x["reason"]) for x in self.rejections[n0:]]
         self.repeat_rejected = [x for x in now if x[1] in {r for _, r in getattr(self, "last_rejected", None) or []}]
         self.last_rejected = now
@@ -1638,17 +1638,17 @@ def parse_usd(text):
 '''),
     Edit('P26', "j2.py", r'''(f" [adds {add} work credits]" if add else "")''',
          r'''((f" [adds {fmt_usd(add)}]" if USD_BUDGET else f" [adds {add} work credits]") if add else "")'''),
-    # ---- P28 (D425): every build failure records a code-made signature; the same one twice in a row, across workflows, stops the cycle
+    # ---- P28 (D431): every build failure records a code-made signature; the same one twice in a row, across workflows, stops the cycle
     Edit("P28", "j2.py", r'''    def __init__(self, kind, detail):
         super().__init__(detail)
         self.kind = kind
 ''', r'''    def __init__(self, kind, detail, files=()):
         super().__init__(detail)
         self.kind = kind
-        self.files = sorted(files)      # P28 (D425): every file outside the folder (the message names five), for build_failure
+        self.files = sorted(files)      # P28 (D431): every file outside the folder (the message names five), for build_failure
 '''),
     Edit("P28", "j2.py", r'''            raise BuilderToolFault("outside", f"changed outside its folder: {where}")
-''', r'''            raise BuilderToolFault("outside", f"changed outside its folder: {where}", files=rec["outside"])      # P28 (D425)
+''', r'''            raise BuilderToolFault("outside", f"changed outside its folder: {where}", files=rec["outside"])      # P28 (D431)
 '''),
     Edit("P28", "j2.py", r'''def failure_signature(audit):
     return sorted(f"{r['criterion']}|{r['verdict']}" for r in audit["results"] + audit.get("rubric", []) if not r["pass"]) \
@@ -1661,7 +1661,7 @@ def parse_usd(text):
 
 
 def build_failure(w):
-    """P28 (D425): what a finished build failed on, judged on the failure, never on the workflow's name or words: a failed
+    """P28 (D431): what a finished build failed on, judged on the failure, never on the workflow's name or words: a failed
     workflow gives (kind, detail) as code set them at the failure site (w["failure"]; an older record without one gives
     ("failed", "")); a built one whose atoms' latest receipts failed gives ("checks", sorted (check type, evidence) pairs),
     without the check's own wording or id; anything else (a pass) gives None."""
@@ -1675,12 +1675,12 @@ def build_failure(w):
 '''),
     Edit("P28", "j2.py", r'''        self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
 ''', r'''        self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
-        self.last_failure, self.repeat_steps = None, []      # P28 (D425): the last finished build's failure; the two that repeated it
+        self.last_failure, self.repeat_steps = None, []      # P28 (D431): the last finished build's failure; the two that repeated it
 '''),
     Edit("P28", "j2.py", r'''        self.write_lock = self.atom = None
         self.site_tag = kind + "-"
 ''', r'''        self.write_lock = self.atom = None
-        self.last_failure, self.repeat_steps = None, []      # P28 (D425): a new stage's builds start fresh
+        self.last_failure, self.repeat_steps = None, []      # P28 (D431): a new stage's builds start fresh
         self.site_tag = kind + "-"
 '''),
     Edit("P28", "j2.py", r'''            if got is None:      # code writes the failure report, so the unusable reply isn't route-checked
@@ -1689,30 +1689,30 @@ def build_failure(w):
 ''', r'''            if got is None:      # code writes the failure report, so the unusable reply isn't route-checked
                 self.write_lock = self.atom = None
                 w["status"] = "failed"
-                w["failure"] = ["unusable_reply", w.get("last_check") or ""]      # P28 (D425): code's own last parse error
+                w["failure"] = ["unusable_reply", w.get("last_check") or ""]      # P28 (D431): code's own last parse error
 '''),
     Edit("P28", "j2.py", r'''        if text is None:
             w["status"] = "failed"
 ''', r'''        if text is None:
             w["status"] = "failed"
-            w["failure"] = ["no_artifact", evidence]      # P28 (D425): code's last evidence
+            w["failure"] = ["no_artifact", evidence]      # P28 (D431): code's last evidence
 '''),
     Edit("P28", "j2.py", r'''        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
 ''', r'''        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
-        fault = None      # P28 (D425): the outside-write fault, for the failure's signature
+        fault = None      # P28 (D431): the outside-write fault, for the failure's signature
 '''),
     Edit("P28", "j2.py", r'''                        stop = f"it changed files outside its folder ({e})"
-''', r'''                        stop, fault = f"it changed files outside its folder ({e})", e      # P28 (D425)
+''', r'''                        stop, fault = f"it changed files outside its folder ({e})", e      # P28 (D431)
 '''),
     Edit("P28", "j2.py", r'''            why = stop or f"no usable build after {attempt} attempt(s)"
 ''', r'''            why = stop or f"no usable build after {attempt} attempt(s)"
-            # P28 (D425): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
+            # P28 (D431): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
             # check always published a build first, so it never ends here)
             w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
 '''),
     Edit("P28", "j2.py", r'''            remaining -= c
             env = {k: (w.get("envelope") or {}).get(k) for k in ("money_limit", "model_call_limit", "time_limit_minutes",
-''', r'''            if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D425)
+''', r'''            if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D431)
                 refused.append(self._reject(name, f"it redoes {and_list(ids)}, which failed the same way twice, and its "
                                                   "cause_change is empty: say what is different about the cause this time"))
                 self._refused_for(w, "its cause_change is empty")
@@ -1722,27 +1722,27 @@ def build_failure(w):
 '''),
     Edit("P28", "j2.py", r'''            wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
 ''', r'''            wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
-            if str(w.get("cause_change") or "").strip():      # P28 (D425): what is different about the cause this time
+            if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
                 wf["cause_change"] = str(w["cause_change"]).strip()
 '''),
     Edit("P28", "j2.py", r'''        real, replan = None, self.real_replan
-''', r'''        task += self._repeat_note()      # P28 (D425): only while a repeated step exists
+''', r'''        task += self._repeat_note()      # P28 (D431): only while a repeated step exists
         real, replan = None, self.real_replan
 '''),
     Edit("P28", "j2.py", r'''                      + self._priority_file_note(table))
         p = self.call("priority", fmt, task, mock)
-''', r'''                      + self._priority_file_note(table) + self._repeat_price_note(table))      # P28 (D425)
+''', r'''                      + self._priority_file_note(table) + self._repeat_price_note(table))      # P28 (D431)
         p = self.call("priority", fmt, task, mock)
 '''),
     Edit("P28", "j2.py", r'''    def _turn_workflow_agent(self, h):
 ''', r'''    def _turn_workflow_agent(self, h):
-        """P28 (D425): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
+        """P28 (D431): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
         wid = h.get("wid") or self.turn
         self._build_workflow(h)
         self._repeat_build_stop(wid)
 
     def _repeat_build_stop(self, wid):
-        """P28 (D425): the build that just finished failed exactly as the previous finished build did (build_failure: the
+        """P28 (D431): the build that just finished failed exactly as the previous finished build did (build_failure: the
         failure's kind and code-made detail, never a workflow's name or words), also when it is another workflow (a
         replacement, a reworded copy): another attempt would likely repeat it, so the cycle stops and Identity asks the
         Requester (a safety limit, as P22's _repeat_stop), resuming at Adaptation's hand-off when the build had one. The two
@@ -1770,7 +1770,7 @@ def build_failure(w):
 
     @staticmethod
     def _failure_words(sig):
-        """P28 (D425): a build failure's signature in words, by code: every outside file, or each failed check's type and
+        """P28 (D431): a build failure's signature in words, by code: every outside file, or each failed check's type and
         evidence, or the code-made detail."""
         kind, detail = sig
         return ("changed files outside its folder: " + ", ".join(detail) if kind == "outside_write" else
@@ -1778,7 +1778,7 @@ def build_failure(w):
                 str(detail) or kind)
 
     def _redoes_repeat(self, p):
-        """P28 (D425): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, or covers one of
+        """P28 (D431): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, or covers one of
         its done-when items. Ids and item numbers are compared; no word of a name, and not a shared output file (nearly
         every page workflow writes index.html)."""
         rep = p.get("replaces") if isinstance(p.get("replaces"), list) else [p.get("replaces")]
@@ -1787,7 +1787,7 @@ def build_failure(w):
         return [wid for wid in self.repeat_steps if (s := self._wf(wid) or {}) and (wid in named or items & set(self._wf_items(s)))]
 
     def _repeat_note(self):
-        """P28 (D425): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
+        """P28 (D431): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
         if not self.repeat_steps:
             return ""
         a, b = self.repeat_steps
@@ -1797,7 +1797,7 @@ def build_failure(w):
                 "\"cause_change\": what is different about the cause this time; without one the validator rejects it.")
 
     def _repeat_price_note(self, table):
-        """P28 (D425): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its
+        """P28 (D431): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its
         cause_change names something new is Priority's judgement; code only shows it."""
         redo = {str(w.get("id") or w.get("name")): str(w.get("cause_change") or "").strip() for w in table
                 if isinstance(w, dict) and self._redoes_repeat(w)}
@@ -1806,11 +1806,11 @@ def build_failure(w):
 
     def _build_workflow(self, h):
 '''),
-    # ---- P29 (D425): with nothing built, no option that leaves nothing to build, and never Done without a deliverable
+    # ---- P29 (D431): with nothing built, no option that leaves nothing to build, and never Done without a deliverable
     # (and, follow-up: the same necessary condition unmet for the same code-made reason in two audits in a row asks the Requester)
     Edit("P29", "j2.py", r'''        same = len(recent) == 2 and failure_signature(recent[0]) == failure_signature(recent[1]) and fails
 ''', r'''        same = len(recent) == 2 and failure_signature(recent[0]) == failure_signature(recent[1]) and fails
-        # P29 (D425): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
+        # P29 (D431): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
         # audits in a row, whatever else moved, can't be met by building (runs/j2-20261123-103238-3429: C1 "the charter lists
         # no files" and C2 "the test '' is not a file in the folder" in every audit while the run kept building)
         before = {(x["id"], x.get("evidence")) for x in (recent[0].get("conditions") or [] if len(recent) == 2 else []) if blocks(x)}
@@ -1822,29 +1822,29 @@ def build_failure(w):
 ''', r'''        if fails and not facts and (same or only_tbc or stuck):
             return self._identity_limit({"reason": "Only you can close what's left: these done-when items are to be "
                                                    "confirmed." if only_tbc else
-                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D425)
+                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D431)
                                              f"necessary condition {c['id']} ({c['text']}) was not met for the same reason in "
                                              f"two audits in a row ({c['evidence']})" for c in stuck)
                                          + f", so {'it' if len(stuck) == 1 else 'they'} can't be met by building: another "
                                            "cycle would likely repeat it." if stuck else
 '''),
     Edit("P29", "j2.py", r'''AUTO_ASK = {"send_confirm", "real_run"}
-''', r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D425): a limit question (the same failure twice among them) is the Requester's own
+''', r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
 '''),
     Edit("P29", "j2.py", r'''        return ["no site has been audited yet"]
 ''', r'''        return ["no site has been audited yet"]
-    if audit.get("version") == 0:      # P29 (D425): taken before anything was built, so nothing can be workable or done
+    if audit.get("version") == 0:      # P29 (D431): taken before anything was built, so nothing can be workable or done
         return ["nothing has been built yet"]
 '''),
     Edit("P29", "j2.py", r'''            named = named if len(kept) > 1 else []
 ''', r'''            named = named if len(kept) > 1 else []
-        if not self.sites:      # P29 (D425): with nothing built, never a "Leave out" that leaves nothing to build (the gate item isn't)
+        if not self.sites:      # P29 (D431): with nothing built, never a "Leave out" that leaves nothing to build (the gate item isn't)
             cut = {t for r in named for t in r.get("texts", [r["text"]])}
             named = named if [c for c in crit if c not in cut and c != GATE_TEXT] else []
 '''),
     Edit("P29", "j2.py", r'''        if self.decisions and limit:
 ''', r'''        if limit and gone and not self.sites and not [c for c in crit if c not in gone and c != GATE_TEXT]:
-            # P29 (D425): a typed answer that leaves out everything still to build, with nothing built, is a stop, never a
+            # P29 (D431): a typed answer that leaves out everything still to build, with nothing built, is a stop, never a
             # finished run with no deliverable: the stop branch below says "Stopped ...: nothing was built"
             decision, gone = "stop", []
             r["to_requester"] = "Got it. Nothing is built yet and nothing would be left to build, so we're stopping here."
@@ -2080,13 +2080,13 @@ PATCH_NOTES = {
     "P9": "`call` appends `system_addendum(fn)` to the system prompt: empty unless the hooks have a node-context file (anchored on the delay lines of `call` only, `if self.calls and call_delay():`; the two other `call_delay()` sites, in `_summarize` and the reviewer call, are not under a patch)",
     "P10": "`store`, `mark_used`, `note_version` and `mark_run_template_used` (sync 6, D181: four writers) of the template library run inside an exclusive lock on `<library>/.lock` (`oslayer.try_lock`: `flock`, or `msvcrt.locking` on Windows) (waits `LOCK_WAIT_S` = 30 s, then raises `LibraryBusy(RuntimeError)`, which `_route_template` already turns into the generic template); the originals are kept as `_store`, `_mark_used`, `_note_version` and `_mark_run_template_used` (a wrapper never calls another wrapper: the lock is not reentrant); `save_run_template`, `move_versions` and the module's `__main__` commands are developer tools and stay unpatched",
     "P21": "`_tool_record` (D245, builder tools live): a file outside the builder's folder that changed during a tools call is not the builder's write when it is one of the host's own run files (`rehydrate.HOST_FILES`: the live view, the snapshot, the event log) or the atomic-write temp file of one (`oslayer.temp_target` maps it back), unless the CLI's tool calls (`LAST_META[\"tool_calls\"]`) name it, so a builder that touches a host file is still stopped",
-    "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (same reason; amended in D425: compared by reason, whatever the workflow's name) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
+    "P22": "`_register` (D246): a done-when item a real run checks is decided by the run's receipt; a proposal without a real run that covers it is refused (\"the real run of 'X' checks\"), not the real-run workflow, and the real-run workflow's refusal for an item another workflow covers names that workflow and says the conflict is there (`_cover_conflict`): one registered or held is to be superseded (named in `replaces`) or replaced by one that doesn't cover the item, and a waiting workflow a proposal of the same batch supersedes no longer counts against the real run; one running or done can't be superseded, so the refusal says the item can't be met by that real run in this run; a rejection the validator's last call also made (same reason; amended in D431: compared by reason, whatever the workflow's name) is a repeated failure: `_agree` stops the cycle with an Identity limit for the Requester (`_repeat_stop`, \"The same failure came back twice in a row\"), resuming where the validator was going when it registered something (runs/j2-20261118-110800-0c75: the script was refused four times for an item the run notes covered)",
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
     "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
     "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
-    "P28": "(D425) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `real_path`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
-    "P29": "(D425) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved, saying it can't be met by building (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
+    "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `real_path`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
+    "P29": "(D431) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved, saying it can't be met by building (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
     "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
@@ -2273,7 +2273,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
         "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D425) stops the cycle on the same build failure twice in a row, across workflows; P29 (D425) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

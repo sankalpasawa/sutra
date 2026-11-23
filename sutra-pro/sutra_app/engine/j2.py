@@ -231,7 +231,7 @@ def _ask(tag, *args, **kw):
 # Decide for me (the Simple view's switch, POST /api/settings): while it is on, an open question to the Requester is
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
-AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D425): a limit question (the same failure twice among them) is the Requester's own
+AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
@@ -855,7 +855,7 @@ class BuilderToolFault(RuntimeError):
     def __init__(self, kind, detail, files=()):
         super().__init__(detail)
         self.kind = kind
-        self.files = sorted(files)      # P28 (D425): every file outside the folder (the message names five), for build_failure
+        self.files = sorted(files)      # P28 (D431): every file outside the folder (the message names five), for build_failure
 
 
 def file_states(root):
@@ -3136,7 +3136,7 @@ def workable(audit):
     found no JS errors, no horizontal overflow at 360px or 1280px, no broken form and no broken in-page link."""
     if not audit:
         return ["no site has been audited yet"]
-    if audit.get("version") == 0:      # P29 (D425): taken before anything was built, so nothing can be workable or done
+    if audit.get("version") == 0:      # P29 (D431): taken before anything was built, so nothing can be workable or done
         return ["nothing has been built yet"]
     num = lambda r: r["id"][2:] if FINDING_ID.fullmatch(str(r["id"])) else r["item"]    # F-n is charter item n
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
@@ -3187,7 +3187,7 @@ def failure_signature(audit):
 
 
 def build_failure(w):
-    """P28 (D425): what a finished build failed on, judged on the failure, never on the workflow's name or words: a failed
+    """P28 (D431): what a finished build failed on, judged on the failure, never on the workflow's name or words: a failed
     workflow gives (kind, detail) as code set them at the failure site (w["failure"]; an older record without one gives
     ("failed", "")); a built one whose atoms' latest receipts failed gives ("checks", sorted (check type, evidence) pairs),
     without the check's own wording or id; anything else (a pass) gives None."""
@@ -3685,7 +3685,7 @@ class J2Run:
         self.playbooks_used, self.playbook_saved = [], None
         self.lessons_used, self.lessons_saved = [], []
         self.fail_floor = 0          # audits before this index don't count for "same failure twice in a row"
-        self.last_failure, self.repeat_steps = None, []      # P28 (D425): the last finished build's failure; the two that repeated it
+        self.last_failure, self.repeat_steps = None, []      # P28 (D431): the last finished build's failure; the two that repeated it
         self.last_limit = None       # the last limit question: state then and the Requester's decision
         self.adapt_idle = None       # _adapt_state() when Adaptation last proposed nothing for lack of budget
         # J2_REALIZATION=1: the judged realization plan, its decisions, whether its blocking facts were asked, the record
@@ -4786,7 +4786,7 @@ class J2Run:
             self._event(fn, "outside_write", f"{fn}: changed outside its folder: {where}")
             self.post("system", f"{fn} changed files outside its folder ({where}). Nothing from that call is used, and "
                                 "it is not tried again.", warning=True)
-            raise BuilderToolFault("outside", f"changed outside its folder: {where}", files=rec["outside"])      # P28 (D425)
+            raise BuilderToolFault("outside", f"changed outside its folder: {where}", files=rec["outside"])      # P28 (D431)
         if rec["over_limits"]:
             self._event(fn, "tool_limits", f"{fn}: " + "; ".join(rec["over_limits"]))
             raise BuilderToolFault("limits", "; ".join(rec["over_limits"]))
@@ -5549,7 +5549,7 @@ class J2Run:
         self.proposed_fields, self.v_refused, self.v_refused_secs, self.item_secs = {}, {}, {}, {}
         self.fail_floor, self.feedback, self.drop_answer, self.adapt_idle, self.last_limit = 0, None, None, None, None
         self.write_lock = self.atom = None
-        self.last_failure, self.repeat_steps = None, []      # P28 (D425): a new stage's builds start fresh
+        self.last_failure, self.repeat_steps = None, []      # P28 (D431): a new stage's builds start fresh
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
@@ -6422,7 +6422,7 @@ class J2Run:
                 self._event("system", "drop_mismatch", f"named {named}, dropping {gone}")
                 gone, names = list(named), and_list(dict.fromkeys(label[c] for c in named))
         if limit and gone and not self.sites and not [c for c in crit if c not in gone and c != GATE_TEXT]:
-            # P29 (D425): a typed answer that leaves out everything still to build, with nothing built, is a stop, never a
+            # P29 (D431): a typed answer that leaves out everything still to build, with nothing built, is a stop, never a
             # finished run with no deliverable: the stop branch below says "Stopped ...: nothing was built"
             decision, gone = "stop", []
             r["to_requester"] = "Got it. Nothing is built yet and nothing would be left to build, so we're stopping here."
@@ -6703,7 +6703,7 @@ class J2Run:
             gone = {t for r in named for t in r.get("texts", [r["text"]])}
             kept = {x for c in crit if c not in gone for x in self._item_sections(c)}
             named = named if len(kept) > 1 else []
-        if not self.sites:      # P29 (D425): with nothing built, never a "Leave out" that leaves nothing to build (the gate item isn't)
+        if not self.sites:      # P29 (D431): with nothing built, never a "Leave out" that leaves nothing to build (the gate item isn't)
             cut = {t for r in named for t in r.get("texts", [r["text"]])}
             named = named if [c for c in crit if c not in cut and c != GATE_TEXT] else []
         drop = [crit.index(t) + 1 for r in named for t in r.get("texts", [r["text"]])]
@@ -6891,7 +6891,7 @@ class J2Run:
                 f"item {a['item']}: {a['receipt']}" for a in (self._real_run_answer(as_int(x["item"])) for x in asked)) + ".")
         recent = self.audits[max(self.fail_floor, len(self.audits) - 2):]
         same = len(recent) == 2 and failure_signature(recent[0]) == failure_signature(recent[1]) and fails
-        # P29 (D425): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
+        # P29 (D431): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
         # audits in a row, whatever else moved, can't be met by building (runs/j2-20261123-103238-3429: C1 "the charter lists
         # no files" and C2 "the test '' is not a file in the folder" in every audit while the run kept building)
         before = {(x["id"], x.get("evidence")) for x in (recent[0].get("conditions") or [] if len(recent) == 2 else []) if blocks(x)}
@@ -6906,7 +6906,7 @@ class J2Run:
         if fails and not facts and (same or only_tbc or stuck):
             return self._identity_limit({"reason": "Only you can close what's left: these done-when items are to be "
                                                    "confirmed." if only_tbc else
-                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D425)
+                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D431)
                                              f"necessary condition {c['id']} ({c['text']}) was not met for the same reason in "
                                              f"two audits in a row ({c['evidence']})" for c in stuck)
                                          + f", so {'it' if len(stuck) == 1 else 'they'} can't be met by building: another "
@@ -7503,7 +7503,7 @@ class J2Run:
                       + f"\nNECESSARY CONDITIONS (code checks every one on the built {self.out['noun']}; it is workable "
                       "only when all are met, so your plan must build what each needs; " + WARN_NOTE + "):\n"
                       + "\n".join(cond_line(c) for c in conditions_for(self.out["conditions"], self.goal, self.out.get("practice", ""))))
-        task += self._repeat_note()      # P28 (D425): only while a repeated step exists
+        task += self._repeat_note()      # P28 (D431): only while a repeated step exists
         real, replan = None, self.real_replan
         changing = bool(self.change and self.change["phase"] == "plan")      # J2_CHANGE: the change plan is the task
         tpl_rows = self._run_tpl_rows()      # J2_RUN_TEMPLATES=1: the template's workflows are this stage's base plan
@@ -8718,7 +8718,7 @@ class J2Run:
                          " come first by the change rule; never cut them. If the change plan doesn't fit, REFUSE and "
                          "say how much more it needs." if self.change and self.change["phase"] == "plan"
                          and self.change.get("docs") else "")
-                      + self._priority_file_note(table) + self._repeat_price_note(table))      # P28 (D425)
+                      + self._priority_file_note(table) + self._repeat_price_note(table))      # P28 (D431)
         p = self.call("priority", fmt, task, mock)
         for _ in range(2):      # a GRANT carries a price; the reply, not the workflow, is re-asked when it doesn't
             dec = str(p.get("decision") or "").lower()
@@ -9234,7 +9234,7 @@ class J2Run:
                         and "left in the budget" not in reason and name not in self.change.setdefault("resend", []):
                     self.change["resend"].append(name)     # the validator's refusal, not Priority's: resent, not cut
                 continue
-            if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D425)
+            if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D431)
                 refused.append(self._reject(name, f"it redoes {and_list(ids)}, which failed the same way twice, and its "
                                                   "cause_change is empty: say what is different about the cause this time"))
                 self._refused_for(w, "its cause_change is empty")
@@ -9282,7 +9282,7 @@ class J2Run:
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
-            if str(w.get("cause_change") or "").strip():      # P28 (D425): what is different about the cause this time
+            if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
                 wf["cause_change"] = str(w["cause_change"]).strip()
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
@@ -9339,7 +9339,7 @@ class J2Run:
                           + (f" The planning documents {', '.join(docs)} are not revised, so they no longer match "
                              "what is built." if docs else ""), change=c["id"])
         # P22 (D246): a rejection the validator's last call also made (the same reason, whatever the workflow is called:
-        # amended in D425) is a repeated failure
+        # amended in D431) is a repeated failure
         now = [(x["workflow"], x["reason"]) for x in self.rejections[n0:]]
         self.repeat_rejected = [x for x in now if x[1] in {r for _, r in getattr(self, "last_rejected", None) or []}]
         self.last_rejected = now
@@ -9643,13 +9643,13 @@ class J2Run:
         self._handoff("coordination", kind="schedule")
 
     def _turn_workflow_agent(self, h):
-        """P28 (D425): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
+        """P28 (D431): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
         wid = h.get("wid") or self.turn
         self._build_workflow(h)
         self._repeat_build_stop(wid)
 
     def _repeat_build_stop(self, wid):
-        """P28 (D425): the build that just finished failed exactly as the previous finished build did (build_failure: the
+        """P28 (D431): the build that just finished failed exactly as the previous finished build did (build_failure: the
         failure's kind and code-made detail, never a workflow's name or words), also when it is another workflow (a
         replacement, a reworded copy): another attempt would likely repeat it, so the cycle stops and Identity asks the
         Requester (a safety limit, as P22's _repeat_stop), resuming at Adaptation's hand-off when the build had one. The two
@@ -9677,7 +9677,7 @@ class J2Run:
 
     @staticmethod
     def _failure_words(sig):
-        """P28 (D425): a build failure's signature in words, by code: every outside file, or each failed check's type and
+        """P28 (D431): a build failure's signature in words, by code: every outside file, or each failed check's type and
         evidence, or the code-made detail."""
         kind, detail = sig
         return ("changed files outside its folder: " + ", ".join(detail) if kind == "outside_write" else
@@ -9685,7 +9685,7 @@ class J2Run:
                 str(detail) or kind)
 
     def _redoes_repeat(self, p):
-        """P28 (D425): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, or covers one of
+        """P28 (D431): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, or covers one of
         its done-when items. Ids and item numbers are compared; no word of a name, and not a shared output file (nearly
         every page workflow writes index.html)."""
         rep = p.get("replaces") if isinstance(p.get("replaces"), list) else [p.get("replaces")]
@@ -9694,7 +9694,7 @@ class J2Run:
         return [wid for wid in self.repeat_steps if (s := self._wf(wid) or {}) and (wid in named or items & set(self._wf_items(s)))]
 
     def _repeat_note(self):
-        """P28 (D425): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
+        """P28 (D431): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
         if not self.repeat_steps:
             return ""
         a, b = self.repeat_steps
@@ -9704,7 +9704,7 @@ class J2Run:
                 "\"cause_change\": what is different about the cause this time; without one the validator rejects it.")
 
     def _repeat_price_note(self, table):
-        """P28 (D425): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its
+        """P28 (D431): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its
         cause_change names something new is Priority's judgement; code only shows it."""
         redo = {str(w.get("id") or w.get("name")): str(w.get("cause_change") or "").strip() for w in table
                 if isinstance(w, dict) and self._redoes_repeat(w)}
@@ -9924,7 +9924,7 @@ class J2Run:
             if got is None:      # code writes the failure report, so the unusable reply isn't route-checked
                 self.write_lock = self.atom = None
                 w["status"] = "failed"
-                w["failure"] = ["unusable_reply", w.get("last_check") or ""]      # P28 (D425): code's own last parse error
+                w["failure"] = ["unusable_reply", w.get("last_check") or ""]      # P28 (D431): code's own last parse error
                 self._say(fn, f"@Coordination {fn} failed: {stop}. My section is unchanged.", "coordination", None,
                           workflow=fn)
                 self._event(fn, "limit_fail", f"{fn}: {stop}")
@@ -10128,7 +10128,7 @@ class J2Run:
         self.write_lock = self.atom = None
         if text is None:
             w["status"] = "failed"
-            w["failure"] = ["no_artifact", evidence]      # P28 (D425): code's last evidence
+            w["failure"] = ["no_artifact", evidence]      # P28 (D431): code's last evidence
             self._say(fn, f"@Coordination {fn} failed: no usable artifact after {attempt} attempt(s). {f} was not "
                           "written.", "coordination", None, workflow=fn)
             self._event(fn, "limit_fail", f"{fn}: no usable artifact")
@@ -10300,7 +10300,7 @@ class J2Run:
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
         attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
-        fault = None      # P28 (D425): the outside-write fault, for the failure's signature
+        fault = None      # P28 (D431): the outside-write fault, for the failure's signature
         reused = self._reuse_folder(w, cwd)
         if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
             reused, evidence = None, leak
@@ -10325,7 +10325,7 @@ class J2Run:
                         lambda: self._mock_tools(w, cwd), max_tokens=4000, timeout=builder_timeout(), tools=tools)
                 except BuilderToolFault as e:
                     if e.kind == "outside":
-                        stop, fault = f"it changed files outside its folder ({e})", e      # P28 (D425)
+                        stop, fault = f"it changed files outside its folder ({e})", e      # P28 (D431)
                         break
                     evidence = f"- {e}"
                     continue
@@ -10352,7 +10352,7 @@ class J2Run:
         if stop or not self.sites:
             w["status"] = "failed"
             why = stop or f"no usable build after {attempt} attempt(s)"
-            # P28 (D425): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
+            # P28 (D431): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
             # check always published a build first, so it never ends here)
             w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
             self.post("system", f"{fn} failed: {why}.", warning=True)

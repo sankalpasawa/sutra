@@ -1421,7 +1421,7 @@ def test_p22_a_different_rejection_in_between_is_not_twice_in_a_row(sort_run):
 
 
 def test_p22_a_renamed_proposal_rejected_for_the_same_reason_stops_the_cycle(sort_run):
-    """D425 amends P22: the repeat is the rejection's reason, whatever the workflow is called (run 17e1's replacements were
+    """D431 amends P22: the repeat is the rejection's reason, whatever the workflow is called (run 17e1's replacements were
     reworded copies)."""
     make, real = sort_run
     run = make()
@@ -1664,7 +1664,7 @@ def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_since_p2
     assert run._auto_pick() is None
     run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                   "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
-    assert run._auto_pick() is None                                     # P29 (D425): a limit question is the Requester's own
+    assert run._auto_pick() is None                                     # P29 (D431): a limit question is the Requester's own
     assert run._auto_choice(run.paused)[:2] == ("Option 1", "Leave out the stories")      # still what the Simple view suggests
 
 
@@ -1869,7 +1869,7 @@ def test_p26_spec_fields_bounds_and_old_credit_keys(tmp_path):
     assert EngineSettings(budget=250, budget_cap=500, limit_add=40).budget == 250       # stored credit settings stay valid
 
 
-# ---- P28 (D425): the same build failure twice in a row, across workflows, stops the cycle -------------------------------------
+# ---- P28 (D431): the same build failure twice in a row, across workflows, stops the cycle -------------------------------------
 # Beta run j2-20261118-071410-17e1 (Bean There): every builder failed with "changed outside its folder: agent_live.json,
 # events.jsonl, snapshot.json", and Adaptation replaced the failed workflow six times (W-1, W-6, W-7, W-11, W-12, W-13).
 OUTSIDE_17E1 = ["agent_live.json", "events.jsonl", "snapshot.json"]
@@ -2071,7 +2071,7 @@ def test_p28_a_redo_of_a_repeated_step_without_cause_change_is_rejected(replay_1
 
 
 def test_p28_a_proposal_for_other_items_needs_no_cause_change_even_when_it_writes_the_same_file(replay_17e1):
-    """Owner's follow-up to D425: only replacing the failed workflow or covering its items is a redo; sharing index.html,
+    """Owner's follow-up to D431: only replacing the failed workflow or covering its items is a redo; sharing index.html,
     which nearly every page workflow writes, is not."""
     run = repeated(replay_17e1)
     menu = copy_sheet(name="Build the menu section", covers=[3])                  # outputs ["index.html"], like W-1 and W-6
@@ -2113,7 +2113,7 @@ def test_p28_the_prompt_lines_appear_only_after_a_repeat(replay_17e1, monkeypatc
             "nothing new about the cause, the money buys the same failure: REFUSE it with that reason.") in prio
 
 
-# ---- P29 (D425): with nothing built, no option that leaves nothing to build, and never Done ---------------------------------------
+# ---- P29 (D431): with nothing built, no option that leaves nothing to build, and never Done ---------------------------------------
 # Replay B: run 17e1's [81]-[90]. No site, the 4 items, one audit at version 0 failing them, 100 of 100 credits spent; Identity's
 # question offered "Leave out" all four items, "Option 2" was picked, and Identity then declared the run done with no site.
 def audit_v0(crit, failing, output="website", version=0):
@@ -2209,7 +2209,7 @@ def test_p29_decide_for_me_never_answers_a_limit_question_nor_the_repeat_questio
     assert second._auto_pick() is None
 
 
-# ---- P29 (D425, follow-up): the same necessary condition unmet for the same reason in two audits in a row stops the cycle ---------
+# ---- P29 (D431, follow-up): the same necessary condition unmet for the same reason in two audits in a row stops the cycle ---------
 # Beta run j2-20261123-103238-3429 (Pulse, 23 Nov): the charter listed no files and no test, so the gate conditions C1 ("the
 # charter lists no files") and C2 ("the test '' is not a file in the folder") failed in every audit while the done-when results
 # moved, and the run kept building. The run's folder is not on this Mac: the audits are rebuilt from that description, with the
