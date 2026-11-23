@@ -2207,3 +2207,65 @@ def test_p29_decide_for_me_never_answers_a_limit_question_nor_the_repeat_questio
     second.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                      "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
     assert second._auto_pick() is None
+
+
+# ---- P29 (D425, follow-up): the same necessary condition unmet for the same reason in two audits in a row stops the cycle ---------
+# Beta run j2-20261123-103238-3429 (Pulse, 23 Nov): the charter listed no files and no test, so the gate conditions C1 ("the
+# charter lists no files") and C2 ("the test '' is not a file in the folder") failed in every audit while the done-when results
+# moved, and the run kept building. The run's folder is not on this Mac: the audits are rebuilt from that description, with the
+# conditions' evidence made by code (_conditions on the folder) as in the run.
+PULSE_DONE_WHEN = ["pulse.py prints the CPU and memory use every second.", "test_pulse.py checks pulse.py's output format and passes."]
+
+
+@pytest.fixture
+def pulse_run(j2ft, tmp_path):
+    def make():
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261123-103238-3429")
+        run.post("user", "Build pulse.py, a tiny system monitor, with a test")
+        run._apply_output(FT)
+        run.goal, run.budget, run.spent = {"statement": "Pulse", "done_when": list(PULSE_DONE_WHEN)}, 100, 40      # no files, no test
+        os.makedirs(run._out_dir(), exist_ok=True)
+        (Path(run._out_dir()) / "pulse.py").write_text("print('cpu 3% mem 41%')\n")
+        run.sites = ["pulse.py"]
+        return run
+    return make
+
+
+def pulse_audit(run, cycle, failing):
+    conds = run._conditions("pulse.py")
+    return {"cycle": cycle, "version": len(run.sites), "output": run.output, "rubric": [], "conditions": conds, "all_pass": False,
+            "mechanical": {},
+            "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing, "verdict": "FAIL" if c in failing else "PASS",
+                         "note": ""} for i, c in enumerate(PULSE_DONE_WHEN, 1)]}
+
+
+def test_p29_replay_3429_the_same_unmet_condition_twice_in_a_row_asks_the_requester(pulse_run):
+    run = pulse_run()
+    first = pulse_audit(run, 1, [PULSE_DONE_WHEN[1]])
+    assert {c["id"]: c["evidence"] for c in first["conditions"] if not c["met"]} == {
+        "C1": "the charter lists no files",
+        "C2": "code reran the test itself, on a copy of the folder, not the builder's own run: the test '' is not a file in the folder"}
+    run.audits = [first]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused                   # once is not twice
+    run.audits.append(pulse_audit(run, 2, [PULSE_DONE_WHEN[0]]))          # the done-when results moved; C1 and C2 did not
+    run._identity_audit({})
+    assert run.paused and run.paused["kind"] == "limit", (run.turn, run.handoff)
+    reason = run.paused["handoff"]["limit"]
+    assert reason.startswith("The same failure came back twice in a row: necessary condition C1 (Every file the charter lists is "
+                             "in the folder) was not met for the same reason in two audits in a row (the charter lists no files)"), reason
+    assert "C2 (" in reason and "can't be met by building" in reason
+    run.auto = True
+    assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True      # Addition A: it waits for the Requester
+
+
+def test_p29_the_same_condition_with_another_reason_is_not_the_same_failure(pulse_run):
+    run = pulse_run()
+    first = pulse_audit(run, 1, [PULSE_DONE_WHEN[1]])
+    run.goal.update(files=["pulse.py", "test_pulse.py"], test=["test_pulse.py"])      # the charter now lists them: new reasons
+    second = pulse_audit(run, 2, [PULSE_DONE_WHEN[0]])
+    unmet = {c["id"]: c["evidence"] for c in second["conditions"] if not c["met"]}
+    assert unmet["C1"] == "missing: test_pulse.py" and unmet["C2"].endswith("the test 'test_pulse.py' is not a file in the folder")
+    run.audits = [first, second]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused, run.paused

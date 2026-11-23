@@ -6891,6 +6891,11 @@ class J2Run:
                 f"item {a['item']}: {a['receipt']}" for a in (self._real_run_answer(as_int(x["item"])) for x in asked)) + ".")
         recent = self.audits[max(self.fail_floor, len(self.audits) - 2):]
         same = len(recent) == 2 and failure_signature(recent[0]) == failure_signature(recent[1]) and fails
+        # P29 (D425): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
+        # audits in a row, whatever else moved, can't be met by building (runs/j2-20261123-103238-3429: C1 "the charter lists
+        # no files" and C2 "the test '' is not a file in the folder" in every audit while the run kept building)
+        before = {(x["id"], x.get("evidence")) for x in (recent[0].get("conditions") or [] if len(recent) == 2 else []) if blocks(x)}
+        stuck = [c for c in (last or {}).get("conditions") or [] if blocks(c) and (c["id"], c.get("evidence")) in before]
         # Only the Requester can help when every remaining failure is a to-be-confirmed item: no other done-when item,
         # no rubric item, no render problem. (Checking done-when alone sent a lone rubric failure to the Requester as
         # a limit question: runs/j2-20261007-184146.) Anything else the department can fix loops back to J2.b.
@@ -6898,9 +6903,14 @@ class J2Run:
         only_tbc = bool(fails and open_items and all(r["verdict"] == "TO_BE_CONFIRMED" for r in open_items)
                         and not j2_check.problems(last.get("mechanical") or {})
                         and ((last.get("mechanical") or {}).get("available") or self.doc))
-        if fails and not facts and (same or only_tbc):
+        if fails and not facts and (same or only_tbc or stuck):
             return self._identity_limit({"reason": "Only you can close what's left: these done-when items are to be "
                                                    "confirmed." if only_tbc else
+                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D425)
+                                             f"necessary condition {c['id']} ({c['text']}) was not met for the same reason in "
+                                             f"two audits in a row ({c['evidence']})" for c in stuck)
+                                         + f", so {'it' if len(stuck) == 1 else 'they'} can't be met by building: another "
+                                           "cycle would likely repeat it." if stuck else
                                          "The same failure came back twice in a row, so another cycle would likely "
                                          "repeat it.", "tbc": bool(only_tbc)})
         cheapest = min(RATES.values()) if RATES else 1
