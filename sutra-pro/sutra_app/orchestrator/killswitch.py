@@ -94,8 +94,8 @@ class KillSwitch:
         of "not known" is "stop"."""
         try:
             os.lstat(self.directory / name)
-        except FileNotFoundError:
-            return False
+        except FileNotFoundError:                  # Windows says this, not NotADirectoryError, when the folder itself is a file: that is "not known", so stop
+            return self.broken()
         except OSError:                            # includes NotADirectoryError (`<data>/nodes` is a file, or a part of the path was swapped for one): not known, so stop (Minor 3)
             return True
         return True
