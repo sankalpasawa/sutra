@@ -32,6 +32,7 @@ from typing import Any
 
 from sutra_app.config import NODE_DEFAULT_CAPS, Settings
 from sutra_app.connectors.cancel import CancelToken
+from sutra_app.orchestrator.livecap import frozen_limit
 from sutra_app.orchestrator.budgets import DEFAULT_SLICE, chain_spend, make_slices, project_cost, project_spend
 from sutra_app.orchestrator.conductor import NODE_FINAL, PROJECT_FINAL, TASK_TO_NODE, Conductor
 from sutra_app.orchestrator.db import Database, Tx, run_blocking
@@ -197,24 +198,8 @@ class ProjectService:
         return max(0.0, round(float(limit) - float(spend_status(conn, limit, now)["spent"]), 6))
 
     def frozen_limit(self, project: Any, now: float) -> float | None:
-        """The dollars a project was given at its start, while that still means something (D388): the owner's own number for the project always; the month's leftover only while the owner still has a monthly
-        limit and the month it was taken from is still the month (a removed limit, or a new month, makes the old figure meaningless: the live month check governs). None when there is none."""
-        if project is None or project["budget_usd"] is None:
-            return None
-        if json.loads(project["caps_json"] or "{}").get("usd_from_month"):
-            from sutra_app.orchestrator.limits import month_start
-            if not self._limit_seen[1] or month_start(float(project["created_at"])) != month_start(now):
-                return None
-        return float(project["budget_usd"])
-
-    def step_cap(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
-        """The dollar cap a step that starts now is given (D409, m-13): what the project and the month have left, SHARED among the steps of the project that run or are ready to run, so that steps which
-        run at the same time cannot together pass the limit by (steps x remainder) before the tick sees it. The first to start alone gets all of it; with two ready, each half. Never below 0."""
-        left = self.usd_left(conn, project_id, now)
-        if left is None:
-            return None
-        alive = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND role <> 'planner' AND state IN ('leased','running','handing_off','queued','ready')", (project_id,)).fetchone()[0]
-        return left / max(1, int(alive))
+        """The dollars a project was given at its start while that still means something (D388): `livecap.frozen_limit` with the owner's limit as this service last read it."""
+        return frozen_limit(project, self._limit_seen[1], now)
 
     def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
         """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when

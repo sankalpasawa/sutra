@@ -209,7 +209,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
                                   owner_decides=_owner_decides(settings.data_dir), providers=_providers_of(port), monthly_limit=limits.monthly_limit, folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
         node_control.projects = projects
         tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
-        tasks.node_usd_left = projects.step_cap                # a step's dollar cap is what the project and the owner's month have left when it starts (D381)
+        tasks.node_usd_left = projects.usd_left                # a step's dollar cap is what the project and the owner's month have left when it starts (D381)
         tasks.before_prepare = projects.conductor.warm_scopes   # the links of the steps' scopes are looked at before the start transaction opens (N-6)
         tasks.node_sync = projector.node_sync = projects.sync_task
         projector.before_drain = projects.prepare_handoff

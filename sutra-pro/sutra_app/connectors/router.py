@@ -362,6 +362,7 @@ class Router:
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
         self.on_tool: Optional[Callable[[Any, str, str, str], None]] = None   # MAN-14: `(tag, name, kind, base_name)` for each tool call of a call whose tag names a node; set by the node's host
+        self.live_cap: Optional[Callable[[], Optional[float]]] = None      # D409: what the next builder call of this step may spend NOW (the project's and the month's remainder, shared by the steps that run); None = nothing limits it
         self.node_rights: Optional[NodeRights] = None          # D380: what a step's frozen grant lets its builder tools be; set by the factory for a node's host, None = the narrowest
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
@@ -866,6 +867,14 @@ class Router:
             return grant                                        # a router made for a step's process (`node_rights` set from its task file) narrows even a call whose tag lost the node
         narrowed = narrow_tools(grant, self.node_rights or NARROWEST)
         left = getattr(allowance, "max_usd", None)
+        live = None
+        if self.live_cap is not None:
+            try:
+                live = self.live_cap()
+            except Exception:                                    # noqa: BLE001  (a reading that fails leaves the step's own meter and the Conductor's tick)
+                log.warning("the live dollar cap could not be read", exc_info=True)
+        if live is not None:
+            left = live if left is None else min(left, live)
         if left is not None:                                     # D387: one builder call is bounded by what the step has left, not by the engine's $2 per call; none left: no program is started
             if left <= 0:
                 raise EnvelopeExceededError("this step has no dollars left", detail={"max_usd": 0.0})

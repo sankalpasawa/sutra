@@ -94,6 +94,31 @@ def make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None) -> ModelPo
     return port_from_config(spec, cfg, usage_sink=usage_sink)
 
 
+def live_cap_reader(data_dir: str, project_id: str) -> Callable[[], Optional[float]]:
+    """A function that says what the next call of a step of `project_id` may spend: the shared arithmetic of `orchestrator/livecap.py`, read from the app's database read-only and the owner's limits file,
+    each time it is called (never frozen). None when nothing limits it or when the database cannot be read (the step's own meter and the Conductor's tick still hold)."""
+    import sqlite3
+    import time
+    from sutra_app.config import DB_FILENAME
+    from sutra_app.orchestrator.limits import LIMITS_FILE, LimitsStore
+    from sutra_app.orchestrator.livecap import call_cap
+
+    def read() -> Optional[float]:
+        path = Path(data_dir) / DB_FILENAME
+        if not path.is_file():
+            return None
+        try:
+            limit = LimitsStore(Path(data_dir) / LIMITS_FILE).load().monthly_usd
+        except Exception:                                      # noqa: BLE001
+            limit = None
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0)
+        try:
+            return call_cap(conn, project_id, limit, time.time())
+        finally:
+            conn.close()
+    return read
+
+
 def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageSink | None = None,
                      load: Optional[PolicyLoad] = None, **router_kw) -> "RouterPort":
     """`make_port` with the connector configuration given. `router_kw` goes to `Router` (tests inject a clock or a sleep)."""
@@ -114,6 +139,8 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
             from .slots import SlotPool
             router.slots = SlotPool(Path(spec.data_dir) / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
         router.node_scope = tuple(spec.scope)                                     # a step of a project edits only inside its scope (MAN-10)
+        if spec.node and spec.project_id:                                         # D409: before each builder call the step reads what it may still spend, now, read-only
+            router.live_cap = live_cap_reader(spec.data_dir, spec.project_id)
         router.node_rights = NodeRights(tuple(spec.node_tiers), spec.node_commands) if (spec.node or spec.node_tiers) else None   # a router made for a step's process narrows every builder call it gets, whatever the tag says (D380, D387)
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 
