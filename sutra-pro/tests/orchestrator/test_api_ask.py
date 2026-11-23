@@ -527,11 +527,11 @@ def test_the_ask_setup_reads_the_folder_off_the_event_loop(ask, monkeypatch):
     real_begin, real_turn = ask_mode.begin, direct_running.begin_turn
 
     def begin(*a, **k):
-        seen.setdefault("begin", []).append(threading.get_ident())
+        seen.setdefault("begin", []).append(threading.current_thread())
         return real_begin(*a, **k)
 
     def begin_turn(*a, **k):
-        seen.setdefault("loop", []).append(threading.get_ident())                   # called on the event loop's own thread
+        seen.setdefault("loop", []).append(threading.current_thread())                  # called on the event loop's own thread (the thread, not its number: a number is reused once a thread ends)
         return real_turn(*a, **k)
     monkeypatch.setattr(ask_mode, "begin", begin)
     monkeypatch.setattr(direct_running, "begin_turn", begin_turn)
@@ -541,7 +541,7 @@ def test_the_ask_setup_reads_the_folder_off_the_event_loop(ask, monkeypatch):
     services.chat_port = Port(started(), text("ok [src/app.py:1]"))
     assert client.post(f"/api/chats/{sid}/direct/retry", json={"message_id": line}, headers=H).status_code == 202 and finish(chats, sid, 4)
     assert len(seen["begin"]) == 2 and len(seen["loop"]) == 2
-    assert set(seen["begin"]).isdisjoint(seen["loop"])
+    assert not [t for t in seen["begin"] if any(t is other for other in seen["loop"])]
 
 
 def test_an_ask_stopped_by_its_own_limit_says_so_in_plain_words_and_a_plain_chat_keeps_the_connectors_words(ask):
