@@ -6791,9 +6791,10 @@ class J2Run:
                    "failing_items": drop, "drop_texts": [t for r in named for t in r.get("texts", [r["text"]])],
                    "drop_named": [r["name"] for r in named for _ in r.get("texts", [r["text"]])],
                    **({"after_ruling": True} if left and not h.get("at_audit") else {})}
-        if len(choices) < 2:
-            # Never a one-option question. The only lone option is "finish as it is" (with no site, "stop here" is
-            # always added, and money is never added without asking): code applies it and says so.
+        if len(choices) < 2 and self.sites:
+            # With a site, the only lone option is "finish as it is" (money is never added without asking): code applies it
+            # and says so. P29 (D431): with nothing built the lone option is "Stop here", and the Requester is asked, like
+            # every limit question (review R1-3): a run that built nothing never ends without their word.
             self.post("system", f"Only one option was possible ({opts[0]}), so it is applied without asking.")
             self.decisions.append({"kind": "limit", "asked": [q["question"]], "answer": "1", "only_option": True,
                                    "decision": "ship"})

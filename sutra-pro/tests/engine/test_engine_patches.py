@@ -2289,3 +2289,21 @@ def test_p29_a_buildable_condition_unmet_the_same_way_twice_goes_back_to_adaptat
     run.audits = [audit([crit[0]], 1), audit([crit[1]], 2)]
     run._identity_audit({})
     assert run.turn == "adaptation" and not run.paused, (run.paused or {}).get("handoff")
+
+
+def test_p29_with_nothing_built_a_lone_stop_here_is_asked_never_applied(make_run):
+    """Review R1-3: nothing built and "keep going" can't be offered again (the last "keep going" changed nothing), so
+    "Stop here" is the only option. The Requester is still asked; the run does not end, and Decide for me waits."""
+    run = make_run()
+    run.post("user", "A one-page website for Bean There")
+    run._apply_output("website")
+    run.goal, run.budget, run.spent = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100, 40
+    run.audits = [audit_v0(DONE_17E1, DONE_17E1)]
+    run.last_limit = {"state": (len(run.sites), len(run.workflows), run.spent), "decision": "continue"}
+    run._identity_limit({"reason": "The same failure came back twice in a row, so another cycle would likely repeat it."})
+    assert run.paused and run.paused["kind"] == "limit", run.outcome
+    assert run.paused["handoff"]["choices"] == ["ship"]
+    assert run.paused["questions"][0]["options"] == ["Stop here: nothing is built yet, so you get no site"]
+    assert not str(run.outcome or "").startswith("Stopped")
+    run.auto = True
+    assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
