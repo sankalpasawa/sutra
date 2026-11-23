@@ -265,6 +265,15 @@ CI_SKIP["tests/release/test_macos_bundle.py::test_the_first_free_port_of_the_ran
 CI_SKIP["tests/release/test_macos_bundle.py::test_the_launcher_starts_the_server_opens_the_browser_and_stops_the_server_on_quit"] = CI_SKIP_REASONS["tests/release/test_macos_bundle.py"]
 
 
+@pytest.fixture(autouse=True)
+def _the_test_process_is_not_elevated(request, monkeypatch):
+    """A CI runner on Windows is an administrator, and a process that is one makes no project step (MAN-15): every test sees an ordinary process, as on a developer's machine. The tests of the check
+    itself ask for the real one with `@pytest.mark.real_elevation`."""
+    if request.node.get_closest_marker("real_elevation") is None:
+        from sutra_app import oslayer
+        monkeypatch.setattr(oslayer, "is_elevated", lambda: False)
+
+
 def pytest_collection_modifyitems(config, items):
     if sys.platform == "win32":
         for item in items:
