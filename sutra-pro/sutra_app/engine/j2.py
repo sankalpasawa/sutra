@@ -9314,9 +9314,10 @@ class J2Run:
                 self.post("system", f"Change {c['id']}: not funded or refused, so not built: {', '.join(cut)}."
                           + (f" The planning documents {', '.join(docs)} are not revised, so they no longer match "
                              "what is built." if docs else ""), change=c["id"])
-        # P22 (D246): a rejection the validator's last call also made (same workflow, same reason) is a repeated failure
+        # P22 (D246): a rejection the validator's last call also made (the same reason, whatever the workflow is called:
+        # amended in D425) is a repeated failure
         now = [(x["workflow"], x["reason"]) for x in self.rejections[n0:]]
-        self.repeat_rejected = [x for x in now if x in (getattr(self, "last_rejected", None) or [])]
+        self.repeat_rejected = [x for x in now if x[1] in {r for _, r in getattr(self, "last_rejected", None) or []}]
         self.last_rejected = now
         return registered, refused, defaults
 

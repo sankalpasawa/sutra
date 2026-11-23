@@ -1420,6 +1420,20 @@ def test_p22_a_different_rejection_in_between_is_not_twice_in_a_row(sort_run):
     assert run.turn == "adaptation", run.handoff
 
 
+def test_p22_a_renamed_proposal_rejected_for_the_same_reason_stops_the_cycle(sort_run):
+    """D425 amends P22: the repeat is the rejection's reason, whatever the workflow is called (run 17e1's replacements were
+    reworded copies)."""
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"
+    run._agree(sort_proposals(real, fix=True))
+    assert run.turn == "adaptation"
+    run._agree([{**sort_proposals(real, fix=True)[0], "name": "Build the sorter"}])       # renamed, refused for the same reason
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"].startswith("The same failure came back twice in a row: the validator rejected Build the sorter")
+
+
 # ---- P23 (D247): ended_workable only for a clean "Done:" end ---------------------------------------------------------------------
 
 def ended(run_dir, outcome, fail=False, **audit_keys):
