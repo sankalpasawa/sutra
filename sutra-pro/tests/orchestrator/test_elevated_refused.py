@@ -26,6 +26,7 @@ def test_a_normal_process_is_not_refused(rig):
     assert reservation.ok and len(tasks) == 2
 
 
+@pytest.mark.real_elevation
 def test_the_real_check_is_false_off_windows_and_follows_the_platform_call_on_windows(monkeypatch):
     monkeypatch.setattr(oslayer, "IS_WINDOWS", False)
     assert oslayer.is_elevated() is False
