@@ -311,6 +311,8 @@ class Host:
         except OSError as exc:
             raise StartFailed(f"settings.json cannot be written: {exc}") from None
         os.environ.update(self.settings.to_env())
+        if task.node is not None:
+            os.environ.pop("J2_USD_BUDGET", None)      # D424: a project's step is held by the project's dollars (D381, D418) and its slice (D320), not by P26
         if self.settings.output == "auto":
             os.environ.pop("J2_OUTPUT", None)          # no type chosen: J2 leaves it to its planner (D165)
         os.environ.update(paths.j2_env())

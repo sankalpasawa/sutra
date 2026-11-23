@@ -2028,5 +2028,30 @@
   "id": "D419",
   "label": "D402 completed; tests; titles; names",
   "anchor": null
+ },
+ {
+  "id": "D420",
+  "label": "Stop button on team page + home box (stop ladder)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D421",
+  "label": "Run cost = reported API price; unpriced calls estimated; $/credit measured",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D422",
+  "label": "P26 dollar mode: credits follow dollars, only the dollar limit asks",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D423",
+  "label": "Budget chip in dollars (API price); Settings in dollars; raise input on both cards",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D424",
+  "label": "projects: P26 off per step; chip $ = project's own; Home Stop stops the project",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

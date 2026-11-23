@@ -115,7 +115,7 @@ OUTPUT_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{1,40}$")      # J2's own shape of 
 def output_names(es: dict) -> tuple[str, ...]:
     """What the fake's engine accepts as `output`: `auto` and every type of the fixture's `output_types` that can be pinned, in its order."""
     return ("auto", *(t["name"] for t in es.get("output_types", []) if t.get("pin")))
-ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1}
+ENGINE_MIN = {"budget": 1, "max_cycles": 1, "max_turns": 1, "chat_full_chars": 1000, "budget_cap": 1, "usd_budget": 1, "usd_cap": 1}
 J2_FUNCS = (*FUNCTIONS, "validator")  # J2's six functions (j2_agent.FUNCS): the ones GET /api/activity and POST /api/ask know
 ASK_CHARS = 2000  # the longest question: the ceiling of a note to an agent (views.ASK_CHARS)
 PURPOSES = ("agent_turn", "judge", "plan", "agent_chat")  # the purposes the fake's story has calls for: what `usage.by_purpose` of an agent's row names (D145, D159)
@@ -379,6 +379,7 @@ class FakeState:
             self.signin_sequence = "success"
             self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
             self.retried: list[str] = []
+            self.stopped: list[str] = []            # D420: POST /api/tasks/{id}/stop, in order; a team's live task ends with its stop
             # gap routines-limits: GET /api/limits, GET and PUT /api/ops/attention, /api/recurring (set by /__fake/limits and /__fake/recurring)
             self.limits = {"spend": {"limit": None, "spent": 0.0, "pct": None, "level": "none", "unpriced_calls": 0, "month": "2026-11",
                                      "month_ends_at": "2026-12-01T00:00:00Z", "line": ""},
@@ -486,7 +487,11 @@ class FakeState:
         return next((n for n in self.fx.graphs[self.graph_stage]["nodes"] if n["id"] == node_id), None)
 
     def departments(self) -> list[dict]:
-        return copy.deepcopy(self.fx.departments.get(self.graph_stage, []))
+        rows = copy.deepcopy(self.fx.departments.get(self.graph_stage, []))
+        for row in rows:
+            if row.get("live_task_id") in self.stopped:
+                row["live_task_id"] = None
+        return rows
 
     def department(self, dept_id: str) -> dict | None:
         return next((d for d in self.departments() if d["id"] == dept_id), None)
@@ -701,7 +706,11 @@ class FakeState:
         if field in ENGINE_ENUMS:
             return None if value in ENGINE_ENUMS[field] and not isinstance(value, bool) else (
                 "invalid_value", f"{field} must be one of {', '.join(map(str, ENGINE_ENUMS[field]))}")
-        if field == "budget_cap" and value is None:
+        if field in ("budget_cap", "usd_cap") and value is None:
+            return None
+        if field in ("usd_budget", "usd_cap"):      # D423: dollars (API price), $1 to $10,000 as EngineSettings has them
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 10_000:
+                return ("invalid_value", f"{field} must be dollars from 1 to 10000")
             return None
         if isinstance(default, bool):
             return None if isinstance(value, bool) else ("invalid_value", f"{field} must be true or false")
@@ -1488,6 +1497,32 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         state.publish("task.updated", {"task": task})
         return JSONResponse(task, status_code=201)
 
+    @app.post("/api/tasks/{task_id}/stop")
+    def stop_task(task_id: str, request: Request):
+        """D420: the stop ladder of a live task (a team's `live_task_id`): the task ends `cancelled` and its team has no live task any more;
+        a task that is not live is 409 busy, as the real route answers one that already ended."""
+        require_token(request, state)
+        with state.lock:
+            row = next((d for d in state.departments() if d.get("live_task_id") == task_id), None)
+            if row is None:
+                raise ApiError(409, "busy", "That run already ended.")
+            state.stopped.append(task_id)
+        task = {"id": task_id, "dept_id": row["id"], "dept_name": row.get("name", ""), "title": "", "status": "cancelled", "created_at": "2026-11-04T10:00:00Z"}
+        state.publish("task.updated", {"task": task})
+        return JSONResponse(task)
+
+    @app.post("/api/projects/{project_id}/stop")
+    def stop_project(project_id: str, request: Request):
+        """D424: Home's Stop on a step of a project stops the whole project; here it ends every live task, as the project's ladder does."""
+        require_token(request, state)
+        with state.lock:
+            live = [d for d in state.departments() if d.get("live_task_id")]
+            state.stopped.extend(d["live_task_id"] for d in live)
+        for d in live:
+            state.publish("task.updated", {"task": {"id": d["live_task_id"], "dept_id": d["id"], "dept_name": d.get("name", ""), "title": "", "status": "cancelled",
+                                                    "created_at": "2026-11-04T10:00:00Z"}})
+        return JSONResponse({"stopped": bool(live)})
+
     @app.get("/api/departments")
     def departments():
         return JSONResponse(state.departments())
@@ -1635,8 +1670,11 @@ def frame(event: str, data: Any, event_id: int | None) -> str:
 
 
 def _check_post(body: Any) -> list[dict]:
-    if not isinstance(body, dict) or set(body) - {"text", "choice", "budget"}:
-        return [violation("", "bad_body", "the body is {text, choice?, budget?}")]
+    if not isinstance(body, dict) or set(body) - {"text", "choice", "budget", "usd_budget"}:
+        return [violation("", "bad_body", "the body is {text, choice?, budget?, usd_budget?}")]
+    usd = body.get("usd_budget")      # D423: the Budget chip's dollars, as ChatPost takes them
+    if usd is not None and (isinstance(usd, bool) or not isinstance(usd, (int, float)) or not 1 <= usd <= 10_000 or round(usd, 2) != usd):
+        return [violation("usd_budget", "bad_usd_budget", "usd_budget must be dollars from 1 to 10000")]
     budget = body.get("budget")      # D252: the home box's Budget, as ChatPost takes it
     if budget is not None and (isinstance(budget, bool) or not isinstance(budget, int) or not 1 <= budget <= 100000):
         return [violation("budget", "bad_budget", "budget must be a whole number from 1 to 100000")]
@@ -2088,7 +2126,7 @@ WELCOME_FACTS = {
                {"name": "codex", "state": "not_ready", "why": "0.5.2: not signed in", "fix": "run `codex login`"}],
     "data": {"dir": "/data/sutra-pro", "db_bytes": 1_310_720, "free_bytes": 42_949_672_960, "backup": "sutra-pro backup"},
     "egress": {"scrub": True, "api_key_refused": True, "only_your_cli": True, "auto_update": {"on": True, "desktop": True}},
-    "autonomy": {"budget": 30, "send_mode": "dry-run", "asks": True},
+    "autonomy": {"budget": 30, "usd_budget": 20.0, "send_mode": "dry-run", "asks": True},
 }
 UPDATE_SETTING = {"auto": True, "chosen": False, "default": True, "desktop": True, "offline": False, "last": None}
 UPDATE_STATES = ("up_to_date", "available", "error", "downloading", "ready", "failed", "tell_only", "installing")

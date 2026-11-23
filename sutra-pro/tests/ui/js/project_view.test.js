@@ -77,6 +77,8 @@ test("a step shows its state, what it follows, what it shares, its files, why it
 test("what it has used is in credits against its own limit", () => {
   assert.match(View.spendHtml(snap()), /<b>14 credits<\/b> of 60 credits/);
   assert.match(View.spendHtml(snap({spend: {calls: 60, usd: 1.5}})), /about \$1\.50[\s\S]*used all of its credits/);
+  assert.match(View.spendHtml(snap({spend: {calls: 3, usd: 0.15}, project: Object.assign(snap().project, {budget_usd: 2})})), /about \$0\.15 of \$2\.00</);      // D424
+  assert.doesNotMatch(View.spendHtml(snap({spend: {calls: 3, usd: 0.15}})), / of \$/);
   assert.match(View.spendHtml(snap({spend: {calls: 1, usd: null}, project: Object.assign(snap().project, {budget_credits: 0})})), /<b>1 credit<\/b>(?! of)/);
   assert.equal(View.spendHtml({project: {}, spend: null}), "");
 });

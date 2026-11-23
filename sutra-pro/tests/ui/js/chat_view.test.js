@@ -217,6 +217,10 @@ test("parseAsk cuts the price tag off an option and keeps a line that is not a q
   assert.deepEqual(a.qs, [{q: "", opts: ["Add a blog", "Skip it"]}]);
   assert.equal(a.say, "- Still a list item");
   assert.deepEqual(parseAsk("1. Q?\n   Option 1: A [adds 2 work credits per page]").qs[0].opts, ["A"]);
+  // D423: a dollar raise's tail too, on a numbered or a bare first option
+  assert.deepEqual(parseAsk("Add $10?\n   Option 1: Add $10 and keep going [adds $10]\n   Option 2: Finish as it is").qs[0].opts,
+    ["Add $10 and keep going", "Finish as it is"]);
+  assert.deepEqual(parseAsk("1. Q?\n   Option 1: Add $1,250.50 and keep going [adds $1,250.50]").qs[0].opts, ["Add $1,250.50 and keep going"]);
 });
 
 test("parseAsk drops a line that comes after the first question and is neither a question nor an option", () => {

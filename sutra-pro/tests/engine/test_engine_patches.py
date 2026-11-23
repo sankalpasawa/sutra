@@ -8,6 +8,7 @@ import contextlib
 import hashlib
 import importlib
 import itertools
+import math
 import json
 import os
 import re
@@ -1650,3 +1651,204 @@ def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_
     run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                   "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
     assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)
+
+
+# ---- P26 (D421, D422): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
+def test_p26_call_usd_takes_the_reported_price_or_estimates_from_tokens(j2):
+    assert j2.call_usd({"usd": 0.12, "tokens": {"input": 1000, "output": 10}}, None) == (0.12, False)      # reported
+    assert j2.call_usd({"usd": 0.0, "tokens": {"input": 9, "output": 1}}, 1.0) == (0.0, False)             # a rate card's (or a free) price
+    usd, est = j2.call_usd({"usd": None, "tokens": {"input": 900_000, "output": 100_000}}, 4e-6)            # at the run's own rate
+    assert est is True and usd == pytest.approx(4.0)
+    usd, est = j2.call_usd({"tokens": {"input": 900_000, "output": 100_000}}, None)                         # no priced call yet: fallback
+    assert est is True and usd == pytest.approx(j2.USD_PER_MTOK_FALLBACK) and j2.USD_PER_MTOK_FALLBACK == 3.18
+    usd, est = j2.call_usd({"tokens": None, "chars": {"prompt": 3_000_000, "reply": 1_000_000}}, None)        # mock: characters / 4
+    assert est is True and usd == pytest.approx(3.18)
+
+
+@pytest.mark.parametrize("x, text", [(20, "$20"), (20.4, "$20.40"), (1.25, "$1.25"), (0.004, "$0.01"), (0, "$0"), (10000, "$10,000")])
+def test_p26_fmt_usd(j2, x, text):
+    assert j2.fmt_usd(x) == text
+
+
+@pytest.mark.parametrize("text, amount", [("Add $10 and keep going", 10.0), ("$12.50", 12.5), ("add 10 dollars", 10.0), ("Add $ 1,000 please", 1000.0),
+                                          ("add 30", None), ("Option 1", None), ("", None)])
+def test_p26_parse_usd(j2, text, amount):
+    assert j2.parse_usd(text) == amount
+
+
+def logged(run, j2, meta):
+    from sutra_app.engine import llm
+    llm.LAST_META.clear()
+    llm.LAST_META.update(meta)
+    return run._log_call("identity", "", "s" * 400, "u" * 400, "r" * 200, {}, 0.1)
+
+
+def test_p26_cost_is_summed_from_reported_usd_and_unpriced_calls_are_estimated(tmp_path):
+    with fresh_j2(tmp_path, J2_USD_BUDGET="20") as j2:
+        assert (j2.USD_BUDGET, j2.USD_CAP) == (20.0, None)
+        run = j2.J2Run(run_dir=tmp_path / "runs" / "j2-20261104-100001-7f3a")
+        assert (run.usd_used, run.usd_limit, run.usd_raises, run.usd_estimated_calls) == (0.0, 20.0, [], 0)
+        logged(run, j2, {"provider": "claude", "usd": 0.5, "input_tokens": 90_000, "output_tokens": 10_000})
+        assert run.usd_used == pytest.approx(0.5) and run.usd_estimated_calls == 0
+        rec = logged(run, j2, {"provider": "codex", "input_tokens": 18_000, "output_tokens": 2_000})          # no price: the run's $5 per million
+        assert rec["usd_estimated"] is True and rec["usd_counted"] == pytest.approx(0.1)
+        assert run.usd_used == pytest.approx(0.6) and run.usd_estimated_calls == 1 and run.usd_estimated_by == {"codex": 1}
+        rows = [json.loads(line) for line in Path(run.dir, "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert [r.get("usd_counted") for r in rows] == [0.5, pytest.approx(0.1)] and rows[1]["usd_estimated"] is True
+        assert run._usd_metrics() == {"usd": {"used": 0.6, "limit": 20.0, "approved": [20.0], "estimated_calls": 1}}
+
+
+def test_p26_off_without_env_is_unchanged(j2, make_run):
+    assert j2.USD_BUDGET is None
+    run = make_run()
+    rec = logged(run, j2, {"provider": "claude", "usd": 0.5, "input_tokens": 90_000, "output_tokens": 10_000})
+    assert "usd_counted" not in rec and "usd_estimated" not in rec and run.usd_used == 0.0 and run._usd_metrics() == {}
+
+
+# ---- P26 part 2 (D422): the dollar limit, credit top-ups by code, the dollar question ---------------------------------------------
+@pytest.fixture
+def usd_j2(tmp_path):
+    with fresh_j2(tmp_path / "usd-env", J2_USD_BUDGET="20") as mod:
+        yield mod
+
+
+def usd_run(mod, tmp_path, name="j2-20261104-100009-7f3a"):
+    return mod.J2Run(run_dir=tmp_path / "runs" / name)
+
+
+def built_run(mod, tmp_path, name="j2-20261104-100011-7f3a"):
+    """A run that has made the Brew Lab site in mock mode (a generous limit), then stands still: the handlers below need its
+    output and charter."""
+    run = usd_run(mod, tmp_path, name)
+    run.usd_limit = 10_000.0
+    say(run, BREW_LAB)
+    run.paused, run.usd_used, run.usd_limit, run.usd_raises = None, 20.4, 20.0, []
+    return run
+
+
+def test_p26_starting_credits_follow_the_dollar_limit_and_j2_budget_is_ignored(tmp_path):
+    with fresh_j2(tmp_path / "a", J2_USD_BUDGET="20", J2_BUDGET="100") as mod:
+        assert mod.BUDGET == math.ceil(20 / mod.USD_PER_CREDIT) == 1070 and mod.USD_PER_CREDIT == 0.0187
+        assert usd_run(mod, tmp_path).budget == 1070
+    with fresh_j2(tmp_path / "b", J2_BUDGET="100") as mod:
+        assert mod.BUDGET == 100 and mod.USD_BUDGET is None
+
+
+def test_p26_top_up_follows_the_dollars_left_without_a_question(usd_j2, tmp_path):
+    run = usd_run(usd_j2, tmp_path)
+    run.budget, run.spent, run.usd_used = 10, 10, 19.9
+    assert run._top_up(5) is True and run.budget == 15                      # $0.10 left buys 5 credits at $0.0187
+    assert run.raises[-1] == {"cycle": 0, "asked": 5, "from": 10, "to": 15, "why": "code top-up from dollars left", "code": True}
+    assert run._top_up(6) is False and run.budget == 15 and run.paused is None
+    assert "Code added 5 work credits from the dollars left." in [m["text"] for m in run.chat]
+
+
+def test_p26_approval_is_funded_by_code(usd_j2, tmp_path, monkeypatch):
+    run = usd_run(usd_j2, tmp_path)
+    w = {"id": "W-1", "name": "Menu", "cost": 50}
+    monkeypatch.setattr(run, "_wf", lambda wid: w)
+    run.budget, run.spent = 20, 0
+    run._identity_approval({"wid": "W-1", "over": ["money 50 > 20"]})
+    assert run.paused is None and run.turn == "priority" and run.handoff["kind"] == "envelope" and run.budget >= 50
+    assert run.raises[-1]["code"] is True
+
+
+def test_p26_ruling_over_budget_is_funded_by_code(usd_j2, tmp_path, monkeypatch):
+    run = built_run(usd_j2, tmp_path)
+    table = [{"id": "W-1", "name": "Menu", "cost": 50, "envelope": {"money_limit": 50, "model_call_limit": 2, "retry_limit": 1}}]
+    c = {"id": "C-1", "identity": [{"say": "Build the menu."}], "pending_winner": "adaptation", "ruled_wfs": table}
+    settled, agreed = [], []
+    monkeypatch.setattr(run, "_conflict", lambda cid: c)
+    monkeypatch.setattr(run, "_settle", lambda conflict, winner, note: settled.append((winner, note)))
+    monkeypatch.setattr(run, "_agree", lambda wfs, counter=False: agreed.append(wfs))
+    monkeypatch.setattr(run, "_save_conflicts", lambda: None)
+    run.budget = run.spent = 10
+    run.usd_used = 0.0
+    run._priority_prices_ruling({"conflict": "C-1", "table": table})
+    assert run.paused is None and agreed == [table] and settled[-1][0] == "adaptation"
+    assert run.budget - run.spent >= 50 and run.raises[-1]["code"] is True
+
+
+def test_p26_raise_from_need_at_run_ratio_half_without_need_and_cap_room(usd_j2, tmp_path, monkeypatch):
+    run = usd_run(usd_j2, tmp_path)
+    run.spent, run.usd_used = 100, 4.0                                       # $0.04 per credit in this run
+    run.call_log = run.call_log + [{}] * usd_j2.USD_RATE_MIN_CALLS           # its own rate counts from its 8th call (R2-1)
+    assert run._usd_raise(50) == 2.0
+    assert run._usd_raise(None) == 10.0                                     # half of $20
+    run.usd_limit = 31
+    assert run._usd_raise(None) == 16.0                                     # above $10: to the dollar
+    run.usd_limit, run.usd_used = 2, 2
+    assert run._usd_raise(None) == 1.0                                      # never below $1
+    monkeypatch.setattr(usd_j2, "USD_CAP", 25.0)
+    run.usd_limit = 20
+    assert run._usd_raise(None) == 5.0                                      # the cap's room
+    run.usd_limit = 25
+    assert run._usd_raise(None) == 0                                        # at the cap: no raise
+
+
+def test_p26_no_cap_unless_set(usd_j2, tmp_path):
+    assert usd_j2.USD_CAP is None
+    run = usd_run(usd_j2, tmp_path)
+    run._usd_add(5000, "Add $5000")
+    assert run.usd_limit == 5020
+
+
+USD_Q = {"question": "This run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.",
+         "options": ["Add $10 and keep going: you get more of the missing parts built. Or type your own amount", "Finish as it is: you get the site"],
+         "budget": [10.0, 0]}
+
+
+def answer_usd(run, text, q=None):
+    h = {"kind": "requester_answered", "limit": "Dollar limit", "choices": ["continue", "ship"], "resume": None, "usd": True,
+         "asked": [dict(q or USD_Q)], "answer": text}
+    run._identity_hears_requester(h)
+
+
+def test_p26_typed_over_5x_is_asked_back_and_a_click_confirms(usd_j2, tmp_path):
+    run = built_run(usd_j2, tmp_path)
+    answer_usd(run, "Add $150 and keep going")
+    p = run.paused
+    assert p and p["kind"] == "limit" and run.usd_limit == 20 and run.usd_raises == []
+    assert p["questions"][0]["question"].startswith("This run has used $20.40 of $20 (API price). Add $150? So far: $20 approved.")
+    assert p["questions"][0]["options"][0].startswith("Add $150 and keep going") and p["questions"][0]["budget"][0] == 150
+    said = [m["text"] for m in run.chat if m.get("who") == "identity"][-1]
+    assert "You typed $150, more than 5 times this run's limit of $20. Pick it to confirm, or choose another option." in said
+    assert p["handoff"]["usd"] is True
+    run.paused = None
+    answer_usd(run, "Option 1", p["questions"][0])                          # a click is never checked
+    assert run.usd_limit == 170 and len(run.usd_raises) == 1
+
+
+def test_p26_typed_under_5x_is_applied_and_the_model_add_is_ignored(usd_j2, tmp_path):
+    run = built_run(usd_j2, tmp_path)
+    answer_usd(run, "Add $30 and keep going")
+    assert run.usd_limit == 50 and run.usd_raises[0]["from"] == 20 and run.usd_raises[0]["to"] == 50
+    assert run._usd_so_far().startswith("So far: $20 + $30 = $50 approved.")
+    other = built_run(usd_j2, tmp_path, "j2-20261104-100010-7f3a")
+    answer_usd(other, "add 30")                                             # no dollar amount: the option's own $10
+    assert other.usd_limit == 30
+
+
+def test_p26_estimated_calls_are_named(usd_j2, tmp_path):
+    run = usd_run(usd_j2, tmp_path)
+    run.usd_estimated_calls, run.usd_estimated_by = 3, {"codex": 3}
+    assert run._so_far() == "So far: $20 approved. 3 calls estimated: Codex reports no price."
+
+
+def test_p26_decide_for_me_never_answers_the_dollar_question(usd_j2, tmp_path):
+    run = usd_run(usd_j2, tmp_path)
+    run.auto = True
+    run.paused = {"kind": "limit", "questions": [dict(USD_Q)], "handoff": {"choices": ["continue", "ship"], "usd": True}, "msg": 1}
+    assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
+
+
+def test_p26_spec_fields_bounds_and_old_credit_keys(tmp_path):
+    from pydantic import ValidationError
+    from sutra_app.engine.spec import EngineSettings
+    s = EngineSettings()
+    assert (s.usd_budget, s.usd_cap) == (20.0, None) and s.to_env()["J2_USD_BUDGET"] == "20.0" and "J2_USD_CAP" not in s.to_env()
+    assert EngineSettings(usd_budget=12.5, usd_cap=100).to_env()["J2_USD_CAP"] == "100.0"
+    for bad in ({"usd_budget": 0.5}, {"usd_budget": 10_001}, {"usd_cap": 0}, {"usd_budget": float("nan")}):
+        with pytest.raises(ValidationError):
+            EngineSettings(**bad)
+    assert EngineSettings(budget=250, budget_cap=500, limit_add=40).budget == 250       # stored credit settings stay valid

@@ -172,7 +172,8 @@ def test_home_reads_what_the_design_says_on_load_and_nothing_else(browser, fake)
               "/api/chats/cs_org/providers",                   # the model pill of the org chat (ABS-9)
               "/api/limits", "/api/ops/attention",             # the limit line of the strip and the quiet hours (gap routines-limits)
               "/api/ops/welcome",                              # whether the first-run card is due (gap welcome-settings)
-              "/api/sections"}                                 # the sidebar's own sections (project_rail.js, SectionsStore)
+              "/api/sections",                                 # the sidebar's own sections (project_rail.js, SectionsStore)
+              "/api/engine/settings"}                          # D423: the home box's Budget chip shows the team default (effective.usd_budget)
     assert {p for p, _ in paths if p != "/api/events"} == wanted
     graph = [r for r in fake.log("/api/graph") if r["path"] == "/api/graph"][0]
     assert "level=chart" in graph["query"]
@@ -743,32 +744,32 @@ def test_a_connector_event_refetches_the_health_once(browser, fake):
 def test_the_engine_group_shows_editable_fields_and_locked_ones_read_only(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 37")          # the 37 settings of engine.json (`workspace`, D127, was the 31st; `builder_timeout`, D169, the 32nd; sync 6 added run_templates, auto_reuse, artifact_library, reviewer and reviewer_wait)
+    browser.wait_for("document.querySelectorAll('#set-engine .setfield').length === 36")          # D423: 39 settings, the three credit ones hidden; the 37 settings of engine.json (`workspace`, D127, was the 31st; `builder_timeout`, D169, the 32nd; sync 6 added run_templates, auto_reuse, artifact_library, reviewer and reviewer_wait)
     assert browser.count('.setfield[data-locked="false"] input[type="checkbox"]') == 13          # rates slim memory realization change board artifact_schema template_library fixes, then run_templates auto_reuse artifact_library reviewer (sync 6)
     assert browser.count('.setfield[data-locked="false"] select') == 2                          # output and workspace
-    assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 12                          # ... the builder time limit (D169) and the reviewer wait (sync 6)
+    assert browser.count('.setfield[data-locked="false"] input[type="number"]') == 11                          # D423: + usd_budget, usd_cap, - budget, budget_cap, limit_add ... the builder time limit (D169) and the reviewer wait (sync 6)
     assert browser.count('.setfield[data-locked="true"]') == 10
     assert browser.count('.setfield[data-locked="true"] input, .setfield[data-locked="true"] select') == 0
     browser.wait_for("document.querySelector('.setfield[data-locked=true] .setlock').textContent.indexOf('/data/sutra-pro/engine.json') >= 0")      # the fake's data folder, read from About's info
     assert set(texts(browser, ".setfield[data-locked=true] .setlock")) == {"edit /data/sutra-pro/engine.json"}
     assert "Changes apply to the next run." in texts(browser, "#set-engine .setnote")[0]
     assert browser.js("document.querySelector('select[data-scope]').value") == ""                 # all teams
-    assert [r["query"] for r in fake.log("/api/engine/settings")] == [""]                   # `dept` is left out for all teams
+    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", ""]               # the Budget chip's read (D423), then Settings'; `dept` is left out for all teams
 
 
 @browser_only
 def test_a_saved_change_sends_only_what_changed_in_a_set_unset_body(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    present(browser, '[data-input="budget"]')
-    browser.js("(() => { const b = document.querySelector('[data-input=budget]'); b.value = '250'; "
+    present(browser, '[data-input="max_cycles"]')      # D423: the credit budget is hidden; a whole-number field stands in
+    browser.js("(() => { const b = document.querySelector('[data-input=max_cycles]'); b.value = '250'; "
                "const s = document.querySelector('[data-input=rates]'); s.checked = false; })()")
     browser.click('[data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
     puts = [r for r in posts(fake, "/api/engine/settings")]
     assert len(puts) == 1 and puts[0]["method"] == "PUT" and puts[0]["token"] is True and puts[0]["query"] == ""
-    assert puts[0]["body"] == {"set": {"budget": 250, "rates": False}, "unset": []}
-    assert browser.js("document.querySelector('[data-input=budget]').value") == "250"       # the answer of the server is what is shown now
+    assert puts[0]["body"] == {"set": {"max_cycles": 250, "rates": False}, "unset": []}
+    assert browser.js("document.querySelector('[data-input=max_cycles]').value") == "250"       # the answer of the server is what is shown now
     browser.click('[data-act="save-engine"]')                                               # nothing changed: nothing is sent
     browser.js("new Promise(r => setTimeout(r, 200))")
     assert len(posts(fake, "/api/engine/settings")) == 1
@@ -778,14 +779,14 @@ def test_a_saved_change_sends_only_what_changed_in_a_set_unset_body(browser, fak
 def test_going_back_to_the_default_unsets_the_field(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    present(browser, '[data-input="budget"]')
-    browser.js("document.querySelector('[data-input=budget]').value = '250'")
+    present(browser, '[data-input="max_cycles"]')
+    browser.js("document.querySelector('[data-input=max_cycles]').value = '250'")
     browser.click('[data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
-    browser.js("document.querySelector('[data-input=budget]').value = '100'")               # the default
+    browser.js("document.querySelector('[data-input=max_cycles]').value = '6'")             # the default
     browser.click('[data-act="save-engine"]')
-    browser.wait_for("document.querySelector('.setfield[data-field=budget]').dataset.source === 'default'")
-    assert [r["body"] for r in posts(fake, "/api/engine/settings")] == [{"set": {"budget": 250}, "unset": []}, {"set": {}, "unset": ["budget"]}]
+    browser.wait_for("document.querySelector('.setfield[data-field=max_cycles]').dataset.source === 'default'")
+    assert [r["body"] for r in posts(fake, "/api/engine/settings")] == [{"set": {"max_cycles": 250}, "unset": []}, {"set": {}, "unset": ["max_cycles"]}]
 
 
 @browser_only
@@ -795,7 +796,7 @@ def test_a_team_scope_passes_dept_in_the_query_for_both_calls(browser, fake):
     present(browser, "select[data-scope]")
     browser.js("(() => { const s = document.querySelector('select[data-scope]'); s.value = 'web'; s.dispatchEvent(new Event('change', {bubbles: true})); })()")
     browser.wait_for("document.querySelector('#set-engine .setnote').textContent.indexOf('this team only') > 0")
-    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", "dept=web"]
+    assert [r["query"] for r in fake.log("/api/engine/settings")] == ["", "", "dept=web"]      # the Budget chip's read (D423), Settings', then the team's
     browser.js("document.querySelector('[data-input=max_cycles]').value = '3'")
     browser.click('[data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
@@ -808,14 +809,14 @@ def test_a_team_scope_passes_dept_in_the_query_for_both_calls(browser, fake):
 def test_a_refused_value_is_named_beside_its_field_and_stays_in_the_box(browser, fake):
     load(browser, fake)
     open_settings(browser, "engine")
-    present(browser, '[data-input="budget"]')
+    present(browser, '[data-input="max_cycles"]')
     browser.expect_failed("/api/engine/settings", 422)
-    browser.js("document.querySelector('[data-input=budget]').value = '0'")
+    browser.js("document.querySelector('[data-input=max_cycles]').value = '0'")
     browser.click('[data-act="save-engine"]')
-    present(browser, '.setfield[data-field="budget"] .seterr')
-    assert "budget must be a whole number of at least 1" in texts(browser, '.setfield[data-field="budget"] .seterr')[0]
-    assert browser.count('.setfield[data-field="max_cycles"] .seterr') == 0
-    assert browser.js("document.querySelector('[data-input=budget]').value") == "0"        # what the owner typed is not thrown away
+    present(browser, '.setfield[data-field="max_cycles"] .seterr')
+    assert "max_cycles must be a whole number of at least 1" in texts(browser, '.setfield[data-field="max_cycles"] .seterr')[0]
+    assert browser.count('.setfield[data-field="max_turns"] .seterr') == 0
+    assert browser.js("document.querySelector('[data-input=max_cycles]').value") == "0"        # what the owner typed is not thrown away
 
 
 @browser_only

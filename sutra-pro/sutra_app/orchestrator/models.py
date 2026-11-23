@@ -547,6 +547,15 @@ class ChatPost(Value):
     # MAN-8, D294: "Decide for me" for the project this request may become: the Gatekeeper's rule table answers its questions (never credits over the ceiling, never a permission of the computer).
     # Only read while SUTRA_NODES_V1 is on; None or false: the owner answers.
     decide_for_me: bool | None = None
+    # D423: the home screen's dollar budget (API price) for a new request; None: the team's own. The limits are EngineSettings.usd_budget's.
+    usd_budget: Annotated[float, Field(ge=1, le=10_000, allow_inf_nan=False)] | None = None
+
+    @field_validator("usd_budget")
+    @classmethod
+    def _to_the_cent(cls, value: float | None) -> float | None:
+        if value is not None and round(value, 2) != value:
+            raise ValueError("dollars, at most two decimals")
+        return value
 
 
 class Accepted(Value):
@@ -804,7 +813,8 @@ _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
 
 
 class TaskSettings(Value):
-    """The ten task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182), all text as J2
+    """The eleven task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182,
+    D422 the dollar budget J2_USD_BUDGET), all text as J2
     reads its environment. `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` are not engine settings: they name the run template this one request starts from and
     the workflows of it, and only the engine host reads them. A key left unset is left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
@@ -819,6 +829,7 @@ class TaskSettings(Value):
     J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
     J2_RUN_TEMPLATE: Annotated[str, StringConstraints(pattern=rf"^{RUN_TEMPLATE_ID_RE}$")] | None = None      # a run template's id (D182)
     J2_RUN_TEMPLATE_WORKFLOWS: Annotated[str, StringConstraints(max_length=RUN_TEMPLATE_WORKFLOWS_MAX)] | None = None      # `all` or a comma list of workflow keys
+    J2_USD_BUDGET: Annotated[str, StringConstraints(max_length=10)] | None = None      # D422: dollars (API price), up to two decimals
 
     @field_validator("J2_RUN_TEMPLATE_WORKFLOWS")
     @classmethod
@@ -832,6 +843,13 @@ class TaskSettings(Value):
     def _whole_number_in_range(cls, value: str | None) -> str | None:
         if value is not None and (not _INT_SETTING.fullmatch(value) or int(value) > 100_000):
             raise ValueError("must be a whole number from 1 to 100000")
+        return value
+
+    @field_validator("J2_USD_BUDGET")
+    @classmethod
+    def _dollars_in_range(cls, value: str | None) -> str | None:
+        if value is not None and (not re.fullmatch(r"[0-9]{1,5}(\.[0-9]{1,2})?", value) or not 1 <= float(value) <= 10_000):
+            raise ValueError("must be dollars from 1 to 10000, at most two decimals")
         return value
 
     @model_serializer(mode="wrap")

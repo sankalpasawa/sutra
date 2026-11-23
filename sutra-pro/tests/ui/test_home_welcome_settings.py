@@ -224,3 +224,24 @@ def test_a_page_that_outlives_a_restart_takes_the_new_token_from_its_own_boot_bl
     assert browser.js("SutraCtx.boot.token") == "restarted-token-0123456789abcdef" != old
     writes = [(r["status"], r["token"]) for r in fake.log("/api/ops/welcome/seen") if r["method"] == "POST"]
     assert writes == [(401, True), (200, True)]                                                      # one refused write, one repeated: no third
+
+
+@browser_only
+def test_settings_show_dollars_hide_credits(browser, fake):
+    """D423: the Engine group sets the budget in dollars (API price) with the not-billed hint; the credit fields are hidden (still valid when stored)."""
+    load(browser, fake)
+    open_settings(browser, "engine")
+    present(browser, '[data-input="usd_budget"]')
+    assert texts(browser, '.setfield[data-field="usd_budget"] .setlabel') == ["Budget (API price, $)"]
+    hint = texts(browser, '.setfield[data-field="usd_budget"] .sethint')[0]
+    assert "API price, estimated" in hint and "nobody is billed this amount" in hint
+    assert browser.js("document.querySelector('[data-input=usd_budget]').value") == "20"
+    assert texts(browser, '.setfield[data-field="usd_cap"] .setlabel') == ["Budget cap (API price, $)"]
+    assert browser.js("document.querySelector('[data-input=usd_cap]').placeholder") == "not set"
+    for gone in ("budget", "budget_cap", "limit_add"):
+        absent(browser, f'.setfield[data-field="{gone}"]')
+    assert "credit" not in browser.js("document.getElementById('set-engine').innerText").lower()
+    browser.js("(() => { document.querySelector('[data-input=usd_budget]').value = '12.5'; document.querySelector('[data-input=usd_cap]').value = '60'; })()")
+    browser.click('[data-act="save-engine"]')
+    browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
+    assert [r["body"] for r in posts(fake, "/api/engine/settings")] == [{"set": {"usd_budget": 12.5, "usd_cap": 60}, "unset": []}]

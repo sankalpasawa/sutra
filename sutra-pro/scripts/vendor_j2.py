@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P25" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P27" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -1152,7 +1152,9 @@ MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity
     def _so_far(self):
         """P25 (D251): the work credits the Requester has approved so far, as a sum, for a question that asks for more:
         "So far: 100 + 30 = 130 work credits approved." (the start alone when nothing was added yet)."""
-        start = self.raises[0]["from"] if self.raises else self.budget
+        if USD_BUDGET:
+            return self._usd_so_far()      # P26 (D422): in dollar mode the approved total is in dollars
+        start =self.raises[0]["from"] if self.raises else self.budget
         adds = [r["to"] - r["from"] for r in self.raises]
         return "So far: " + " + ".join(str(x) for x in [start, *adds]) + (f" = {self.budget}" if adds else "") + \
             " work credits approved."
@@ -1203,10 +1205,438 @@ MAX_ATTEMPTS = 4           # attempts two disagreeing agents get before Identity
     Edit('P25', "j2.py", r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
                          f"Or type your own number, up to {room}" if add else
                          f"Keep going: {more}")
-''', r'''            opts.append((f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
+''', r'''            opts.append((f"Add {fmt_usd(add)} and keep going: {more}. Or type your own amount" if add and USD_BUDGET else      # P26 (D422)
+                         f"Add {add} work credits{' (the most allowed)' if add < want else ''} and keep going: {more}. "
                          f"{own_number(room)}" if add else
                          f"Keep going: {more}")
 '''),
+    # ---- P26 (D421, D422): dollar mode, on only when J2_USD_BUDGET is set. Part 1: each logged AI call adds its API price (the usd
+    # it reported, or an estimate from its tokens) to the run's cost; no behaviour changes
+    Edit('P26', "j2.py", r'''LIMIT_ADD = int(os.getenv("J2_LIMIT_ADD", "30"))    # budget the "keep working" option adds when the budget ran out
+''', r'''LIMIT_ADD = int(os.getenv("J2_LIMIT_ADD", "30"))    # budget the "keep working" option adds when the budget ran out
+# P26 (D421, D422): dollar mode, on only when J2_USD_BUDGET is set: a run's limit is dollars (API price), credits stay internal
+USD_BUDGET = float(os.environ["J2_USD_BUDGET"]) if os.getenv("J2_USD_BUDGET") else None
+USD_CAP = float(os.environ["J2_USD_CAP"]) if os.getenv("J2_USD_CAP") else None      # the most a run may be raised to; unset: no cap
+USD_PER_CREDIT = 0.0187          # D421: measured on the beta's runs (median dollars per work credit)
+USD_PER_MTOK_FALLBACK = 3.18     # D421: dollars per million tokens for a call with no price before any priced call in the run
+USD_RAISE_SHARE = 0.5            # the suggested raise without a stated need: half the run's limit
+BIG_RAISE = 5                    # a typed raise above this many times the limit is asked back
+USD_RAISE_TEXT = re.compile(r"\s*add \$[\d,]+(?:\.\d{1,2})?(?: and keep going)?\.?\s*", re.I)      # what a card's raise input sends
+USD_RATE_MIN_CALLS = 8           # D422: a run's own dollars per credit counts from its 8th call (the opening, 7 calls, spends none)
+if USD_BUDGET:
+    BUDGET = math.ceil(USD_BUDGET / USD_PER_CREDIT)      # P26 (D422): the starting credits follow the dollar limit; J2_BUDGET is ignored
+
+
+def call_tokens(rec):
+    """P26: a calls.jsonl row's tokens (input + output), or its characters / 4 when the call has no token count (mock mode)."""
+    t = rec.get("tokens") or {}
+    if t:
+        return (t.get("input") or 0) + (t.get("output") or 0)
+    c = rec.get("chars") or {}
+    return ((c.get("prompt") or 0) + (c.get("reply") or 0)) / 4
+
+
+def call_usd(rec, run_rate):
+    """P26 (D421): (dollars, estimated) for one calls.jsonl row: the usd it reported (or its rate card's), else its tokens times
+    `run_rate` (this run's dollars per token from its priced calls), else times USD_PER_MTOK_FALLBACK."""
+    if rec.get("usd") is not None:
+        return float(rec["usd"]), False
+    return call_tokens(rec) * (run_rate if run_rate else USD_PER_MTOK_FALLBACK / 1_000_000), True
+
+
+def fmt_usd(x):
+    """P26: "$20", "$20.40", "$1.25"; a positive amount below a cent shows as "$0.01"."""
+    c = max(round(x, 2), 0.01) if x > 0 else 0.0
+    return f"${c:,.0f}" if c == int(c) else f"${c:,.2f}"
+
+
+_USD = re.compile(r"\$\s*(\d[\d,]*(?:\.\d{1,2})?)|\b(\d[\d,]*(?:\.\d{1,2})?)\s*(?:dollars?|usd)\b", re.I)
+
+
+def parse_usd(text):
+    """P26: the dollar amount in an answer ("Add $10 and keep going", "$12.50", "add 10 dollars"), else None ("add 30")."""
+    m = _USD.search(text or "")
+    return float((m[1] or m[2]).replace(",", "")) if m else None
+'''),
+    Edit('P26', "j2.py", r'''        self.budget, self.raises = BUDGET, []
+''', r'''        self.budget, self.raises = BUDGET, []
+        # P26 (D422): the run's cost in dollar mode: used, its limit, the Requester's raises, calls estimated (by provider)
+        self.usd_used, self.usd_limit, self.usd_raises = 0.0, USD_BUDGET or 0.0, []
+        self.usd_estimated_calls, self.usd_estimated_by, self.usd_priced, self.usd_priced_tokens = 0, {}, 0.0, 0
+'''),
+    Edit('P26', "j2.py", r'''    def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
+''', r'''    def _count_usd(self, rec):
+        """P26 (D421): in dollar mode, add this call's API price to the run's cost: what it reported, or an estimate at this
+        run's own rate (its priced calls' dollars per token), else at USD_PER_MTOK_FALLBACK. The row keeps what was counted."""
+        if not USD_BUDGET:
+            return
+        usd, estimated = call_usd(rec, self.usd_priced / self.usd_priced_tokens if self.usd_priced_tokens else None)
+        if estimated:
+            self.usd_estimated_calls += 1
+            who = rec.get("provider") or "mock"
+            self.usd_estimated_by[who] = self.usd_estimated_by.get(who, 0) + 1
+            rec["usd_estimated"] = True
+        else:
+            self.usd_priced += usd
+            self.usd_priced_tokens += call_tokens(rec)
+        self.usd_used += usd
+        rec["usd_counted"] = round(usd, 6)
+
+    def _usd_metrics(self):
+        """P26: the summary's `budget.usd` in dollar mode: used, limit, approved (the start, then each raise) and calls estimated."""
+        if not USD_BUDGET:
+            return {}
+        start = self.usd_raises[0]["from"] if self.usd_raises else self.usd_limit
+        return {"usd": {"used": round(self.usd_used, 4), "limit": self.usd_limit,
+                        "approved": [start, *(r["to"] - r["from"] for r in self.usd_raises)],
+                        "estimated_calls": self.usd_estimated_calls}}
+
+    def _usd_rate(self):
+        """P26 (D422): the run's one rate between dollars and work credits, used both ways: to price a raise (`_usd_raise`) and to
+        turn dollars into credits (`_usd_credits`). Its own dollars per credit (dollars used / credits spent) once it has spent
+        credits and made USD_RATE_MIN_CALLS calls, else USD_PER_CREDIT."""
+        if self.spent > 0 and self.usd_used > 0 and len(self.call_log) >= USD_RATE_MIN_CALLS:
+            return self.usd_used / self.spent
+        return USD_PER_CREDIT
+
+    def _usd_credits(self, usd, rate=None):
+        """P26 (D422): the whole work credits `usd` dollars buy at `rate` (the rate a question was priced at), else the run's."""
+        return math.floor(max(0.0, usd) / (rate or self._usd_rate()) + 1e-9)
+
+    def _top_up(self, need=0):
+        """P26 (D422): in dollar mode the credits follow the dollars left: code raises the budget to what they buy at the run's
+        rate (`_usd_rate`; no question, no cap) and says so. True when `need` credits are free now; always False when off."""
+        if not USD_BUDGET:
+            return False
+        want = self.spent + self._usd_credits(self.usd_limit - self.usd_used)
+        if want > self.budget:
+            old, self.budget = self.budget, want
+            self.raises.append({"cycle": self.cycle, "asked": want - old, "from": old, "to": want,
+                                "why": "code top-up from dollars left", "code": True})
+            self._event("system", "budget_raise", f"{old} -> {want} (code top-up from dollars left)")
+            self.post("system", f"Code added {want - old} work credits from the dollars left.")
+        return self.budget - self.spent >= need
+
+    def _usd_raise(self, budget_needed=None, rate=None):
+        """P26 (D422): the dollars the raise question suggests: the credits needed at `rate` (the run's, `_usd_rate`), else
+        USD_RAISE_SHARE of the limit; to the cent (to $1 above $10), at least $1, at most the cap's room. 0: no raise."""
+        if budget_needed:
+            x = as_int(budget_needed) * (rate or self._usd_rate())
+        else:
+            x = self.usd_limit * USD_RAISE_SHARE
+        x = max(1.0, math.ceil(x) if x > 10 else math.ceil(x * 100) / 100)
+        if USD_CAP is not None:
+            x = min(x, max(0.0, USD_CAP - self.usd_limit))
+        return round(x, 2)
+
+    def _usd_so_far(self):
+        """P26 (D422): "So far: $20 + $10 = $30 approved." and, when some calls had no price, " 3 calls estimated: Codex
+        reports no price." (the dollar question's closing words; P25's `_so_far` returns this in dollar mode)."""
+        start = self.usd_raises[0]["from"] if self.usd_raises else self.usd_limit
+        adds = [r["to"] - r["from"] for r in self.usd_raises]
+        out = ("So far: " + " + ".join(fmt_usd(x) for x in [start, *adds])
+               + (f" = {fmt_usd(self.usd_limit)}" if adds else "") + " approved.")
+        n = self.usd_estimated_calls
+        if n:
+            who = and_list(k.capitalize() for k in sorted(self.usd_estimated_by))
+            out += f" {n} call{'s' if n != 1 else ''} estimated: {who} reports no price."
+        return out
+
+    def _usd_add(self, add, answer, rate=None):
+        """P26 (D422): the Requester's dollar raise: the limit goes up (to the cap when one is set), and the dollars it adds buy
+        credits at `rate`, the rate the question was priced at (`usd_rate` in its handoff), so an approved raise funds exactly what
+        it was priced for; then the dollars left top credits up as usual."""
+        old = self.usd_limit
+        new = round(min(old + add, USD_CAP) if USD_CAP is not None else old + add, 2)
+        if new <= old:
+            self.post("system", f"The budget is at its cap ({fmt_usd(old)}, API price): nothing was added.")
+            return
+        self.usd_limit = new
+        self.usd_raises.append({"cycle": self.cycle, "asked": add, "from": old, "to": new, "why": f"the Requester's answer: {answer}"})
+        self._event("identity", "usd_raise", f"{fmt_usd(old)} -> {fmt_usd(new)} (asked +{fmt_usd(add)})")
+        self.post("system", f"Budget raised on the Requester's approval: {fmt_usd(old)} -> {fmt_usd(new)} (API price).")
+        rate = rate or self._usd_rate()
+        got = self._usd_credits(new - max(old, self.usd_used), rate)      # dollars already spent past the limit buy nothing
+        if got:
+            was, self.budget = self.budget, self.budget + got
+            self.raises.append({"cycle": self.cycle, "asked": got, "from": was, "to": self.budget,
+                                "why": f"the Requester's dollar raise at ${rate:.4f} per credit", "code": True})
+            self._event("system", "budget_raise", f"{was} -> {self.budget} (the Requester's dollar raise at ${rate:.4f} per credit)")
+        self._top_up()
+
+    def _usd_confirm(self, q, h, typed):
+        """P26 (D422): a typed raise above BIG_RAISE times the limit is asked back: the same question, its continue option
+        now the typed amount; a click on it, or the same amount sent again (`confirm_usd`, the card's button), confirms."""
+        i = (h.get("choices") or []).index("continue")
+        opts, budget = list(q.get("options") or []), list(q.get("budget") or [0] * len(q.get("options") or []))
+        opts[i], budget[i] = re.sub(r"^Add \$[\d,.]+", f"Add {fmt_usd(typed)}", opts[i]), typed
+        question = re.sub(r"Add \$[\d,.]+\?", f"Add {fmt_usd(typed)}?", q.get("question", "").split(" So far: ")[0])
+        self._event("identity", "usd_big_raise", f"typed {fmt_usd(typed)}, limit {fmt_usd(self.usd_limit)}")
+        self._ask_user(f"You typed {fmt_usd(typed)}, more than {BIG_RAISE} times this run's limit of {fmt_usd(self.usd_limit)}. "
+                       "Pick it to confirm, or choose another option.",
+                       [{**q, "question": question, "options": opts, "budget": budget}], "limit",
+                       handoff={**{k: v for k, v in h.items() if k not in ("answer", "asked")}, "confirm_usd": typed})
+
+    def _usd_ruling_reask(self, c, h, typed, short=False):
+        """P26 (D422, R2-2): the ruling's dollar question asked again. "Add $0" adds nothing and an amount that funds less than the
+        ruling (`short`) is asked again with the amount offered; a typed raise above BIG_RAISE times the limit comes back with that
+        amount as its first option, and Approve (or the same amount sent again) confirms it. The stored question stays the first one."""
+        q = c["user_question"]
+        keep = {k: v for k, v in h.items() if k not in ("answer", "asked", "confirm_usd")}
+        if typed and not short:
+            q = {**q, "question": re.sub(r"Add \$[\d,.]+ so", f"Add {fmt_usd(typed)} so", q["question"], count=1),
+                 "options": [re.sub(r"^Add \$[\d,.]+", f"Add {fmt_usd(typed)}", q["options"][0]), *q["options"][1:]],
+                 "budget": [typed, 0]}
+            keep.update(usd=typed, confirm_usd=typed)
+            self._event("identity", "usd_big_raise", f"typed {fmt_usd(typed)}, limit {fmt_usd(self.usd_limit)}")
+            say = (f"You typed {fmt_usd(typed)}, more than {BIG_RAISE} times this run's limit of {fmt_usd(self.usd_limit)}. Approve it "
+                   "to confirm, or choose another option.")
+        else:
+            keep["usd"] = (q.get("budget") or [h.get("usd")])[0]      # the amount first offered
+            say = (f"{fmt_usd(typed)} does not fund the ruling in full: it needs {fmt_usd(keep['usd'])}. Approve that amount, type "
+                   "another, or go with Priority's final answer." if short else "Add $0 adds nothing. Approve the amount offered, "
+                   "type another, or go with Priority's final answer.")
+        self._ask_user(say, [q], "ruling_budget", conflict=c["id"], auto=True, handoff=keep)
+
+    def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
+'''),
+    Edit('P26', "j2.py", r'''        self.call_log.append(rec)
+''', r'''        self._count_usd(rec)      # P26 (D421): before the row is written, so calls.jsonl says what was counted
+        self.call_log.append(rec)
+'''),
+    Edit('P26', "j2.py", r'''"spent": self.spent, "rate_card": bool(RATES)},
+''', r'''"spent": self.spent, "rate_card": bool(RATES), **self._usd_metrics()},      # P26
+'''),
+    Edit('P26', "j2.py", r'''"budget": {"start": BUDGET, "granted": self.budget, "used": self.spent, "raises": self.raises},''',
+         r'''"budget": {"start": BUDGET, "granted": self.budget, "used": self.spent, "raises": self.raises, **self._usd_metrics()},      # P26'''),
+    # ---- P26 part 2 (D422): the dollar limit. Credits follow the dollars left wherever J2 asked for credits (code top-ups);
+    # only the dollar limit asks the Requester, in dollars; Decide for me never answers it (prompt-changing in dollar mode, D249)
+    Edit('P26', "j2.py", r'''                elif self.goal and self.budget - self.spent < cheapest:
+''', r'''                elif self.goal and not self._top_up(cheapest) and self.budget - self.spent < cheapest:      # P26: dollars left first
+'''),
+    Edit('P26', "j2.py", r'''            if self.cycle_turns >= self._turn_cap() and self.handoff.get("kind") != "limit" and not j2h:
+''', r'''            # P26 (D422): the dollar limit, checked between turns (a turn in progress may pass it); the answer to it is let through
+            if USD_BUDGET and self.usd_used >= self.usd_limit and self.handoff.get("kind") not in ("limit", "requester_answered") \
+                    and not j2h:
+                self._handoff("identity", kind="limit", usd=True, reason=f"Dollar limit: this run has used {fmt_usd(self.usd_used)} "
+                                                                         f"of {fmt_usd(self.usd_limit)} (API price).")
+                continue
+            if self.cycle_turns >= self._turn_cap() and self.handoff.get("kind") != "limit" and not j2h:
+'''),
+    Edit('P26', "j2.py", r'''        env, remaining = w.get("envelope") or {}, self.budget - self.spent
+''', r'''        if USD_BUDGET and not w.get("charged"):      # P26 (D422): the dollars left fund it before Priority can hold it (R2-1)
+            self._top_up(w["cost"])
+        env, remaining = w.get("envelope") or {}, self.budget - self.spent
+'''),
+    Edit('P26', "j2.py", r'''        need = max(0, w["cost"] - (self.budget - self.spent))
+        if answer:
+''', r'''        need = max(0, w["cost"] - (self.budget - self.spent))
+        if not answer and need > 0 and USD_BUDGET:      # P26 (D422): the dollars left fund it, else the dollar question
+            if self._top_up(w["cost"]):
+                return self._handoff("priority", kind="envelope", wid=w["id"])
+            return self._handoff("identity", kind="limit", usd=True, budget_needed=w["cost"] - (self.budget - self.spent),
+                                 reason=f"Dollar limit: running {w['name']} needs more than the dollars left fund "
+                                        f"({fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} used, API price).",
+                                 resume={"to": "priority", "handoff": {"kind": "envelope", "wid": w["id"]}})
+        if answer:
+'''),
+    Edit('P26', "j2.py", r'''        cost = granted_total(table)
+        if cost > remaining:
+''', r'''        cost = granted_total(table)
+        if cost > remaining and self._top_up(cost):      # P26 (D422): the dollars left fund the ruling, as choice 1 of the question does
+            self.p_refused = {}
+            self._settle(c, c["pending_winner"], "Code funded Identity's ruling from the dollars left: it goes to the validator.")
+            return self._agree(c["ruled_wfs"])
+        usd_rate = self._usd_rate() if USD_BUDGET else None      # P26 (D422): the rate this question is priced at, carried to its answer
+        usd = self._usd_raise(cost - (self.budget - self.spent), usd_rate) if USD_BUDGET and cost > remaining else 0
+        if cost > remaining and (usd or not USD_BUDGET):      # P26: at the dollar cap nothing can be added; Priority's answer stands
+'''),
+    Edit('P26', "j2.py", r'''        need, have = self._change_cost(rows), self.budget - self.spent
+        if need > have:
+''', r'''        need, have = self._change_cost(rows), self.budget - self.spent
+        if need > have and not self._top_up(need):      # P26 (D422): the dollars left fund the change first
+'''),
+    Edit('P26', "j2.py", r'''        twice = [c for c in left if len(self.deferred[c]) >= 2]
+        need = sum(item_min(c, self.goal) for c in left) - (self.budget - self.spent)
+''', r'''        twice = [c for c in left if len(self.deferred[c]) >= 2]
+        self._top_up(sum(item_min(c, self.goal) for c in left))      # P26 (D422): the dollars left fund what a ruling left out first
+        need = sum(item_min(c, self.goal) for c in left) - (self.budget - self.spent)
+'''),
+    Edit('P26', "j2.py", r'''        want = max(as_int(h.get("budget_needed")) or LIMIT_ADD, cheapest)
+        add = min(want, room) if short or h.get("budget_needed") else 0
+''', r'''        want = max(as_int(h.get("budget_needed")) or LIMIT_ADD, cheapest)
+        add = min(want, room) if short or h.get("budget_needed") else 0
+        usd, need = False, h.get("budget_needed")
+        if USD_BUDGET:      # P26 (D422): credits follow the dollars left; a raise is the dollar question, in dollars
+            if need and not h.get("usd") and self._top_up(as_int(need)):
+                need = None      # the dollars left fund what was asked for: no raise to ask
+            short = bool(h.get("usd")) or not self._top_up(cheapest)
+            usd = short or bool(need)
+            usd_rate = self._usd_rate()      # the rate this question is priced at, carried to its answer (usd_rate)
+            add = want = self._usd_raise(need, usd_rate) if usd else 0
+'''),
+    Edit('P26', "j2.py", r'''        if (not short or self.budget + add - self.spent >= cheapest) and not stale and (add or not h.get("budget_needed")):
+''', r'''        if (not short or (add > 0 if USD_BUDGET else self.budget + add - self.spent >= cheapest)) and not stale \
+                and (add or not (need if USD_BUDGET else h.get("budget_needed"))):      # P26: a dollar raise funds keep going
+'''),
+    Edit('P26', "j2.py", r'''        q["question"] = str(r.get("question") or "").strip() or q["question"]
+''', r'''        q["question"] = str(r.get("question") or "").strip() or q["question"]
+        if usd:      # P26 (D422): the dollar question is code's own words; P25 adds what was approved so far
+            q["question"] = (f"This run has used {fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} (API price)."
+                             + (f" Add {fmt_usd(add)}?" if "continue" in choices and add else f" {ask[0].upper() + ask[1:]}?"))
+'''),
+    Edit('P26', "j2.py", r'''        handoff = {"kind": "requester_answered", "limit": reason, "choices": choices, "resume": resume,
+''', r'''        handoff = {"kind": "requester_answered", "limit": reason, "choices": choices, "resume": resume, **({"usd": True, "usd_rate": usd_rate} if usd else {}),
+'''),
+    Edit('P26', "j2.py", r'''            add = max(0, as_int(r.get("add"))) or None
+''', r'''            add = max(0, as_int(r.get("add"))) or None
+            if h.get("usd"):      # P26 (D422): code reads a typed dollar amount, never the model's credits; a click takes the option's
+                add = None if ONLY_PICK.fullmatch(answer) else parse_usd(answer)
+                if add == 0:
+                    decision = None      # "Add $0" is no raise and names no option: asked again
+                if add and "continue" in choices and decision in (None, "continue"):
+                    decision = "continue"
+'''),
+    Edit('P26', "j2.py", r'''                add = q["budget"][choices.index("continue")] or None       # the option's own amount
+''', r'''                add = q["budget"][choices.index("continue")] or None       # the option's own amount
+            if h.get("usd") and add and decision == "continue" and not ONLY_PICK.fullmatch(answer) and add > BIG_RAISE * self.usd_limit \
+                    and add != h.get("confirm_usd"):
+                return self._usd_confirm(q, h, add)      # P26 (D422): a typed raise over 5x the limit is asked back, once
+'''),
+    Edit('P26', "j2.py", r'''        if add and decision != "ship":
+            self._raise_budget(add, f"the Requester's answer: {answer}")
+''', r'''        if add and decision != "ship":
+            if h.get("usd"):
+                self._usd_add(add, answer, h.get("usd_rate"))      # P26 (D422)
+            else:
+                self._raise_budget(add, f"the Requester's answer: {answer}")
+'''),
+    Edit('P26', "j2.py", r'''(f" and add {add} work credits" if add and
+''', r'''(f" and add {fmt_usd(add) if h.get('usd') else str(add) + ' work credits'}" if add and
+'''),
+    Edit('P26', "j2.py", r'''"choices", "failing_items", "resume", "drop_texts",
+                                          "drop_named"))''', r'''"choices", "failing_items", "resume", "drop_texts",
+                                          "drop_named", "usd", "confirm_usd", "usd_rate"))'''),
+    Edit('P26', "j2.py", r'''        p = self.paused
+        if not (self.auto and p) or p["kind"] in AUTO_ASK or len(self.auto_log) >= AUTO_CAP:
+            return None
+''', r'''        p = self.paused
+        if not (self.auto and p) or p["kind"] in AUTO_ASK or len(self.auto_log) >= AUTO_CAP:
+            return None
+        if (p.get("handoff") or {}).get("usd"):
+            return None      # P26 (D422): only the Requester answers the dollar question
+'''),
+    Edit('P26', "j2.py", r'''"auto_waits": self.paused["kind"] in AUTO_ASK,''',
+         r'''"auto_waits": self.paused["kind"] in AUTO_ASK or bool(self.paused["handoff"].get("usd")),'''),
+    Edit('P26', "j2.py", r'''                             f"Go with Priority's final answer ({dec.upper()}): {brief_list(wfs)}"]}
+            c.update(user_question=q, escalated_to_user=True)
+''', r'''                             f"Go with Priority's final answer ({dec.upper()}): {brief_list(wfs)}"]}
+            if USD_BUDGET:      # P26 (D422): the dollar question; choice 1 raises the dollar limit, never credits
+                names = lambda ws: and_list(x.get("name") for x in ws) or "nothing"
+                q = {"question": f"This run has used {fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} (API price). Add "
+                                 f"{fmt_usd(usd)} so Identity's ruling is funded in full?",
+                     "options": [f"Add {fmt_usd(usd)} so the ruling is funded in full: {names(table)}",
+                                 f"Go with Priority's final answer ({dec.upper()}): {names(wfs)}"], "budget": [usd, 0]}
+            c.update(user_question=q, escalated_to_user=True)
+'''),
+    # P26 (D422, R2-2): the ruling's dollar question keeps its amount ("[adds $Z]"), so its card takes a typed amount too
+    Edit('P26', "j2.py", r'''            questions = [{k: v for k, v in q.items() if k != "budget"} for q in questions]
+''', r'''            questions = [{k: v for k, v in q.items() if k != "budget" or (kind == "ruling_budget" and USD_BUDGET)}
+                         for q in questions]
+'''),
+    Edit('P26', "j2.py", r'''        c, answer, need = self._conflict(h.get("conflict")), h.get("answer"), as_int(h.get("need"))
+        c["user_answer"] = answer
+''', r'''        c, answer, need = self._conflict(h.get("conflict")), h.get("answer"), as_int(h.get("need"))
+        # P26 (D422, R2-2): a typed dollar amount: "Add $0" and an amount that funds less than the ruling are asked again, one over
+        # BIG_RAISE times the limit is asked back once; it is the raise only when the Requester chose to add (below)
+        typed = parse_usd(answer) if h.get("usd") and not ONLY_PICK.fullmatch(answer or "") else None
+        if typed is not None:
+            buys = self._usd_credits(typed - max(0.0, self.usd_used - self.usd_limit), h.get("usd_rate"))
+            if typed == 0 or buys < need:
+                return self._usd_ruling_reask(c, h, typed, short=bool(typed))
+            if typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd"):
+                return self._usd_ruling_reask(c, h, typed)
+        c["user_answer"] = answer
+'''),
+    Edit('P26', "j2.py", r'''        if as_int(r.get("choice")) == 1:
+''', r'''        if typed and (as_int(r.get("choice")) == 1 or USD_RAISE_TEXT.fullmatch(answer)):      # P26 (D422): the card's own raise
+            r["choice"], h = 1, {**h, "usd": typed}                                         # text is choice 1; a refusal never raises
+        if as_int(r.get("choice")) == 1:
+'''),
+    Edit('P26', "j2.py", r'''"need": need},''', r'''"need": need, **({"usd": usd, "usd_rate": usd_rate} if USD_BUDGET else {})},'''),
+    Edit('P26', "j2.py", r'''            self._raise_budget(need, f"{c['id']} ruling")
+''', r'''            if h.get("usd"):
+                self._usd_add(h["usd"], answer, h.get("usd_rate"))      # P26 (D422)
+            else:
+                self._raise_budget(need, f"{c['id']} ruling")
+'''),
+    # P26 (D422): a document chain's shortfall: the dollars left fund it first, then the dollar question (R1-4)
+    Edit('P26', "j2.py", r'''        left, todo = self.budget - self.spent, self.stages[i:]
+''', r'''        self._top_up()      # P26 (D422): the dollars left fund the chain first
+        left, todo = self.budget - self.spent, self.stages[i:]
+'''),
+    Edit('P26', "j2.py", r'''        opts, budget, choices = [], [], []
+        if add:
+''', r'''        usd_rate = self._usd_rate() if USD_BUDGET else None      # P26 (D422): the rate this question is priced at, carried to its answer
+        if USD_BUDGET:
+            add = self._usd_raise(need, usd_rate)      # P26 (D422): the raise is dollars
+        opts, budget, choices = [], [], []
+        if add and USD_BUDGET:
+            opts.append(f"Add {fmt_usd(add)} and keep going: you get more of what you asked for built. Or type your own amount")
+            budget.append(add)
+            choices.append("continue")
+        elif add:
+'''),
+    Edit('P26', "j2.py", r'''        shown = [f"{self._sw(k)} (needs at least {c} work credits{'' if ok else '; not covered'})" for k, c, ok in rows]
+''', r'''        shown = [f"{self._sw(k)} (needs at least {c} work credits{'' if ok else '; not covered'})" for k, c, ok in rows]
+        if USD_BUDGET:      # P26 (D422): the Requester reads dollars, never credits
+            q["question"] = (f"This run has used {fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} (API price)."
+                             + (f" Add {fmt_usd(add)}?" if add else f" {ask[0].upper() + ask[1:]}?"))
+            shown = [f"{self._sw(k)}{'' if ok else ' (not covered)'}" for k, c, ok in rows]
+'''),
+    Edit('P26', "j2.py", r'''self.post("system", f"The work credits left ({left}) can't cover {names}.''',
+         r'''self.post("system", f"The {'dollars' if USD_BUDGET else f'work credits ({left})'} left can't cover {names}.'''),
+    Edit('P26', "j2.py", r'''        self._ask_user(f"You asked for {and_list(self._sw(k) for k in todo)}, which needs at least "
+                       f"{sum(c for _, c, _ in rows)} work credits; {left} are left.", [q], "limit", gaps=shown,
+''', r'''        self._ask_user(f"You asked for {and_list(self._sw(k) for k in todo)}, which needs more than the dollars left fund."
+                       if USD_BUDGET else f"You asked for {and_list(self._sw(k) for k in todo)}, which needs at least "
+                       f"{sum(c for _, c, _ in rows)} work credits; {left} are left.", [q], "limit", gaps=shown,
+'''),
+    Edit('P26', "j2.py", r'''"unfunded": short, "limit": "stages"}''', r'''"unfunded": short, "limit": "stages", **({"usd": True, "usd_rate": usd_rate} if USD_BUDGET else {})}'''),
+    Edit('P26', "j2.py", r'''"choices", "unfunded", "limit"))''', r'''"choices", "unfunded", "limit", "usd", "confirm_usd", "usd_rate"))'''),
+    Edit('P26', "j2.py", r'''        add = d.get("add") or (q.get("budget")[choices.index("continue")] if decision == "continue" and q.get("budget") else None)
+''', r'''        add = d.get("add") or (q.get("budget")[choices.index("continue")] if decision == "continue" and q.get("budget") else None)
+        if h.get("usd"):      # P26 (D422): a typed dollar amount, else the option's own; never the model's credits
+            typed = None if ONLY_PICK.fullmatch(answer) else parse_usd(answer)
+            if typed == 0:      # "Add $0" is no raise: asked again
+                return self._reask(q, h, ("kind", "stage_i", "started", "choices", "unfunded", "limit", "confirm_usd", "usd", "usd_rate"))
+            add = typed or (q["budget"][choices.index("continue")] if decision == "continue" and q.get("budget") else None)
+            if typed and decision == "continue" and typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd"):
+                return self._usd_confirm(q, h, typed)      # over 5x the limit: asked back once
+'''),
+    Edit('P26', "j2.py", r'''+ (f" and add {add} work credits" if add else "")''',
+         r'''+ (f" and add {fmt_usd(add) if h.get('usd') else str(add) + ' work credits'}" if add else "")'''),
+    Edit('P26', "j2.py", r'''        if add:
+            self._raise_budget(add, f"the Requester's answer: {answer}")
+        if decision == "continue":
+            self.post("identity", "Got it. We'll keep going." + (f" {add} work credits added." if add else ""), to_user=True,
+''', r'''        if add and h.get("usd"):
+            self._usd_add(add, answer, h.get("usd_rate"))      # P26 (D422)
+        elif add:
+            self._raise_budget(add, f"the Requester's answer: {answer}")
+        if decision == "continue":
+            self.post("identity", "Got it. We'll keep going." + ((f" {fmt_usd(add)} added (API price)." if h.get("usd") else
+                                                                  f" {add} work credits added.") if add else ""), to_user=True,
+'''),
+    # P26 (D422): Identity is told the dollar limit, never a credit one, so its words to the Requester carry no credits (R1-10)
+    Edit('P26', "j2.py", r'''        reason, last = h.get("reason") or "", self.audits[-1] if self.audits else None
+''', r'''        reason, last = h.get("reason") or "", self.audits[-1] if self.audits else None
+        if USD_BUDGET and reason.startswith("Out of budget"):
+            reason = (f"Out of budget: this run has used {fmt_usd(self.usd_used)} of {fmt_usd(self.usd_limit)} approved (API price), "
+                      "and what is left does not fund the next step.")
+'''),
+    Edit('P26', "j2.py", r'''(f" [adds {add} work credits]" if add else "")''',
+         r'''((f" [adds {fmt_usd(add)}]" if USD_BUDGET else f" [adds {add} work credits]") if add else "")'''),
 )
 
 OTHER_EDITS = (
@@ -1415,6 +1845,9 @@ def register(entry, extras=None):
 
 def _create(name, label, secs, file=None, path=None, practice=None, form=None):
     """Save a new document type, locally:'''),
+    # ---- P27 (main c9d4e662): a type's file pattern lists files only; Windows refuses to open (hash) a folder it matches
+    Edit("P27", "j2_artifacts.py", 'sorted(glob.glob(os.path.join(d, t["file"])), key=_num)] \\\n',
+         'sorted(glob.glob(os.path.join(d, t["file"])), key=_num) if os.path.isfile(p)] \\\n'),
 )
 
 EDITS = J2_EDITS + OTHER_EDITS
@@ -1434,6 +1867,8 @@ PATCH_NOTES = {
     "P23": "`ended_workable(run_dir)` (D247) is true only for a clean end: `summary.json`'s outcome starts \"Done:\" and the last audit passes `workable()` with `accepted` and `after_real_run` emptied, so a run that ended \"Done with open items\" (an item accepted as it is, a real run that never ran or did not pass) is never saved as a run template (`_save_run_template`), reused as a folder (`_reuse_folder`) or served by the content door",
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
     "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
+    "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
+    "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
     "P12": "Windows (D101), nothing else: `j2_check.find_chrome` also looks in the Windows install folders of Chrome, `j2_check._chrome` decodes Chrome's output as UTF-8 with replacement, `j2_template_lib` writes its index with `oslayer.replace` (a rename that waits out a reader) and takes its library lock through `oslayer` (P10), records a template's saved path with `/` on every system (`run_tpl_rel`) and splits it on either separator when it checks for `..` (`run_saved_dir`)",
@@ -1619,7 +2054,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
         "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

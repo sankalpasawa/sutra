@@ -153,25 +153,51 @@ test("a team's question says who asks in plain words: Asha needs one answer (or 
   assert.match(FD.needCard(approval(11), {}), /Asha needs your OK/);
 });
 
-test("budgetOf (D252): empty is the team default, a whole number from 1 to 100000 is sent, anything else stops the send with a sentence", () => {
-  for (const v of ["", "   ", null, undefined]) assert.deepEqual(FD.budgetOf(v), {ok: true, budget: null, error: ""});
-  for (const [v, n] of [["1", 1], ["100", 100], [" 250 ", 250], ["100000", 100000]]) assert.deepEqual(FD.budgetOf(v), {ok: true, budget: n, error: ""});
-  for (const v of ["0", "-3", "100001", "12.5", "1e3", "abc", "007"]) {
-    const got = FD.budgetOf(v);
-    assert.equal(got.ok, false, v);
-    assert.equal(got.budget, null);
-    assert.match(got.error, /whole number of work credits from 1 to 100000, or empty for the team default/);
-  }
-});
-
-test("the home box (D252): an empty Budget field with the team-default placeholder beside Go, and no cap field", () => {
+test("the home box (D423): an empty holder for the Budget chip beside Go, the chip script before home.js, no credits field", () => {
   const fs = require("node:fs");
   const html = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/pages/home.html"), "utf8");
   const box = html.slice(html.indexOf('<div class="fdcompose">'), html.indexOf('id="fdsend"'));
-  assert.match(box, /Budget \(work credits\) <input id="fdbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default"/);
-  assert.doesNotMatch(box.slice(box.indexOf('id="fdbudget"')).split(">")[0], /value=/);
-  assert.doesNotMatch(html, /cap/i);
+  assert.match(box, /<span id="fdbudget" style="margin-left:auto"><\/span>/);
+  assert.doesNotMatch(box, /work credits|type="number"/);
+  assert.ok(html.indexOf("/ui/js/budget_chip.js") > 0 && html.indexOf("/ui/js/budget_chip.js") < html.indexOf("/ui/js/home.js"));
+  assert.equal(FD.budgetOf, undefined);
   const js = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/static/js/home.js"), "utf8");
   assert.match(js, /choice \? \{text: body, choice\} : \{text: body, \.\.\.budget\}/);      // a budget never rides with a card answer
-  assert.match(js, /send\(body, null, \{plan: true, budget: b\.budget\}\)/);
+  assert.match(js, /send\(body, null, \{plan: true, usd_budget: usd\}\)/);
+});
+
+test("stopOf (D420): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {
+  const sent = [{id: 900, role: "user", text: "A cafe site"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A cafe site"}}];
+  const base = {show: true, messages: sent, answers: {}, box: "", departments: [dept("web", "running", {live_task_id: tid(7)}), dept("ads", "idle", {live_task_id: tid(8)})]};
+  assert.deepEqual(FD.stopOf(base), {show: true, taskId: tid(7)});
+  const no = {show: false, taskId: ""};
+  assert.deepEqual(FD.stopOf({...base, box: "more please"}), no);                                       // typing turns it back into Go
+  assert.deepEqual(FD.stopOf({...base, box: "   "}), {show: true, taskId: tid(7)});
+  assert.deepEqual(FD.stopOf({...base, show: false}), no);                                              // nothing sent from this box
+  assert.deepEqual(FD.stopOf({...base, departments: [dept("web", "filed", {live_task_id: null})]}), no);  // the run ended
+  assert.deepEqual(FD.stopOf({...base, departments: [dept("web", "running", {live_task_id: "../x"})]}), no);
+  assert.deepEqual(FD.stopOf({...base, messages: sent.slice(0, 1)}), no);                                // no team has the work yet
+  const choice = {id: 902, role: "agent", text: "", card: {type: "choice", question: "Which team?", options: [{id: "web", label: "Web"}]}};
+  assert.deepEqual(FD.stopOf({...base, messages: [...sent, choice]}), no);                              // the card is a question, not the work
+  assert.deepEqual(FD.stopOf(null), no);
+  const step = [sent[0], {...sent[1], card: {...sent[1].card, project_id: "prj_1"}}];                    // D424: a step of a project
+  assert.deepEqual(FD.stopOf({...base, messages: step}), {show: true, taskId: tid(7), project: "prj_1"});
+});
+
+test("raise input (D423): a dollar question's card takes a typed amount; the option tail is stripped; no credits; every $ says API price", () => {
+  const text = "@Requester The site isn't finished yet.\nThis run has used $20.40 of $20 (API price). Add $10? So far: $20 approved. 3 calls estimated: Codex reports no price." +
+    "\n   Option 1: Add $10 and keep going: you get more of the missing parts built. Or type your own amount [adds $10]\n   Option 2: Finish as it is: you get the site";
+  const html = FD.needCard(question(12, {text}), {});
+  assert.match(html, /<input class="bchipraisein"[^>]*value="\$10"/);
+  assert.match(html, /data-act="fd-raise" data-msg="12">Add and keep going/);
+  assert.match(html, /3 calls estimated: Codex reports no price\./);
+  assert.doesNotMatch(html, /\[adds/);
+  assert.doesNotMatch(html, /credit/i);
+  const shown = html.replace(/<[^>]+>/g, " ");
+  for (const m of shown.matchAll(/\$\d[\d,.]*/g)) {
+    const near = shown.slice(Math.max(0, m.index - 80), m.index + 120);
+    assert.match(near, /API price|estimated/, `${m[0]} has API price near it`);
+  }
+  assert.match(FD.needCard(question(13, {options: ["Add $10 and keep going [adds $10]", "Finish"]}), {}), /data-text="Add \$10 and keep going \[adds \$10\]"><b>Add \$10 and keep going<\/b>|>Add \$10 and keep going</);
+  assert.doesNotMatch(FD.needCard(question(7), {}), /bchipraise/);                    // an ordinary question has no raise input
 });

@@ -610,7 +610,7 @@
     renderChat();
     renderComposer();
     try {
-      const budget = isObj(opts) && Number.isInteger(opts.budget) ? {budget: opts.budget} : {};      // D252: the home box's Budget, a new request only
+      const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D423: the Budget chip's dollars, a new request only
       const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
@@ -838,8 +838,8 @@
     const el = $("fdattn");
     if (!fd || !el) return;
     const active = doc.activeElement;
-    if (active && el.contains(active) && active.matches && active.matches("textarea[data-msg]") && active.value.trim() !== "" &&
-      !S.front.answering[active.dataset.msg] && !hasOwn(S.answers, active.dataset.msg)) { S.front.held = true; return; }
+    const msg = active && el.contains(active) && active.matches ? answerTyped(active) : undefined;
+    if (msg !== undefined && !S.front.answering[msg] && !hasOwn(S.answers, msg)) { S.front.held = true; return; }
     S.front.held = false;
     const st = {needs: S.needs, heads: S.heads, seen: S.seen, departments: S.departments, loaded: S.needsLoaded, answering: S.front.answering,
       errors: S.front.errors, elapsedMs: S.needsAt ? Date.now() - S.needsAt : 0, moreDone: S.front.moreDone};
@@ -847,6 +847,14 @@
     const done = fd.finishedHtml(st);
     ctx.paint($("fddone"), done);
     $("fddone").hidden = done === "";
+  }
+
+  // The message a focused box is typing an answer to: a half-typed answer, or a dollar raise changed from its suggested amount (R1-6). Else undefined.
+  function answerTyped(box) {
+    if (box.matches("textarea[data-msg]")) return box.value.trim() !== "" ? box.dataset.msg : undefined;
+    if (!box.matches(".bchipraisein") || box.value === box.defaultValue) return undefined;
+    const send = box.closest(".fdcard") && box.closest(".fdcard").querySelector("[data-act=fd-raise]");
+    return send ? send.dataset.msg : undefined;
   }
 
   // Under the box: after the owner started something here, the org chat's progress sentence and its last word (or the choice it waits on).
@@ -859,7 +867,8 @@
     // only what came after this send: an older project's task card must never be where a new project lands
     const since = S.front.since || 0;
     const fresh = S.messages.filter(m => !(typeof m.id === "number" && m.id <= since));
-    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going};
+    const st = {show: S.front.sent || S.front.error !== "", status, error: S.front.error, messages: fresh, answers: answersMap(), going: S.front.going,
+      departments: S.departments, box: $("fdbox") ? $("fdbox").value : ""};
     const href = S.front.sent && fd.landing ? fd.landing(st) : "";
     if (href && place() === "front" && !S.front.going) {
       S.front.going = true;
@@ -870,25 +879,60 @@
       }, LAND_MS);
     }
     ctx.paint($("fdlatest"), fd.latestHtml(st));
+    if (fd.stopOf) paintStop(fd.stopOf(st));
+  }
+
+  // D420: Go is Stop (a square and "Stop") while the run this box started is live and the box is empty; data-stop holds the task id
+  const STOP_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor"/></svg> ';
+  function paintStop(stop) {
+    const b = $("fdsend");
+    if (!b || ((b.dataset.stop || "") === stop.taskId && (b.dataset.project || "") === (stop.project || ""))) return;
+    b.dataset.stop = stop.taskId;
+    b.dataset.project = stop.project || "";
+    b.classList.toggle("fdstop", stop.show);
+    b.innerHTML = stop.show ? STOP_ICON + "Stop" : "Go";
+    if (stop.show) b.setAttribute("aria-label", "Stop the run"); else b.removeAttribute("aria-label");
+  }
+
+  // Stop: asks first, then the existing stop ladder (POST /api/tasks/{id}/stop, no force); 409 means it already ended, so only the lists refresh
+  // D424: a step of a project stops the whole project (POST /api/projects/{id}/stop, the project's own ladder)
+  async function stopFront(taskId, project) {
+    if (!/^tsk_[0-9a-f]{12}$/.test(text(taskId))) return false;
+    if (!root.confirm(project ? "Stop this project? What's built so far is kept." : "Stop this run? What's built so far is kept.")) return false;
+    try {
+      await api.post(project ? "/api/projects/" + enc(project) + "/stop" : "/api/tasks/" + enc(taskId) + "/stop", {});
+    } catch (e) {
+      if (!e || e.status !== 409) { showBanner(errorWords(e)); return false; }
+    }
+    await fetchDepartments().catch(handleFetchError);
+    return true;
+  }
+
+  // D423: the Budget chip beside Go, drawn once the team default is known (GET /api/engine/settings, effective.usd_budget); without it no
+  // budget is sent and the team's own applies
+  async function mountChip() {
+    const el = $("fdbudget");
+    if (!el || !root.BudgetChip) return;
+    try {
+      const s = await api.get("/api/engine/settings");
+      const v = isObj(s) && isObj(s.effective) ? s.effective.usd_budget : null;
+      if (Number.isFinite(v)) S.chip = root.BudgetChip.mount(el, v, "default");
+    } catch (e) { handleFetchError(e); }
   }
 
   async function sendFront() {
     const box = $("fdbox");
     const body = text(box.value).trim();
     if (body === "" || S.sending) return false;
-    const field = $("fdbudget"), fdo = FD(), b = fdo ? fdo.budgetOf(field ? field.value : "") : {ok: true, budget: null, error: ""};      // D252: empty = the team's own budget
-    if (field) {
-      field.setCustomValidity(b.error);
-      if (!b.ok) { field.reportValidity(); return false; }
-    }
+    const usd = S.chip ? S.chip.value() : null;      // D423: the Budget chip; null is the team's own budget
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
     S.front.since = S.lastId;
     $("fdsend").disabled = true;
-    const ok = await send(body, null, {plan: true, budget: b.budget});
+    const ok = await send(body, null, {plan: true, usd_budget: usd});
     $("fdsend").disabled = false;
-    if (ok) { if (box.value.trim() === body) box.value = ""; if (field) field.value = ""; }
+    if (ok) { if (box.value.trim() === body) box.value = ""; if (S.chip) S.chip.reset(); }
     else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
     renderFrontLatest();
     return ok;
@@ -939,7 +983,7 @@
   }
 
   function onFrontClick(e) {
-    if (e.target.closest("#fdsend")) { sendFront(); return; }
+    if (e.target.closest("#fdsend")) { const stop = $("fdsend").dataset.stop; if (stop) stopFront(stop, $("fdsend").dataset.project || ""); else sendFront(); return; }
     const tryit = e.target.closest("[data-act=fd-try]");
     if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
     const b = e.target.closest("button[data-act]");
@@ -948,6 +992,11 @@
     const card = b.closest(".fdcard");
     if (act === "fd-option") answerFront(b.dataset.msg, "Option " + b.dataset.opt);
     else if (act === "fd-answer") { const box = card && card.querySelector("textarea[data-msg]"); if (box) answerFront(b.dataset.msg, box.value); }
+    else if (act === "fd-raise") {      // D423: a dollar raise, typed; a bad amount marks the box and sends nothing
+      const box = card && card.querySelector(".bchipraisein"), n = root.BudgetChip ? root.BudgetChip.parse(box && box.value) : null;
+      if (n === null) { if (box) box.setAttribute("aria-invalid", "true"); }
+      else answerFront(b.dataset.msg, "Add $" + n + " and keep going");
+    }
     else if (act === "fd-approve" || act === "fd-decline") decideFront(b.dataset.msg, b.dataset.text || (act === "fd-approve" ? "Yes" : "No"));
     else if (act === "fd-choose") { const id = Number(b.dataset.msg); if (Number.isInteger(id)) { S.answers[id] = b.dataset.text || ""; send(b.dataset.text || b.dataset.option, {message_id: id, option: b.dataset.option || b.dataset.text}).then(renderFrontLatest); } }
     else if (act === "fd-retry" || act === "retry-task") retryTask(b.dataset.task, b);
@@ -973,6 +1022,7 @@
   function wireFront() {
     if (!$("front")) return;
     $("front").addEventListener("click", onFrontClick);
+    $("fdbox").addEventListener("input", renderFrontLatest);      // D420: typing turns Stop back into Go
     $("fdbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFront(); } });
     $("front").addEventListener("keydown", e => {
       const t = e.target;
@@ -1848,6 +1898,7 @@
     const link = deepLink();
     wire();
     wireFind();
+    mountChip();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false, group: link.pane === "settings" ? "appearance" : ""});
     renderProgress();
     renderComposer();
@@ -1971,7 +2022,7 @@
 
   const HomePage = {
     boot, loadAll, renderChat, send, answerNeeds, selectPane, renderRail, renderNeeds, onEvent, themeApply, barSet, renderSettings, saveEngine, testConnector,
-    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, openRawChat,
+    signIn, cancelSignIn, errorWords, poll: pollAll, state: () => S, retryTask, renderFront, setPlace, answerFront, decideFront, sendFront, stopFront, openRawChat,
   };
   root.HomePage = HomePage;
   const start = () => protect("boot", () => boot().catch(e => { if (root.console) root.console.error("HomePage: boot failed", e); }));

@@ -724,3 +724,37 @@ button:not(:disabled):not(.cjump-btn):active,.lbtn:active,.fnchip:active{transfo
 /* ---- one accent: J2's detailed view and library draw links, badges and selected tabs in J2's purple (--accent, --vio); every Sutra page uses the
    studio's navy (--s-accent, light and dark) */
 body { --accent: var(--s-accent); --vio: var(--s-accent); }
+
+/* ---- the Budget chip (budget_chip.js, D423) beside Go on Home's box and a team page's start form; both pages link this sheet. The studio's tokens
+   (--s-*: sutra-front.css on Home, the team page's j2.css has the same names). A pill, and a popover that floats above it (absolute, over the page):
+   the row it sits in never grows, so "Try:" keeps its one line. Every button here is drawn in full: no browser default shows.
+   Borders that mark a control are --s-muted (3:1, contrast.test.js); the popover's edge is the hairline --line, which both pages define. */
+.bchip{position:relative;display:flex;justify-content:flex-end;font:500 14px/1.2 var(--s-body)}
+.bchip button{appearance:none;margin:0;cursor:pointer;font:inherit;text-transform:none;box-shadow:none}
+.bchip .bchippill{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:8px 14px;border-radius:999px;border:1px solid var(--s-muted);background:var(--s-surface2);color:var(--s-ink);font-weight:600}
+.bchip .bchippill:hover,.bchip .bchippill[aria-expanded="true"]{border-color:var(--s-accent)}
+.bchipcaret{font-size:11px;color:var(--s-muted)}
+.bchip :focus-visible{outline:2px solid var(--s-accent);outline-offset:2px}
+.bchippop{position:absolute;right:0;top:calc(100% + 8px);z-index:40;width:max-content;max-width:min(400px,calc(100vw - 34px));box-sizing:border-box;padding:14px 16px;
+  border-radius:14px;border:1px solid var(--line);background:var(--s-surface);color:var(--s-ink);box-shadow:0 1px 2px var(--s-ring),0 16px 36px -16px var(--s-shadow);text-align:left}
+.bchippop[hidden]{display:none}
+.bchiptitle{margin:0 0 10px;font:600 15px/1.2 var(--s-display);color:var(--s-ink)}
+.bchiprow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.bchip .bchippick{display:inline-flex;align-items:baseline;gap:5px;white-space:nowrap;padding:7px 12px;border-radius:999px;border:1px solid var(--s-muted);background:var(--s-surface);color:var(--s-ink);font-weight:500}
+.bchip .bchippick:hover{border-color:var(--s-accent)}
+.bchip .bchippick[aria-pressed="true"]{background:var(--s-accent);border-color:var(--s-accent);color:var(--s-accentink);font-weight:600}
+.bchiptag{font:600 11px/1 var(--s-body);letter-spacing:.02em;color:inherit}
+/* Custom, picked, is the box: the pill's own place, height and radius. Focus is the pill's border in the accent doubled by a 1px ring (accent on the
+   surface: 7.1:1 light, 7.5:1 and 7.8:1 dark) and a soft halo. A bad amount turns it --s-bad, doubled the same way (5.7:1 light, 6.5:1 dark; red is
+   close to --s-muted in lightness, so the width and the .bchiperr line under the row carry it too, not the hue alone). */
+.bchipcustom{display:inline-flex;align-items:center;gap:2px;padding:0 12px;border-radius:999px;border:1px solid var(--s-muted);background:var(--s-surface);color:var(--s-ink);cursor:text}
+.bchipcustom:focus-within{border-color:var(--s-accent);box-shadow:0 0 0 1px var(--s-accent),0 0 0 4px color-mix(in srgb,var(--s-accent) 28%,transparent)}
+.bchipcustom:has(.bchipown[aria-invalid="true"]){border-color:var(--s-bad);box-shadow:0 0 0 1px var(--s-bad)}
+.bchipcustom:has(.bchipown[aria-invalid="true"]):focus-within{box-shadow:0 0 0 1px var(--s-bad),0 0 0 4px color-mix(in srgb,var(--s-bad) 28%,transparent)}
+.bchip .bchipown{width:4.6em;margin:0;padding:7px 0;border:0;border-radius:0;outline:0;background:none;color:var(--s-ink);font:inherit;box-shadow:none;appearance:none}
+/* !important: the team page's `#sview :focus-visible` (an id, j2.css) would draw its rectangle inside the pill; the pill shows the focus instead */
+.bchip .bchipown:focus,.bchip .bchipown:focus-visible{outline:0!important;box-shadow:none}
+.bchip .bchipown::placeholder{color:var(--s-muted);opacity:1}
+.bchiperr{margin:8px 0 0;font-size:12.5px;line-height:1.4;color:var(--s-bad)}
+.bchiperr[hidden]{display:none}
+.bchipnote{margin:10px 0 0;font-size:12.5px;line-height:1.4;color:var(--s-muted)}

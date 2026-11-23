@@ -256,7 +256,9 @@
     const budget = Number.isFinite(p.budget_credits) && p.budget_credits > 0 ? p.budget_credits : null;
     const usd = isObj(s.spend) && Number.isFinite(s.spend.usd) ? s.spend.usd : null;
     const unpriced = isObj(s.spend) && Number.isFinite(s.spend.unpriced) && s.spend.unpriced > 0 ? s.spend.unpriced : 0;
-    return '<h2>What it has used</h2><p class="pspend"><b>' + credits(calls) + "</b>" + (budget ? " of " + credits(budget) : "") + (usd !== null ? "; about $" + usd.toFixed(2) : "") + "</p>" +
+    const limit = Number.isFinite(p.budget_usd) && p.budget_usd > 0 ? p.budget_usd : null;      // D424: the project's own dollars (the Budget chip's, or the month's left)
+    return '<h2>What it has used</h2><p class="pspend"><b>' + credits(calls) + "</b>" + (budget ? " of " + credits(budget) : "") +
+      (usd !== null ? "; about $" + usd.toFixed(2) + (limit !== null ? " of $" + limit.toFixed(2) : "") : "") + "</p>" +
       (usd !== null ? '<p class="cnote">The dollars are an estimate at list price. They include the planning of the project' + (unpriced ? "; " + (unpriced === 1 ? "1 call has" : unpriced + " calls have") + " no price, so it may be a little more" : "") + ".</p>" : "") +
       (budget && calls >= budget ? '<p class="cnote">It has used all of its credits.</p>' : "");
   }

@@ -670,7 +670,7 @@ def test_engine_settings_follow_the_engine_sections_field_list():
               "force_audit_note", "force_question", "memory_test_lessons"]  # engine.md LOCKED_FIELDS
     assert settings["locked"] == locked
     assert settings["editable"] == [f for f in settings["defaults"] if f not in locked]
-    assert len(settings["defaults"]) == 37 and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169); sync 6 (D177, D179): run_templates, auto_reuse, artifact_library, reviewer, reviewer_wait
+    assert len(settings["defaults"]) == 39 and settings["defaults"]["usd_budget"] == 20.0 and settings["defaults"]["usd_cap"] is None and settings["defaults"]["builder_timeout"] == 600.0       # J2 sync 5 (D169); sync 6 (D177, D179): run_templates, auto_reuse, artifact_library, reviewer, reviewer_wait
     flags = {f: settings["defaults"][f] for f in ("run_templates", "auto_reuse", "artifact_library", "reviewer", "reviewer_wait")}
     assert flags == {"run_templates": False, "auto_reuse": False, "artifact_library": False, "reviewer": True, "reviewer_wait": 120.0}
     types = settings["output_types"]                                                  # D166: the pages' choices; the names are data
@@ -1466,6 +1466,8 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("PUT", "/api/tasks/tsk_000000000001/choice", {"provider": None}, "/api/tasks/{task_id}/choice"),
     ("POST", "/api/chats/cs_org/retry", {}, "/api/chats/cs_org/retry"),
     ("POST", "/api/tasks/tsk_000000000001/retry", {}, "/api/tasks/{task_id}/retry"),
+    ("POST", "/api/tasks/tsk_000000000001/stop", {}, "/api/tasks/{task_id}/stop"),
+    ("POST", "/api/projects/prj_000000000001/stop", {}, "/api/projects/{project_id}/stop"),
     ("PUT", "/api/limits", {"guard_enabled": True}, "/api/limits"),
     ("POST", "/api/limits/continue", {}, "/api/limits/continue"),
     ("PUT", "/api/ops/attention", {"nudges_per_hour": 1}, "/api/ops/attention"),
@@ -2150,7 +2152,8 @@ def test_a_working_log_and_a_step_are_read_only_and_an_unknown_chat_is_gone(fake
     assert len(ok(fake, "/api/chats/cs_77aa10c2e9b4/messages")["messages"]) == 16  # nothing was added
 
 
-BODY_MESSAGE = "the body is {text, choice?, budget?}"
+BODY_MESSAGE = "the body is {text, choice?, budget?, usd_budget?}"
+USD_MESSAGE = "usd_budget must be dollars from 1 to 10000"      # D423
 TEXT_MESSAGE = "text must be 1 to 8000 characters"
 CHOICE_MESSAGE = "choice is {message_id, option}"
 
@@ -2163,6 +2166,8 @@ CHOICE_MESSAGE = "choice is {message_id, option}"
     ({"text": "x", "choice": {"message_id": 1}}, "choice", CHOICE_MESSAGE),
     ({"text": "x", "choice": {"message_id": 1, "option": "Yes", "more": 1}}, "choice", CHOICE_MESSAGE),
     ({"text": "x", "choice": {"message_id": 1, "option": 2}}, "choice", CHOICE_MESSAGE),
+    ({"text": "x", "usd_budget": 0.5}, "usd_budget", USD_MESSAGE), ({"text": "x", "usd_budget": 12.345}, "usd_budget", USD_MESSAGE),
+    ({"text": "x", "usd_budget": True}, "usd_budget", USD_MESSAGE),
 ])
 def test_a_line_that_is_not_text_of_one_to_8000_characters_is_refused_before_anything_is_stored(fake, body, path, message):
     error = error_of(fake.post("/api/chats/cs_org/messages", body), 422, "validation")

@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 44 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 52 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -36,7 +36,7 @@ _spec.loader.exec_module(port)
 
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "function_chat", "output_pick", "dept_ext"]
+           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext"]
 # The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
 # here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
 J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates", "run-template",
@@ -67,8 +67,8 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 # ----------------------------------------------------------------------------------------------------------------------
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
             "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f1", "E20f2", "E20g", "E20h", "E20i", "E21", "E22", "E23",
-            "E24a", "E24b", "E24c", "E24d", "E24e", "E24f", "E25a", "E25b", "E25c", "E25d"]
-COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2}
+            "E24a", "E24b", "E24c", "E24d", "E24e", "E24f", "E25a", "E25b", "E25c", "E25d", "E26a", "E26b", "E26c", "E27a", "E27b", "E27c", "E27d", "E27e"]
+COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2, "E27d": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
            "<!--SUTRA-BOOT-->\n"
@@ -156,14 +156,27 @@ CASES = {
     "E24e": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow", 1)],
              ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow"]),
     "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
-    # E25 (D251): the start page's Budget (work credits), 100 by default, sent with the first message as `budget`
-    "E25a": ([('<div class="schips" id="schips"></div><label for="lbudget"', 1),
-              ('Budget (work credits) <input id="lbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default"', 1)],
-             ['<div class="schips" id="schips"></div><button']),
-    "E25b": ([("async function sendText(text, budget){", 1)], ["async function sendText(text){"]),
-    "E25c": ([("...(budget ? {budget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
-    "E25d": ([("const b = lbudget(); if (b === null) return; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); });", 1),
-              ("const lbudget = () => {", 1)], ['$("lsend").disabled = true; sendText(t); });']),
+    # E25 (D423): the start page's Budget chip in dollars (API price), sent with the next request only as `usd_budget`
+    "E25a": ([('<div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button', 1)],
+             ['<div class="schips" id="schips"></div><button', "work credits) <input"]),
+    "E25b": ([("async function sendText(text, usdBudget){", 1)], ["async function sendText(text){"]),
+    "E25c": ([("...(usdBudget ? {usd_budget: usdBudget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
+    "E25d": ([("const b = LCHIP ? LCHIP.value() : null; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); if (LCHIP) LCHIP.reset(); });", 1),
+              ('SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})', 1)], ['$("lsend").disabled = true; sendText(t); });', "const lbudget"]),
+    # E26 (D420): Stop on the studio's send button while the run is live, after a confirm, through the existing stop ladder
+    "E26a": ([('<svg data-icon="send" width="15" height="15"', 1), ('<svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none">', 1)],
+             ['<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15"']),
+    "E26b": ([('const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);', 1)],
+             ['$("sbox").disabled = $("ssend").disabled = busy;']),
+    "E26c": ([("if (!confirm(\"Stop this run? What's built so far is kept.\")) return;", 1), ('SutraCtx.api.post("/api/tasks/" + id + "/stop", {})', 1),
+              ('$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop();', 1)],
+             ['$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim();']),
+    # E27 (D423): the raise card takes a typed amount in dollars; the "[adds $Z]" tail is stripped like the credits one
+    "E27a": ([('  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer"', 1)], ['  else h += `<div class="own">']),
+    "E27b": ([("function sRaise(s, kind, live){", 1), ("BudgetChip.raiseHtml(add)", 1)], []),
+    "E27c": ([('return sendText("Add $" + n + " and keep going"); }', 1), ('if (b.dataset.raise !== undefined)', 1)], []),
+    "E27d": ([(r"\[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]", 2)], [r"\[adds \d+ (?:units|work credits)[^\]]*\]"]),
+    "E27e": ([('  if (ok) h += sRaise(s, kind, live) + `<div class="acts">', 1)], ['  if (ok) h += `<div class="acts">']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
@@ -187,17 +200,19 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_forty_four_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 44 and sorted(CASES) == sorted(EDIT_IDS)
+def test_there_are_fifty_one_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 52 and sorted(CASES) == sorted(EDIT_IDS)
     assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 41
+    assert sum(1 for count in COUNTS.values() if count == 1) == 48
 
 
 def test_the_retired_edits_left_nothing_behind():
     # E14 to E18 (Run settings: J2's own is native now) and E19a to E19c (the start select, OUTS and /api/output moved to a module)
-    for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", "/api/engine/settings", 'id="stitle"', 'id="sotype"',
+    for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", 'id="stitle"', 'id="sotype"',
                  "run-settings.css", "/api/output"):
         assert gone not in PAGE, gone
+    assert PAGE.count("/api/engine/settings") == 1 and 'SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})' in PAGE, \
+        "only E25's Budget chip reads the settings now (D423); the retired output select read them too"
     assert 'id="runlist"' in PAGE and 'id="runq"' in PAGE and 'class="rsec"' in PAGE            # J2's own Run settings is there instead
     assert not (UI / "static" / "css" / "run-settings.css").exists()
 
@@ -439,6 +454,7 @@ document.documentElement.dataset.theme = "dark";</script>
       <span class="slsep" aria-hidden="true"></span><a class="slq" href="/library?view=detail">Template library</a><button type="button" class="slink" id="slanddetail">Detailed view</button></div>
   </section>
   <section class="swork" id="swork" hidden>
+    <form class="scbox" id="sform"><input id="sbox" aria-label="Your message" placeholder="Ask for a change…" autocomplete="off"><button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>
     <div class="sprev" id="sprevbox"><iframe id="sframe" title="Your result"></iframe><iframe id="sframe2" class="next" title="Your result, next version" tabindex="-1" aria-hidden="true"></iframe></div>
   </section>
 </div>
@@ -512,6 +528,16 @@ async function sendText(text){
   await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})});
 }
 $("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; $("lsend").disabled = true; sendText(t); });
+function qCard(s, kind, live){ let h = "";
+  if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button></div>`;
+  else h += `<div class="own"><input aria-label="Your answer"></div>`; }
+const qa = l => l.match(/^\s+Option \d+: (.*?)(?: \[adds \d+ (?:units|work credits)[^\]]*\])?$/) || l.replace(/ \[adds \d+ (?:units|work credits)[^\]]*\]$/, "");
+function sCardClick(e){
+  const inp = c.querySelector(".own input");
+  if (b.dataset.own !== undefined) return; }
+function sChat(s){ const busy = s.status === "running" || !!s.saved;
+  $("sbox").disabled = $("ssend").disabled = busy; }
+$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim(); if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });
 const TABSUB = {rundetails: "run id, model, budget", runsettings: "appearance, what to build, saved runs"};
 document.addEventListener("keydown", e => { if (e.key === "Escape" && CHAT.on && !document.body.classList.contains("simple") && !(RAIL && RAIL.open) && !$("detail").open && $("agentdrawer").hidden) chatSet(false); });
 if (!CAT.on) poll();
@@ -629,7 +655,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 44 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 52 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -856,7 +882,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 44
+    assert len(port.PAGE_EDITS) == 52
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -887,5 +913,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 44 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 52 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

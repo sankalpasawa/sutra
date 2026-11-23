@@ -98,9 +98,9 @@
   const stripTag = value => text(value).replace(/^\s*@[\w-]+[,:]?[ \t]*/, "");
 
   /* ---------------------------------------------------------------- a question with options (J2's parseAsk, j2_ui.html:1070) */
-  const OPTION = /^\s+Option \d+: (.*?)(?: \[adds \d+ (?:units|work credits)[^\]]*\])?$/;
+  const OPTION = /^\s+Option \d+: (.*?)(?: \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\])?$/;      // D423: or "[adds $10]"
   const OPTION_START = /^\s+Option \d+: /;
-  const OPTION_TAIL = / \[adds \d+ (?:units|work credits)[^\]]*\]$/;
+  const OPTION_TAIL = / \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]$/;
   const NOT_A_QUESTION = /^-|^Still not right|^Some parts|^I couldn't tell/;
 
   // parseAsk(text) -> {say, qs: [{q, opts}]} from "@Requester say\n1. question\n   Option 1: text" (one unnumbered question: the line above its

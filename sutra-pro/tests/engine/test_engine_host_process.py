@@ -129,8 +129,8 @@ def test_a_stop_line_ends_the_process_inside_six_seconds_while_a_slow_call_is_ru
 
 
 def test_two_departments_run_side_by_side_and_share_nothing_but_the_library(make_run_dir, data_dir, procs):
-    a = make_run_dir(dept_id="web", run_id="j2-20261104-100004-aaaa", user_text=BREW_LAB, settings={"J2_BUDGET": "95"})
-    b = make_run_dir(dept_id="docs", run_id="j2-20261104-100004-bbbb", user_text=BREW_LAB, settings={"J2_BUDGET": "120", "J2_REALIZATION": "0"})
+    a = make_run_dir(dept_id="web", run_id="j2-20261104-100004-aaaa", user_text=BREW_LAB, settings={"J2_BUDGET": "95", "J2_USD_BUDGET": "1.5"})
+    b = make_run_dir(dept_id="docs", run_id="j2-20261104-100004-bbbb", user_text=BREW_LAB, settings={"J2_BUDGET": "120", "J2_USD_BUDGET": "2", "J2_REALIZATION": "0"})
     first, second = spawn(a), spawn(b)
     procs.extend([first, second])
     assert finish(first) == 0 and finish(second) == 0, stderr_of(a) + stderr_of(b)
@@ -140,8 +140,9 @@ def test_two_departments_run_side_by_side_and_share_nothing_but_the_library(make
         assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items")
         assert {u["call_ref"].split(":")[0] for u in of(rows, "usage") if not u["call_ref"].startswith("r:")} == {mine}
     assert (json.loads((a / "settings.json").read_text())["budget"], json.loads((b / "settings.json").read_text())["budget"]) == (95, 120)
-    assert json.loads((a / "summary.json").read_text())["budget"]["start"] == 95, "each process has its own J2 constants"
-    assert json.loads((b / "summary.json").read_text())["budget"]["start"] == 120
+    # D422: dollar mode is on in the app (EngineSettings.usd_budget), so each process's starting credits come from its own J2_USD_BUDGET
+    budgets = [json.loads((d / "summary.json").read_text())["budget"] for d in (a, b)]
+    assert [(x["start"], x["usd"]["limit"]) for x in budgets] == [(81, 1.5), (107, 2.0)], "each process has its own J2 constants"
     assert json.loads((a / "summary.json").read_text())["realization"]["applied"] is True
     assert "realization" not in json.loads((b / "summary.json").read_text())
     memory = {d: sorted(p.name for p in (data_dir / "departments" / d / "memory").glob("*")) for d in ("web", "docs")}

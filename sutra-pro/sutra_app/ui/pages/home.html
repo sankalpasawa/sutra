@@ -29,7 +29,7 @@ try { if (new URLSearchParams(location.search).get("pane") === "settings") { doc
     <section class="fdnew" aria-labelledby="fd-new-h">
       <h1 class="fdtitle" id="fd-new-h">What should we make?</h1>
       <div class="fdcompose"><textarea id="fdbox" rows="3" aria-label="A new project" placeholder="A one-page website for my cafe, with the menu and opening hours&hellip;" maxlength="20000"></textarea>
-        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><label for="fdbudget" style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;margin-left:auto">Budget (work credits) <input id="fdbudget" name="budget" type="number" inputmode="numeric" min="1" max="100000" step="1" placeholder="team default" style="width:8em"></label><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Go</button></div></div>
+        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><span id="fdbudget" style="margin-left:auto"></span><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Go</button></div></div>
       <div id="fdfaces"></div>
       <div id="fdlatest"></div>
     </section>
@@ -142,6 +142,6 @@ try { if (new URLSearchParams(location.search).get("pane") === "settings") { doc
 <script src="/ui/js/heads_up_view.js"></script>
 <script src="/ui/js/chat_attention.js"></script>
 <script src="/ui/js/welcome.js"></script>
-<script src="/ui/js/front_door.js"></script><script src="/ui/js/sections_store.js"></script><script src="/ui/js/project_rail.js"></script><script src="/ui/js/home.js"></script>
+<script src="/ui/js/budget_chip.js"></script><script src="/ui/js/front_door.js"></script><script src="/ui/js/sections_store.js"></script><script src="/ui/js/project_rail.js"></script><script src="/ui/js/home.js"></script>
 </body>
 </html>

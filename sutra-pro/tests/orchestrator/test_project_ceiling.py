@@ -218,6 +218,14 @@ def test_a_project_gets_what_is_left_of_the_monthly_limit_when_it_starts(rig):
     assert project["budget_usd"] == 2.5 and json.loads(project["caps_json"])["usd_from_month"] is True
 
 
+def test_the_owners_budget_chip_is_the_projects_own_dollars(rig):
+    """D424: the dollars the owner picked on Home's Budget chip are the project's own number (not the month's), so its stop says "the dollars you set"."""
+    month_limit(rig, 3.0)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])], usd=1.5)
+    project = rig.project(reservation.project_id)
+    assert project["budget_usd"] == 1.5 and "usd_from_month" not in json.loads(project["caps_json"])
+
+
 def test_without_a_monthly_limit_a_project_has_no_dollar_limit_of_its_own(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
     assert rig.project(reservation.project_id)["budget_usd"] is None and "usd_from_month" not in json.loads(rig.project(reservation.project_id)["caps_json"])

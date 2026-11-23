@@ -25,6 +25,8 @@ UI = REPO / "sutra_app" / "ui"
 PAGE_FILES = [UI / "pages" / "j2_ui.html", UI / "pages" / "j2_ui_render.js"]
 STATIC_JS = sorted((UI / "static" / "js").glob("*.js")) + [UI / "pages" / "home.html"]
 SETTINGS_PATH = "/api/engine/settings"
+# D420: the Stop button reads the team's live task and calls the stop ladder through SutraCtx.api: the orchestrator's routes, not J2's
+STOP_PATHS = {"/api/departments/", "/api/tasks/"}
 CAPABILITIES_PATH = "/api/engine/capabilities"      # D126: what the engine can do (a read for the owner and the doctor; no page calls it, no team)
 # served by a package that has not merged yet (ORCH-8: health); the page calls them, no router of this repo has them
 NOT_MOUNTED_YET = {"/api/health"}
@@ -227,7 +229,7 @@ def test_every_path_the_j2_page_calls_is_in_the_engine_table_and_in_the_ui_list(
     engine = {path for (_, path) in route_table(world.routers["engine"])}
     called = literal_paths(PAGE_FILES)
     assert called, "the scan found no path in the J2 page: the pattern is out of date"
-    for path in called - not_in_engine_yet():
+    for path in called - not_in_engine_yet() - STOP_PATHS:
         assert ui_matches(path) or path == SETTINGS_PATH, f"{path} is called by the J2 page but is not in sutra_ctx.js J2_PATHS"
         assert served(path, engine), f"{path} is called by the J2 page and the engine serves no such route"
 

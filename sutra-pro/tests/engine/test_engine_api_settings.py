@@ -297,3 +297,16 @@ def test_the_api_process_keeps_the_local_type_store_in_the_data_folder_not_in_th
     assert done.returncode == 0, done.stderr
     paths = done.stdout.split()
     assert paths[0] == str(tmp_path / "types" / "types.local.json") and paths[1] == str(tmp_path / "types" / "templates")
+
+
+# ---- D423: the team default in dollars (API price) -----------------------------------------------------------------------
+def test_the_dollar_budget_and_cap_are_editable_with_their_bounds(api):
+    body = api.client.get(URL).json()
+    assert body["effective"]["usd_budget"] == 20.0 and body["effective"]["usd_cap"] is None
+    assert {"usd_budget", "usd_cap"} <= set(body["editable"])
+    got = put(api, {"set": {"usd_budget": 12.5, "usd_cap": 100}})
+    assert got.status_code == 200 and got.json()["effective"]["usd_budget"] == 12.5 and got.json()["effective"]["usd_cap"] == 100
+    assert put(api, {"unset": ["usd_cap"]}).json()["effective"]["usd_cap"] is None
+    for bad in ({"usd_budget": 0.5}, {"usd_budget": 10_001}, {"usd_cap": 0}, {"usd_budget": "20"}):
+        assert put(api, {"set": bad}).status_code == 422, bad
+    assert json.loads(api.glob.read_text()) == {"usd_budget": 12.5}

@@ -176,3 +176,13 @@ def test_a_node_block_without_rights_means_none_given_and_an_ordinary_run_has_no
     assert spec.node_tiers == () and spec.node_commands == "none" and spec.node is True, "a node block without tiers is still a node"
     ordinary = _spec_of(monkeypatch, None)
     assert ordinary.node_tiers == () and ordinary.node_commands == "none" and ordinary.scope == () and ordinary.node is False
+
+
+def test_a_project_step_runs_without_dollar_mode_and_an_ordinary_run_keeps_it(j2, make_run_dir, monkeypatch):
+    """D424: a node's dollars are the project's (D381, D418) and its credits its slice (D320), so the host drops J2_USD_BUDGET (P26) for it; an ordinary run keeps the team's."""
+    import os
+    run_with(make_run_dir, node=NODE)
+    assert "J2_USD_BUDGET" not in os.environ
+    monkeypatch.delenv("J2_USD_BUDGET", raising=False)
+    run_with(make_run_dir, run_id="j2-20261104-100005-7f3b")
+    assert os.environ["J2_USD_BUDGET"] == "20.0"

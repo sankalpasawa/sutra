@@ -45,7 +45,7 @@ CONNECTORS = ("auto", "claude", "codex", "stub")
 OUTPUT_NAME_RE = r"[a-z][a-z0-9_]{1,40}"
 # The first eight are `EngineSettings` fields; the last two (D182) are task-only: the run template this request starts from and the workflows of it.
 TASK_SETTING_KEYS = ("J2_OUTPUT", "J2_BUDGET", "J2_BUDGET_CAP", "J2_FIXES", "J2_MEMORY", "J2_SLIM", "J2_RATES", "J2_DECIDE_FOR_ME",
-                     "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS")
+                     "J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS", "J2_USD_BUDGET")
 RUN_TEMPLATE_ID_RE = r"[a-z0-9-]{1,80}"        # a run template's id (J2 names its folder `library/run-templates/<id>/`)
 RUN_TEMPLATE_WORKFLOWS_MAX = 400               # characters of `J2_RUN_TEMPLATE_WORKFLOWS`
 RUN_TEMPLATE_KEYS_MAX = 40                     # workflow keys one request may name
@@ -225,6 +225,8 @@ class EngineSettings(BaseModel):
     fixes: Literal[0, 1] = 0
     budget: int = Field(100, ge=1, le=100000)
     budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: no cap (D251, P25)
+    usd_budget: float = Field(20.0, ge=1, le=10_000, allow_inf_nan=False)      # D421, D422: a run's limit in dollars (API price); turns dollar mode on (P26)
+    usd_cap: Optional[float] = Field(None, ge=1, le=10_000, allow_inf_nan=False)      # the most a run may be raised to; None: no cap (P26)
     max_cycles: int = Field(6, ge=1)
     limit_add: int = Field(30, ge=0)
     bargain_minutes: float = Field(15.0, ge=0, allow_inf_nan=False)

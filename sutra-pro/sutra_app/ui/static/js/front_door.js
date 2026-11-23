@@ -14,10 +14,11 @@
      finishedHtml(state)                 "Just finished": the work finished lately, each row with Open (nothing when there is none)
      latestHtml(state)                   under the box, after the owner sent something there: one calm line, a choice to press, or the way to the work
      summary(state)                      "2 things need you" / "Nothing needs you right now" (the document title and the screen reader line)
-     budgetOf(value)                     the box's "Budget (work credits)" (D252): {ok, budget, error}; empty is ok with budget null (the team's own
-                                         budget), a whole number from 1 to 100000 is that number, anything else is not ok with the sentence to show
+     stopOf(state)                       D420: {show, taskId}: the box's Go is Stop while the box is empty and the card under it shows the work it
+                                         just started ("Your project is set up") whose team has a live task; D424: plus `project` when that work
+                                         is a step of a multi-agent project
 
-   Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-approve and fd-decline (data-msg), fd-retry
+   Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-raise (data-msg, D423: the typed dollars beside it), fd-approve and fd-decline (data-msg), fd-retry
    (data-task), fd-seen (data-task), fd-choose (data-msg, data-option), fd-more. A team link is a real <a href="/d/<dept>/">.
    A classic script with ONE global, FrontDoor; in node it is module.exports. */
 (function (root) {
@@ -76,6 +77,7 @@
 
   const HV = () => root.HeadsUpView || (typeof require === "function" ? safeRequire("./heads_up_view.js") : null);
   const CV = () => root.ChatView || (typeof require === "function" ? safeRequire("./chat_view.js") : null);
+  const BC = () => root.BudgetChip || (typeof require === "function" ? safeRequire("./budget_chip.js") : null);
   function safeRequire(name) { try { return require(name); } catch (e) { return null; } }
 
   /* ---------------------------------------------------------------- the teams */
@@ -124,6 +126,7 @@
 
   // "Keep going: you get more of the missing parts built" reads as a choice and what it means: the choice in bold, the meaning under it.
   function optionLabel(t) {
+    t = String(t).replace(/ \[adds [^\]]*\]$/, "");      // D423: the "[adds $Z]" tail is the engine's, not the owner's words
     const m = /^([^:]{2,40}):\s*(.+)$/.exec(t);
     return m ? "<b>" + esc(m[1]) + '</b><span class="fdoptwhy">' + esc(m[2]) + "</span>" : esc(t);
   }
@@ -165,10 +168,13 @@
         '" data-text="' + esc(t) + '"' + dis + ">" + optionLabel(t) + "</button>").join("") + "</div>"
       : '<div class="fdreply"><textarea class="fdbox" rows="1" data-msg="' + esc(msg) + '" aria-label="Your answer to ' + esc(who) + '" placeholder="Your answer"' + dis + "></textarea>" +
         '<button type="button" class="fdbtn fdyes" data-act="fd-answer" data-msg="' + esc(msg) + '"' + dis + ">Send</button></div>";
+    // D423: a dollar raise question also takes a typed amount, the suggested one filled in (its "[adds $Z]" tail in the question text)
+    const add = BC() && !busy ? BC().raiseFromText(item.text) : null;
+    const raise = add !== null ? BC().raiseHtml(add, 'data-act="fd-raise" data-msg="' + esc(msg) + '"') : "";
     const open = dept ? '<a class="fdopen" href="' + esc(teamHref(dept)) + '">Open ' + esc(who) + "</a>" : "";
     return '<article class="fdcard fdask" data-msg="' + esc(msg) + '" data-kind="question"' + (dept ? ' data-dept="' + esc(dept) + '"' : "") + ">" +
       '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + (ask.qs.length > 1 ? "Asha needs " + ask.qs.length + " answers" : "Asha needs one answer") +
-      '</b><span class="fdwho">' + esc(who) + "</span></span>" + waited(item, o.elapsedMs) + "</header>" + body + err + answer +
+      '</b><span class="fdwho">' + esc(who) + "</span></span>" + waited(item, o.elapsedMs) + "</header>" + body + err + answer + raise +
       (open ? '<footer class="fdfoot">' + open + "</footer>" : "") + "</article>";
   }
 
@@ -294,15 +300,20 @@
     return latestSimple(s, r, status);
   }
 
-  // D252: the Budget field, as POST /api/chats/cs_org/messages takes it (J2_BUDGET's limits); empty means the team's own budget
-  const BUDGET_SAID = "Budget: a whole number of work credits from 1 to 100000, or empty for the team default";
-  function budgetOf(value) {
-    const v = text(value).trim();
-    if (v === "") return {ok: true, budget: null, error: ""};
-    return /^[1-9][0-9]{0,5}$/.test(v) && Number(v) <= 100000 ? {ok: true, budget: Number(v), error: ""} : {ok: false, budget: null, error: BUDGET_SAID};
+  // D420: Go is Stop while the box is empty, the card under it shows the work this send started (latestSimple's r.task, no choice before it)
+  // and that team has a live task. state: latestHtml's, plus {box, departments}.
+  const TASK_ID = /^tsk_[0-9a-f]{12}$/;
+  function stopOf(state) {
+    const s = isObj(state) ? state : {};
+    const r = replyOf(s);
+    const team = s.show === true && !r.choice && r.task && Array.isArray(s.departments) ? s.departments.find(d => isObj(d) && d.id === r.task.card.dept_id) : null;
+    const id = team ? text(team.live_task_id) : "";
+    if (text(s.box).trim() !== "" || !TASK_ID.test(id)) return {show: false, taskId: ""};
+    const project = idOf(r.task.card.project_id);      // D424: a step of a project: Stop stops the whole project (main's project stop), not this one step
+    return project ? {show: true, taskId: id, project} : {show: true, taskId: id};
   }
 
-  const FrontDoor = {ORG, budgetOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
+  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

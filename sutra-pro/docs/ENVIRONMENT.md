@@ -51,7 +51,7 @@ Flags with no variable: `--no-browser`, `--browser auto|chrome|default`, `--exit
 
 These are the J2 flags, each with J2's own default (the pacing delay is 0 because the connector layer paces). The variable name is what J2 reads and what
 `sutra-pro config show` prints; in `engine.json` and in `config set` you use the field name. **Locked** fields are not editable in Settings (they can send mail, run a browser or force a
-failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the eight keys a task may carry, besides two task-only keys, `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS`, that name the run template one request starts from and are not settings); every other field reaches a run only through the
+failure) and change only with `sutra-pro config set`. **Task** fields may also be given by a single request (the nine keys a task may carry, besides two task-only keys, `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS`, that name the run template one request starts from and are not settings); every other field reaches a run only through the
 two `engine.json` files. `J2_PUSH_RUNS` (always `0`: Sutra never pushes a run folder) and `J2_RUN_BY` (always `sutra-pro`: no user name goes into run data) are fixed by the engine host and are not settings. A run does not pass the server's own `J2_*` variables on to its engine process: the files are the way in.
 
 | Variable | Field | Default | Locked | Task | Meaning |
@@ -59,10 +59,12 @@ two `engine.json` files. `J2_PUSH_RUNS` (always `0`: Sutra never pushes a run fo
 | `J2_OUTPUT` | `output` | `auto` | no | yes | what the team builds: `auto` (the owner's pick is kept; project work is chosen for a project or a working folder; otherwise J2's planner picks the type from `artifacts/types.json` for each run, there is no default type, D165) or the name of any type J2 knows (a lower-case name of 2 to 41 letters, digits and underscores, checked against the data when J2 loads: `GET /api/engine/settings` lists them in `output_types`, D166); the retired `J2_GENERIC` is gone |
 | `J2_WORKSPACE` | `workspace` | `auto` | no | no | `auto`: every agent of the engine may read the owner's working folder (project work may change it, within the owner's access setting); `off`: none |
 | `J2_FIXES` | `fixes` | `0` | no | yes | `1` turns on the two flow fixes of the J2 loop |
-| `J2_BUDGET` | `budget` | `100` | no | yes | starting budget in work credits; a full documents-plus-website run needs 500 or more |
-| `J2_BUDGET_CAP` | `budget_cap` | `unset` | no | yes | the most your approvals can raise the budget to; unset means no cap (D251) |
+| `J2_USD_BUDGET` | `usd_budget` | `20` | no | yes | what one run may use, in dollars (API price, estimated: runs use your Claude subscription; nobody is billed it); the app always sets it, which turns on dollar mode (D422) |
+| `J2_USD_CAP` | `usd_cap` | `unset` | no | no | the most a run's dollar budget may be raised to; unset means no cap (D422) |
+| `J2_BUDGET` | `budget` | `100` | no | yes | starting budget in work credits; ignored when J2_USD_BUDGET is set (the credits then follow the dollars, D422) |
+| `J2_BUDGET_CAP` | `budget_cap` | `unset` | no | yes | the most your approvals can raise the budget to; unset means no cap (D251); ignored when J2_USD_BUDGET is set |
 | `J2_MAX_CYCLES` | `max_cycles` | `6` | no | no | plan, build, audit cycles before Identity asks you what to do |
-| `J2_LIMIT_ADD` | `limit_add` | `30` | no | no | credits the "keep working" choice adds when the budget has run out |
+| `J2_LIMIT_ADD` | `limit_add` | `30` | no | no | credits the "keep working" choice adds when the budget has run out; ignored when J2_USD_BUDGET is set |
 | `J2_BARGAIN_MINUTES` | `bargain_minutes` | `15` | no | no | minutes the bargain between two disagreeing functions (J2.c) may take |
 | `J2_BARGAIN_CALLS` | `bargain_calls` | `8` | no | no | model calls that bargain may spend |
 | `J2_MAX_TURNS` | `max_turns` | `30` | no | no | agent turns per cycle |
