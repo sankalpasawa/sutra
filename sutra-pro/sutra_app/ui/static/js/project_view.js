@@ -164,8 +164,8 @@
     });
     const engine = arr(s.questions).filter(isObj).map(q => {
       const options = arr(q.options).map(clean).filter(Boolean).slice(0, 20);
-      const buttons = options.map((text, i) => '<button type="button" data-act="step-answer" data-session="' + esc(clean(q.session_id)) + '" data-text="Option ' + (i + 1) + '">' + esc(text.length > 160 ? text.slice(0, 159) + "\u2026" : text) + "</button>").join("");
-      return '<div class="ncard c-nodeapproval" data-card="step_question" data-message="' + esc(clean(q.message_id)) + '"><p class="sq">' + esc(clean(q.text).replace(/\s*Option \d+:.*$/, "")) + "</p>" +
+      const buttons = options.map((text, i) => '<button type="button" data-act="step-answer" data-project="' + esc(clean(isObj(s.project) ? s.project.id : "")) + '" data-message="' + esc(clean(q.message_id)) + '" data-option="' + (i + 1) + '">' + esc(text.length > 160 ? text.slice(0, 159) + "\u2026" : text) + "</button>").join("");
+      return '<div class="ncard c-nodeapproval" data-card="step_question" data-message="' + esc(clean(q.message_id)) + '"><p class="sq">' + esc(clean(q.text)) + "</p>" +
         (buttons ? '<div class="opts">' + buttons + "</div>" : '<p class="cnote">Answer it in that team\'s chat.</p>') + "</div>";
     });
     const all = asked.concat(system, engine);

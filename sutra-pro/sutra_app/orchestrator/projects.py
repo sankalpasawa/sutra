@@ -890,16 +890,33 @@ class ProjectService:
         row = conn.execute("SELECT text FROM chat_messages WHERE id = ? AND role = 'user'", (int(rid[4:]),)).fetchone()
         return (row["text"] if row is not None else "")[:2000]
 
+    def answer_step_question(self, project_id: str, message_id: int, option: int) -> tuple[str, str]:
+        """The team and the words for an answer to a step's engine question, ONLY while that question is still open (D415, r-11): it must be one of this project's open step questions and the option one of its
+        buttons. Raises Busy (a plain 409) when it is not: a stale card or a second tab must never become a new ordinary task. Returns `(dept id, "Option N")` as a tuple."""
+        from sutra_app.orchestrator.errors import Busy
+        conn = self.db.conn()
+        found = next((q for q in self._step_questions(conn, project_id) if q["message_id"] == message_id), None)
+        if found is None or not 1 <= option <= len(found["options"]):
+            raise Busy("That question is not open any more")
+        dept = conn.execute("SELECT node_id FROM chat_sessions WHERE id = ? AND kind = 'department'", (found["session_id"],)).fetchone()
+        if dept is None:
+            raise Busy("That question is not open any more")
+        return dept["node_id"], f"Option {option}"
+
     @staticmethod
     def _step_questions(conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
         """The questions the ENGINE of a step asked the owner (J2's own: "keep working on those notes, or take the report as it is?") and nobody answered yet, for the steps of this project that wait for
         an answer (D401). They are chat questions of the step's team, answered through the chat route; the project page shows them so the owner need not find them on Home. The rule table never answers
         one of these: Decide for me answers questions of the project (a tier, a scope, an estimate), not the engine's own about its work."""
-        from sutra_app.orchestrator.chats import parse_options
+        from sutra_app.orchestrator.chats import trailing_options
         rows = conn.execute("SELECT n.id AS node, m.id AS message_id, m.session_id AS session_id, m.text AS text FROM agent_nodes n JOIN tasks t ON t.id = n.task_id "
                             "JOIN chat_messages m ON m.task_id = n.task_id AND m.kind = 'question' AND m.answered_by IS NULL "
                             "WHERE n.project_id = ? AND t.status = 'waiting_user' ORDER BY m.id", (project_id,)).fetchall()
-        return [{"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": r["text"][:1500], "options": parse_options(r["text"])} for r in rows]
+        out = []
+        for r in rows:
+            question, options = trailing_options(r["text"])                       # only the closing run of numbered lines is buttons; the question is all that comes before it (D401, r-2)
+            out.append({"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": question[:1500], "options": options})
+        return out
 
     @staticmethod
     def _with_usage(conn: sqlite3.Connection, node: NodeOut, now: int) -> NodeOut:

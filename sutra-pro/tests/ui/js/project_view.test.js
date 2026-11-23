@@ -310,7 +310,7 @@ test("each step says what it used: calls, minutes, about how many dollars; nothi
 });
 
 test("a step that waits for an answer to its engine's question says so on the page with the question and its buttons (D401)", () => {
-  const q = {node_id: "nd_b", message_id: 7, session_id: "cs_0123456789ab", text: "Keep working on the notes, or take the report as it is?\nOption 1: keep working\nOption 2: take it as it is", options: ["keep working", "take it as it is"]};
+  const q = {node_id: "nd_b", message_id: 7, session_id: "cs_0123456789ab", text: "Keep working on the notes, or take the report as it is?", options: ["keep working", "take it as it is"]};
   const s = snap({questions: [q]});
   const head = View.header(s);
   assert.match(head, />Waiting for your answer</);
@@ -320,7 +320,8 @@ test("a step that waits for an answer to its engine's question says so on the pa
   assert.match(cards, /Waiting for you/);
   assert.match(cards, /Keep working on the notes, or take the report as it is\?/);
   assert.equal(/Option 1:/.test(cards), false, "the option lines are the buttons, not text");
-  assert.ok(cards.includes('data-act="step-answer" data-session="cs_0123456789ab" data-text="Option 1">keep working</button>') && cards.includes('data-text="Option 2">take it as it is</button>'));
+  assert.match(View.cardsHtml(snap({questions: [Object.assign({}, q, {text: "Real question? Option 3: said by the model, kept as text"})]})), /Option 3: said by the model, kept as text/, "the page shows the whole question the server gives it");
+  assert.ok(cards.includes('data-act="step-answer" data-project="' + PROJECT + '" data-message="7" data-option="1">keep working</button>') && cards.includes('data-option="2">take it as it is</button>'));
   const steps = View.stepsHtml(s);
   assert.match(steps, /<b>Step a2<\/b> <span class="pstate">Waiting for your answer<\/span>/);
   assert.match(View.graphHtml(s), /Waiting for your answer/);

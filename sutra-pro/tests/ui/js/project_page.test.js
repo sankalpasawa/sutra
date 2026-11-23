@@ -258,15 +258,20 @@ test("a page for a bad id draws the sentence and reads nothing", async () => {
   assert.deepEqual(calls, []);
 });
 
-test("an answer to a step's engine question goes to that team's chat route, only for a real session and an option word (D401)", async () => {
+test("an answer to a step's engine question goes to the project's route with the question's number and the button's, and a refusal makes the page read the project again (D415)", async () => {
   const w = world();
   await w.page.start();
-  assert.equal(await w.page.act(button({act: "step-answer", session: "cs_0123456789ab", text: "Option 2"})), true);
-  assert.deepEqual(w.posts, [["/api/chats/cs_0123456789ab/messages", {text: "Option 2"}]]);
-  for (const bad of [{session: "../x", text: "Option 1"}, {session: "cs_0123456789ab", text: "free words"}, {session: "cs_0123456789ab", text: "Option 100"}, {session: "", text: "Option 1"}]) {
+  assert.equal(await w.page.act(button({act: "step-answer", project: ID, message: "7", option: "2"})), true);
+  assert.deepEqual(w.posts, [["/api/projects/" + ID + "/questions/7/answer", {option: 2}]]);
+  for (const bad of [{project: ID, message: "../x", option: "1"}, {project: ID, message: "7", option: "Option 1"}, {project: ID, message: "7", option: "100"}, {project: "prj_ffffffffffff", message: "7", option: "1"}, {project: ID, message: "", option: "1"}]) {
     assert.equal(await w.page.act(button(Object.assign({act: "step-answer"}, bad))), false, JSON.stringify(bad));
   }
   assert.equal(w.posts.length, 1);
+  const stale = world({failPost: Object.assign(new Error("409"), {status: 409})});
+  await stale.page.start();
+  const reads = stale.reads();
+  assert.equal(await stale.page.act(button({act: "step-answer", project: ID, message: "7", option: "1"})), false);
+  assert.ok(stale.reads() > reads, "the page read the project again instead of keeping a stale card");
 });
 
 test("the Live badge shows only while the project runs: not after it is done, stopped or failed (D413)", async () => {
