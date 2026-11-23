@@ -9675,13 +9675,13 @@ class J2Run:
                 str(detail) or kind)
 
     def _redoes_repeat(self, p):
-        """P28 (D425): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, covers one of its
-        done-when items or writes one of its outputs. Ids, item numbers and file names are compared; no word of a name."""
+        """P28 (D425): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, or covers one of
+        its done-when items. Ids and item numbers are compared; no word of a name, and not a shared output file (nearly
+        every page workflow writes index.html)."""
         rep = p.get("replaces") if isinstance(p.get("replaces"), list) else [p.get("replaces")]
         named = {str(x).upper() for x in rep + [p.get("revises")] if x}
-        items, outs = set(self._covers(p)), {str(o) for o in p.get("outputs") or []}
-        return [wid for wid in self.repeat_steps if (s := self._wf(wid) or {}) and (
-            wid in named or items & set(self._wf_items(s)) or outs & {str(o) for o in s.get("outputs") or []})]
+        items = set(self._covers(p))
+        return [wid for wid in self.repeat_steps if (s := self._wf(wid) or {}) and (wid in named or items & set(self._wf_items(s)))]
 
     def _repeat_note(self):
         """P28 (D425): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
@@ -9690,9 +9690,8 @@ class J2Run:
         a, b = self.repeat_steps
         return (f"\nA STEP FAILED THE SAME WAY TWICE: {a} and {b} failed the same way twice "
                 f"({self._failure_words(build_failure(self._wf(b)) or ('failed', ''))}). A workflow that redoes this step "
-                f"(names {a} or {b} in revises or replaces, covers one of their done-when items or writes one of their "
-                "outputs) must carry \"cause_change\": what is different about the cause this time; without one the "
-                "validator rejects it.")
+                f"(names {a} or {b} in revises or replaces, or covers one of their done-when items) must carry "
+                "\"cause_change\": what is different about the cause this time; without one the validator rejects it.")
 
     def _repeat_price_note(self, table):
         """P28 (D425): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its

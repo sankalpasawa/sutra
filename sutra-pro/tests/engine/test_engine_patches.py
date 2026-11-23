@@ -2035,20 +2035,22 @@ def test_p28_a_keep_going_answer_does_not_clear_the_memory(replay_17e1):
 
 
 def copy_sheet(cause=None, **kw):
-    """Adaptation's next proposal after Replay A: the copy sheet again (it writes W-1's and W-6's output)."""
-    atom = {"id": "a1", "goal": "write copy.md", "context": ["charter"], "constraints": ["only the folder"],
-            "how": {"kind": "AI", "agent": "Builder", "steps": "write copy.md"},
-            "expected_output": [{"text": "copy.md exists", "kind": "file", "target": "copy.md"}],
-            "verification": [{"text": "copy.md exists", "type": "file-exists", "target": "copy.md", "expect": True}]}
-    return {"name": "Write the copy sheet into the output folder", "kind": "build", "goal_gap": "the copy", "outputs": ["copy.md"],
-            "completion_check": "copy.md exists", "covers": [], "dependencies": [], "atoms": [atom], "parts": ["styling"], "cost": 5,
-            **({"cause_change": cause} if cause is not None else {}), **kw}
+    """A proposal after Replay A: by default the page base again, covering item 1 as the repeated step did, and writing
+    index.html as nearly every page workflow does."""
+    atom = {"id": "a1", "goal": "write the page base", "context": ["charter"], "constraints": ["only the folder"],
+            "how": {"kind": "AI", "agent": "Builder", "steps": "write index.html"},
+            "expected_output": [{"text": "index.html exists", "kind": "file", "target": "index.html"}],
+            "verification": [{"text": "index.html exists", "type": "file-exists", "target": "index.html", "expect": True}]}
+    return {"name": "Build the page base into the output folder", "kind": "build", "goal_gap": "the page base",
+            "outputs": ["index.html"], "completion_check": "index.html exists", "covers": [1], "dependencies": [], "atoms": [atom],
+            "parts": ["page_section"], "cost": 10, **({"cause_change": cause} if cause is not None else {}), **kw}
 
 
 def repeated(replay_17e1):
+    """Replay A on the page base (run 17e1's W-7 and W-11: covers item 1, writes index.html)."""
     run, add, fault, calls = replay_17e1
     for wid in ("W-1", "W-6"):
-        add(wid, "Write the exact copy sheet")
+        add(wid, "Build the page base and intro from the charter", covers=[1], covers_text=[DONE_17E1[0]], outputs=["index.html"])
         run._turn_workflow_agent({"wid": wid})
     assert run.repeat_steps == ["W-1", "W-6"]
     return run
@@ -2058,19 +2060,21 @@ def test_p28_a_redo_of_a_repeated_step_without_cause_change_is_rejected(replay_1
     run = repeated(replay_17e1)
     why = ("it redoes W-1 and W-6, which failed the same way twice, and its cause_change is empty: say what is different about "
            "the cause this time")
-    for cause in (None, "", "  "):
+    for cause in (None, "", "  "):                                    # it covers their item 1
         reg, refused, _ = run._register([copy_sheet(cause)])
-        assert not reg and refused == [f"Write the copy sheet into the output folder ({why})"], refused
-    reg, refused, _ = run._register([copy_sheet(replaces=["W-6"], outputs=["copy_sheet.md"])])       # names it in replaces
+        assert not reg and refused == [f"Build the page base into the output folder ({why})"], refused
+    reg, refused, _ = run._register([copy_sheet(replaces=["W-6"], covers=[], outputs=["copy.md"], parts=["styling"], cost=5)])
     assert not reg and "(it redoes W-6, which failed the same way twice, and its cause_change is empty" in refused[0], refused
-    reg, refused, _ = run._register([copy_sheet("write the copy into out/, not the run folder")])
-    assert [w["name"] for w in reg] == ["Write the copy sheet into the output folder"] and not refused, refused
-    assert reg[0]["cause_change"] == "write the copy into out/, not the run folder"
+    reg, refused, _ = run._register([copy_sheet("write the page into out/, not the run folder")])
+    assert [w["name"] for w in reg] == ["Build the page base into the output folder"] and not refused, refused
+    assert reg[0]["cause_change"] == "write the page into out/, not the run folder"
 
 
-def test_p28_a_proposal_for_other_items_needs_no_cause_change(replay_17e1):
+def test_p28_a_proposal_for_other_items_needs_no_cause_change_even_when_it_writes_the_same_file(replay_17e1):
+    """Owner's follow-up to D425: only replacing the failed workflow or covering its items is a redo; sharing index.html,
+    which nearly every page workflow writes, is not."""
     run = repeated(replay_17e1)
-    menu = copy_sheet(name="Build the menu section", outputs=["menu.html"], covers=[3], parts=["page_section"], cost=10)
+    menu = copy_sheet(name="Build the menu section", covers=[3])                  # outputs ["index.html"], like W-1 and W-6
     reg, refused, _ = run._register([menu])
     assert [w["name"] for w in reg] == ["Build the menu section"] and not refused, refused
     assert "cause_change" not in reg[0]
@@ -2086,7 +2090,7 @@ def test_p28_the_prompt_lines_appear_only_after_a_repeat(replay_17e1, monkeypatc
     def spy(fn, fmt, task, mock, **kw):
         seen[fn] = task
         raise Seen
-    table = [{**copy_sheet("write the copy into out/"), "id": "p1"}]
+    table = [{**copy_sheet("write the copy into out/"), "id": "p1"}]      # it covers item 1, as W-1 and W-6 did
 
     def prompts():
         seen.clear()
@@ -2100,7 +2104,7 @@ def test_p28_the_prompt_lines_appear_only_after_a_repeat(replay_17e1, monkeypatc
     assert "cause_change" not in adapt and "cause_change" not in prio.split("ON THE TABLE")[1].split("]")[-1]
     assert "FAILED THE SAME WAY TWICE" not in adapt + prio
     for wid in ("W-1", "W-6"):
-        add(wid, "Write the exact copy sheet")
+        add(wid, "Build the page base and intro from the charter", covers=[1], covers_text=[DONE_17E1[0]], outputs=["index.html"])
         run._turn_workflow_agent({"wid": wid})
     adapt, prio = prompts()
     assert ("W-1 and W-6 failed the same way twice (changed files outside its folder: agent_live.json, events.jsonl, "
