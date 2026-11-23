@@ -169,7 +169,7 @@ OPEN = ("Done with open items: shipped as is on the Requester's decision (the ow
 
 def test_the_engines_open_items_sentence_is_said_in_plain_words():
     said = plain_outcome(OPEN)
-    assert said == "Done, with some things still open. You chose to take it as it is. Still open: the closing notes repeat a mistake."
+    assert said == "Done, with one thing still open. You chose to take it as it is. Still open: The closing notes repeat a mistake."
     for engine_word in ("rubric", "PJ-4", "NEEDS_REVISION", "Requester", "shipped as is"):
         assert engine_word not in said
     assert plain_outcome("Done with open items: shipped as is on the Requester's decision (x).") == "Done, with one thing still open. You chose to take it as it is."
@@ -182,7 +182,7 @@ def test_the_done_card_of_a_step_that_finished_with_open_items_says_it_plainly(r
     reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
     rig.finish(tasks["a1"], status="done_with_open_items", outcome=OPEN)
     [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
-    assert card["outcome"].startswith("Done, with some things still open.") and "rubric" not in card["outcome"] and card["project_id"] == reservation.project_id
+    assert card["outcome"].startswith("Done, with one thing still open.") and "rubric" not in card["outcome"] and card["project_id"] == reservation.project_id
     assert rig.t.row(tasks["a1"]).outcome.startswith("Done with open items"), "the record keeps the engine's words"
 
 
@@ -273,3 +273,23 @@ def test_the_done_card_of_a_step_says_every_check_passed_in_plain_words(rig):
     [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
     assert card["outcome"] == "Done. Every check passed."
     assert rig.t.row(tasks["a1"]).outcome.startswith("Done: the project work report"), "the record keeps the engine's words"
+
+
+def test_the_engines_real_workable_strings_leave_no_id_code_word_or_possessive_slip():
+    """r-1: copied from `workable()` and the ship paths of the engine: done-when item, design rubric, necessary condition, rubrics (plural), the render check and the 'finished as it is' sentence."""
+    from sutra_app.orchestrator.stopwords import JARGON
+    strings = [
+        "Done with open items: shipped as is on the Requester's decision. Still not workable: done-when item 3 (F-3 NEEDS_REVISION): the page lists prices; design rubric D-2 (FAILED): contrast is low; "
+        "necessary condition NC-1 not met: privacy page (evidence: missing); render check didn't run, so JS errors, overflow and forms are unverified: no browser.",
+        "Done with open items: finished as it is on the Requester's decision. Not made: the footer; the map.",
+        "Done with open items: shipped as is on the Requester's decision. Still not workable: rubrics PJ-4, PJ-5 (NEEDS_REVISION, SECOND): notes are thin",
+        "Done with open items: shipped as is on the Requester's decision (x). Still not workable: document rubric PJ-4 (NEEDS_REVISION) the closing notes repeat a mistake.",
+    ]
+    import re
+    for text in strings:
+        said = plain_outcome(text)
+        assert not JARGON.search(said), said
+        assert not re.search(r"\b[A-Z]{1,3}-\d+\b|\b[A-Z][A-Z_]{3,}\b|you's|your's|Requester", said), said
+        assert said.startswith("Done, with ") and "You chose to take it as it is." in said, said
+    assert "The page lists prices; contrast is low; privacy page" in plain_outcome(strings[0])
+    assert plain_outcome(strings[1]).endswith("Still open: The footer; the map.")

@@ -19,10 +19,6 @@ _STOPPED_ENGINE = (
     (re.compile(r"^stopped\b.*:\s*nothing was built", re.I), "It stopped: nothing was built."),
     (re.compile(r"dry run changed the requester's real folders", re.I), "It stopped: a trial run changed folders it was not meant to touch."))
 _OPEN_ITEMS = re.compile(r"^done with open items\s*[:.-]?\s*", re.I)
-_AS_IS = re.compile(r"shipped as is on the requester'?s decision(?:\s*\([^)]*\))?\.?", re.I)
-_RUBRIC = re.compile(r"\b(?:document |site |code )?rubric\s+[A-Z]{1,4}-?\d+\b", re.I)
-_CODE_WORD = re.compile(r"\s*\(\s*[A-Z][A-Z_]{3,}\s*\)")
-_STILL = re.compile(r"still not workable\s*:", re.I)
 
 
 def plain_stop(reason: str) -> str:
@@ -64,19 +60,33 @@ def plain_outcome(outcome: str, project_reason: str = "") -> str:
     return outcome
 
 
+_ITEM_HEAD = re.compile(r"^(?:done-when item\s+\S+|(?:document|design|site|code)?\s*rubrics?\s+[^:]*?|necessary conditions?\s+\S+\s+not met)\s*(?:\([^)]*\))?\s*:?\s*", re.I)
+_EVIDENCE = re.compile(r"\s*\((?:evidence|note)\s*:[^)]*\)", re.I)
+_ID = re.compile(r"\b[A-Z]{1,3}-\d+\b")
+_CODE = re.compile(r"\b[A-Z][A-Z_]{3,}\b")
+
+
+def _plain_item(item: str) -> str:
+    """One thing the engine named as still open, without its ids: "done-when item 3 (F-3 NEEDS_REVISION): the page lists prices" is "the page lists prices"; "design rubric D-2 (FAILED): contrast is low" is
+    "contrast is low"; "necessary condition NC-1 not met: privacy page (evidence: missing)" is "privacy page"."""
+    item = _ITEM_HEAD.sub("", item.strip(), count=1)
+    item = _EVIDENCE.sub("", item)
+    item = re.sub(r"\([^)]*\b(?:[A-Z][A-Z_]{3,}|[A-Z]{1,3}-\d+)\b[^)]*\)", "", item)        # a parenthesis that holds an id or a code word
+    item = _CODE.sub("", _ID.sub("", item))
+    item = re.sub(r"\b(?:rubrics?|done-when|necessary conditions?)\b", "", item, flags=re.I)
+    return re.sub(r"\s+", " ", item).strip(" .;:,-")
+
+
 def _plain_open_items(text: str) -> str:
-    """The engine's "Done with open items: shipped as is on the Requester's decision (...). Still not workable: document rubric PJ-4 (NEEDS_REVISION) ..." in the owner's words (D402): no rubric id, no code word,
-    no "Requester" (the owner). What is left of the engine's own sentence after that is kept; the two stock phrases become plain ones."""
+    """The engine's "Done with open items: <how it was shipped>. Still not workable: <item>; <item> ..." (or "... Not made: <left>.") in the owner's words (D402, r-1): no id, no code word, no rubric, no "Requester"
+    (the owner is "you", "the Requester's decision" is "your decision"). What the engine named as open stays, one item at a time, in its own plain part."""
     rest = _OPEN_ITEMS.sub("", text, count=1)
-    rest = re.sub(r"finished as it is on the requester'?s decision\.?", "shipped as is on the Requester's decision.", rest, flags=re.I)
-    rest = re.sub(r"\bNot made\s*:", "Still open:", rest, flags=re.I)
-    rest = re.sub(r"\bthe real run\b", "the trial run", rest, flags=re.I)
-    chose = bool(_AS_IS.search(rest))
-    rest = _AS_IS.sub("", rest)
-    rest = _STILL.sub("Still open:", rest)
-    rest = _CODE_WORD.sub("", _RUBRIC.sub("", rest))
-    rest = re.sub(r"^Still open:\s*$", "", re.sub(r"\s+", " ", rest).strip())
-    rest = re.sub(r"\bthe requester\b", "you", rest, flags=re.I)
-    rest = re.sub(r"\s+", " ", rest).strip(" .;:")
-    head = "Done, with some things still open." if rest else "Done, with one thing still open."
-    return " ".join(part for part in (head, "You chose to take it as it is." if chose else "", (rest[:1].upper() + rest[1:] + ".") if rest else "") if part)
+    why, items_part = rest, ""
+    parts = re.split(r"(?i)(still not workable|not made)\s*:", rest, maxsplit=1)
+    if len(parts) == 3:
+        why, items_part = parts[0], parts[2]
+    chose = bool(re.search(r"as is|as it is|requester|decision|accepted", why, re.I))
+    items = [it for it in (_plain_item(x) for x in re.split(r";\s*", items_part.strip(" .")) if x.strip()) if it]
+    head = "Done, with some things still open." if len(items) > 1 else "Done, with one thing still open."
+    tail = ("Still open: " + "; ".join(i[:1].upper() + i[1:] if k == 0 else i for k, i in enumerate(items)) + ".") if items else ""
+    return " ".join(part for part in (head, "You chose to take it as it is." if chose else "", tail) if part)
