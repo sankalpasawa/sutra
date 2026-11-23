@@ -337,6 +337,7 @@
     get: (path, query) => send("GET", path, query),
     post: (path, body) => send("POST", path, undefined, body),
     put: (path, body) => send("PUT", path, undefined, body),
+    patch: (path, body) => send("PATCH", path, undefined, body),
     del: path => send("DELETE", path),
   };
 

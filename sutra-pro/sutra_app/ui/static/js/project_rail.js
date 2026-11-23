@@ -86,9 +86,30 @@
     caret: '<svg class="pr-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
   };
 
-  function nameBox(form, value, label) {
-    return '<form class="pr-namebox" data-pr-form="' + esc(form) + '"><input class="pr-input" type="text" maxlength="40" autocomplete="off" aria-label="' + esc(label) +
-      '" placeholder="Section name" value="' + esc(value) + '"></form>';
+  function nameBox(form, value, label, max, placeholder) {
+    return '<form class="pr-namebox" data-pr-form="' + esc(form) + '"><input class="pr-input" type="text" maxlength="' + (max || 40) + '" autocomplete="off" aria-label="' + esc(label) +
+      '" placeholder="' + esc(placeholder || "Section name") + '" value="' + esc(value) + '"></form>';
+  }
+
+  // Named projects (D426): a project's own menu. Rename and Delete first, then the sections it may move to. A project that works cannot be
+  // deleted (the server refuses it too); Delete keeps its runs and files, so the question says so.
+  const PROJECT_CHARS = 80;
+  const deleteQuestion = name => "Delete " + clean(name) + "? It leaves the sidebar. Its runs and files stay on disk.";
+
+  function projectMenuHtml(project, sections) {
+    const p = isObj(project) ? project : {};
+    const team = esc(p.id || "");
+    const list = Array.isArray(sections) ? sections : [];
+    const inSec = list.find(s => Array.isArray(s.teams) && s.teams.includes(p.id));
+    const working = p.state === "making";
+    const items = list.map(s => '<button type="button" class="pr-mi" role="menuitemradio" aria-checked="' + (inSec === s) + '" data-pr="move" data-team="' + team +
+      '" data-sec="' + esc(s.id) + '">' + esc(s.name) + "</button>").join("");
+    return '<button type="button" class="pr-mi" role="menuitem" data-pr="teamrename" data-team="' + team + '">Rename</button>' +
+      '<button type="button" class="pr-mi pr-mi-bad" role="menuitem" data-pr="teamdelete" data-team="' + team + '"' + (working ? " disabled" : "") + ">Delete</button>" +
+      (working ? '<p class="pr-minote">Working. Stop it first.</p>' : "") +
+      '<p class="pr-mhead">Move to section</p>' + items +
+      (inSec ? '<button type="button" class="pr-mi" role="menuitem" data-pr="move" data-team="' + team + '" data-sec="">No section</button>' : "") +
+      '<button type="button" class="pr-mi pr-mi-new" role="menuitem" data-pr="addfor" data-team="' + team + '">New section&hellip;</button>';
   }
 
   function html(m, current, view) {
@@ -98,9 +119,10 @@
     const projects = m && Array.isArray(m.projects) ? m.projects : [];
     const count = m && Number.isInteger(m.count) ? m.count : 0;
     const mark = p => '<i class="pr-mark pr-' + esc(p.state) + '" aria-hidden="true"></i><span class="pr-sr">' + esc(p.words) + ", </span>";
-    const row = p => '<li class="pr-row"><a class="pr-item' + (p.id === cur ? " pr-on" : "") + '" href="' + esc(p.href) + '"' +
+    const row = p => v.renamingTeam === p.id ? '<li class="pr-row">' + nameBox("teamrename", p.name, "New name for " + p.name, PROJECT_CHARS, "Project name") + "</li>" :
+      '<li class="pr-row"><a class="pr-item' + (p.id === cur ? " pr-on" : "") + '" href="' + esc(p.href) + '"' +
       (p.id === cur ? ' aria-current="page"' : "") + ' title="' + esc(p.words) + '">' + mark(p) + '<span class="pr-name">' + esc(p.name) + "</span></a>" +
-      '<button type="button" class="pr-more" data-pr="projmenu" data-team="' + esc(p.id) + '" aria-haspopup="menu" aria-label="Move ' + esc(p.name) + ' to a section">' + ICONS.more + "</button></li>";
+      '<button type="button" class="pr-more" data-pr="projmenu" data-team="' + esc(p.id) + '" aria-haspopup="menu" aria-label="More for ' + esc(p.name) + '">' + ICONS.more + "</button></li>";
     const nav = (id, href, icon, label, on, extra) => '<li><a class="pr-nav' + (on ? " pr-on" : "") + '" id="' + id + '" href="' + href + '"' + (on ? ' aria-current="page"' : "") + ">" +
       icon + '<span class="pr-name">' + label + "</span>" + (extra || "") + "</a></li>";
     const badge = count > 0 ? '<b class="pr-count" aria-label="' + count + (count === 1 ? " thing needs you" : " things need you") + '">' + count + "</b>" : "";
@@ -137,7 +159,7 @@
   const doc = () => root.document || null;
   const ctx = () => root.SutraCtx || null;
   const S = {mounted: false, el: null, list: null, btn: null, menu: null, departments: [], needs: [], heads: [], current: "", timer: null, open: false,
-    doc: null, adding: false, renaming: "", allShut: false, error: "", pendingTeam: "", dirty: false, saving: Promise.resolve()};
+    doc: null, adding: false, renaming: "", renamingTeam: "", allShut: false, error: "", pendingTeam: "", dirty: false, saving: Promise.resolve()};
 
   function here() {
     const d = doc();
@@ -148,7 +170,7 @@
     return "";
   }
 
-  const view = () => ({doc: S.doc, here: here(), adding: S.adding, renaming: S.renaming, allShut: S.allShut, error: S.error});
+  const view = () => ({doc: S.doc, here: here(), adding: S.adding, renaming: S.renaming, renamingTeam: S.renamingTeam, allShut: S.allShut, error: S.error});
 
   function paint(force) {
     if (!S.list) return;
@@ -230,6 +252,12 @@
   }
 
   function onNew(e) {
+    if (root.CreateProject && typeof root.CreateProject.open === "function") {      // named projects: every new project is named first (D426)
+      e.preventDefault();
+      setOpen(false);
+      root.CreateProject.open();
+      return;
+    }
     const d = doc();
     const box = d && d.getElementById("fdbox");
     const onFront = box && d.documentElement.dataset.place !== "ws";
@@ -276,12 +304,43 @@
     const team = button.dataset.team;
     const ss = SS();
     const list = ss && S.doc ? S.doc.sections : [];
-    const inSec = list.find(s => s.teams.includes(team));
-    const items = list.map(s => '<button type="button" class="pr-mi" role="menuitemradio" aria-checked="' + (inSec === s) + '" data-pr="move" data-team="' + esc(team) +
-      '" data-sec="' + esc(s.id) + '">' + esc(s.name) + "</button>").join("");
-    openMenu(button, '<p class="pr-mhead">Move to section</p>' + items +
-      (inSec ? '<button type="button" class="pr-mi" role="menuitem" data-pr="move" data-team="' + esc(team) + '" data-sec="">No section</button>' : "") +
-      '<button type="button" class="pr-mi pr-mi-new" role="menuitem" data-pr="addfor" data-team="' + esc(team) + '">New section&hellip;</button>');
+    openMenu(button, projectMenuHtml(projectOf(team) || {id: team, name: team}, list));
+  }
+
+  function projectOf(team) {
+    const m = model(S.departments, S.needs, S.heads, {});
+    return m.projects.find(p => p.id === team) || null;
+  }
+
+  async function renameTeam(team, name) {
+    const c = ctx();
+    if (!c || !c.api || typeof c.api.patch !== "function") return;
+    try {
+      await c.api.patch("/api/teams/" + encodeURIComponent(team), {name});
+      S.error = "";
+      await load();
+    } catch (err) {
+      S.error = (err && err.message) || "The project could not be renamed.";
+      paint(true);
+    }
+  }
+
+  async function deleteTeam(team) {
+    const c = ctx();
+    const p = projectOf(team);
+    if (!c || !c.api || !p || typeof root.confirm !== "function" || !root.confirm(deleteQuestion(p.name))) return;
+    try {
+      await c.api.del("/api/teams/" + encodeURIComponent(team));
+    } catch (err) {
+      S.error = (err && err.message) || "The project could not be deleted.";
+      paint(true);
+      return;
+    }
+    S.error = "";
+    const ss = SS();
+    if (ss && S.doc && S.doc.sections.some(s => s.teams.includes(team))) commit(ss.assign(S.doc, team, null));     // no empty entry left in its section
+    if (text(c.dept) === team && root.location) { root.location.href = "/"; return; }
+    await load();
   }
 
   function onClick(e) {
@@ -296,6 +355,8 @@
       if (!again) (act === "projmenu" ? projectMenu : sectionMenu)(b);
       return;
     }
+    if (act === "teamrename") { closeMenu(false); S.renamingTeam = b.dataset.team || ""; S.adding = false; S.renaming = ""; paint(true); return; }
+    if (act === "teamdelete") { closeMenu(false); if (!b.disabled) deleteTeam(b.dataset.team || ""); return; }
     if (!ss) return;
     if (act === "add") { closeMenu(false); S.adding = !S.adding; S.renaming = ""; S.pendingTeam = ""; paint(true); }
     else if (act === "addfor") { closeMenu(false); S.adding = true; S.renaming = ""; S.pendingTeam = b.dataset.team || ""; paint(true); }
@@ -311,6 +372,16 @@
   }
 
   function finishName(form, keep) {
+    if (form.dataset.prForm === "teamrename") {
+      const team = S.renamingTeam;
+      const input = form.querySelector(".pr-input");
+      const name = clean(input ? input.value : "");
+      const p = projectOf(team);
+      S.renamingTeam = "";
+      paint(true);
+      if (keep && team && name && (!p || name !== p.name)) renameTeam(team, name);
+      return;
+    }
     const ss = SS();
     const input = form.querySelector(".pr-input");
     const name = ss ? ss.cleanName(input ? input.value : "") : "";
@@ -397,7 +468,7 @@
     return true;
   }
 
-  const ProjectRail = {model, html, mount, set, open: setOpen, load, loadSections, repaint: () => paint(true),
+  const ProjectRail = {model, html, mount, set, open: setOpen, load, loadSections, repaint: () => paint(true), projectMenuHtml, deleteQuestion,
     state: () => ({mounted: S.mounted, open: S.open, current: S.current, doc: S.doc}), WORDS, ORG_HREF};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ProjectRail;
   else root.ProjectRail = ProjectRail;

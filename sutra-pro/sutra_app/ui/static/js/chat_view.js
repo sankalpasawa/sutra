@@ -205,12 +205,16 @@
 
   function choiceCard(c, ctx, type) {
     const options = optionList(c.options);
+    const first = type === "approval" && Array.isArray(c.adds) ? c.adds[0] : null;
+    const add = first && typeof first === "object" && clean(first.ref) && clean(first.name) && clean(c.change_id) ? {ref: clean(first.ref), name: clean(first.name)} : null;
     const answer = clean(ctx.answer);
     const done = answer !== "" || ctx.answered === true;
     return '<div class="ncard c-' + type + '" data-card="' + type + '"' + changeRef(c) + (done ? ' data-answered="true"' : "") + ">" +
       '<p class="sq">' + safeText(clean(c.question)) + "</p>" + (type === "approval" ? impactList(c, done) : "") +
       (done ? '<p class="canswer">' + (answer ? "You answered: <b>" + esc(answer) + "</b>" : "Answered") + "</p>"
-        : '<div class="opts">' + options.map(o => '<button type="button" data-act="choose" data-id="' + esc(o.id) + '" data-option="' + esc(o.label) + '">' + esc(o.label) + "</button>").join("") + "</div>") +
+        : '<div class="opts">' + (add ? '<button type="button" data-act="name-add" data-change="' + esc(clean(c.change_id)) + '" data-ref="' + esc(add.ref) +
+            '" data-name="' + esc(add.name) + '">Name it&hellip;</button>' : "") +                 // a project is named before it is made (D427)
+          options.filter(o => !add || o.id !== "yes").map(o => '<button type="button" data-act="choose" data-id="' + esc(o.id) + '" data-option="' + esc(o.label) + '">' + esc(o.label) + "</button>").join("") + "</div>") +
       "</div>";
   }
 

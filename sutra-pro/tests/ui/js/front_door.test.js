@@ -201,3 +201,20 @@ test("raise input (D423): a dollar question's card takes a typed amount; the opt
   assert.match(FD.needCard(question(13, {options: ["Add $10 and keep going [adds $10]", "Finish"]}), {}), /data-text="Add \$10 and keep going \[adds \$10\]"><b>Add \$10 and keep going<\/b>|>Add \$10 and keep going</);
   assert.doesNotMatch(FD.needCard(question(7), {}), /bchipraise/);                    // an ordinary question has no raise input
 });
+
+test("an approval that starts a project offers Name it and Not now (D427)", () => {
+  const item = approval(12, {change_id: "chg-0007", adds: [{ref: "$web", name: 'Cafe "site"'}], text: "I'd start a new project for this: Cafe site."});
+  const html = FD.needCard(item, {});
+  assert.match(html, /data-act="fd-name" data-change="chg-0007" data-ref="\$web" data-name="Cafe &quot;site&quot;"[^>]*>Name it&hellip;</);
+  assert.match(html, /data-act="fd-decline" data-msg="12" data-text="No">Not now</);
+  assert.doesNotMatch(html, /fd-approve/);
+});
+
+test("the first approval that starts a project, once per change (D427: the box opens by itself after Let Sutra choose)", () => {
+  const needs = [question(3), approval(11), approval(12, {change_id: "chg-0007", adds: [{ref: "$web", name: "Cafe site"}]}),
+    approval(13, {change_id: "chg-0008", adds: [{ref: "$a", name: "Bakery"}]})];
+  assert.deepEqual(FD.addToName(needs, {}), {change_id: "chg-0007", ref: "$web", name: "Cafe site"});
+  assert.deepEqual(FD.addToName(needs, {"chg-0007": true}), {change_id: "chg-0008", ref: "$a", name: "Bakery"});
+  assert.equal(FD.addToName(needs, {"chg-0007": true, "chg-0008": true}), null);
+  assert.equal(FD.addToName(null, {}), null);
+});

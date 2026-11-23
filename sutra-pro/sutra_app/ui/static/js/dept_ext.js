@@ -379,10 +379,29 @@
     d.head.appendChild(css);
     // the sections store first (the sidebar's own groups), then the sidebar, which mounts once it has loaded
     const add = (id, src, then) => { const tag = d.createElement("script"); tag.id = id; tag.src = src; tag.addEventListener("load", then); tag.addEventListener("error", then); d.head.appendChild(tag); };
-    add("sections_store-js", "/ui/js/sections_store.js", () => add("project_rail-js", "/ui/js/project_rail.js", () => {
-      if (root.ProjectRail) safely("ProjectRail.mount", () => root.ProjectRail.mount({}));
-      place();
-    }));
+    add("sections_store-js", "/ui/js/sections_store.js", () => add("create_project-js", "/ui/js/create_project.js",
+      () => add("project_pick-js", "/ui/js/project_pick.js", () => add("project_rail-js", "/ui/js/project_rail.js", () => {
+        if (root.ProjectRail) safely("ProjectRail.mount", () => root.ProjectRail.mount({}));
+        safely("greet", greet);
+        place();
+      }))));
+    return true;
+  }
+
+  /* ---- the start heading (named projects, R1.8): "What should we make in <Project>?", the name a dropdown of projects. Picking another one
+     opens its page; "+ New project…" opens the Create project box. J2's #sgreet is filled from here, its page is not edited. */
+  function greet() {
+    const d = doc();
+    const c = ctx();
+    const boot = bootOf();
+    const el = d && d.getElementById("sgreet");
+    const dept = clean(boot.dept);
+    if (!el || !root.ProjectPick || !c || !c.api || !dept || boot.archived === true) return false;
+    const pick = root.ProjectPick.mount(el, {projects: [{id: dept, name: clean(boot.dept_label) || dept}], pick: dept, attention: false, onPick: id => {
+      if (id === root.ProjectPick.NEW) { if (root.CreateProject) root.CreateProject.open(); return; }
+      if (id && id !== dept && root.location) root.location.href = "/d/" + encodeURIComponent(id) + "/";
+    }});
+    Promise.resolve(c.api.get("/api/departments")).then(list => { if (Array.isArray(list) && pick) pick.set({projects: list}); }).catch(() => {});
     return true;
   }
 

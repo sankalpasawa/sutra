@@ -852,3 +852,11 @@ test("fluid. transcriptItems is the transcript cut into one keyed element per me
   const noIds = ChatView.transcriptItems(session, [{kind: "text", who: "sutra", text: "a"}, {kind: "text", who: "sutra", text: "b"}], {});
   assert.deepEqual(noIds.map(i => i.key), ["i0", "i1"], "a line without an id is keyed by its place");
 });
+
+test("an approval that starts a project offers Name it and No (D427)", () => {
+  const html = ChatView.card({type: "approval", change_id: "chg-0007", question: "I'd start a new project for this: Cafe site.",
+    options: [{id: "yes", label: "Yes"}, {id: "no", label: "No"}], adds: [{ref: "$web", name: "Cafe <site>"}]}, {});
+  assert.match(html, /data-act="name-add" data-change="chg-0007" data-ref="\$web" data-name="Cafe &lt;site&gt;"[^>]*>Name it&hellip;</);
+  assert.match(html, /data-act="choose" data-id="no" data-option="No">No</);
+  assert.doesNotMatch(html, /data-id="yes"/);
+});

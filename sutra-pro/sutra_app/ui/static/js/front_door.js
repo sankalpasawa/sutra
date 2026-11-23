@@ -136,6 +136,12 @@
     return hv ? hv.waitedHtml(item, elapsedMs) : "";
   }
 
+  // The project an approval would start (D427): {ref, name} of the card's first add, or null.
+  const addOf = item => {
+    const add = isObj(item) && Array.isArray(item.adds) ? item.adds[0] : null;
+    return isObj(add) && clean(add.ref) && clean(add.name) && clean(item.change_id) ? {ref: clean(add.ref), name: clean(add.name)} : null;
+  };
+
   function needCard(item, opts) {
     if (!isObj(item) || !Number.isInteger(item.message_id)) return "";
     const o = isObj(opts) ? opts : {};
@@ -144,13 +150,17 @@
     const dis = busy ? " disabled" : "";
     const err = clean(o.error) ? '<p class="fderr" role="alert">' + esc(clean(o.error)) + "</p>" : "";
     if (item.kind === "approval") {
+      // `adds` (D427): the project the org chat would start; its first entry is the one the Create project box names
       const yes = (Array.isArray(item.options) && clean(item.options[0])) || "Yes";
       const no = (Array.isArray(item.options) && clean(item.options[1])) || "No";
       return '<article class="fdcard fdappr" data-msg="' + esc(msg) + '" data-kind="approval">' +
         '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + "Asha needs your OK" +
           '</b></span>' + waited(item, o.elapsedMs) + "</header>" +
         '<p class="fdq">' + esc(clean(item.text) || "A change to your org waits for your yes.") + "</p>" + err +
-        '<div class="fdacts"><button type="button" class="fdbtn fdyes" data-act="fd-approve" data-msg="' + esc(msg) + '" data-text="' + esc(yes) + '"' + dis + ">Approve</button>" +
+        '<div class="fdacts">' + (addOf(item)
+          ? '<button type="button" class="fdbtn fdyes" data-act="fd-name" data-change="' + esc(clean(item.change_id)) + '" data-ref="' + esc(addOf(item).ref) +
+            '" data-name="' + esc(addOf(item).name) + '"' + dis + ">Name it&hellip;</button>"                      // a project is named before it is made (D427)
+          : '<button type="button" class="fdbtn fdyes" data-act="fd-approve" data-msg="' + esc(msg) + '" data-text="' + esc(yes) + '"' + dis + ">Approve</button>") +
         '<button type="button" class="fdbtn fdghost" data-act="fd-decline" data-msg="' + esc(msg) + '" data-text="' + esc(no) + '"' + dis + ">Not now</button></div></article>";
     }
     const dept = idOf(item.dept_id);
@@ -313,7 +323,17 @@
     return project ? {show: true, taskId: id, project} : {show: true, taskId: id};
   }
 
-  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};
+  // The project to name next (D427): the first approval in `needs` that would start one and whose change is not in `opened`; null when none.
+  function addToName(needs, opened) {
+    const seen = isObj(opened) ? opened : {};
+    for (const item of Array.isArray(needs) ? needs : []) {
+      const add = isObj(item) && item.kind === "approval" ? addOf(item) : null;
+      if (add && !seen[clean(item.change_id)]) return {change_id: clean(item.change_id), ref: add.ref, name: add.name};
+    }
+    return null;
+  }
+
+  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count, addToName};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

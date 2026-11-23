@@ -229,7 +229,55 @@
     renderRail();
     renderChat();
     renderFront();
+    renderPick();
     if (S.settings) paintEngine();
+  }
+
+  // ---- where the start box sends (named projects, R1.9 and R1.10): the heading's project, or "Let Sutra choose" (the org chat). The pick
+  // starts on the last one used, kept on the server (GET/PUT /api/teams/last): a browser's storage belongs to one port.
+  const pickState = {mounted: null, pick: "", loaded: false};
+  function renderPick() {
+    const el = $("fd-new-h");
+    if (!el || !root.ProjectPick) return;
+    const projects = Array.isArray(S.departments) ? S.departments : [];
+    if (!pickState.mounted) {
+      pickState.mounted = protect("project picker", () => root.ProjectPick.mount(el, {projects, pick: pickState.pick, attention: true, onPick: choosePick}));
+      return;
+    }
+    pickState.mounted.set({projects, pick: pickState.pick});
+  }
+  async function loadPick() {
+    try {
+      const answer = await api.get("/api/teams/last");
+      pickState.pick = isObj(answer) && typeof answer.dept === "string" ? answer.dept : "";
+    } catch (e) { pickState.pick = ""; }
+    pickState.loaded = true;
+    renderPick();
+  }
+  function choosePick(id) {
+    if (root.ProjectPick && id === root.ProjectPick.NEW) { if (root.CreateProject) root.CreateProject.open(); return; }
+    pickState.pick = id || "";
+    renderPick();
+    api.put("/api/teams/last", {dept: pickState.pick}).catch(() => {});
+  }
+  const pickedProject = () => {
+    const id = root.ProjectPick && pickState.loaded ? root.ProjectPick.pickOf(S.departments, pickState.pick) : "";
+    return id ? (S.departments || []).find(d => isObj(d) && d.id === id) || null : null;
+  };
+
+  // A prompt for a picked project goes straight to it, with its budget, without the org chat (R1.10), then its page opens. A busy project
+  // or one deleted meanwhile is refused in plain words, and nothing is lost from the box.
+  async function sendToProject(team, body, usd) {
+    try {
+      await api.post("/api/say?dept=" + encodeURIComponent(team.id), Number.isFinite(usd) ? {text: body, usd_budget: usd} : {text: body});
+    } catch (err) {
+      const status = err && Number.isInteger(err.status) ? err.status : 0;
+      S.front.error = (root.ProjectPick && root.ProjectPick.refusal(status, team.name)) || (err && err.message) || FAILED;
+      if (status === 403) choosePick("");
+      return false;
+    }
+    root.location.href = "/d/" + encodeURIComponent(team.id) + "/";
+    return true;
   }
 
   async function fetchNeeds() {
@@ -240,6 +288,25 @@
     renderNeeds();
     renderRail();
     renderChat();
+    nameAfterSend();
+  }
+
+  // Named projects (D427): the org chat never makes a project by itself. A project it would start is named in the Create project box: opened
+  // by "Name it…" on the card, and by itself once per change after the owner sent a request from the start box with "Let Sutra choose".
+  const named = {};
+  function nameAdd(changeId, ref, name) {
+    if (!root.CreateProject || !changeId || !ref) return false;
+    named[changeId] = true;
+    root.CreateProject.open({changeId, ref, name, onDone: id => {
+      fetchNeeds().catch(handleFetchError);
+      if (id) root.location.href = "/d/" + encodeURIComponent(id) + "/";
+    }});
+    return true;
+  }
+  function nameAfterSend() {
+    if (!S.front || !S.front.sent || !root.FrontDoor || typeof root.FrontDoor.addToName !== "function") return;
+    const next = root.FrontDoor.addToName(S.needs, named);
+    if (next) nameAdd(next.change_id, next.ref, next.name);
   }
 
   // GET /api/heads-up: crashed or app-stopped work (Try again), teams gone quiet, work finished in 24 h. A failed read keeps the lane it had.
@@ -723,6 +790,8 @@
         renderChat();
         send(label, {message_id: numeric, option: b.dataset.id || label});
       }
+    } else if (act === "name-add") {
+      nameAdd(b.dataset.change, b.dataset.ref, b.dataset.name);
     } else if (act === "node-answer") {
       answerProjectQuestion(b, numeric);
     } else if (act === "option") {
@@ -930,6 +999,14 @@
     S.front.going = false;
     S.front.since = S.lastId;
     $("fdsend").disabled = true;
+    const team = pickedProject();
+    if (team) {
+      const sent = await sendToProject(team, body, usd);
+      $("fdsend").disabled = false;
+      if (sent) { box.value = ""; if (S.chip) S.chip.reset(); }
+      renderFrontLatest();
+      return sent;
+    }
     const ok = await send(body, null, {plan: true, usd_budget: usd});
     $("fdsend").disabled = false;
     if (ok) { if (box.value.trim() === body) box.value = ""; if (S.chip) S.chip.reset(); }
@@ -998,6 +1075,7 @@
       else answerFront(b.dataset.msg, "Add $" + n + " and keep going");
     }
     else if (act === "fd-approve" || act === "fd-decline") decideFront(b.dataset.msg, b.dataset.text || (act === "fd-approve" ? "Yes" : "No"));
+    else if (act === "fd-name") nameAdd(b.dataset.change, b.dataset.ref, b.dataset.name);
     else if (act === "fd-choose") { const id = Number(b.dataset.msg); if (Number.isInteger(id)) { S.answers[id] = b.dataset.text || ""; send(b.dataset.text || b.dataset.option, {message_id: id, option: b.dataset.option || b.dataset.text}).then(renderFrontLatest); } }
     else if (act === "fd-retry" || act === "retry-task") retryTask(b.dataset.task, b);
     else if (act === "fd-seen" || act === "headsup-seen") {
@@ -1031,6 +1109,7 @@
     $("front").addEventListener("focusout", () => root.setTimeout(() => { if (S.front.held) renderAttention(); }, 0));
     if ($("gofront")) $("gofront").addEventListener("click", () => setPlace("front"));
     if (root.ProjectRail) protect("project sidebar", () => root.ProjectRail.mount({feed: false}));      // Home feeds it from its own reads
+    loadPick();
   }
 
   // The tab title count and one desktop notice per new question or problem (chat_attention.js), once both lists have been read: what is

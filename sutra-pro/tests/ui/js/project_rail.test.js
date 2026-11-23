@@ -66,7 +66,7 @@ test("sections: each with its projects in order, a folded one shows none, the re
   assert.match(html, /Empty\. Use &middot;&middot;&middot; on a project to move it here\./);
   assert.deepEqual(names(html.slice(html.indexOf("pr-all"))), ["Align Physio", "New one"]);
   assert.match(html, /data-pr="secmenu" data-sec="sec_aaaa" aria-haspopup="menu" aria-label="Rename or delete Clients"/);
-  assert.match(html, /data-pr="projmenu" data-team="web" aria-haspopup="menu" aria-label="Move Align Physio to a section"/);
+  assert.match(html, /data-pr="projmenu" data-team="web" aria-haspopup="menu" aria-label="More for Align Physio"/);
   assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, adding: true}), /<form class="pr-namebox" data-pr-form="add"><input class="pr-input"/);
   assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, renaming: "sec_aaaa"}), /data-pr-form="rename"><input [^>]*value="Clients">/);
   assert.match(ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc, allShut: true}), /<div class="pr-sec pr-all pr-shut">/);
@@ -83,4 +83,34 @@ test("the one view button of a project reads Agent view in the studio and Simple
   assert.equal(DeptExt.helpers.viewLabel(true), "Agent view");
   assert.equal(DeptExt.helpers.viewLabel(false), "Simple view");
   assert.equal(DeptExt.helpers.switchMenuHtml, undefined);
+});
+
+// ---- named projects, task 7: Rename and Delete in a project's menu (D426) ----------------------------------------------------------
+
+const SECS = [{id: "sec_aaaa", name: "Clients", teams: ["web"], collapsed: false}];
+
+test("a project's menu has Rename, Delete, then Move to section", () => {
+  const html = ProjectRail.projectMenuHtml({id: "web", name: "Align Physio", state: "idle"}, SECS);
+  const acts = (html.match(/data-pr="[a-z]+"/g) || []).map(x => x.slice(9, -1));
+  assert.deepEqual(acts.slice(0, 2), ["teamrename", "teamdelete"]);
+  assert.ok(html.indexOf("Move to section") > html.indexOf("teamdelete"));
+  assert.match(html, /data-pr="move" data-team="web" data-sec="sec_aaaa"/);
+  assert.doesNotMatch(html, /data-pr="teamdelete"[^>]* disabled/);
+});
+
+test("Delete of a working project is disabled and says why", () => {
+  const html = ProjectRail.projectMenuHtml({id: "web", name: "Align Physio", state: "making"}, SECS);
+  assert.match(html, /data-pr="teamdelete"[^>]* disabled/);
+  assert.match(html, /Working\. Stop it first\./);
+});
+
+test("a project being renamed shows a name box of 80 characters in its row; a section keeps 40", () => {
+  const html = ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc: {version: 1, sections: []}, renamingTeam: "web"});
+  assert.match(html, /<form class="pr-namebox" data-pr-form="teamrename"><input class="pr-input" type="text" maxlength="80"[^>]*value="Align Physio">/);
+  const sec = ProjectRail.html(ProjectRail.model(DEPTS, []), "", {doc: {version: 1, sections: SECS}, renaming: "sec_aaaa"});
+  assert.match(sec, /data-pr-form="rename"><input class="pr-input" type="text" maxlength="40"/);
+});
+
+test("the delete question names the project and says its files stay", () => {
+  assert.equal(ProjectRail.deleteQuestion("Align Physio"), "Delete Align Physio? It leaves the sidebar. Its runs and files stay on disk.");
 });
