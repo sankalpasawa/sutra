@@ -489,7 +489,7 @@ def test_the_texts_j2_posts_are_still_what_the_checks_read(j2):
 
 def test_a_rejection_j2_posts_is_what_atom_rules_reads(run):
     r = run()
-    r._reject("Build menu", "missing completion_check")
+    r._reject("Build menu", "missing completion_check", ("missing", ("completion_check",)))      # P22 (D431): a code-set key
     m = r.chat[-1]
     assert m["who"] == "system" and m["rejected"] == "Build menu" and m["text"].startswith(registry_module.REJECTED_PREFIX)
     assert registry_module._reason_of(m) == "missing completion_check"

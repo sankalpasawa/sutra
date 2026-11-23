@@ -8079,7 +8079,7 @@ class J2Run:
             bad = {w.get("name") or "?": m for w in pool if (m := self._kind_problem(w) + self._atom_problems(w, pool))}
             if not bad:
                 break
-            why = [self._reject(n, "; ".join(m)) for n, m in bad.items()]
+            why = [self._reject(n, "; ".join(m), ("atoms",)) for n, m in bad.items()]      # key: P22 (D431)
             if retry:
                 r = self.call("adaptation", fmt, task + "\nTHE VALIDATOR REJECTED: " + "; ".join(why) + ". Send your "
                               "reply again with every field of every work atom filled in.", mock)
@@ -8991,9 +8991,11 @@ class J2Run:
 
     REQUIRED = ("name", "goal_gap", "outputs", "completion_check")
 
-    def _reject(self, name, reason):
-        """A validator rejection: counted, saved for summary.json, and posted as a system note with the exact reason."""
-        self.rejections.append({"cycle": self.cycle, "workflow": name, "reason": reason})
+    def _reject(self, name, reason, key):
+        """A validator rejection: counted, saved for summary.json, and posted as a system note with the exact reason.
+        P22 amended (D431): key is set by code at the rejection, the rule and code-made ids only (item numbers, workflow
+        ids), never a name, an agent's or the judge's words; the same rejection twice in a row is the same key."""
+        self.rejections.append({"cycle": self.cycle, "workflow": name, "reason": reason, "key": json.loads(json.dumps(key))})      # as summary.json keeps it
         self._event("validator", "role_refusal" if "Audit's job" in reason else "refused", f"{name}: {reason}")
         self.post("system", f"Validator rejected '{name}': {reason}.", rejected=name)
         return f"{name} ({reason})"
@@ -9181,7 +9183,7 @@ class J2Run:
             c, name = granted(w), w.get("name") or "?"
             if self.change and self.change["phase"] == "plan" and name not in self.change["allowed"]:
                 refused.append(self._reject(name, f"it is not in the change plan of {self.change['id']} (change.json); "
-                                                  "propose only the workflows the change plan names"))
+                                                  "propose only the workflows the change plan names", ("change_plan",)))
                 continue
             missing = [f for f in self.REQUIRED if not (w.get(f) or (f == "goal_gap" and w.get("purpose")))]
             if missing and (row := self._plan_row(name)):
@@ -9230,7 +9232,29 @@ class J2Run:
                       else self._underpriced(w, rc, covered) if RATES
                       else None) or (f"it costs {c}, over the {remaining} left in the budget" if c > remaining else None)
             if reason:
-                refused.append(self._reject(name, reason))
+                # P22 amended (D431): the rule that fired, in the order of the reason above, with code-made ids only (the
+                # done-when items of a real-run clash, the required fields); names, sections, dependencies, LLD ids, parts
+                # and the judge's words stay out of the key
+                key = next(k for k, on in (
+                    (("audit",), w.get("kind") == "audit"),
+                    (("real_run_covers", tuple(self._no_at(i) for i in clash.get(id(w), ()))), id(w) in clash),
+                    (("missing", tuple(missing)), bool(missing)),
+                    (("atoms",), bool(no_atom)),
+                    (("dependencies",), bool(self._unknown_deps(w, batch) and self._dep_names(batch))),
+                    (("lld",), bool(unknown_lld)),
+                    (("sections",), bool(bad_secs)),
+                    (("no_section",), bool(no_sec)),
+                    (("priority_refused",), name in self.p_refused),
+                    (("counter_limit",), bool(counter and as_int((w.get("envelope") or {}).get("money_limit")) <= 0)),
+                    (("no_price",), bool(RATES and rc is None)),
+                    (("parts",), bool(unknown)),
+                    (("floor",), rc is not None and c < rc),
+                    (("judge",), (w.get("judge") or {}).get("ready") is False),
+                    (("sections_cost",), c < sec_min),
+                    (("cost_zero",), c <= 0),
+                    (("over_budget",), reason == f"it costs {c}, over the {remaining} left in the budget"),
+                    (("underpriced",), True)) if on)
+                refused.append(self._reject(name, reason, key))
                 self._refused_for(w, reason)
                 if self.change and name in self.change["allowed"] and name not in self.p_refused \
                         and "left in the budget" not in reason and name not in self.change.setdefault("resend", []):
@@ -9238,7 +9262,8 @@ class J2Run:
                 continue
             if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D431)
                 refused.append(self._reject(name, f"it redoes {and_list(ids)}, which failed the same way twice, and its "
-                                                  "cause_change is empty: say what is different about the cause this time"))
+                                                  "cause_change is empty: say what is different about the cause this time",
+                                            ("cause_change", tuple(ids))))
                 self._refused_for(w, "its cause_change is empty")
                 continue
             remaining -= c
@@ -9265,7 +9290,7 @@ class J2Run:
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
                 bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
                 if bad:
-                    refused.append(self._reject(name, "; ".join(bad)))
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
                     continue
                 checks = w["real_run"].get("checks") or []
                 at = self._item_at()
@@ -9278,8 +9303,9 @@ class J2Run:
                           or (f"done-when item {i} is checked by the real run's receipt, so no workflow covers it: take it "
                               "out of covers and keep it in real_run checks")
                           for i in checks if at.get(as_int(i)) in planned])
-                if bad:
-                    refused.append(self._reject(name, "; ".join(bad)))
+                if bad:      # key (D431): the rule and the item numbers, never the other workflow's name
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_checks", tuple(
+                        as_int(i) for i in checks) if isinstance(checks, list) else ())))
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
@@ -9340,10 +9366,10 @@ class J2Run:
                 self.post("system", f"Change {c['id']}: not funded or refused, so not built: {', '.join(cut)}."
                           + (f" The planning documents {', '.join(docs)} are not revised, so they no longer match "
                              "what is built." if docs else ""), change=c["id"])
-        # P22 (D246): a rejection the validator's last call also made (the same reason, whatever the workflow is called:
-        # amended in D431) is a repeated failure
-        now = [(x["workflow"], x["reason"]) for x in self.rejections[n0:]]
-        self.repeat_rejected = [x for x in now if x[1] in {r for _, r in getattr(self, "last_rejected", None) or []}]
+        # P22 (D246): a rejection the validator's last call also made is a repeated failure. Amended in D431: the same
+        # code-set key (the rule and code-made ids, _reject), whatever any workflow is called; the words are for display
+        now = [(x["workflow"], x["reason"], json.dumps(x.get("key"))) for x in self.rejections[n0:]]
+        self.repeat_rejected = [x for x in now if x[2] in {k for *_, k in getattr(self, "last_rejected", None) or []}]
         self.last_rejected = now
         return registered, refused, defaults
 
@@ -9378,7 +9404,7 @@ class J2Run:
         if not rep:
             return False
         self.last_rejected = []
-        said = "; ".join(f"{n} ({r})" for n, r in rep)
+        said = "; ".join(f"{n} ({r})" for n, r, *_ in rep)
         self._event("validator", "repeat", said)
         self._handoff("identity", kind="limit", reason=f"The same failure came back twice in a row: the validator rejected "
                                                        f"{said} again, so another cycle would likely repeat it.",
@@ -12201,7 +12227,7 @@ class J2Run:
             if probs and a["id"] in corr:        # Adaptation's own correction breaks a rule: code's correction
                 new, probs = {**a, "verification": corr[a["id"]]}, []
             if probs:
-                self._reject(f"{a['id']} corrected check", "; ".join(probs))
+                self._reject(f"{a['id']} corrected check", "; ".join(probs), ("corrected_check", a["id"]))      # key: P22 (D431)
             else:
                 a["verification"] = new["verification"]
                 if not self._run_checks(w, MAX_CHECK_ATTEMPTS, *self._recheck_page(a["id"])[:1], atoms=[a],

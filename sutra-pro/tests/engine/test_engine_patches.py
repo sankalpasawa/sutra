@@ -1434,6 +1434,29 @@ def test_p22_a_renamed_proposal_rejected_for_the_same_reason_stops_the_cycle(sor
     assert run.handoff["reason"].startswith("The same failure came back twice in a row: the validator rejected Build the sorter")
 
 
+def test_p22_renaming_the_other_workflow_a_rejection_names_is_still_the_same_rejection(sort_run):
+    """Review R1-2: the repeat compares the rejection's code-set key (its rule and the item numbers), never a name. The run
+    notes are refused for covering item 3, which the real run checks; the refusal names the real-run workflow, and renaming
+    that workflow between two calls changes the words, not the rejection."""
+    make, real = sort_run
+    run = make()
+    script, test, notes = sort_proposals(real)
+    run._register([script, notes])
+    assert [x["workflow"] for x in run.rejections] == ["Write run_on_sort_me.md"] and not run.repeat_rejected
+    run._register([{**script, "name": "Build the sorter"}, notes])
+    assert "'Build the sorter'" in run.rejections[-1]["reason"]
+    assert [x[0] for x in run.repeat_rejected] == ["Write run_on_sort_me.md"], run.rejections
+
+
+def test_p22_a_rejection_of_another_kind_is_not_the_same_rejection(sort_run):
+    make, real = sort_run
+    run = make()
+    script, test, notes = sort_proposals(real)
+    run._register([script, notes])                                      # refused: it covers the real run's item
+    run._register([{**notes, "completion_check": ""}])                   # refused: a required field is missing
+    assert run.rejections[-1]["workflow"] == "Write run_on_sort_me.md" and not run.repeat_rejected
+
+
 # ---- P23 (D247): ended_workable only for a clean "Done:" end ---------------------------------------------------------------------
 
 def ended(run_dir, outcome, fail=False, **audit_keys):
