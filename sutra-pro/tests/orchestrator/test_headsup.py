@@ -288,3 +288,13 @@ def test_an_earlier_attempt_of_a_step_finds_its_project_too(db, clock):
     world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A', 'running', ?)", NOW - 3 * HOUR)
     world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'done', ?)", second, NOW)
     assert {i.task_id: i.project_id for i in HeadsUp(db, nodes=True).items(NOW)}[first] == "prj_0123456789ab"
+
+
+def test_a_step_that_finished_with_open_items_in_a_project_that_still_runs_has_no_try_again(db, clock):
+    """r-5: the branch had no test: a step of a running project is tried again by its project, never from here."""
+    world = World(db, clock)
+    task = put(world, 90, "web", "done_with_open_items", ended=NOW - HOUR, outcome="Done with open items: x")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.kind == "finished" and item.retry is False
+    assert [i.retry for i in HeadsUp(db).items(NOW)] == [True], "an ordinary task keeps its Try again"
