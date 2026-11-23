@@ -3136,6 +3136,8 @@ def workable(audit):
     found no JS errors, no horizontal overflow at 360px or 1280px, no broken form and no broken in-page link."""
     if not audit:
         return ["no site has been audited yet"]
+    if audit.get("version") == 0:      # P29 (D425): taken before anything was built, so nothing can be workable or done
+        return ["nothing has been built yet"]
     num = lambda r: r["id"][2:] if FINDING_ID.fullmatch(str(r["id"])) else r["item"]    # F-n is charter item n
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
     ok |= set(audit.get("after_real_run") or [])    # step 7: items only the approved real run meets; its receipt decides them
@@ -6419,6 +6421,15 @@ class J2Run:
             if sorted(gone) != sorted(named):
                 self._event("system", "drop_mismatch", f"named {named}, dropping {gone}")
                 gone, names = list(named), and_list(dict.fromkeys(label[c] for c in named))
+        if limit and gone and not self.sites and not [c for c in crit if c not in gone and c != GATE_TEXT]:
+            # P29 (D425): a typed answer that leaves out everything still to build, with nothing built, is a stop, never a
+            # finished run with no deliverable: the stop branch below says "Stopped ...: nothing was built"
+            decision, gone = "stop", []
+            r["to_requester"] = "Got it. Nothing is built yet and nothing would be left to build, so we're stopping here."
+            if self.last_limit:
+                self.last_limit["decision"] = "stop"
+            if self.decisions:
+                self.decisions[-1]["decision"] = "stop"
         if self.decisions and limit:
             self.decisions[-1].update(named=h.get("drop_named") if decision == "drop" and "drop_texts" in h else [],
                                       dropped=[label[c] for c in gone])
@@ -6692,6 +6703,9 @@ class J2Run:
             gone = {t for r in named for t in r.get("texts", [r["text"]])}
             kept = {x for c in crit if c not in gone for x in self._item_sections(c)}
             named = named if len(kept) > 1 else []
+        if not self.sites:      # P29 (D425): with nothing built, never a "Leave out" that leaves nothing to build (the gate item isn't)
+            cut = {t for r in named for t in r.get("texts", [r["text"]])}
+            named = named if [c for c in crit if c not in cut and c != GATE_TEXT] else []
         drop = [crit.index(t) + 1 for r in named for t in r.get("texts", [r["text"]])]
         shown = [f"{r['name']} ({r['status']})" for r in rows]      # the list under Identity's words
         if named:

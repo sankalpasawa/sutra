@@ -709,7 +709,12 @@ def below_floor():
     run.goal = {"done_when": both}                          # no marks: nothing is core but the gate, so both may go
     assert not any(j2.must_keep(c, run.goal) for c in both)
     run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
-    assert run.paused["handoff"]["choices"] == ["continue", "drop"], run.paused["handoff"]
+    # P29 (D425): nothing is built, so leaving both out would leave nothing to build: no "Leave out", "Stop here" instead
+    assert run.paused["handoff"]["choices"] == ["continue", "ship"], run.paused["handoff"]
+    run = page_run()
+    run.goal, run.sites = {"done_when": both}, ["<!doctype html><title>x</title>"]      # with a site, both may go
+    run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
+    assert run.paused["handoff"]["choices"] == ["continue", "drop", "ship"], run.paused["handoff"]
 
 
 

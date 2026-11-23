@@ -2106,3 +2106,81 @@ def test_p28_the_prompt_lines_appear_only_after_a_repeat(replay_17e1, monkeypatc
             "snapshot.json)") in adapt and '"cause_change"' in adapt and "the validator rejects it" in adapt
     assert ('REDOES A STEP THAT FAILED THE SAME WAY TWICE: {"p1": "write the copy into out/"}. If a cause_change names '
             "nothing new about the cause, the money buys the same failure: REFUSE it with that reason.") in prio
+
+
+# ---- P29 (D425): with nothing built, no option that leaves nothing to build, and never Done ---------------------------------------
+# Replay B: run 17e1's [81]-[90]. No site, the 4 items, one audit at version 0 failing them, 100 of 100 credits spent; Identity's
+# question offered "Leave out" all four items, "Option 2" was picked, and Identity then declared the run done with no site.
+def audit_v0(crit, failing, output="website", version=0):
+    return {"cycle": 1, "version": version, "output": output, "rubric": [], "conditions": [], "all_pass": not failing,
+            "mechanical": {"available": False, "note": "nothing was built"},
+            "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing,
+                         "verdict": "FAIL" if c in failing else "PASS", "note": ""} for i, c in enumerate(crit, 1)]}
+
+
+@pytest.fixture
+def nothing_built(make_run):
+    def make(failing=DONE_17E1):
+        run = make_run()
+        run.post("user", "A one-page website for Bean There")
+        run._apply_output("website")
+        run.goal, run.budget, run.spent = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100, 100
+        run.audits = [audit_v0(DONE_17E1, failing)]
+        assert not run.sites
+        run._identity_limit({"reason": "The same failure came back twice in a row, so another cycle would likely repeat it."})
+        return run
+    return make
+
+
+def test_p29_replay_17e1_offers_no_leave_out_that_leaves_nothing_with_nothing_built(nothing_built):
+    run = nothing_built()
+    h, opts = run.paused["handoff"], run.paused["questions"][0]["options"]
+    assert "drop" not in h["choices"], (h["choices"], opts)
+    assert not [o for o in opts if o.startswith("Finish as it is")]
+    assert h["choices"] == ["continue", "ship"] and opts[-1] == "Stop here: nothing is built yet, so you get no site", opts
+
+
+def test_p29_a_partial_leave_out_is_still_offered(nothing_built):
+    """OQ-4: narrowing the scope is not shipping as is."""
+    run = nothing_built(failing=[DONE_17E1[2]])
+    h = run.paused["handoff"]
+    assert "drop" in h["choices"] and h["drop_texts"] == [DONE_17E1[2]], h
+
+
+def test_p29_leaving_everything_out_with_nothing_built_stops_never_done(nothing_built, monkeypatch):
+    run = nothing_built(failing=[DONE_17E1[2]])
+    p, real = run.paused, run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"decision": "drop", "drop_items": [1, 2, 3, 4], "to_requester": "Sure.",
+                                                           "to_agents": "", "confirmed": [], "still_to_be_confirmed": []}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Leave all of it out"})
+    assert re.fullmatch(r"Stopped on the Requester's decision \(.*\): nothing was built\.", run.outcome or ""), run.outcome
+    assert run.goal["done_when"] == DONE_17E1 and run.turn is None
+    assert run.last_limit["decision"] == "stop"
+    run._write_summary()
+    assert json.loads((Path(run.dir) / "summary.json").read_text())["status"] == "stopped"
+    from sutra_app.orchestrator.stopwords import plain_outcome
+    assert plain_outcome(run.outcome) == "It stopped: nothing was built."
+
+
+def test_p29_workable_is_false_for_an_audit_at_version_0_and_unchanged_without_a_version(j2):
+    a = audit_v0(DONE_17E1, [], output="prd")
+    assert j2.workable(a) == ["nothing has been built yet"]
+    old = {k: v for k, v in a.items() if k != "version"}
+    assert j2.workable(old) == [] and j2.workable({**a, "version": 1}) == []
+
+
+def test_p29_identity_cannot_declare_a_document_done_with_nothing_built(make_run, monkeypatch):
+    run = make_run()
+    run.post("user", "A PRD for Bean There")
+    run._apply_output("prd")
+    crit = ["The PRD names the users.", "The PRD lists the goals."]
+    run.goal, run.budget, run.spent = {"statement": "PRD", "done_when": crit}, 100, 0
+    run.audits = [audit_v0(crit, [], output="prd")]
+    real = run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"to_requester": "Your PRD is ready.", "to_agents": "", "done": True,
+                                                           "clause": "done_when", "next": "Requester"}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not str(run.outcome or "").startswith("Done"), (run.turn, run.outcome)
