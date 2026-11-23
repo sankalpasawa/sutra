@@ -2251,10 +2251,8 @@ def test_p29_replay_3429_the_same_unmet_condition_twice_in_a_row_asks_the_reques
     run.audits.append(pulse_audit(run, 2, [PULSE_DONE_WHEN[0]]))          # the done-when results moved; C1 and C2 did not
     run._identity_audit({})
     assert run.paused and run.paused["kind"] == "limit", (run.turn, run.handoff)
-    reason = run.paused["handoff"]["limit"]
-    assert reason.startswith("The same failure came back twice in a row: necessary condition C1 (Every file the charter lists is "
-                             "in the folder) was not met for the same reason in two audits in a row (the charter lists no files)"), reason
-    assert "C2 (" in reason and "can't be met by building" in reason
+    assert run.paused["handoff"]["limit"] == ("This condition comes from the charter, and building can't change it. The charter "
+                                              "needs fixing.")
     run.auto = True
     assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True      # Addition A: it waits for the Requester
 
@@ -2269,3 +2267,25 @@ def test_p29_the_same_condition_with_another_reason_is_not_the_same_failure(puls
     run.audits = [first, second]
     run._identity_audit({})
     assert run.turn == "adaptation" and not run.paused, run.paused
+
+
+def test_p29_a_buildable_condition_unmet_the_same_way_twice_goes_back_to_adaptation(make_run):
+    """Review R1-1: only a condition the charter decides asks the Requester. A website's in-page link (N4) is the build's
+    to fix: unmet for the same reason in two audits, it goes back to Adaptation as before."""
+    run = make_run()
+    run.post("user", "A one-page website")
+    run._apply_output("website")
+    crit = ["The page shows the name.", "The page shows the hours."]
+    run.goal, run.budget, run.spent = {"statement": "x", "done_when": list(crit)}, 100, 20
+    run.sites = ["<!doctype html><title>x</title>", "<!doctype html><title>y</title>"]
+
+    def audit(failing, version):
+        return {"cycle": 1, "version": version, "output": "website", "rubric": [], "all_pass": False,
+                "mechanical": {"available": True, "js_errors": [], "broken_in_page_links": []},
+                "conditions": [{"id": "N4", "text": "Every in-page link resolves", "check": "links-well-formed", "met": False,
+                                "evidence": "broken in-page link: #menu"}],
+                "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing,
+                             "verdict": "FAIL" if c in failing else "PASS", "note": ""} for i, c in enumerate(crit, 1)]}
+    run.audits = [audit([crit[0]], 1), audit([crit[1]], 2)]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused, (run.paused or {}).get("handoff")

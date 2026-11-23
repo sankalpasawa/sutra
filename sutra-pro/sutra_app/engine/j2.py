@@ -6894,8 +6894,12 @@ class J2Run:
         # P29 (D431): a necessary condition unmet for the same code-made reason (its id and evidence, never its wording) in two
         # audits in a row, whatever else moved, can't be met by building (runs/j2-20261123-103238-3429: C1 "the charter lists
         # no files" and C2 "the test '' is not a file in the folder" in every audit while the run kept building)
-        before = {(x["id"], x.get("evidence")) for x in (recent[0].get("conditions") or [] if len(recent) == 2 else []) if blocks(x)}
-        stuck = [c for c in (last or {}).get("conditions") or [] if blocks(c) and (c["id"], c.get("evidence")) in before]
+        # only a condition the charter decides (from_charter, set by code where the condition is checked: _folder_condition);
+        # one the build can meet goes back to Adaptation as before (review R1-1)
+        before = {(x["id"], x.get("evidence")) for x in (recent[0].get("conditions") or [] if len(recent) == 2 else [])
+                  if blocks(x) and x.get("from_charter")}
+        stuck = [c for c in (last or {}).get("conditions") or []
+                 if blocks(c) and c.get("from_charter") and (c["id"], c.get("evidence")) in before]
         # Only the Requester can help when every remaining failure is a to-be-confirmed item: no other done-when item,
         # no rubric item, no render problem. (Checking done-when alone sent a lone rubric failure to the Requester as
         # a limit question: runs/j2-20261007-184146.) Anything else the department can fix loops back to J2.b.
@@ -6906,11 +6910,8 @@ class J2Run:
         if fails and not facts and (same or only_tbc or stuck):
             return self._identity_limit({"reason": "Only you can close what's left: these done-when items are to be "
                                                    "confirmed." if only_tbc else
-                                         "The same failure came back twice in a row: " + "; ".join(      # P29 (D431)
-                                             f"necessary condition {c['id']} ({c['text']}) was not met for the same reason in "
-                                             f"two audits in a row ({c['evidence']})" for c in stuck)
-                                         + f", so {'it' if len(stuck) == 1 else 'they'} can't be met by building: another "
-                                           "cycle would likely repeat it." if stuck else
+                                         "This condition comes from the charter, and building can't change it. The charter "
+                                         "needs fixing." if stuck else      # P29 (D431)
                                          "The same failure came back twice in a row, so another cycle would likely "
                                          "repeat it.", "tbc": bool(only_tbc)})
         cheapest = min(RATES.values()) if RATES else 1
@@ -12454,6 +12455,8 @@ class J2Run:
         k = c["check"]
         if k == "charter-files-present":
             want = charter_list(g, cond.get("charter_field"))
+            if not want:      # P29 (D431): unmet because the charter lists none: building can't change it
+                c["from_charter"] = True
             miss = [f for f in want if not (llm.inside(os.path.join(folder, f), folder)
                                             and os.path.isfile(os.path.join(folder, f)))]
             return (bool(want) and not miss, (f"missing: {', '.join(miss)}" if miss else
@@ -12461,6 +12464,8 @@ class J2Run:
                     f"the charter lists no {cond.get('charter_field')}")
         if k == "test-passed":
             t = (charter_list(g, cond.get("charter_field")) or [""])[0]
+            if not t:      # P29 (D431): the charter names no test: building can't change it
+                c["from_charter"] = True
             rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout())
             return rr["pass"] is True, ("code reran the test itself, on a copy of the folder, not the builder's own run: "
                                         + rr["evidence"]) if rr["pass"] is not None else rr["evidence"]
