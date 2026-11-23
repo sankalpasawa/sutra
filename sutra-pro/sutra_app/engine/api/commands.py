@@ -108,7 +108,7 @@ class DeptCommands:
         settings = dict(page.next_settings)
         if budget:
             settings["J2_BUDGET"] = str(budget)
-        if usd_budget:      # D257: the Budget chip's dollars (API price), for this delivery only
+        if usd_budget:      # D423: the Budget chip's dollars (API price), for this delivery only
             settings["J2_USD_BUDGET"] = str(usd_budget)
         if template:
             settings["J2_RUN_TEMPLATE"] = str(template)

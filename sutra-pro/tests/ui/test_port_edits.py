@@ -156,14 +156,14 @@ CASES = {
     "E24e": ([("`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow", 1)],
              ["`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}\">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow"]),
     "E24f": ([("const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=", 1)], ["const rtHref = (id, keys) => `/?view=simple"]),
-    # E25 (D257): the start page's Budget chip in dollars (API price), sent with the next request only as `usd_budget`
+    # E25 (D423): the start page's Budget chip in dollars (API price), sent with the next request only as `usd_budget`
     "E25a": ([('<div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button', 1)],
              ['<div class="schips" id="schips"></div><button', "work credits) <input"]),
     "E25b": ([("async function sendText(text, usdBudget){", 1)], ["async function sendText(text){"]),
     "E25c": ([("...(usdBudget ? {usd_budget: usdBudget} : {})})", 1)], ["body:JSON.stringify(RTNEW.id && !RTNEW.sent ?"]),
     "E25d": ([("const b = LCHIP ? LCHIP.value() : null; $(\"lbox\").value = \"\"; $(\"lsend\").disabled = true; sendText(t, b); if (LCHIP) LCHIP.reset(); });", 1),
               ('SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})', 1)], ['$("lsend").disabled = true; sendText(t); });', "const lbudget"]),
-    # E26 (D254): Stop on the studio's send button while the run is live, after a confirm, through the existing stop ladder
+    # E26 (D420): Stop on the studio's send button while the run is live, after a confirm, through the existing stop ladder
     "E26a": ([('<svg data-icon="send" width="15" height="15"', 1), ('<svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none">', 1)],
              ['<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15"']),
     "E26b": ([('const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);', 1)],
@@ -171,7 +171,7 @@ CASES = {
     "E26c": ([("if (!confirm(\"Stop this run? What's built so far is kept.\")) return;", 1), ('SutraCtx.api.post("/api/tasks/" + id + "/stop", {})', 1),
               ('$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop();', 1)],
              ['$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim();']),
-    # E27 (D257): the raise card takes a typed amount in dollars; the "[adds $Z]" tail is stripped like the credits one
+    # E27 (D423): the raise card takes a typed amount in dollars; the "[adds $Z]" tail is stripped like the credits one
     "E27a": ([('  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer"', 1)], ['  else h += `<div class="own">']),
     "E27b": ([("function sRaise(s, kind, live){", 1), ("BudgetChip.raiseHtml(add)", 1)], []),
     "E27c": ([('return sendText("Add $" + n + " and keep going"); }', 1), ('if (b.dataset.raise !== undefined)', 1)], []),
@@ -212,7 +212,7 @@ def test_the_retired_edits_left_nothing_behind():
                  "run-settings.css", "/api/output"):
         assert gone not in PAGE, gone
     assert PAGE.count("/api/engine/settings") == 1 and 'SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept})' in PAGE, \
-        "only E25's Budget chip reads the settings now (D257); the retired output select read them too"
+        "only E25's Budget chip reads the settings now (D423); the retired output select read them too"
     assert 'id="runlist"' in PAGE and 'id="runq"' in PAGE and 'class="rsec"' in PAGE            # J2's own Run settings is there instead
     assert not (UI / "static" / "css" / "run-settings.css").exists()
 

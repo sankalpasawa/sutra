@@ -44,7 +44,7 @@ import sutra_app
 from sutra_app import oslayer
 from sutra_app.config import LOOPBACK_HOSTS, Settings, SettingsError
 from sutra_app.connectors.attachments import MAX_BYTES as MAX_ATTACHMENT_BYTES
-from sutra_app.orchestrator.api import agent, agent_chats, atoms, chat_v2, chart, chat, departments, graph, insight, limits, recurring, rules_notes, sections, system, tasks, usage
+from sutra_app.orchestrator.api import agent, agent_chats, atoms, chat_v2, chart, chat, departments, graph, insight, limits, projects, recurring, rules_notes, sections, system, tasks, usage
 from sutra_app.orchestrator.api import events as events_api
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
 from sutra_app.orchestrator.errors import error_body
@@ -67,7 +67,7 @@ MAX_UPLOAD_BODY_BYTES = MAX_ATTACHMENT_BYTES * 4 // 3 + 64 * 1024        # one f
 STOP_POLL_S = 0.5                # how often the server looks for a stop request (the app.stop file)
 GRACEFUL_SHUTDOWN_S = 5                 # open connections are cancelled after this; the stop ladders then run in the lifespan
 # the orchestrator's own routers, in include order: the agent router first (it owns POST /api/chats/{sid}/messages and the decision route)
-ROUTERS = (events_api, chat_v2, agent_chats, agent, chat, atoms, usage, graph, chart, insight, departments, tasks, recurring, limits, attention_api, system, rules_notes, sections)
+ROUTERS = (events_api, chat_v2, agent_chats, agent, chat, atoms, usage, graph, chart, insight, departments, tasks, recurring, limits, projects, attention_api, system, rules_notes, sections)
 # plug-ins: (module, how to mount it), in the order orchestrator 6.4 fixes; the library's schema router sits before the UI
 PLUGINS = ("sutra_app.engine.api", "sutra_app.connectors.api", "sutra_app.library.api", "sutra_app.ui")
 OPS_API = "sutra_app.ops.api"           # GAP-CONSOLE's router (`router`); mounted after the orchestrator's routers when the module exists
@@ -231,8 +231,18 @@ def create_app(settings: Settings | None = None, *, connector: Any = None, launc
     install_error_handlers(app, redacted_response_class(services.redact))
     for module in ROUTERS:
         app.include_router(module.build_router())
+    if services.settings.work_v1:                                                              # the Work routes exist only with the switch on (DV-2): off, they are 404 before any token check
+        app.include_router(importlib.import_module("sutra_app.orchestrator.api.work").build_router())
+    if services.settings.recipes_v1:                                                           # the Recipes routes exist only with their switch on (DV-3): off, 404 before any token check
+        app.include_router(importlib.import_module("sutra_app.orchestrator.api.recipes").build_router())
     app.state.ops_api = _mount_ops_api(app)
     app.state.plugins = {name: _mount_plugin(app, services, name) for name in PLUGINS}
+    if services.settings.nodes_v1 and getattr(services, "projects", None) is not None and app.state.plugins.get("sutra_app.ui"):
+        importlib.import_module("sutra_app.ui").mount_project_page(app, services)      # the project page exists only with the feature on (MAN-13, D326)
+    if services.settings.work_v1 and app.state.plugins.get("sutra_app.ui"):
+        importlib.import_module("sutra_app.ui").mount_work_page(app, services)                  # the Work page exists only with its switch on (DV-2)
+    if services.settings.recipes_v1 and app.state.plugins.get("sutra_app.ui"):
+        importlib.import_module("sutra_app.ui").mount_recipes_page(app, services)               # the Recipes page exists only with its switch on (DV-3)
     inner = app.build_middleware_stack
     app.build_middleware_stack = lambda: logsetup.RequestIdMiddleware(inner())       # outermost: the Host guard's 400 and a 500 carry the id too
     return app

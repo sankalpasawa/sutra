@@ -1155,7 +1155,7 @@ function sQText(t){      // a question that asks several things ("Please send th
   return (m ? `<p class="q">${esc(m[1])}</p>` : "") + `<ol class="qlist">${items.map(x => `<li>${esc(x.charAt(0).toUpperCase() + x.slice(1))}</li>`).join("")}</ol>`;
 }
 // a click on a card (Asha's panel or the copy on the work): an option, your own words, Answer later / now, an approval
-function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars
+function sRaise(s, kind, live){      // E27 (D423): the raise input, only on a live dollar question whose continue option adds dollars
   const q = live && (kind === "limit" || kind === "ruling_budget") && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \$/.test(o));
   const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;
   return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }
@@ -1280,7 +1280,7 @@ function sChat(s, open, live, M){      // Asha's panel: your messages, hers, a c
   $("smood").textContent = ready ? "Your project is ready" : s.status === "running" ? "Working with the team…" : open.length ? "Waiting for you" : s.saved ? "Saved project" : "";
   if (!$("sphav").__v){ $("sphav").__v = 1; $("sphav").innerHTML = face("asha", 38, {label: false}); }
   const busy = s.status === "running" || !!s.saved;
-  const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D254)
+  const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D420)
   $("sbox").placeholder = s.saved ? "Saved project. Press + for a new one" : live ? "Or type your answer here…" : ready ? "Ask for a change…" : s.status === "running" ? "The team is working…" : "Write a message…";
 }
 function sTop(s, M, open, ready){
@@ -1814,7 +1814,7 @@ $("srt").addEventListener("click", e => { if (!e.target.closest("[data-rtdrop]")
 // start page: type, or pick an example; Decide for me; the team card
 $("lbox").addEventListener("input", () => { const t = $("lbox"); $("lsend").disabled = !t.value.trim(); t.style.height = "auto"; t.style.height = Math.min(180, Math.max(76, t.scrollHeight)) + "px"; });
 $("lbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); $("lform").requestSubmit(); } });
-// E25 (D257): the Budget chip in dollars (API price); null is the team's own budget, so nothing is sent
+// E25 (D423): the Budget chip in dollars (API price); null is the team's own budget, so nothing is sent
 let LCHIP = null;
 document.addEventListener("DOMContentLoaded", () => { if (!window.BudgetChip || !$("lbudget")) return;
   SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept}).then(s => { const v = s && s.effective && s.effective.usd_budget;
@@ -1824,7 +1824,7 @@ $("schips").addEventListener("click", e => { const b = e.target.closest("[data-b
 $("sautoland").onclick = $("sauto").onclick = function(){ if (!this.disabled) sAutoSet(this.getAttribute("aria-checked") !== "true"); };
 $("slanddetail").onclick = $("sdetail").onclick = () => setView("detail", true);
 // the studio: Asha's box, the cards, the views, the parts, the team, the dock
-// E26 (D254): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only
+// E26 (D420): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only
 // until the owner types. Stop asks first, then calls the stop ladder once; 409 means the run already ended: refresh only
 function sStopOn(s){ return !!s && !s.saved && (s.status === "running" || (!!s.paused && !$("sbox").value.trim())); }
 function sStopMode(on){ const b = $("ssend"); b.dataset.stop = on ? "1" : ""; b.setAttribute("aria-label", on ? "Stop the run" : "Send");

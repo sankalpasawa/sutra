@@ -521,6 +521,8 @@
     const directOn = () => { const c = st && st.tab === "chat" ? composerOf() : null; return c !== null && c.state().mode === "direct"; };
     const pillData = () => st.pill || {providers: [], chosen: null};
     const askBlocked = () => (directOn() && st.pill ? root.ChatComposer.askBlock(pillData().providers) : "");
+    // Ask (DV-1): the server says so in the pill (`ask`, only with SUTRA_ASK_V1 on). Without it the switch is never drawn and the bar is what it was.
+    const askExists = () => !!(st && st.pill && st.pill.ask === true);
 
     function paintBar() {
       const CC = root.ChatComposer;
@@ -534,7 +536,8 @@
         return;
       }
       const data = pillData();
-      const html = CC.bar(c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}});
+      c.enableAsk(askExists());
+      const html = CC.bar(c.state(), {labels: {team: "Tell the team", direct: "Ask the model"}, ask: askExists()});
       chatRefs.bar.hidden = html === "";
       paintTo(chatRefs.bar, html);
       if (c.live() && root.ChatLiveView && root.Fluid) { chatRefs.stream.hidden = true; chatRefs.stream.innerHTML = ""; chatRefs.stream.__html = undefined; }       // the reply is a node of the transcript now
@@ -566,6 +569,7 @@
           if (!st || st.pillSid !== sid || r.error || !r.value) return;
           st.pill = r.value;
           paintPill();
+          if (askExists() && st.tab === "chat" && chatRefs) paintBar();            // DV-1: the pill is where the page learns that Ask exists, so the bar is drawn again once it is known (never with the flag off)
         });
       }
       const data = st.pill || {providers: [], chosen: null};
@@ -1324,6 +1328,19 @@
       await refreshMessages(g);
     }
 
+    // "Turn this into work" on a sources card (DV-1): the request is DRAFTED in the box, with Send pointing at "Tell the team"; the owner edits it and presses Send. Nothing is sent here.
+    function askToWork(draft) {
+      const c = composerOf();
+      if (!c || !chatRefs || !chatRefs.box) return false;
+      const words = c.draft(draft);                 // leaves Ask first: the box may have been closed only because no model can answer an Ask
+      st.ccMode = "team";
+      paintBar();
+      paintComposer();
+      if (chatRefs.box.disabled) { c.say("The message box is closed right now, so the draft was not written. Try again when it opens."); return false; }          // closed for another reason (the team is working): the owner is told, the words are not forced in
+      root.ChatComposer.fillBox(chatRefs.box, words);
+      return true;
+    }
+
     // Retry on a direct line that failed: the owner's same words, once, to the model (the error line names the line: data-turn).
     async function retryDirect(turnId) {
       const c = composerOf();
@@ -1334,7 +1351,7 @@
       const g = gen;
       const said = CV().attachedOf(line.text);
       st.banner = "";
-      const out = await c.retry(line.id, said.text, {files: said.names.length});
+      const out = await c.retry(line.id, said.text, {files: said.names.length, mode: line.mode === "ask" ? "ask" : "do"});          // DV-1: the line's own mode, as the server stored it
       if (g !== gen || !st) return;
       if (out.ok) { st.stick = true; await refreshMessages(g); }
       if (st && g === gen && chatRefs) paintChat();
@@ -1448,6 +1465,8 @@
       else if (name === "send") send(chatRefs ? chatRefs.box.value : "", true);
       else if (name === "composer-stop") { if (!root.ChatComposer || root.ChatComposer.stopPress(e)) stopDirect(); }          // the 2nd click of a double-click on Send is not a Stop
       else if (name === "composer-mode") { const c = composerOf(); if (c) { st.ccMode = act.dataset.mode === "direct" ? "direct" : "team"; c.setMode(st.ccMode); } }
+      else if (name === "composer-ask") { const c = composerOf(); if (c) c.setAsk(act.dataset.ask); }
+      else if (name === "ask-to-work") askToWork(act.dataset.draft || "");          // DV-1: drafts a request in the box; the owner edits it and sends it
       else if (name === "composer-attach") { const input = chatRefs && chatRefs.bar ? chatRefs.bar.querySelector(".ccinput") : null; if (input) input.click(); }
       else if (name === "composer-remove") { const c = composerOf(); if (c) c.removeFile(act.dataset.key); }
       else if (name === "fn") openFrom(act);

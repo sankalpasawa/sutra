@@ -31,6 +31,7 @@ from .discover import connector_config
 from .egress import Egress
 from .errors import ConnectorError, NoProviderError
 from .models import AskRequest, ConnectorConfig, RouteContext
+from .node_tools import NodeRights
 from .policy import PolicyLoad, RoutingPolicy, load_policy
 from .router import Router
 from .stub import StubConnector
@@ -93,6 +94,31 @@ def make_port(spec: PortSpec, *, usage_sink: UsageSink | None = None) -> ModelPo
     return port_from_config(spec, cfg, usage_sink=usage_sink)
 
 
+def live_cap_reader(data_dir: str, project_id: str) -> Callable[[], Optional[float]]:
+    """A function that says what the next call of a step of `project_id` may spend: the shared arithmetic of `orchestrator/livecap.py`, read from the app's database read-only and the owner's limits file,
+    each time it is called (never frozen). None when nothing limits it or when the database cannot be read (the step's own meter and the Conductor's tick still hold)."""
+    import sqlite3
+    import time
+    from sutra_app.config import DB_FILENAME
+    from sutra_app.orchestrator.limits import LIMITS_FILE, LimitsStore
+    from sutra_app.orchestrator.livecap import call_cap
+
+    def read() -> Optional[float]:
+        path = Path(data_dir) / DB_FILENAME
+        if not path.is_file():
+            return None
+        try:
+            limit = LimitsStore(Path(data_dir) / LIMITS_FILE).load().monthly_usd
+        except Exception:                                      # noqa: BLE001
+            limit = None
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2.0)
+        try:
+            return call_cap(conn, project_id, limit, time.time())
+        finally:
+            conn.close()
+    return read
+
+
 def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageSink | None = None,
                      load: Optional[PolicyLoad] = None, **router_kw) -> "RouterPort":
     """`make_port` with the connector configuration given. `router_kw` goes to `Router` (tests inject a clock or a sleep)."""
@@ -109,17 +135,25 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
     if not stub_only:                                  # D109: J2's agents are observed, never edited: one audit row per prompt, byte-identical text
         router.egress = Egress(Path(spec.data_dir) / "connectors" / "egress.jsonl")
         router.folders = WorkFolder(spec.data_dir, cfg.resolved_work_root())      # D127: a call whose tag asks for the owner's folder gets it; read on every call
-    return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id))
+        if spec.slots:                                                            # SUTRA_NODES_SLOTS: the limit across processes (MAN-12)
+            from .slots import SlotPool
+            router.slots = SlotPool(Path(spec.data_dir) / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
+        router.node_scope = tuple(spec.scope)                                     # a step of a project edits only inside its scope (MAN-10)
+        if spec.node and spec.project_id:                                         # D409: before each builder call the step reads what it may still spend, now, read-only
+            router.live_cap = live_cap_reader(spec.data_dir, spec.project_id)
+        router.node_rights = NodeRights(tuple(spec.node_tiers), spec.node_commands) if (spec.node or spec.node_tiers) else None   # a router made for a step's process narrows every builder call it gets, whatever the tag says (D380, D387)
+    return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 
 
 class RouterPort:
     """The engine's `ModelPort` over a `Router`. `complete` is the router's own (the mapping lives there, connectors 3.10);
     this class adds `describe`, `preflight` and `close`."""
 
-    def __init__(self, router: Router, *, mock: bool = False, tag: Optional[CallTag] = None) -> None:
+    def __init__(self, router: Router, *, mock: bool = False, tag: Optional[CallTag] = None, tools: tuple[str, ...] = ()) -> None:
         self.router = router
         self.mock = mock
         self._tag = tag or CallTag()
+        self._tools = tuple(tools)                       # a node's granted app tools: on its agent-turn calls only (MAN-8, D298)
 
     def _probe_request(self) -> AskRequest:
         return AskRequest(user="preflight", ctx=RouteContext(tag=self._tag), kind="text")
@@ -156,6 +190,8 @@ class RouterPort:
         return PreflightResult(ok=True, message=f"{first} is ready ({plan.models[first]})", providers=providers)
 
     def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None) -> CompletionResult:
+        if self._tools and req.run_tools is None:        # never on a builder-tools call: its tools are the grant's own
+            return self.router.complete(req, on_progress, tools=self._tools)
         return self.router.complete(req, on_progress)
 
     def close(self) -> None:

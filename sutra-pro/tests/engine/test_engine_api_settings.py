@@ -299,7 +299,7 @@ def test_the_api_process_keeps_the_local_type_store_in_the_data_folder_not_in_th
     assert paths[0] == str(tmp_path / "types" / "types.local.json") and paths[1] == str(tmp_path / "types" / "templates")
 
 
-# ---- D257: the team default in dollars (API price) -----------------------------------------------------------------------
+# ---- D423: the team default in dollars (API price) -----------------------------------------------------------------------
 def test_the_dollar_budget_and_cap_are_editable_with_their_bounds(api):
     body = api.client.get(URL).json()
     assert body["effective"]["usd_budget"] == 20.0 and body["effective"]["usd_cap"] is None

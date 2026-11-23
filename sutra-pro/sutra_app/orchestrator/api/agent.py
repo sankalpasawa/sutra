@@ -63,9 +63,10 @@ def build_router() -> APIRouter:
         if direct_running.answering(sid):                                     # the owner asked the model directly and it is still writing: two answers would interleave
             raise Busy("This chat is already answering")
         if (body.budget is not None or body.usd_budget is not None) and (session.kind != "org" or body.choice is not None):
-            raise AppError("validation", "a budget goes with a new request in the org chat")      # D252, D257
+            raise AppError("validation", "a budget goes with a new request in the org chat")      # D252, D423
         if session.kind == "org":
-            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget, usd_budget=body.usd_budget)
+            accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget, decide_for_me=bool(body.decide_for_me),
+                                                                        usd_budget=body.usd_budget)
             return _json(request, accepted.model_dump(mode="json"), 202)
         delivery = await run_blocking(_need(request, "tasks").deliver, sid, body.text)
         return _json(request, delivery.model_dump(mode="json"))

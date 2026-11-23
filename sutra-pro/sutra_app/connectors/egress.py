@@ -7,6 +7,7 @@ Credential SHAPES (and, when a `Redactor` is given, the app's known secret VALUE
 
 The audit row (`<data>/connectors/egress.jsonl`, append only, 0600) holds time, session, provider, mode, byte count and shape names with
 counts. Never a payload, never a match. A write failure never stops a call; it is logged and the row is returned with `log_error`.
+A call made for a node of a multi-agent project (D282, D283) also names the node and its role (`node`, `role`): ids and a word, never more.
 """
 from __future__ import annotations
 
@@ -91,8 +92,9 @@ class Egress:
         self.redactor = redactor
         self._lock = threading.Lock()
 
-    def check(self, text: str, *, session: Optional[str], provider: str, replace: bool, system: str = "") -> str:
-        """The text to send (scrubbed when `replace`), after writing the audit row."""
+    def check(self, text: str, *, session: Optional[str], provider: str, replace: bool, system: str = "", node_id: str = "", node_role: str = "") -> str:
+        """The text to send (scrubbed when `replace`), after writing the audit row. `node_id` and `node_role` (the call tag's, D283, D282) are added to the row only when they are
+        given: a call that belongs to no node of a project writes the row it always wrote."""
         counts: dict[str, int] = {}
         out = text
         if self.redactor is not None:
@@ -105,8 +107,13 @@ class Egress:
                         out = out.replace(v, "[redacted:secret-value]")
         out, shapes = scan(out, replace=replace)
         counts.update(shapes)
-        self._record({"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "session": session or "-", "provider": provider,
-                      "mode": "replace" if replace else "observe", "bytes": len((system + text).encode("utf-8")), "shapes": counts})
+        row = {"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "session": session or "-", "provider": provider,
+               "mode": "replace" if replace else "observe", "bytes": len((system + text).encode("utf-8")), "shapes": counts}
+        if node_id:
+            row["node"] = node_id                               # ids and a role word only, like every other field of the row
+            if node_role:
+                row["role"] = node_role
+        self._record(row)
         return out if replace else text
 
     def _record(self, row: dict) -> None:

@@ -87,7 +87,7 @@ class _RunCommands:
             RUN.set_run_template(template, workflows)
         if budget and not RUN.chat:      # D251: the start page's Budget field, for a run that has not started
             RUN.budget = int(budget)
-        if usd_budget and not RUN.chat and j2.USD_BUDGET:      # D257: the Budget chip's dollars, for a run that has not started
+        if usd_budget and not RUN.chat and j2.USD_BUDGET:      # D423: the Budget chip's dollars, for a run that has not started
             RUN.usd_limit = float(usd_budget)
         return RUN.user_says(text)
 

@@ -108,6 +108,20 @@ class Tx:
     def now(self) -> int:
         return self._clock.now()
 
+    @contextmanager
+    def savepoint(self) -> Iterator[None]:
+        """A part of the transaction that can fail alone (B1): on an exception its writes and the events it emitted are undone, the exception goes up, and the transaction goes on."""
+        mark = len(self._events)
+        self.conn.execute("SAVEPOINT part")
+        try:
+            yield
+        except BaseException:
+            self.conn.execute("ROLLBACK TO part")
+            self.conn.execute("RELEASE part")
+            del self._events[mark:]
+            raise
+        self.conn.execute("RELEASE part")
+
 
 class Database:
     """One SQLite file. `publish` receives each committed transaction's events as a list, in order, with `seq` 0 (the bus

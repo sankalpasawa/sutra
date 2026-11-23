@@ -1653,7 +1653,7 @@ def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_
     assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)
 
 
-# ---- P26 (D255, D256): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
+# ---- P26 (D421, D422): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
 def test_p26_call_usd_takes_the_reported_price_or_estimates_from_tokens(j2):
     assert j2.call_usd({"usd": 0.12, "tokens": {"input": 1000, "output": 10}}, None) == (0.12, False)      # reported
     assert j2.call_usd({"usd": 0.0, "tokens": {"input": 9, "output": 1}}, 1.0) == (0.0, False)             # a rate card's (or a free) price
@@ -1705,7 +1705,7 @@ def test_p26_off_without_env_is_unchanged(j2, make_run):
     assert "usd_counted" not in rec and "usd_estimated" not in rec and run.usd_used == 0.0 and run._usd_metrics() == {}
 
 
-# ---- P26 part 2 (D256): the dollar limit, credit top-ups by code, the dollar question ---------------------------------------------
+# ---- P26 part 2 (D422): the dollar limit, credit top-ups by code, the dollar question ---------------------------------------------
 @pytest.fixture
 def usd_j2(tmp_path):
     with fresh_j2(tmp_path / "usd-env", J2_USD_BUDGET="20") as mod:

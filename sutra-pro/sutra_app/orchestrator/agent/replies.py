@@ -3,6 +3,7 @@
     AssignmentDraft   one task for one department (the top-level Step); refs a1 to a5
     ChatDecision      family `chat_turn`, kind `decide` (stage A): what the request is and whether the chart changes
     AssignmentPlan    family `chat_turn`, kind `assignments` (stage C): 1 to 5 drafts; `to_task_workflow(request_id)`
+    NodePlan          family `node_plan` (stage D, only for a project, D306): per step the paths it would change and the app tools it needs
 
 All three are flat and transport-safe (no union, no recursion). There is NO prose field anywhere: the model's output is structure
 only and none of its sentences is shown to the owner. The model never writes an id of a new node (stage B's `$ref` does that).
@@ -20,7 +21,7 @@ from sutra_app.library.registry import record
 from sutra_app.library.types import NodeId
 from sutra_app.library.workflow import AssignmentStep, TaskWorkflow
 
-__all__ = ["AssignmentRef", "AssignmentDraft", "ChatDecision", "AssignmentPlan", "plan_of", "dependency_order", "REF_ORDER"]
+__all__ = ["AssignmentRef", "AssignmentDraft", "ChatDecision", "AssignmentPlan", "NodePlanStep", "NodePlan", "plan_of", "dependency_order", "REF_ORDER"]
 
 AssignmentRef = Annotated[str, StringConstraints(pattern=r"^a[1-5]$")]
 REF_ORDER = ("a1", "a2", "a3", "a4", "a5")
@@ -181,3 +182,40 @@ class AssignmentPlan(Record):
 def plan_of(assignments: Sequence[AssignmentDraft]) -> AssignmentPlan:
     """An `AssignmentPlan` over drafts a decision already carries."""
     return AssignmentPlan(assignments=list(assignments))
+
+
+NeedsWord = Literal["sutra", "github"]
+
+
+class NodePlanStep(Value):
+    """What one step of a project asks for beyond its team's defaults: `scope` the paths of the owner's folder it would change (at most 5, relative, written with `/`; empty when it changes
+    none or the whole folder), `needs` the app tools it wants (`sutra`: read the app's own data; `github`: read GitHub through the owner's own login). A request, nothing more: the rules and the
+    owner decide."""
+
+    ref: AssignmentRef
+    scope: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=200)]], Field(max_length=5)] = []
+    needs: Annotated[list[NeedsWord], Field(max_length=2)] = []
+
+
+@record
+class NodePlan(Record):
+    """Stage D (D306): for each assignment of a request that became a project, the write scope and the needs it asks for. It carries no words to show and no id of a new thing."""
+
+    FAMILY = "node_plan"
+    TRANSPORT_OPTIONAL = frozenset({"schema_version"})
+    kind: Literal["node_plan"] = "node_plan"
+    steps: Annotated[list[NodePlanStep], Field(max_length=5)] = []
+
+    @model_validator(mode="after")
+    def _refs(self) -> Self:
+        seen: set[str] = set()
+        problems: list[Problem] = []
+        for index, step in enumerate(self.steps):
+            if step.ref in seen:
+                problems.append((("steps", index, "ref"), f"ref {step.ref} is used twice"))
+            seen.add(step.ref)
+            if len(set(step.needs)) != len(step.needs):
+                problems.append((("steps", index, "needs"), f"{step.ref} lists the same need twice"))
+        if problems:
+            _raise("NodePlan", problems)
+        return self

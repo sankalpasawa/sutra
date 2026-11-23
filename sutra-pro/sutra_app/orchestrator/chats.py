@@ -59,6 +59,32 @@ _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MU
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
 
 
+_OPTION_NUMBERED = re.compile(r"^[ \t]*Option[ \t]+([0-9]+):[ \t]*(.+?)[ \t]*$")
+
+
+def trailing_options(text: str) -> tuple[str, list[str]]:
+    """`(the question, its options)` for a question whose options are the LAST lines of the text, numbered 1, 2, 3 ... in order, as J2 writes them. Only that closing run counts: an `Option N:` line in the
+    middle of the text, or a run that does not start at 1 and count up, is just text (the model's words are not to be trusted to shape the buttons, D401, r-2). The question is everything before the run, so
+    the owner always reads the real text. Option i of the list is the one that is called `Option i`."""
+    lines = (text or "").rstrip().split("\n")
+    run: list[tuple[int, str]] = []
+    k = len(lines)
+    while k > 0:
+        found = _OPTION_NUMBERED.match(lines[k - 1])
+        if found is None:
+            break
+        run.insert(0, (int(found.group(1)), found.group(2)[:500]))
+        k -= 1
+    start = None
+    for i in range(len(run)):                                    # the last place from which the numbers read 1, 2, 3 ... to the end
+        if [n for n, _ in run[i:]] == list(range(1, len(run) - i + 1)):
+            start = i
+    if start is None:
+        return (text or "").rstrip(), []
+    options = [label for _, label in run[start:]][:20]
+    return "\n".join(lines[: len(lines) - (len(run) - start)]).rstrip(), options
+
+
 def parse_options(text: str) -> list[str]:
     """The answer options in a question's text: the `Option N: ...` lines J2 writes (`j2.numbered`), in order, at most 20,
     each cut to 500 characters."""
@@ -99,7 +125,7 @@ def _message_out(row: sqlite3.Row, newest: Mapping[tuple[str, int], int] | None 
         card=json.loads(row["card_json"]) if row["card_json"] else None, pause=row["pause"], answered_by=row["answered_by"],
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
         turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF),
-        ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]), via=_via_of(row["meta_json"]),
+        ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]), via=_via_of(row["meta_json"]), mode=mode_of(row["meta_json"]),
         superseded=bool(owner is not None and attempt is not None and newest is not None and newest.get((row["session_id"], owner), 1) > attempt))
 
 
@@ -126,13 +152,13 @@ def _passed_on_of(session_id: str, src_ref: str | None) -> int | None:
 
 
 def _turn_of(src_ref: str | None) -> int | None:
-    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`
+    """The owner's line a direct-chat reply answers (`src_ref` is `direct:<message id>`, or `direct-note:`, `direct-error:`, `direct-switch:`, `direct-sources:`
     for the other messages that end the same turn: orchestrator/direct_turns.py), else None."""
     found = _DIRECT_REF.fullmatch(src_ref or "")
     return int(found.group(1)) if found else None
 
 
-_DIRECT_REF = re.compile(r"direct(?:-(?:note|error|switch))?:([1-9][0-9]{0,15})(?:\.([2-9]|[1-9][0-9]))?")
+_DIRECT_REF = re.compile(r"direct(?:-(?:note|error|switch|sources))?:([1-9][0-9]{0,15})(?:\.([2-9]|[1-9][0-9]))?")
 
 
 def _attempt_of(src_ref: str | None) -> int | None:
@@ -160,6 +186,14 @@ def _via_of(meta_json: str | None) -> dict | None:
         return None
     model = via.get("model")
     return {"provider": via["provider"], "model": model if isinstance(model, str) and model else None}
+
+
+def mode_of(meta_json: str | None) -> str | None:
+    """`ask` for the owner's line of an Ask turn (the sibling key `mode`, DV-1), else None."""
+    try:
+        return "ask" if json.loads(meta_json or "{}").get("mode") == "ask" else None
+    except ValueError:
+        return None
 
 
 def _ordered_of(meta_json: str | None) -> bool:
@@ -316,6 +350,8 @@ class ChatStore:
             meta_json = json.dumps({**json.loads(meta_json), **sibling}, separators=(",", ":"), ensure_ascii=False)
         if msg.via:
             meta_json = json.dumps({**json.loads(meta_json), "via": msg.via}, separators=(",", ":"), ensure_ascii=False)
+        if msg.mode:
+            meta_json = json.dumps({**json.loads(meta_json), "mode": msg.mode}, separators=(",", ":"), ensure_ascii=False)
         cursor = conn.execute(
             "INSERT INTO chat_messages(session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -325,7 +361,7 @@ class ChatStore:
         conn.execute("UPDATE chat_sessions SET last_message_id = ?, updated_at = max(updated_at, ?) WHERE id = ?", (message_id, msg.at, session_id))
         out = self.message_in(conn, message_id)
         tx.emit("chat.message", {"session_id": session_id, "message": out.model_dump(mode="json")})
-        if msg.kind == "question" or (msg.kind == "card" and (msg.card or {}).get("type") == "approval"):
+        if msg.kind == "question" or (msg.kind == "card" and (msg.card or {}).get("type") in ("approval", "node_approval")):
             self.emit_needs_you(tx)
         return out
 
@@ -377,6 +413,11 @@ class ChatStore:
             out.append(NeedsYouOut(
                 message_id=r["id"], session_id=r["session_id"], kind="approval", text=card["question"],
                 options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"]), **age(r["at"])))
+        for r in conn.execute("SELECT m.id, m.session_id, m.card_json, m.at FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'node_approval' "
+                              "AND m.answered_by IS NULL ORDER BY m.id"):                     # the open questions of a multi-agent project (D317); no such row exists while SUTRA_NODES_V1 is off
+            card = json.loads(r["card_json"])
+            out.append(NeedsYouOut(message_id=r["id"], session_id=r["session_id"], kind="node_approval", text=card["question"], options=[str(o) for o in card["options"]],
+                                   asked_at=iso_z(r["at"]), **age(r["at"])))
         return sorted(out, key=lambda item: item.message_id)
 
     def needs_you_count(self) -> int:
@@ -394,7 +435,8 @@ class ChatStore:
         approvals = conn.execute(
             "SELECT count(*) FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'approval'"
             " AND json_extract(m.card_json, '$.change_id') IN (SELECT id FROM chart_changes WHERE status = 'pending_approval')").fetchone()[0]
-        return int(questions + approvals)
+        projects = conn.execute("SELECT count(*) FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'node_approval' AND m.answered_by IS NULL").fetchone()[0]
+        return int(questions + approvals + projects)
 
     # ---- the provider chip -----------------------------------------------------------------------------------------
 

@@ -129,7 +129,7 @@
   const FLAGS01 = freeze(["fixes"]);                   // 0 or 1 on the wire, a toggle on the page
   const FLOATS = freeze(["bargain_minutes", "delay", "builder_timeout", "reviewer_wait", "usd_budget", "usd_cap"]); // JSON cannot tell 15.0 from 15, so the float fields are named
   const NULLABLE = freeze(["budget_cap", "usd_cap"]);  // empty means "not set" (null)
-  const HIDDEN = freeze(["budget", "budget_cap", "limit_add"]);      // D257: the credit fields stay valid when stored, but the budget is set in dollars
+  const HIDDEN = freeze(["budget", "budget_cap", "limit_add"]);      // D423: the credit fields stay valid when stored, but the budget is set in dollars
   // Sub-groups of the Engine group (J2 sync 6, D177 and D179): the fields that sit together under a heading, after the rest. Layout only: a field named here
   // that the engine does not list is not drawn, and a field of the engine that is named nowhere stays in the main list.
   const SUBGROUPS = freeze([

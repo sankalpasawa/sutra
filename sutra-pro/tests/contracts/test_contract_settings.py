@@ -31,7 +31,7 @@ def test_the_eleven_keys_are_the_same_list_on_both_sides():
     assert [FIELD_OF[key] for key in TASK_SETTING_KEYS[:8]] == ["output", "budget", "budget_cap", "fixes", "memory", "slim", "rates", "decide_for_me"]
     assert TASK_SETTING_KEYS[8:10] == ("J2_RUN_TEMPLATE", "J2_RUN_TEMPLATE_WORKFLOWS") and not {*TASK_SETTING_KEYS[8:10]} & set(FIELD_OF), \
         "these two are task-only (D182): no engine setting"
-    assert TASK_SETTING_KEYS[10] == "J2_USD_BUDGET" and FIELD_OF["J2_USD_BUDGET"] == "usd_budget"      # D256: a request's dollar budget
+    assert TASK_SETTING_KEYS[10] == "J2_USD_BUDGET" and FIELD_OF["J2_USD_BUDGET"] == "usd_budget"      # D422: a request's dollar budget
 
 
 def test_what_the_orchestrator_accepts_the_engine_reads_as_the_same_values():

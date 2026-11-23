@@ -452,6 +452,7 @@
     const html = S.pillData ? CP.pill(S.pillData.providers, S.pillData.chosen) : "";
     ctx.paint(el, html);
     el.hidden = html === "";
+    if (askExists() || (S.cc && S.cc.state().ask === "ask")) renderBar();            // DV-1: the pill is where the page learns that Ask exists, so the bar is drawn again once it is known (never with the flag off)
   }
 
   // A turn that ended may have moved the chat to the other model (the router switches on a failure): read the pill again, keeping what it shows until the answer comes.
@@ -495,13 +496,16 @@
   const directOn = () => { const c = composer(); return c !== null && c.state().mode === "direct"; };
   const providersOf = () => (S.pillData ? S.pillData.providers : []);
   const askBlocked = () => (directOn() && S.pillData ? root.ChatComposer.askBlock(providersOf()) : "");
+  // Ask (DV-1): the server says so in the pill (`ask`, only with SUTRA_ASK_V1 on). Without it the switch is never drawn and the bar is what it was.
+  const askExists = () => !!(S.pillData && S.pillData.ask === true);
 
   function renderBar() {
     const c = composer();
     const bar = $("sbar");
     if (!c || !bar) return;
     const CC = root.ChatComposer;
-    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
+    c.enableAsk(askExists());
+    const html = CC.bar(c.state(), {labels: {team: "Plan with Sutra", direct: "Ask directly"}, ask: askExists()});
     ctx.paint(bar, html);
     bar.hidden = html === "";
     if (liveOn()) $("sstream").hidden = true;                                       // the reply is a node of the transcript now (renderLive)
@@ -535,10 +539,23 @@
     if (stuck !== "") { showBanner({text: stuck, settings: true}); return false; }
     clearBanner();
     const said = root.ChatView.attachedOf(line.text);
-    const out = await c.retry(line.id, said.text, {files: said.names.length});
+    const out = await c.retry(line.id, said.text, {files: said.names.length, mode: line.mode === "ask" ? "ask" : "do"});          // DV-1: the line's own mode, as the server stored it
     if (!out.ok) return false;
     S.own = true;
     try { await fetchMessages(false); } catch (e) { handleFetchError(e); }
+    return true;
+  }
+
+  // "Turn this into work" on a sources card (DV-1): the request is DRAFTED in the box, with Send pointing at "Plan with Sutra"; the owner edits it and presses Send. Nothing is sent here.
+  function askToWork(draft) {
+    const c = composer();
+    const box = $("sbox");
+    if (!c || !box) return false;
+    const words = c.draft(draft);                   // leaves Ask first: the box may have been closed only because no model can answer an Ask
+    renderBar();
+    renderComposer();
+    if (box.disabled) { c.say("The message box is closed right now, so the draft was not written. Try again when it opens."); return false; }          // closed for another reason: the owner is told, the words are not forced in
+    root.ChatComposer.fillBox(box, words);
     return true;
   }
 
@@ -593,7 +610,7 @@
     renderChat();
     renderComposer();
     try {
-      const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D257: the Budget chip's dollars, a new request only
+      const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D423: the Budget chip's dollars, a new request only
       const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
@@ -706,6 +723,8 @@
         renderChat();
         send(label, {message_id: numeric, option: b.dataset.id || label});
       }
+    } else if (act === "node-answer") {
+      answerProjectQuestion(b, numeric);
     } else if (act === "option") {
       send("Option " + b.dataset.opt);
     } else if (act === "answer-option") {
@@ -722,6 +741,8 @@
       retryDirect(b.dataset.turn);
     } else if (act === "composer-stop") {
       stopDirect();
+    } else if (act === "ask-to-work") {
+      askToWork(b.dataset.draft || "");
     } else if (act === "copy-reply" || act === "copy-code") {
       if (root.ChatLiveView) root.ChatLiveView.copy(b, {fallback: copyFallback});
     }
@@ -861,22 +882,25 @@
     if (fd.stopOf) paintStop(fd.stopOf(st));
   }
 
-  // D254: Go is Stop (a square and "Stop") while the run this box started is live and the box is empty; data-stop holds the task id
+  // D420: Go is Stop (a square and "Stop") while the run this box started is live and the box is empty; data-stop holds the task id
   const STOP_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3" fill="currentColor"/></svg> ';
   function paintStop(stop) {
     const b = $("fdsend");
-    if (!b || (b.dataset.stop || "") === stop.taskId) return;
+    if (!b || ((b.dataset.stop || "") === stop.taskId && (b.dataset.project || "") === (stop.project || ""))) return;
     b.dataset.stop = stop.taskId;
+    b.dataset.project = stop.project || "";
     b.classList.toggle("fdstop", stop.show);
     b.innerHTML = stop.show ? STOP_ICON + "Stop" : "Go";
     if (stop.show) b.setAttribute("aria-label", "Stop the run"); else b.removeAttribute("aria-label");
   }
 
   // Stop: asks first, then the existing stop ladder (POST /api/tasks/{id}/stop, no force); 409 means it already ended, so only the lists refresh
-  async function stopFront(taskId) {
-    if (!/^tsk_[0-9a-f]{12}$/.test(text(taskId)) || !root.confirm("Stop this run? What's built so far is kept.")) return false;
+  // D424: a step of a project stops the whole project (POST /api/projects/{id}/stop, the project's own ladder)
+  async function stopFront(taskId, project) {
+    if (!/^tsk_[0-9a-f]{12}$/.test(text(taskId))) return false;
+    if (!root.confirm(project ? "Stop this project? What's built so far is kept." : "Stop this run? What's built so far is kept.")) return false;
     try {
-      await api.post("/api/tasks/" + enc(taskId) + "/stop", {});
+      await api.post(project ? "/api/projects/" + enc(project) + "/stop" : "/api/tasks/" + enc(taskId) + "/stop", {});
     } catch (e) {
       if (!e || e.status !== 409) { showBanner(errorWords(e)); return false; }
     }
@@ -884,7 +908,7 @@
     return true;
   }
 
-  // D257: the Budget chip beside Go, drawn once the team default is known (GET /api/engine/settings, effective.usd_budget); without it no
+  // D423: the Budget chip beside Go, drawn once the team default is known (GET /api/engine/settings, effective.usd_budget); without it no
   // budget is sent and the team's own applies
   async function mountChip() {
     const el = $("fdbudget");
@@ -900,7 +924,7 @@
     const box = $("fdbox");
     const body = text(box.value).trim();
     if (body === "" || S.sending) return false;
-    const usd = S.chip ? S.chip.value() : null;      // D257: the Budget chip; null is the team's own budget
+    const usd = S.chip ? S.chip.value() : null;      // D423: the Budget chip; null is the team's own budget
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
@@ -959,7 +983,7 @@
   }
 
   function onFrontClick(e) {
-    if (e.target.closest("#fdsend")) { const stop = $("fdsend").dataset.stop; if (stop) stopFront(stop); else sendFront(); return; }
+    if (e.target.closest("#fdsend")) { const stop = $("fdsend").dataset.stop; if (stop) stopFront(stop, $("fdsend").dataset.project || ""); else sendFront(); return; }
     const tryit = e.target.closest("[data-act=fd-try]");
     if (tryit) { $("fdbox").value = tryit.dataset.text || tryit.textContent; $("fdbox").focus(); return; }
     const b = e.target.closest("button[data-act]");
@@ -968,7 +992,7 @@
     const card = b.closest(".fdcard");
     if (act === "fd-option") answerFront(b.dataset.msg, "Option " + b.dataset.opt);
     else if (act === "fd-answer") { const box = card && card.querySelector("textarea[data-msg]"); if (box) answerFront(b.dataset.msg, box.value); }
-    else if (act === "fd-raise") {      // D257: a dollar raise, typed; a bad amount marks the box and sends nothing
+    else if (act === "fd-raise") {      // D423: a dollar raise, typed; a bad amount marks the box and sends nothing
       const box = card && card.querySelector(".bchipraisein"), n = root.BudgetChip ? root.BudgetChip.parse(box && box.value) : null;
       if (n === null) { if (box) box.setAttribute("aria-invalid", "true"); }
       else answerFront(b.dataset.msg, "Add $" + n + " and keep going");
@@ -998,7 +1022,7 @@
   function wireFront() {
     if (!$("front")) return;
     $("front").addEventListener("click", onFrontClick);
-    $("fdbox").addEventListener("input", renderFrontLatest);      // D254: typing turns Stop back into Go
+    $("fdbox").addEventListener("input", renderFrontLatest);      // D420: typing turns Stop back into Go
     $("fdbox").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendFront(); } });
     $("front").addEventListener("keydown", e => {
       const t = e.target;
@@ -1053,6 +1077,27 @@
     const out = {};
     S.heads.forEach(h => { if (isObj(h) && h.retry === true && typeof h.task_id === "string") out[h.task_id] = true; });
     return out;
+  }
+
+  // A question of a multi-agent project (D317): the buttons of a `node_approval` card. An answer goes to the project's answer route; "Check again" and "Skip" to the permission routes.
+  async function answerProjectQuestion(button, messageId) {
+    const project = text(button.dataset.project), approval = text(button.dataset.approval), item = text(button.dataset.item), decision = text(button.dataset.decision);
+    if (!/^prj_[0-9a-f]{12}$/.test(project)) return false;
+    const url = decision === "check_again" ? "/api/projects/" + enc(project) + "/system/" + enc(item) + "/check" : decision === "skip" ? "/api/projects/" + enc(project) + "/system/" + enc(item) + "/skip"
+      : "/api/projects/" + enc(project) + "/approvals/" + enc(approval);
+    button.disabled = true;
+    try {
+      await api.post(url, decision === "check_again" || decision === "skip" ? {} : {decision});
+      clearBanner();
+    } catch (e) {
+      showBanner(errorWords(e));
+      button.disabled = false;
+      return false;
+    }
+    if (decision !== "check_again" && typeof messageId === "number") { S.answers[messageId] = ""; renderChat(); }
+    try { await fetchMessages(true); } catch (e) { handleFetchError(e); }              // the card is marked answered by the server: read the chat again
+    refetchNeeds();
+    return true;
   }
 
   // Try again: the existing POST /api/tasks/{id}/retry (a new task with the same words, parent_task_id = this one), then the lane again.
@@ -1878,6 +1923,7 @@
       const c = composer();
       if (!b || !c) return;
       if (b.dataset.act === "composer-mode") c.setMode(b.dataset.mode);
+      else if (b.dataset.act === "composer-ask") c.setAsk(b.dataset.ask);
       else if (b.dataset.act === "composer-attach") { const input = $("sbar").querySelector(".ccinput"); if (input) input.click(); }
       else if (b.dataset.act === "composer-remove") c.removeFile(b.dataset.key);
     });

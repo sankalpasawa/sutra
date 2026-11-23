@@ -379,7 +379,7 @@ class FakeState:
             self.signin_sequence = "success"
             self.heads_up: list[dict] = []          # gap attention: GET /api/heads-up (set by /__fake/heads-up), emptied of a task on its retry
             self.retried: list[str] = []
-            self.stopped: list[str] = []            # D254: POST /api/tasks/{id}/stop, in order; a team's live task ends with its stop
+            self.stopped: list[str] = []            # D420: POST /api/tasks/{id}/stop, in order; a team's live task ends with its stop
             # gap routines-limits: GET /api/limits, GET and PUT /api/ops/attention, /api/recurring (set by /__fake/limits and /__fake/recurring)
             self.limits = {"spend": {"limit": None, "spent": 0.0, "pct": None, "level": "none", "unpriced_calls": 0, "month": "2026-11",
                                      "month_ends_at": "2026-12-01T00:00:00Z", "line": ""},
@@ -708,7 +708,7 @@ class FakeState:
                 "invalid_value", f"{field} must be one of {', '.join(map(str, ENGINE_ENUMS[field]))}")
         if field in ("budget_cap", "usd_cap") and value is None:
             return None
-        if field in ("usd_budget", "usd_cap"):      # D257: dollars (API price), $1 to $10,000 as EngineSettings has them
+        if field in ("usd_budget", "usd_cap"):      # D423: dollars (API price), $1 to $10,000 as EngineSettings has them
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 1 <= value <= 10_000:
                 return ("invalid_value", f"{field} must be dollars from 1 to 10000")
             return None
@@ -1499,7 +1499,7 @@ def register_api(app: FastAPI, state: FakeState) -> None:
 
     @app.post("/api/tasks/{task_id}/stop")
     def stop_task(task_id: str, request: Request):
-        """D254: the stop ladder of a live task (a team's `live_task_id`): the task ends `cancelled` and its team has no live task any more;
+        """D420: the stop ladder of a live task (a team's `live_task_id`): the task ends `cancelled` and its team has no live task any more;
         a task that is not live is 409 busy, as the real route answers one that already ended."""
         require_token(request, state)
         with state.lock:
@@ -1510,6 +1510,18 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         task = {"id": task_id, "dept_id": row["id"], "dept_name": row.get("name", ""), "title": "", "status": "cancelled", "created_at": "2026-11-04T10:00:00Z"}
         state.publish("task.updated", {"task": task})
         return JSONResponse(task)
+
+    @app.post("/api/projects/{project_id}/stop")
+    def stop_project(project_id: str, request: Request):
+        """D424: Home's Stop on a step of a project stops the whole project; here it ends every live task, as the project's ladder does."""
+        require_token(request, state)
+        with state.lock:
+            live = [d for d in state.departments() if d.get("live_task_id")]
+            state.stopped.extend(d["live_task_id"] for d in live)
+        for d in live:
+            state.publish("task.updated", {"task": {"id": d["live_task_id"], "dept_id": d["id"], "dept_name": d.get("name", ""), "title": "", "status": "cancelled",
+                                                    "created_at": "2026-11-04T10:00:00Z"}})
+        return JSONResponse({"stopped": bool(live)})
 
     @app.get("/api/departments")
     def departments():
@@ -1660,7 +1672,7 @@ def frame(event: str, data: Any, event_id: int | None) -> str:
 def _check_post(body: Any) -> list[dict]:
     if not isinstance(body, dict) or set(body) - {"text", "choice", "budget", "usd_budget"}:
         return [violation("", "bad_body", "the body is {text, choice?, budget?, usd_budget?}")]
-    usd = body.get("usd_budget")      # D257: the Budget chip's dollars, as ChatPost takes them
+    usd = body.get("usd_budget")      # D423: the Budget chip's dollars, as ChatPost takes them
     if usd is not None and (isinstance(usd, bool) or not isinstance(usd, (int, float)) or not 1 <= usd <= 10_000 or round(usd, 2) != usd):
         return [violation("usd_budget", "bad_usd_budget", "usd_budget must be dollars from 1 to 10000")]
     budget = body.get("budget")      # D252: the home box's Budget, as ChatPost takes it

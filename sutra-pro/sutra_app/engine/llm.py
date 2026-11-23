@@ -45,14 +45,14 @@ from sutra_app.library.replies import close_json, extract_json     # re-exported
 from sutra_app.library.types import clip
 
 from .port import (
-    CallTag, CompletionRequest, CompletionResult, ModelError, ModelPort, NoModelAvailable, PortInfo, PreflightResult,
+    Allowance, CallTag, CompletionRequest, CompletionResult, ModelError, ModelPort, NoModelAvailable, PortInfo, PreflightResult,
     ToolGrant, UsageRecorder,
 )
 
 __all__ = [
     "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
-    "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS",
+    "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS", "NodeMeter", "NodeCapReached", "CAP_WORDS",
 ]
 
 MOCK_ENV = ("SUTRA_MOCK", "SUTRA_OFFLINE", "STUDIO_MOCK")     # any of them set to "1" means mock mode (D36)
@@ -76,6 +76,7 @@ MOCK: bool = env_mock()
 PROVIDER: Optional[str] = None
 MODEL: Optional[str] = None
 _PORT: Optional[ModelPort] = None
+_METER: "Optional[NodeMeter]" = None
 _DEFAULT_PORT: Optional["ScriptedPort"] = None     # mock mode with no port configured: made on first use
 _BASE_TAG: CallTag = CallTag()
 _BOUND_ATOM: Optional[str] = None
@@ -193,15 +194,85 @@ def _as_tag(tag: Any) -> CallTag:
     raise TypeError("a tag is a CallTag or a mapping of its fields")
 
 
+CAP_WORDS = {"calls": "used up its model calls", "usd": "used up its dollars", "wall": "ran out of time"}      # what a node that reached a cap says, in plain words
+
+
+class NodeCapReached(ModelError):
+    """A node of a multi-agent project used up what its grant lets it spend: `which` is `calls`, `usd` or `wall`. A `ModelError`, so J2's own failure paths end the run; the host then says why
+    in the run's outcome (MAN-9). Never retryable: the next call would be refused too."""
+
+    code = "node_cap"
+    retryable = False
+
+    def __init__(self, which: str) -> None:
+        super().__init__(f"this step {CAP_WORDS[which]}")
+        self.which = which
+
+
+class NodeMeter:
+    """What one node of a project has spent across ALL its calls, and what is left (MAN-9, D272): calls, dollars and wall time. The router's allowance is per request; this meter makes it
+    cumulative for the process, so a node that makes many small calls is still stopped. `check()` raises `NodeCapReached` before a call that would go past a cap; `allowance()` is what one
+    request may still spend, `charge()` adds a finished call. A cap of None is not checked. With no meter (every run that is not a node) `ask` sends the allowance it always sent: none."""
+
+    def __init__(self, *, max_calls: Optional[int] = None, max_usd: Optional[float] = None, wall_s: Optional[float] = None, clock: Callable[[], float] = time.time) -> None:
+        self.max_calls, self.max_usd, self.wall_s, self._clock = max_calls, max_usd, wall_s, clock
+        self.started = clock()
+        self.calls = 0
+        self.usd = 0.0
+        self.reached: Optional[str] = None
+        self._lock = threading.Lock()
+
+    def _deadline(self) -> Optional[float]:
+        return self.started + self.wall_s if self.wall_s is not None else None
+
+    def check(self) -> None:
+        with self._lock:
+            which = ("calls" if self.max_calls is not None and self.calls >= self.max_calls else "usd" if self.max_usd is not None and self.usd >= self.max_usd
+                     else "wall" if self._deadline() is not None and self._clock() >= self._deadline() else None)
+            if which is not None:
+                self.reached = self.reached or which
+                raise NodeCapReached(which)
+
+    def allowance(self) -> Allowance:
+        with self._lock:
+            return self._allowance()
+
+    def _allowance(self) -> Allowance:
+        return Allowance(max_calls=None if self.max_calls is None else max(0, self.max_calls - self.calls), max_usd=None if self.max_usd is None else max(0.0, self.max_usd - self.usd),
+                         deadline=self._deadline())
+
+    def begin(self) -> Allowance:
+        """Check the caps AND count the call in one step under the lock (two threads cannot both take the last call), and give what this one request may still spend."""
+        with self._lock:
+            which = ("calls" if self.max_calls is not None and self.calls >= self.max_calls else "usd" if self.max_usd is not None and self.usd >= self.max_usd
+                     else "wall" if self._deadline() is not None and self._clock() >= self._deadline() else None)
+            if which is not None:
+                self.reached = self.reached or which
+                raise NodeCapReached(which)
+            allowance = self._allowance()
+            self.calls += 1
+            return allowance
+
+    def refund(self) -> None:
+        """Take back the count of a call that never started a model program (it waited for a machine-wide slot and gave up: PB-14)."""
+        with self._lock:
+            self.calls = max(0, self.calls - 1)
+
+    def charge(self, usd: Optional[float]) -> None:
+        """Add what a finished call cost (the call itself was counted by `begin`)."""
+        with self._lock:
+            self.usd += float(usd or 0.0)
+
+
 def configure(port: Optional[ModelPort] = None, *, mock: Optional[bool] = None,
-              base_tag: Optional[CallTag | Mapping] = None) -> None:
+              base_tag: Optional[CallTag | Mapping] = None, meter: "Optional[NodeMeter]" = None) -> None:
     """Set the model port, mock mode and the tag every call starts from. Each call replaces the whole configuration:
     `configure()` is the environment's default (mock only if `env_mock()`, no port, an empty tag).
 
     mock: True/False, else the port's `describe().mock`, else `env_mock()`. In mock mode `PROVIDER` and `MODEL` stay None
     (J2 wrote null provider and model into its run files in mock mode); otherwise they come from `port.describe()`.
     With `mock` true and no port, `ask` uses a `ScriptedPort` made on first use."""
-    global _PORT, _BASE_TAG, MOCK, PROVIDER, MODEL
+    global _PORT, _BASE_TAG, MOCK, PROVIDER, MODEL, _METER
     info: Optional[PortInfo] = port.describe() if port is not None else None
     if mock is not None:
         is_mock = bool(mock)
@@ -210,6 +281,7 @@ def configure(port: Optional[ModelPort] = None, *, mock: Optional[bool] = None,
     else:
         is_mock = env_mock()
     _PORT = port
+    _METER = meter                       # a node's meter, or None: every run that is not a node (MAN-9)
     _BASE_TAG = _as_tag(base_tag)
     MOCK = is_mock
     PROVIDER, MODEL = (None, None) if is_mock or info is None else (info.provider, info.model)
@@ -320,15 +392,22 @@ def ask(system, user, mock, max_tokens=1500, effort="high", on_progress=None, js
     if tag.atom is None and _BOUND_ATOM is not None:
         tag = tag.model_copy(update={"atom": _BOUND_ATOM})
     tag = _hooked_tag(tag)
+    meter = _METER
+    allowance = meter.begin() if meter is not None else None       # a node past its calls, dollars or time makes no call (raises `NodeCapReached`); the call is counted here, under a lock
     request = CompletionRequest(system=system, user=user, max_tokens=max_tokens, effort=effort, json_mode=json_mode,
-                                images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=None,
+                                images=images, json_schema=schema, timeout_s=timeout or None, tag=tag, allowance=allowance,
                                 scripted=mock, run_tools=grant)
     try:
         result = port.complete(request, _hooked_progress(tag, on_progress))
     except ModelError as exc:
+        if meter is not None and (getattr(exc, "detail", None) or {}).get("slots") is True:
+            meter.refund()                                                    # it never started a program: not a call (PB-14)
         if exc.code == "timeout":
             raise CallTimeout(str(exc)) from exc
         raise
+    else:
+        if meter is not None:
+            meter.charge(result.usd)
     if MOCK:                          # J2 reported nothing for a mock reply, and returned it as it was
         return result.text
     meta = {"model": result.model, "provider": result.provider, "input_tokens": result.input_tokens,

@@ -1,4 +1,4 @@
-"""D255: scripts/usd_basis.py, the read-only measurement behind the dollar budget. Per recorded run it sums the API price each AI call reported,
+"""D421: scripts/usd_basis.py, the read-only measurement behind the dollar budget. Per recorded run it sums the API price each AI call reported,
 counts the calls with and without one (by provider and basis), and divides by the run's credits spent; then the median and spread of dollars
 per credit, the fallback dollars per million tokens for calls with no price, and the proposed default (1000 credits, rounded to a clean amount)."""
 import importlib.util

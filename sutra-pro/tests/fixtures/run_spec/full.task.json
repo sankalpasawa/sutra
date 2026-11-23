@@ -1,0 +1,35 @@
+{
+  "schema": "run-spec/1",
+  "run_id": "j2-20261104-100004-7f3a",
+  "task_id": "tsk_a1b2c3d4e5f6",
+  "dept_id": "web",
+  "dept_label": "Web",
+  "scope_id": "web-div",
+  "scope_label": "Pricing",
+  "user_text": "Café menu — naïve ünïcode",
+  "framing": "the owner wants a menu",
+  "parent_run_id": "j2-20261103-090000-aaaa",
+  "seed_from": "j2-20261103-090000-aaaa",
+  "upstream": [
+    {
+      "dept_id": "sales",
+      "run_id": "j2-20261103-080000-bbbb",
+      "title": "Quote",
+      "files": [
+        "quote.md",
+        "terms.md"
+      ]
+    }
+  ],
+  "settings": {
+    "J2_OUTPUT": "hld",
+    "J2_BUDGET": "75",
+    "J2_BUDGET_CAP": "150",
+    "J2_FIXES": "1",
+    "J2_MEMORY": "0",
+    "J2_SLIM": "1",
+    "J2_RATES": "0",
+    "J2_DECIDE_FOR_ME": "1"
+  },
+  "connector": "stub"
+}

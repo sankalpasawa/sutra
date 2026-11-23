@@ -171,3 +171,130 @@ def test_get_heads_up_is_a_read_without_a_token_in_the_response_model(db, clock,
     [body] = response.json()
     assert HeadsUpOut.model_validate(body).task_id == crashed and body["since_s"] == HOUR
     assert set(body) == {"kind", "tone", "task_id", "dept_id", "dept_name", "title", "status", "text", "outcome", "at", "since_s", "retry"}
+
+
+# ---- a step of a project that was stopped is not a problem to try again (D383) -------------------------------------------------------------
+
+def _step_of(world: World, task: str, project_status: str):
+    world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A project', ?, ?)", project_status, NOW - 3 * HOUR)
+    world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'cancelled', ?)", task, NOW - 3 * HOUR)
+
+
+def test_a_step_of_a_stopped_project_is_not_listed_with_try_again_whoever_stopped_it(db, clock):
+    world = World(db, clock)
+    for index, outcome in enumerate(("Stopped: stopped on request", "stopped by the kill switch", "The team stopped unexpectedly.")):
+        task = put(world, 10 + index, "web", "stopped" if index < 2 else "crashed", ended=NOW - HOUR, outcome=outcome, stopped_by="app")
+        _step_of(world, task, "stopped")
+        assert HeadsUp(db, nodes=True).items(NOW) == [], outcome
+        assert [i.task_id for i in HeadsUp(db).items(NOW)] == [task], "flag off: no node table is read and the lane is what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_of_a_project_that_still_runs_keeps_its_row(db, clock):
+    world = World(db, clock)
+    task = put(world, 20, "web", "crashed", ended=NOW - HOUR, outcome="The team stopped unexpectedly.")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.task_id == task and item.retry is False, "a step is tried again by its project, never from here (D398)"
+
+
+def test_no_step_of_an_ended_project_is_listed_with_try_again_whatever_the_project_ended_as(db, clock):
+    """D390: a project that could not finish, was stopped or is done: its steps are never a problem to try again (run 2 showed one for a project that had ended 'Could not finish')."""
+    world = World(db, clock)
+    for index, project_status in enumerate(("failed", "stopped", "done", "done_with_open_items")):
+        task = put(world, 30 + index, "web", "stopped", ended=NOW - HOUR, outcome="Stopped: stopped on request", stopped_by="app")
+        _step_of(world, task, project_status)
+        assert HeadsUp(db, nodes=True).items(NOW) == [], project_status
+        assert [i.task_id for i in HeadsUp(db).items(NOW)] == [task], "flag off: the lane is what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_that_finished_with_open_items_in_an_ended_project_has_no_try_again(db, clock):
+    world = World(db, clock)
+    task = put(world, 40, "web", "done_with_open_items", ended=NOW - HOUR, outcome="Done, some left open")
+    _step_of(world, task, "done_with_open_items")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.kind == "finished" and item.retry is False
+    assert HeadsUp(db).items(NOW)[0].retry is True
+
+
+# ---- a step is never tried again by hand (D398, M-A) ----------------------------------------------------------------------------------------------
+
+def test_a_failed_step_of_a_project_that_still_runs_is_listed_without_try_again(db, clock):
+    world = World(db, clock)
+    task = put(world, 50, "web", "crashed", ended=NOW - HOUR, outcome="it crashed for good")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.task_id == task and item.kind == "problem" and item.retry is False
+    assert HeadsUp(db).items(NOW)[0].retry is True, "flag off: what it was"
+
+
+def test_an_earlier_attempt_of_a_step_is_a_step_too(db, clock):
+    world = World(db, clock)
+    first = put(world, 51, "web", "crashed", ended=NOW - 2 * HOUR, outcome="the first try crashed")
+    second = put(world, 52, "web", "stopped", ended=NOW - HOUR, outcome="Stopped: stopped on request", parent=first, stopped_by="app")
+    world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A', 'running', ?)", NOW - 3 * HOUR)
+    world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'failed', ?)", second, NOW)
+    for item in HeadsUp(db, nodes=True).items(NOW):
+        assert item.retry is False, (item.task_id, item.kind)
+
+
+def test_a_step_that_finished_in_a_project_that_was_stopped_or_failed_is_not_just_finished_on_home(db, clock):
+    """D403: run 3 showed 'Just finished: Done' for the first step of a project the kill switch stopped afterwards."""
+    world = World(db, clock)
+    for index, project_status in enumerate(("stopped", "failed")):
+        task = put(world, 60 + index, "web", "done", ended=NOW - 120, outcome="Done: the notes are written")
+        _step_of(world, task, project_status)
+        assert HeadsUp(db, nodes=True).items(NOW) == [], project_status
+        assert [(i.kind, i.task_id) for i in HeadsUp(db).items(NOW)] == [("finished", task)], "flag off: what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_that_finished_in_a_project_that_runs_or_is_done_is_still_news(db, clock):
+    world = World(db, clock)
+    for project_status in ("running", "done"):
+        task = put(world, 70, "web", "done", ended=NOW - 120, outcome="Done")
+        _step_of(world, task, project_status)
+        assert [(i.kind, i.task_id) for i in HeadsUp(db, nodes=True).items(NOW)] == [("finished", task)], project_status
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_row_of_a_step_carries_its_project_so_home_can_open_the_project_page(db, clock):
+    """D412 (run 4 item 3): Home's Open for a step went to the team page."""
+    world = World(db, clock)
+    task = put(world, 80, "web", "done", ended=NOW - 120, outcome="Done")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.project_id == "prj_0123456789ab" and item.model_dump(mode="json")["project_id"] == "prj_0123456789ab"
+    [plain] = HeadsUp(db).items(NOW)
+    assert "project_id" not in plain.model_dump(mode="json"), "flag off: no key"
+    other = put(world, 81, "sales", "done", ended=NOW - 100, outcome="Done")
+    both = {i.task_id: i for i in HeadsUp(db, nodes=True).items(NOW)}
+    assert "project_id" not in both[other].model_dump(mode="json"), "an ordinary task has none"
+
+
+def test_an_earlier_attempt_of_a_step_finds_its_project_too(db, clock):
+    world = World(db, clock)
+    first = put(world, 82, "web", "done_with_open_items", ended=NOW - 200, outcome="open")
+    second = put(world, 83, "web", "done", ended=NOW - 100, outcome="Done", parent=first)
+    world.sql("INSERT INTO projects(id, title, status, created_at) VALUES ('prj_0123456789ab', 'A', 'running', ?)", NOW - 3 * HOUR)
+    world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'done', ?)", second, NOW)
+    assert {i.task_id: i.project_id for i in HeadsUp(db, nodes=True).items(NOW)}[first] == "prj_0123456789ab"
+
+
+def test_a_step_that_finished_with_open_items_in_a_project_that_still_runs_has_no_try_again(db, clock):
+    """r-5: the branch had no test: a step of a running project is tried again by its project, never from here."""
+    world = World(db, clock)
+    task = put(world, 90, "web", "done_with_open_items", ended=NOW - HOUR, outcome="Done with open items: x")
+    _step_of(world, task, "running")
+    [item] = HeadsUp(db, nodes=True).items(NOW)
+    assert item.kind == "finished" and item.retry is False
+    assert [i.retry for i in HeadsUp(db).items(NOW)] == [True], "an ordinary task keeps its Try again"

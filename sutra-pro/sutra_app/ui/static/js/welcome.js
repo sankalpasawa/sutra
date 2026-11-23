@@ -83,7 +83,7 @@
 
   function autonomyFact(a) {
     const x = isObj(a) ? a : {};
-    // D257: the budget is in dollars (API price); the credits stay the engine's own bookkeeping
+    // D423: the budget is in dollars (API price); the credits stay the engine's own bookkeeping
     const usd = Number.isFinite(x.usd_budget) && x.usd_budget > 0 ? "$" + (Number.isInteger(x.usd_budget) ? x.usd_budget : x.usd_budget.toFixed(2)) : "";
     const budget = usd ? "inside a budget of " + usd + " (API price) for each run" : "inside a budget for each run";
     const mail = x.send_mode === "live" ? "Emails a team writes are sent for real (you can change that in Settings, Engine)."

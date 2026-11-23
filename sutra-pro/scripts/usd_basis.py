@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""What a run costs in dollars (API price) per work credit, measured on recorded runs (D255).
+"""What a run costs in dollars (API price) per work credit, measured on recorded runs (D421).
 
     scripts/py scripts/usd_basis.py --data ~/.sutra-pro-beta
 

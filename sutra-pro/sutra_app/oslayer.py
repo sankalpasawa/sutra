@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 __all__ = ["console_python", "IS_WINDOWS", "O_BINARY", "SIGKILL", "try_lock", "unlock", "pid_alive", "process_command", "popen_group_kwargs",
-           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name"]
+           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name", "is_elevated", "long_paths_enabled"]
 
 IS_WINDOWS = os.name == "nt"
 O_BINARY: int = getattr(os, "O_BINARY", 0)          # 0 on POSIX: OR-ing it in changes nothing there
@@ -336,3 +336,65 @@ def user_token() -> str:
         return str(getuid())
     import getpass
     return re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser() or "user")[:40] or "user"
+
+
+# ---- what the computer has allowed (MAN-15; read only: Sutra changes no system setting) --------------------------------------------
+
+def is_elevated() -> bool:
+    """True when this process runs with administrator rights on Windows (an elevated process refuses new nodes: files it makes would belong to the administrator). False everywhere else and
+    whenever the answer cannot be had: only a positive answer refuses anything."""
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())          # type: ignore[attr-defined]
+    except Exception:                                               # noqa: BLE001
+        return False
+
+
+def long_paths_enabled() -> bool:
+    """Whether Windows lets a path be longer than 260 characters (the `LongPathsEnabled` setting, read only). True on every other system and when the answer cannot be had."""
+    if not IS_WINDOWS:
+        return True
+    try:
+        import winreg                                               # type: ignore[import-not-found]
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
+            return bool(winreg.QueryValueEx(key, "LongPathsEnabled")[0])
+    except Exception:                                               # noqa: BLE001
+        return True
+
+
+def app_location(executable: str | None = None, platform: str | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+    """Whether the app runs from the usual place for an installed app (MAN-13, D322 d, D326): `{usual: bool, note: str}`. The note is plain words for the project page, empty when all is well.
+    Only an installed app is judged: a Mac app outside the Applications folders (the disk image, Downloads), a Windows install outside Program Files and the per-user Programs folder. A checkout, a
+    command-line install and any other system are never "not usual": nothing is said about them. Read only; nothing about the path leaves this function. The arguments are for a test."""
+    exe = (executable if executable is not None else sys.executable).replace("\\", "/")
+    system = platform if platform is not None else sys.platform
+    variables = env if env is not None else os.environ
+    if system == "darwin" and ".app/Contents/" in exe:
+        homes = ("/Applications/", (variables.get("HOME", "").replace("\\", "/").rstrip("/") + "/Applications/") if variables.get("HOME") else "/Applications/")
+        if exe.startswith(homes):
+            return {"usual": True, "note": ""}
+        return {"usual": False, "note": "Sutra Pro is not in your Applications folder. Your computer asks about files and folders for the app where it is, so it may ask again. Drag the app into Applications and open it from there."}
+    if system == "win32" and exe.rsplit("/", 1)[-1].lower().startswith("sutrapro"):
+        roots = [variables.get(name, "").replace("\\", "/").rstrip("/").lower() for name in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")]
+        local = variables.get("LOCALAPPDATA", "").replace("\\", "/").rstrip("/").lower()
+        if local:
+            roots.append(local + "/programs")
+        if any(root and exe.lower().startswith(root + "/") for root in roots):
+            return {"usual": True, "note": ""}
+        return {"usual": False, "note": "Sutra Pro is not installed in the usual place. Windows may ask again, or block it, where it is. Run the installer again and open the app from there."}
+    return {"usual": True, "note": ""}
+
+
+def controlled_folder_access() -> bool | None:
+    """Whether Windows Controlled folder access is turned on (`EnableControlledFolderAccess` is 1; 2 is "audit only" and blocks nothing), read only. None on every other system and whenever the answer
+    cannot be had: only a positive answer says anything (R10, D333)."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        import winreg                                               # type: ignore[import-not-found]
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Defender\Windows Defender Exploit Guard\Controlled Folder Access") as key:
+            return int(winreg.QueryValueEx(key, "EnableControlledFolderAccess")[0]) == 1
+    except Exception:                                               # noqa: BLE001
+        return None

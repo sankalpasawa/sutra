@@ -14,10 +14,11 @@
      finishedHtml(state)                 "Just finished": the work finished lately, each row with Open (nothing when there is none)
      latestHtml(state)                   under the box, after the owner sent something there: one calm line, a choice to press, or the way to the work
      summary(state)                      "2 things need you" / "Nothing needs you right now" (the document title and the screen reader line)
-     stopOf(state)                       D254: {show, taskId}: the box's Go is Stop while the box is empty and the card under it shows the work it
-                                         just started ("Your project is set up") whose team has a live task
+     stopOf(state)                       D420: {show, taskId}: the box's Go is Stop while the box is empty and the card under it shows the work it
+                                         just started ("Your project is set up") whose team has a live task; D424: plus `project` when that work
+                                         is a step of a multi-agent project
 
-   Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-raise (data-msg, D257: the typed dollars beside it), fd-approve and fd-decline (data-msg), fd-retry
+   Buttons carry data-act: fd-option (data-msg, data-opt, data-text), fd-answer (data-msg), fd-raise (data-msg, D423: the typed dollars beside it), fd-approve and fd-decline (data-msg), fd-retry
    (data-task), fd-seen (data-task), fd-choose (data-msg, data-option), fd-more. A team link is a real <a href="/d/<dept>/">.
    A classic script with ONE global, FrontDoor; in node it is module.exports. */
 (function (root) {
@@ -125,7 +126,7 @@
 
   // "Keep going: you get more of the missing parts built" reads as a choice and what it means: the choice in bold, the meaning under it.
   function optionLabel(t) {
-    t = String(t).replace(/ \[adds [^\]]*\]$/, "");      // D257: the "[adds $Z]" tail is the engine's, not the owner's words
+    t = String(t).replace(/ \[adds [^\]]*\]$/, "");      // D423: the "[adds $Z]" tail is the engine's, not the owner's words
     const m = /^([^:]{2,40}):\s*(.+)$/.exec(t);
     return m ? "<b>" + esc(m[1]) + '</b><span class="fdoptwhy">' + esc(m[2]) + "</span>" : esc(t);
   }
@@ -167,7 +168,7 @@
         '" data-text="' + esc(t) + '"' + dis + ">" + optionLabel(t) + "</button>").join("") + "</div>"
       : '<div class="fdreply"><textarea class="fdbox" rows="1" data-msg="' + esc(msg) + '" aria-label="Your answer to ' + esc(who) + '" placeholder="Your answer"' + dis + "></textarea>" +
         '<button type="button" class="fdbtn fdyes" data-act="fd-answer" data-msg="' + esc(msg) + '"' + dis + ">Send</button></div>";
-    // D257: a dollar raise question also takes a typed amount, the suggested one filled in (its "[adds $Z]" tail in the question text)
+    // D423: a dollar raise question also takes a typed amount, the suggested one filled in (its "[adds $Z]" tail in the question text)
     const add = BC() && !busy ? BC().raiseFromText(item.text) : null;
     const raise = add !== null ? BC().raiseHtml(add, 'data-act="fd-raise" data-msg="' + esc(msg) + '"') : "";
     const open = dept ? '<a class="fdopen" href="' + esc(teamHref(dept)) + '">Open ' + esc(who) + "</a>" : "";
@@ -299,7 +300,7 @@
     return latestSimple(s, r, status);
   }
 
-  // D254: Go is Stop while the box is empty, the card under it shows the work this send started (latestSimple's r.task, no choice before it)
+  // D420: Go is Stop while the box is empty, the card under it shows the work this send started (latestSimple's r.task, no choice before it)
   // and that team has a live task. state: latestHtml's, plus {box, departments}.
   const TASK_ID = /^tsk_[0-9a-f]{12}$/;
   function stopOf(state) {
@@ -307,7 +308,9 @@
     const r = replyOf(s);
     const team = s.show === true && !r.choice && r.task && Array.isArray(s.departments) ? s.departments.find(d => isObj(d) && d.id === r.task.card.dept_id) : null;
     const id = team ? text(team.live_task_id) : "";
-    return text(s.box).trim() === "" && TASK_ID.test(id) ? {show: true, taskId: id} : {show: false, taskId: ""};
+    if (text(s.box).trim() !== "" || !TASK_ID.test(id)) return {show: false, taskId: ""};
+    const project = idOf(r.task.card.project_id);      // D424: a step of a project: Stop stops the whole project (main's project stop), not this one step
+    return project ? {show: true, taskId: id, project} : {show: true, taskId: id};
   }
 
   const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count};

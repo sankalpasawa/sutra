@@ -496,7 +496,7 @@ def test_a_budget_goes_only_with_a_new_request_in_the_org_chat(convo):
     assert response.status_code == 422 and "org chat" in response.text, response.text
 
 
-# ============================================ D257: the home screen's budget in dollars (API price) ===========================
+# ============================================ D423: the home screen's budget in dollars (API price) ===========================
 
 def test_home_usd_budget(convo):
     answered(convo)

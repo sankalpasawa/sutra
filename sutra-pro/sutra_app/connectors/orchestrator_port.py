@@ -15,6 +15,8 @@ The tag of a call is built from the arguments, never from the orchestrator's str
     context.task_id   -> tag.task_id
     context.atom_id   -> tag.atom          (the request's overhead key; S4-fnodes-07)
     context.session_id / node_id -> RouteContext.session_id / node_id
+    context.agent_node_id / agent_role -> tag.node_id / node_role   (a call made for a node of a multi-agent project, D283; node_id above is the GRAPH node)
+    cancel            -> JsonRequest.cancel    (an optional stop token: the router honours it before every attempt, D291)
 
 Errors are the router's `ConnectorError`s; each carries `.kind` (unavailable | auth | quota | timeout | bad_output).
 """
@@ -25,6 +27,7 @@ from pydantic import ValidationError
 
 from sutra_app.engine.port import CallTag
 
+from .cancel import CancelToken
 from .errors import InvalidJsonError, InvalidRequestError
 from .models import JsonRequest, RouteContext
 from .router import Router
@@ -40,13 +43,16 @@ def build_tag(function: str, step: Optional[str], context: Optional[Mapping[str,
     ctx = context or {}
     fields: dict[str, Any] = {"function": function, "stage": step or None}
     if function == ORG_AGENT:
-        fields["workspace"] = "edit"
+        fields["workspace"] = "read" if ctx.get("agent_node_id") else "edit"          # a planner node (a project's planning call) only reads the owner's folder; the chat agent of today edits (D127, G6, D307)
     if ctx.get("purpose"):
         fields["purpose"] = ctx["purpose"]
     if ctx.get("task_id"):
         fields["task_id"] = ctx["task_id"]
     if ctx.get("atom_id"):
         fields["atom"] = ctx["atom_id"]
+    if ctx.get("agent_node_id"):
+        fields["node_id"] = ctx["agent_node_id"]
+        fields["node_role"] = ctx.get("agent_role") or ""
     try:
         return CallTag(**fields)
     except ValidationError as e:
@@ -64,11 +70,11 @@ class AsyncConnector:
 
     async def call_json(self, prompt: str, *, schema: Optional[dict] = None, tools: Sequence[str] = (), timeout: float = 120.0,
                         function: str = "chat_agent", step: str = "plan",
-                        context: Optional[Mapping[str, str]] = None) -> tuple[dict, Optional[float], str]:
+                        context: Optional[Mapping[str, str]] = None, cancel: Optional[CancelToken] = None) -> tuple[dict, Optional[float], str]:
         ctx = context or {}
         route = RouteContext(tag=build_tag(function, step, ctx), session_id=ctx.get("session_id") or None,
                              node_id=ctx.get("node_id") or None)
-        req = JsonRequest(user=prompt, ctx=route, schema=schema, tools=tuple(tools), timeout_s=timeout)
+        req = JsonRequest(user=prompt, ctx=route, schema=schema, tools=tuple(tools), timeout_s=timeout, cancel=cancel)
         result = await asyncio.to_thread(self.router.call_json, req)
         if not isinstance(result.value, dict):
             raise InvalidJsonError("reply: the JSON is not an object", provider=result.turn.provider)

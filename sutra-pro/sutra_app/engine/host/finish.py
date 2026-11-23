@@ -4,12 +4,14 @@
 
 `Host._conclude` calls it once, right after the publisher stopped and before the heartbeat does: the heartbeat still beats while the steps
 work, and the final publish and `run.ended` come after every file they write. A run that ended `done` or `done_with_open_items` gets the
-steps below, in this order; a stopped or crashed run gets none.
+steps below, in this order (a node's `handoff` first, G1); a stopped or crashed run gets none.
 
     agent_views   `j2_agent_views.build(<run folder>, quiet=True)`: the agent-readable JSON (`agent/*.json`, `artifacts/<name>.json`,
                   `site/sections/<id>.json`, the stamped `prd.json`, `hld.json`, `lld.json`, `design.json`) that the Artifacts pane's
                   Agent-readable tab shows, each file checked by its model. J2 builds them only by hand
                   (`python -m sutra_app.engine.j2_agent_views build <run folder>`).
+    handoff       `handoff.json`, only for a node of a multi-agent project (the optional `node` block of `task.json`, `NODE_STEPS`: any other run does not even get a trace line for it): the files of
+                  the run folder with their checksums and the run's own outcome sentence, for the server to check and scrub (handoff.py).
     catalog       `j2_template_lib.collect(<team runs folder>, runs=[<this run>])` under the library lock (P10): the templates this run
                   stored reach the catalog. Only when the template library is on for the run (`EngineSettings.effective()`, D178: `auto_reuse` turns it on in J2 too), the run is not a mock run (a scripted
                   run teaches the library nothing) and it stored templates. A lock that stays taken for the whole wait skips the step.
@@ -35,7 +37,7 @@ from sutra_app.library.types import clip
 
 from ..events import END_STATUSES
 
-__all__ = ["run_steps", "agent_views", "catalog", "Skip", "STEPS", "ENDED_WELL", "STEP_SECONDS", "TRACE_TYPE"]
+__all__ = ["run_steps", "agent_views", "catalog", "handoff", "Skip", "STEPS", "NODE_STEPS", "ENDED_WELL", "STEP_SECONDS", "TRACE_TYPE"]
 
 ENDED_WELL = END_STATUSES[:2]                      # the `run.ended` statuses that get the steps (`done`, `done_with_open_items`): the statuses have one owner, events.py (D188, R-3)
 STEP_SECONDS = 10.0                                # a step that takes longer ends the rest (D142)
@@ -84,7 +86,20 @@ def catalog(host) -> dict:
     return {key: len(row.get(key) or ()) for key in ("added", "renumbered", "same", "not_recorded")}
 
 
+def handoff(host) -> dict:
+    """`handoff.json` for a node of a multi-agent project (D263, MAN-6): what the run leaves for the server to check, scrub and store. Only when `task.json` has a `node` block: any other run
+    skips it, so a run that is not a node writes nothing new. The files and checksums are read from the run folder here, never from what an agent said."""
+    node = getattr(getattr(host, "task", None), "node", None)
+    if node is None:
+        raise Skip("the run is not a node of a project")
+    from . import handoff as handoff_file
+    document = handoff_file.build(host.paths.run_dir, node.id, getattr(host, "ended_status", "done"), getattr(host, "ended_outcome", ""))
+    handoff_file.write(host.paths.run_dir, document)
+    return {"files": len(document["files"]), "status": document["status"]}
+
+
 STEPS: tuple[tuple[str, Step], ...] = (("agent_views", agent_views), ("catalog", catalog))
+NODE_STEPS: tuple[tuple[str, Step], ...] = (("handoff", handoff),)       # added after `STEPS` for the run of a node only: any other run has the steps (and the trace lines) it always had (MAN-6)
 
 
 # ---- the runner ------------------------------------------------------------------------------------------------------------------
@@ -97,7 +112,9 @@ def run_steps(host, status: str, steps: Optional[tuple[tuple[str, Step], ...]] =
         return []
     written: list[dict] = []
     slow: Optional[str] = None                                    # the name of the first step over the limit
-    for name, step in STEPS if steps is None else steps:
+    if steps is None:
+        steps = (NODE_STEPS if getattr(getattr(host, "task", None), "node", None) is not None else ()) + STEPS     # a node's hand-off goes FIRST: a slow step must never cost it its hand-off (G1, D311)
+    for name, step in steps:
         row: dict[str, Any] = {"step": name}
         asked_to_stop = getattr(host, "stopping", None)
         if slow is not None:

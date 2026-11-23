@@ -30,14 +30,17 @@ __all__ = [
     "Iso", "Event", "Violation", "ChartNodeOut", "ChartView", "ChartChangeOut", "ChangeResult", "GraphEdgeOut", "GraphNodeOut",
     "GraphView", "FnStats", "FnMeta", "FnDetailMeta", "UsageTotals", "ChatSessionOut", "ChatMessageOut", "ChatOption",
     "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "DoneReport", "AtomCard", "CardRow",
-    "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX",
+    "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX", "AnswerCard", "AnswerSource",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
     "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
-    "STEP_ID_RE",
+    "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "SystemPermissionCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
+    "NODE_RUNTIMES",
 ]
 
+ProjectId = Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")]
+ApprovalId = Annotated[str, StringConstraints(pattern=r"^ap_[0-9a-f]{12}$")]
 Iso = Annotated[str, StringConstraints(pattern=r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")]
 Name = Annotated[str, StringConstraints(max_length=200)]
 Line = Annotated[str, StringConstraints(max_length=1000)]
@@ -270,6 +273,15 @@ class TaskCard(Value):
     dept_name: Name
     title: Name
     status: TaskStatus
+    project_id: ProjectId | None = None     # the project this task is a step of (nodes on): the card links to its page (D382); left out of the wire shape when there is none
+
+    @model_serializer(mode="wrap")
+    def _project_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A card of an ordinary task keeps the wire shape it always had: no `project_id` key."""
+        data = handler(self)
+        if data.get("project_id") is None:
+            data.pop("project_id", None)
+        return data
 
 
 class ApprovalCard(Value):
@@ -336,12 +348,13 @@ class DoneCard(Value):
     outcome: Annotated[str, StringConstraints(max_length=2000)] = ""
     receipt: DoneReceipt | None = None
     report: DoneReport | None = None
+    project_id: ProjectId | None = None     # the project this task is a step of (nodes on): the card links to its page (D394); left out of the wire shape when there is none
 
     @model_serializer(mode="wrap")
     def _receipt_and_report_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
-        """A card without a receipt or a report (every card stored before they existed) keeps the wire shape it always had: the keys are left out."""
+        """A card without a receipt, a report or a project (every card stored before they existed) keeps the wire shape it always had: the keys are left out."""
         data = handler(self)
-        for key in ("receipt", "report"):
+        for key in ("receipt", "report", "project_id"):
             if data.get(key) is None:
                 data.pop(key, None)
         return data
@@ -387,6 +400,47 @@ class DeliverableCard(Value):
         return data
 
 
+class AnswerSource(Value):
+    """One source a cited answer named, as code found it (DV-1, `orchestrator/citations.py`). `label` is `checked` or `could not find`; it is written by code and never by a model.
+    `how` says what `checked` covers (`lines`: the file and those lines are there; `quote`: and the quoted words are on them) and is absent for `could not find`, which has a `reason`."""
+    path: Annotated[str, StringConstraints(min_length=1, max_length=300)]
+    start: Annotated[int, Field(ge=0, le=999_999_999)]
+    end: Annotated[int, Field(ge=0, le=999_999_999)]
+    quote: Annotated[str, StringConstraints(max_length=1000)] | None = None
+    label: Literal["checked", "could not find"]
+    how: Literal["lines", "quote"] | None = None
+    reason: Annotated[str, StringConstraints(max_length=200)] = ""
+
+    @model_serializer(mode="wrap")
+    def _only_what_there_is(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        for key in ("quote", "how"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        if not data.get("reason"):
+            data.pop("reason", None)
+        return data
+
+
+class AnswerCard(Value):
+    """The sources of a cited answer (DV-1), a card of its own in the chat right after the answer: every mark of the answer with its label, the counts, and the owner's question
+    (the page drafts "Turn this into work" from it). `sources` empty is an answer too: the answer named no file. `more` counts marks past the limit that were not checked."""
+    type: Literal["answer_sources"]
+    question: Annotated[str, StringConstraints(max_length=500)] = ""
+    sources: Annotated[list[AnswerSource], Field(max_length=50)] = []
+    checked: Count = 0
+    missing: Count = 0
+    more: Count = 0
+    tried: Count = 0                                                   # edit or web tool calls the turn made although Ask does not allow them (counted from the turn's own blocks, `tool_kinds`); left out when 0
+
+    @model_serializer(mode="wrap")
+    def _tried_only_when_there_were_some(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if not data.get("tried"):
+            data.pop("tried", None)
+        return data
+
+
 class CardRow(Value):
     label: Annotated[str, StringConstraints(max_length=80)]
     text: Annotated[str, StringConstraints(max_length=2000)]
@@ -401,8 +455,25 @@ class AtomCard(Value):
     rows: Annotated[list[CardRow], Field(max_length=30)] = []
 
 
+class NodeApprovalCard(Value):
+    """One open question of a project as a card (MAN-8): what is asked in plain words, which tier, which node it is about (empty: the whole project), the answers it takes and when it
+    ends. `kind` is `tier` (the app tools or GitHub), `scope` (a wide write scope), `plan_estimate` (the plan's cost) or `system` (a permission of the computer, MAN-15). A plan estimate
+    can be allowed once or refused; nothing is ever "allowed for the project" above tier 4."""
+
+    type: Literal["node_approval"] = "node_approval"
+    project_id: ProjectId
+    approval_id: ApprovalId
+    kind: Annotated[str, StringConstraints(max_length=40)]
+    tier: Annotated[int, Field(ge=0, le=6)]
+    node_id: Annotated[str, StringConstraints(max_length=40)] = ""
+    question: Annotated[str, StringConstraints(max_length=500)]
+    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)]
+    expires_at: Iso
+    item: Annotated[str, StringConstraints(max_length=40)] = ""      # a system question: which permission (the buttons call its check and skip routes)
+
+
 ChatCard = Annotated[
-    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard],
+    Union[ChartChangeCard, TaskCard, ApprovalCard, ChoiceCard, NeedsYouCard, TeamChatCard, DoneCard, DeliverableCard, AtomCard, NodeApprovalCard, AnswerCard],
     Field(discriminator="type"),
 ]
 
@@ -431,6 +502,7 @@ class ChatMessageOut(Value):
     superseded: bool = False                                               # a reply of a try that a later try of the same owner line replaced (kept, not shown as the answer)
     ordered: bool = False                                                  # `blocks` holds the whole turn in order, text included (D212)
     via: JsonObject | None = None                                          # a direct reply: {provider, model} that wrote it, so the header says the same live and after a reload
+    mode: Literal["ask"] | None = None                                     # the owner's line of an Ask turn (DV-1, D350): left out of every other message, so a page that does not know Ask sees what it always saw
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -446,6 +518,8 @@ class ChatMessageOut(Value):
             data.pop("steer", None)
         if data.get("ask") is None:
             data.pop("ask", None)
+        if data.get("mode") is None:
+            data.pop("mode", None)
         if data.get("client_id") is None:
             data.pop("client_id", None)
         if data.get("attempt") is None:
@@ -470,7 +544,10 @@ class ChatPost(Value):
     # D252: the home screen's "Budget (work credits)" for a new request in the org chat; None: the team's own budget. The limits are
     # J2_BUDGET's (TaskSettings, EngineSettings.budget).
     budget: Annotated[int, Field(ge=1, le=100_000)] | None = None
-    # D257: the home screen's dollar budget (API price) for a new request; None: the team's own. The limits are EngineSettings.usd_budget's.
+    # MAN-8, D294: "Decide for me" for the project this request may become: the Gatekeeper's rule table answers its questions (never credits over the ceiling, never a permission of the computer).
+    # Only read while SUTRA_NODES_V1 is on; None or false: the owner answers.
+    decide_for_me: bool | None = None
+    # D423: the home screen's dollar budget (API price) for a new request; None: the team's own. The limits are EngineSettings.usd_budget's.
     usd_budget: Annotated[float, Field(ge=1, le=10_000, allow_inf_nan=False)] | None = None
 
     @field_validator("usd_budget")
@@ -603,7 +680,7 @@ class UsageOut(Value):
 class NeedsYouOut(Value):
     message_id: Annotated[int, Field(ge=1)]
     session_id: SessionId
-    kind: Literal["question", "approval"]
+    kind: Literal["question", "approval", "node_approval"]
     dept_id: NodeId | None = None
     dept_name: Name = ""
     text: Body
@@ -622,6 +699,114 @@ class NodeDetail(Value):
     archived_chats: Annotated[list[ChatSessionOut], Field(max_length=200)] = []
 
 
+# ---- multi-agent nodes: projects and nodes (design docs/design/multi-agent-nodes, D253, D283, D290) --------------------------------------
+# A "node" here is a runtime node: a running agent, one `tasks` row plus one `agent_nodes` row (not a graph node, which is a box in the graph). These shapes are inert until
+# SUTRA_NODES_V1 is on: nothing builds one while the flag is off, and `RunSpec.node` (MAN-3) is left out of `task.json` unless it is set.
+
+AgentNodeId = Annotated[str, StringConstraints(pattern=r"^nd_[0-9a-f]{12}$")]
+GrantId = Annotated[str, StringConstraints(pattern=r"^gr_[0-9a-f]{12}$")]
+ScopePath = Annotated[str, StringConstraints(min_length=1, max_length=400)]
+ScopeList = Annotated[list[ScopePath], Field(max_length=50)]
+
+PROJECT_STATUSES = ("planning", "awaiting_approval", "running", "reviewing", "done", "done_with_open_items", "stopped", "failed")
+NODE_STATES = ("planned", "awaiting_approval", "awaiting_system", "ready", "queued", "leased", "running", "handing_off", "done", "failed", "cancelled", "expired")
+NODE_ROLES = ("planner", "worker", "reviewer")
+NODE_RUNTIMES = ("inline", "engine", "light")
+ProjectStatus = Literal["planning", "awaiting_approval", "running", "reviewing", "done", "done_with_open_items", "stopped", "failed"]
+AgentNodeState = Literal["planned", "awaiting_approval", "awaiting_system", "ready", "queued", "leased", "running", "handing_off", "done", "failed", "cancelled", "expired"]
+NodeRole = Literal["planner", "worker", "reviewer"]
+NodeRuntime = Literal["inline", "engine", "light"]
+
+
+class NodeCaps(Value):
+    """What one node may spend before its host stops it (D272, D273): model calls, dollars where the provider reports them (none unless the owner sets it), wall time."""
+
+    calls: Annotated[int, Field(ge=1, le=10_000)] = 60
+    usd: Annotated[float, Field(gt=0, le=100_000)] | None = None
+    wall_s: Annotated[int, Field(ge=1, le=86_400)] = 1800
+
+
+class NodeBlock(Value):
+    """The optional `node` block of `task.json` (D283): who this run is inside a project. Older readers ignore it (`TaskSpec` drops unknown keys); the writer leaves it out
+    of the file while SUTRA_NODES_V1 is off, so the file is byte-identical to today's. Only workers and reviewers run as processes: the planner is inline."""
+
+    id: AgentNodeId
+    project_id: ProjectId
+    role: Literal["worker", "reviewer"]
+    runtime: Literal["engine", "light"]
+    attempt: Annotated[int, Field(ge=1, le=10)] = 1
+    grants_id: GrantId
+    caps: NodeCaps = NodeCaps()
+    scope: ScopeList = []
+    # MAN-8 (D298): the app tools this node's grant gives it (`none`, `sutra`, `github` or `sutra+github`), so the host can put them on the node's own agent-turn calls (never on a builder-tools
+    # call). `none` for a node whose grant holds none.
+    tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"
+    slots: bool = False                       # SUTRA_NODES_SLOTS is on: the run takes a machine-wide slot for each model program it starts (MAN-12)
+    tiers: list[int] = []                     # D380: the tiers of the frozen grant and its commands level: the host takes the builder tools of this node's calls down to them
+    commands: str = "none"
+
+
+class ProjectOut(Value):
+    """A project as the page reads it (`GET /api/projects`): the row, with times as ISO text. `caps` is the cap table the project froze at plan time."""
+
+    id: ProjectId
+    request_id: Ident | None = None
+    title: Name = ""
+    status: ProjectStatus
+    failure_policy: Literal["stop_branch", "stop_all"] = "stop_branch"
+    decide_for_me: bool = False
+    paused: bool = False
+    review_loops: Count = 0
+    caps: JsonObject = {}
+    budget_credits: Count | None = None
+    budget_usd: Seconds | None = None
+    created_at: Iso
+    ended_at: Iso | None = None
+    stop_reason: Annotated[str, StringConstraints(max_length=200)] = ""
+
+
+class SystemPermissionCard(Value):
+    """A permission of the computer a step needs before it starts (MAN-15, D295): which one, what it is for, the plain steps for THIS system, and the two answers: check again (after the owner allowed
+    it in the settings) or skip (the steps that need it are cancelled). Sutra changes no setting and Decide for me cannot answer it."""
+
+    type: Literal["system_permission"] = "system_permission"
+    project_id: ProjectId
+    approval_id: ApprovalId
+    item: Annotated[str, StringConstraints(max_length=40)]
+    label: Annotated[str, StringConstraints(max_length=200)] = ""
+    level: Literal["read", "write"] = "read"
+    steps: Annotated[list[Annotated[str, StringConstraints(max_length=300)]], Field(max_length=8)]
+    platform: Annotated[str, StringConstraints(max_length=20)] = ""
+    options: Annotated[list[Annotated[str, StringConstraints(max_length=40)]], Field(max_length=4)] = ["check_again", "skip"]
+    affects: Annotated[list[str], Field(max_length=20)] = []
+
+
+class NodeOut(Value):
+    """A runtime node as the page reads it. `grants` is the frozen grant (`grants.Grant.to_json()`), empty until the Gatekeeper has issued one."""
+
+    id: AgentNodeId
+    project_id: ProjectId
+    task_id: TaskId | None = None
+    role: NodeRole
+    runtime: NodeRuntime
+    plan_ref: Annotated[str, StringConstraints(max_length=200)] = ""
+    title: Annotated[str, StringConstraints(max_length=200)] = ""          # the step's own title (its task's), so the page names a step by what it does (D383)
+    calls: Count | None = None                                             # what the step used, every attempt counted (D395): model calls, dollars (None: no call priced) and minutes from its first start
+    usd: Annotated[float, Field(ge=0)] | None = None
+    minutes: Annotated[float, Field(ge=0)] | None = None
+    depends_on: Annotated[list[AgentNodeId], Field(max_length=50)] = []
+    state: AgentNodeState
+    attempt: Annotated[int, Field(ge=1, le=10)] = 1
+    grants: JsonObject = {}
+    scope: ScopeList = []
+    slice_credits: Count | None = None
+    last_beat_at: Iso | None = None
+    lease_expires_at: Iso | None = None
+    failure_reason: Annotated[str, StringConstraints(max_length=200)] = ""
+    created_at: Iso
+    ended_at: Iso | None = None
+
+
 # ---- the run document: task.json -----------------------------------------------------------------------------------
 
 _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
@@ -629,7 +814,7 @@ _INT_SETTING = re.compile(r"[1-9][0-9]{0,5}")
 
 class TaskSettings(Value):
     """The eleven task keys a request may carry (D18, S1-contracts-03; J2 sync 4 added the Decide for me switch, J2 sync 6 the two run template keys, D182,
-    D256 the dollar budget J2_USD_BUDGET), all text as J2
+    D422 the dollar budget J2_USD_BUDGET), all text as J2
     reads its environment. `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` are not engine settings: they name the run template this one request starts from and
     the workflows of it, and only the engine host reads them. A key left unset is left out of the dump. Anything else is refused (closed class), so a model reply or web request cannot reach live email,
     a Chrome path or a forced audit failure."""
@@ -644,7 +829,7 @@ class TaskSettings(Value):
     J2_DECIDE_FOR_ME: Literal["0", "1"] | None = None
     J2_RUN_TEMPLATE: Annotated[str, StringConstraints(pattern=rf"^{RUN_TEMPLATE_ID_RE}$")] | None = None      # a run template's id (D182)
     J2_RUN_TEMPLATE_WORKFLOWS: Annotated[str, StringConstraints(max_length=RUN_TEMPLATE_WORKFLOWS_MAX)] | None = None      # `all` or a comma list of workflow keys
-    J2_USD_BUDGET: Annotated[str, StringConstraints(max_length=10)] | None = None      # D256: dollars (API price), up to two decimals
+    J2_USD_BUDGET: Annotated[str, StringConstraints(max_length=10)] | None = None      # D422: dollars (API price), up to two decimals
 
     @field_validator("J2_RUN_TEMPLATE_WORKFLOWS")
     @classmethod
@@ -685,7 +870,7 @@ class UpstreamRef(Value):
 
 class RunSpec(Value):
     """`task.json` ("run-spec/1"): the strict writer of a document the engine's `TaskSpec` reads. `user_text` is the owner's
-    words verbatim (Identity starts from them); `framing` is the chat agent's paragraph, context only."""
+    words verbatim (Identity starts from them); `framing` is the chat agent's paragraph, context only. `node` is the optional identity block of a project's node (D283)."""
 
     schema_: Literal["run-spec/1"] = Field(TASK_SCHEMA, alias="schema")
     run_id: RunId
@@ -701,6 +886,15 @@ class RunSpec(Value):
     upstream: Annotated[list[UpstreamRef], Field(max_length=10)] = []
     settings: TaskSettings = TaskSettings()
     connector: Literal["auto", "claude", "codex", "stub"] = "auto"
+    node: NodeBlock | None = None            # who this run is inside a multi-agent project (D283): only for a node, and only while SUTRA_NODES_V1 is on
+
+    @model_serializer(mode="wrap")
+    def _no_node_unless_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """`task.json` is byte-identical to what it was before nodes existed whenever the run is not a node: the key is left out, not written as null."""
+        data = handler(self)
+        if data.get("node") is None:
+            data.pop("node", None)
+        return data
 
 
 # ---- the run events (events.jsonl) -----------------------------------------------------------------------------

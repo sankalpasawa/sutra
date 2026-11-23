@@ -26,8 +26,8 @@
          removeFile(key)
          send(text)                    POST /direct with the uploaded refs -> {ok, message_id} | {ok:false, error}; the files are kept on a refusal; a text over
                                        MAX_MESSAGE (8000) characters is refused first, in words, with nothing sent (QA direct-chat bug 7)
-         retry(lineId, text, {files})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
-                                       them; else text only, and the note says so)
+         retry(lineId, text, {files, mode})  the same line asked again, once: POST /direct with the same text (and the same files when this page sent
+                                       them; else text only, and the note says so). `mode` ("ask" | "do") is the line's own mode as the server stored it (DV-1)
          stop()                        POST /direct/stop; the turn ends when the stored reply (or the error line) arrives
          partial(data)                 a `chat.partial` of this chat adds to the streaming text (the ChatPill rules)
          resync()                      ask GET /api/chats/{sid} whether a direct turn answers: a turn this page does not know is shown with its Stop (a reload, a
@@ -52,7 +52,19 @@
      stopPress(event)                  false for the second click of a double-click: a double-click on Send would send, and as the label turns into Stop under
                                        the pointer stop the turn it just started. A deliberate (single, or keyboard) press is true.
 
-   Buttons carry data-act (composer-mode, composer-attach, composer-remove, composer-stop) and the panel that shows the bar listens for them.
+   Ask (DV-1, flag SUTRA_ASK_V1; the page turns it on only when the server's pill says `ask`): an Ask | Do switch in front of the box. Do is everything above, as it was.
+   Ask sends the same POST /direct with `mode: "ask"`: a read-only answer about the owner's folder whose sources Sutra checks. It always goes to the model, so while it is on the
+   team / model toggle is not shown and state.mode reads "direct" (without being remembered: a reload comes back in Do).
+         enableAsk(on)                 the page says whether Ask exists (the pill's `ask`); off puts a chat that was asking back in Do. Until it is on, nothing below exists
+         setAsk("ask" | "do")          the switch; false when Ask is not on
+         state.ask                     "ask" | "do" (not enumerable: the state of a page without Ask has exactly the keys it always had)
+         say(words)                    put a sentence in the note under the box
+         draft(text)                   "Turn this into work": leaves Ask, points Send at the team, and returns the text (at most MAX_MESSAGE characters) for the page to put in the
+                                       box. It never sends anything: the owner edits it and presses Send
+     fillBox(box, text)                put a draft in a message box: the words, the caret at the end, the box focused, an `input` event so the page saves and resizes it
+   With `bar(state, {ask: true})` the switch is drawn; without it the bar is exactly what it was.
+
+   Buttons carry data-act (composer-mode, composer-ask, composer-attach, composer-remove, composer-stop) and the panel that shows the bar listens for them.
    A classic script with ONE global, ChatComposer; in node it is module.exports. */
 (function (root) {
   "use strict";
@@ -76,6 +88,11 @@
   const SIZE_UNITS = ["B", "KB", "MB"];
 
   const idle = () => ({active: false, stopping: false, text: "", messageId: null});
+
+  // Ask (DV-1): the words of the switch. Simple words: what it reads, what it never does, that Sutra checks the sources.
+  const ASK_TITLE = "Ask: an answer about your folder. It only reads, it changes nothing, and Sutra checks every source it names.";
+  const DO_TITLE = "Do: tell the team what to do, or ask the model, as before.";
+  const ASK_NOTE = "Ask only reads your folder and changes nothing. Sutra checks every source the answer names.";
 
   function size(n) {
     let v = Number.isFinite(n) ? Math.max(0, n) : 0;
@@ -168,16 +185,23 @@
     const team = clean(labels.team) || "Tell the team";
     const direct = clean(labels.direct) || "Ask the model";
     const mode = s.mode === "direct" ? "direct" : "team";
-    const toggle = o.toggle === false ? "" : '<div class="ccmode" role="group" aria-label="Where this message goes">' +
+    const askOn = o.ask === true;                                             // Ask exists (DV-1): the switch is drawn, and while it is on the box always asks the model
+    const asking = askOn && s.ask === "ask";
+    const askSwitch = !askOn ? "" : '<div class="ccmode ccask" role="group" aria-label="What this message does">' +
+      '<button type="button" class="ccmode-opt' + (asking ? " on" : "") + '" data-act="composer-ask" data-ask="ask" aria-pressed="' + asking + '" title="' + esc(ASK_TITLE) + '">' + esc(clean(labels.ask) || "Ask") + "</button>" +
+      '<button type="button" class="ccmode-opt' + (asking ? "" : " on") + '" data-act="composer-ask" data-ask="do" aria-pressed="' + !asking + '" title="' + esc(DO_TITLE) + '">' + esc(clean(labels.do) || "Do") + "</button></div>";
+    const toggle = asking || o.toggle === false ? "" : '<div class="ccmode" role="group" aria-label="Where this message goes">' +
       '<button type="button" class="ccmode-opt' + (mode === "team" ? " on" : "") + '" data-act="composer-mode" data-mode="team" aria-pressed="' + (mode === "team") + '">' + esc(team) + "</button>" +
       '<button type="button" class="ccmode-opt' + (mode === "direct" ? " on" : "") + '" data-act="composer-mode" data-mode="direct" aria-pressed="' + (mode === "direct") + '">' + esc(direct) + "</button></div>";
-    if (mode !== "direct") return toggle;
+    // the team's route has no note of its own; with Ask available the page can say something there (a draft that could not be written), and only then
+    if (mode !== "direct") return askSwitch + toggle + (askOn && clean(s.note) !== "" ? '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>" : "");
     const CS = searchOf();
     const limit = CS ? CS.limitsNote() : "";
     const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' +
       '<input type="file" class="ccinput" multiple hidden tabindex="-1" aria-label="Choose files to attach"/><small>' + esc(limit) + "</small></div>";
     const note = clean(s.note) === "" ? "" : '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>";
-    return toggle + chips(s.files) + attach + note;
+    const about = asking ? '<p class="ccnote ccasknote">' + esc(ASK_NOTE) + "</p>" : "";
+    return askSwitch + about + toggle + chips(s.files) + attach + note;
   }
 
   function streamRow(state, provider) {
@@ -216,7 +240,7 @@
     const turn = isObj(s.turn) ? s.turn : idle();
     if (s.mode === "direct" && turn.active === true) return {label: turn.stopping === true ? "Stopping…" : "Stop", act: "composer-stop", disabled: turn.stopping === true};
     const uploading = (Array.isArray(s.files) ? s.files : []).some(x => isObj(x) && x.status === "uploading");
-    return {label: "Send", act: "send", disabled: f.disabled === true || (s.mode === "direct" && (uploading || f.blocked === true))};
+    return {label: s.ask === "ask" ? "Ask" : "Send", act: "send", disabled: f.disabled === true || (s.mode === "direct" && (uploading || f.blocked === true))};
   }
 
   /* ---------------------------------------------------------------- the controller */
@@ -247,6 +271,12 @@
     const rememberedMode = (() => { try { return modes && typeof modes.loadMode === "function" ? modes.loadMode(sid) : ""; } catch (e) { return ""; } })();
     let modeNow = rememberedMode !== "" ? rememberedMode : (o.mode === "direct" ? "direct" : "team");
     const state = {files: [], note: ""};
+    // Ask (DV-1): `askAllowed` is the page's word that the server has it; `askNow` the switch; `modeBefore` where Do goes back to (the team / model toggle, which Ask never remembers)
+    let askAllowed = false;
+    let askNow = "do";
+    let modeBefore = null;
+    const asking = () => askAllowed && askNow === "ask";
+    Object.defineProperty(state, "ask", {enumerable: false, configurable: true, get: () => (asking() ? "ask" : "do")});
     Object.defineProperty(state, "mode", {enumerable: true, configurable: true, get: () => modeNow, set: v => {
       const next = v === "direct" ? "direct" : "team";
       if (next === modeNow) return;
@@ -271,6 +301,11 @@
     let seq = 0;
     let pastes = 0;
     const sent = new Map();                 // owner line id -> the attachment refs this page sent with it (a Retry sends them again)
+    const modes_ = new Map();               // owner line id -> "ask" | "do": how this page sent it, so that a Retry is the same kind of turn (an Ask stays read only)
+    const remember = (id, asked) => { if (id !== null) { modes_.set(id, asked ? "ask" : "do"); while (modes_.size > 50) modes_.delete(modes_.keys().next().value); } };
+    // How a Retry asks (D350): the server stores the mode with the owner's line and the page passes it (`opts.mode`, from the line's own `mode`); a server that does not say, and a line this page
+    // sent itself, are told by what the page remembers; only then does the switch decide. The server never lets a Retry widen an Ask, whatever the page sends.
+    const askedBefore = (lineId, told) => (told === "ask" ? true : told === "do" ? false : (modes_.has(lineId) ? modes_.get(lineId) === "ask" : asking()));
     const base = "/api/chats/" + encodeURIComponent(sid);
     const urls = isObj(o.objectUrl) ? o.objectUrl : {
       create: file => (root.URL && typeof root.URL.createObjectURL === "function" ? root.URL.createObjectURL(file) : ""),
@@ -291,9 +326,57 @@
     };
 
     function setMode(mode) {
+      if (asking()) leaveAsk();                                         // the toggle is not drawn while asking; a program that sets the mode means it
       state.mode = mode === "direct" ? "direct" : "team";
       state.note = "";
       changed();
+    }
+
+    // Back to Do: the toggle comes back as it was before Ask. Nothing was remembered while asking, so nothing is undone in storage.
+    function leaveAsk() {
+      askNow = "do";
+      if (modeBefore !== null) modeNow = modeBefore;
+      modeBefore = null;
+    }
+
+    function enableAsk(on) {
+      const next = on === true;
+      if (next === askAllowed) return;
+      if (!next && asking()) { leaveAsk(); state.note = ""; }
+      askAllowed = next;
+      changed();
+    }
+
+    function setAsk(value) {
+      if (!askAllowed) return false;
+      const next = value === "ask" ? "ask" : "do";
+      if (next === askNow) return true;
+      if (next === "ask") {
+        modeBefore = modeNow;
+        askNow = "ask";
+        modeNow = "direct";                                             // Ask always goes to the model; set directly so the toggle's own memory is not touched
+      } else {
+        leaveAsk();
+      }
+      state.note = "";
+      changed();
+      return true;
+    }
+
+    // A sentence under the box (the same place as every other note of the composer): what the page wants the owner to know and that no other part of the composer says.
+    function say(words) {
+      state.note = clean(words);
+      changed();
+    }
+
+    // "Turn this into work": the owner leaves Ask and Send points at the team again (Plan with Sutra / Tell the team). The text is only RETURNED: the page puts it in the
+    // box. Nothing is posted here, ever.
+    function draft(value) {
+      if (asking()) leaveAsk();
+      state.mode = "team";
+      state.note = "";
+      changed();
+      return Array.from(text(value)).slice(0, MAX_MESSAGE).join("");
     }
 
     function removeFile(key) {
@@ -374,15 +457,18 @@
     }
 
     // One POST /direct: the turn is active while it travels and after it was accepted; a refusal ends it and says why.
-    async function ask(body, refs, names) {
-      if (live) return askLive(body, refs, names, null);
+    async function ask(body, refs, names, how) {
+      const asked = how === undefined ? asking() : how === true;           // a retry of a line that was an Ask asks again, whatever the switch says now
+      if (live) return askLive(body, refs, names, null, asked);
       state.turn = {active: true, stopping: false, text: "", messageId: null};
       state.note = "";
       changed();
       try {
         const payload = refs.length ? {text: body, attachments: refs, names} : {text: body};
+        if (asked) payload.mode = "ask";                                   // DV-1: only an Ask names a mode; a Do sends exactly what it always sent
         const accepted = await api.post(base + "/direct", payload);
         const id = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
+        remember(id, asked);
         if (state.turn.active) state.turn.messageId = id;
         if (id !== null && refs.length) {
           sent.set(id, {refs: refs.slice(), names: names.slice()});
@@ -406,7 +492,8 @@
       const o = isObj(opts) ? opts : {};
       const known = sent.get(Number(lineId));
       state.mode = "direct";
-      const out = live && Number.isInteger(Number(lineId)) && Number(lineId) > 0 ? await retryLive(Number(lineId), body, known) : (known ? await ask(body, known.refs, known.names) : await ask(body, [], []));
+      const how = askedBefore(Number(lineId), isObj(opts) ? opts.mode : undefined);
+      const out = live && Number.isInteger(Number(lineId)) && Number(lineId) > 0 ? await retryLive(Number(lineId), body, known, how) : (known ? await ask(body, known.refs, known.names, how) : await ask(body, [], [], how));
       if (out.ok && !known && Number.isFinite(o.files) && o.files > 0) {
         state.note = "Sent again without its files: attach them again to include them.";
         changed();
@@ -521,7 +608,7 @@
 
     // One POST /direct as a live turn: the page's own `client_id` goes with it, so the server's `turn.accepted`, the 202 and the stored line all name the same send
     // (one bubble, a repeated POST is `duplicate`, never a second turn). Stop pressed before the 202 is sent right after it.
-    async function askLive(body, refs, names, retryOf) {
+    async function askLive(body, refs, names, retryOf, asked) {
       const clientId = newId();
       live.dispatch({type: "send", clientId});
       pending = retryOf === null ? {clientId, text: body} : null;
@@ -529,7 +616,9 @@
       changed();
       try {
         const payload = refs.length ? {text: body, attachments: refs, names, client_id: clientId} : {text: body, client_id: clientId};
+        if (asked === true) payload.mode = "ask";                          // DV-1: only an Ask names a mode
         const accepted = await api.post(base + "/direct", payload);
+        if (isObj(accepted) && Number.isInteger(accepted.message_id)) remember(accepted.message_id, asked === true);
         return await acceptedLive(clientId, accepted, refs, names);
       } catch (e) {
         return failedLive(clientId, e);
@@ -566,18 +655,20 @@
 
     // The owner's Retry on a line whose turn failed or was stopped: the live route reuses the owner's line and runs a new try (no second bubble, no repeated side
     // effect of the owner's words); a server without the live chat has no such route and the words are sent again as they always were.
-    async function retryLive(lineId, body, known) {
+    async function retryLive(lineId, body, known, asked) {
       const clientId = newId();
       live.dispatch({type: "send", clientId, messageId: lineId});
       pending = null;
       state.note = "";
       changed();
       try {
-        const accepted = await api.post(base + "/direct/retry", {message_id: lineId, client_id: clientId});
+        const payload = {message_id: lineId, client_id: clientId};
+        if (asked === true) payload.mode = "ask";                           // DV-1: an Ask is retried as an Ask (read only, with its sources)
+        const accepted = await api.post(base + "/direct/retry", payload);
         return await acceptedLive(clientId, accepted, [], []);
       } catch (e) {
         live.dispatch({type: "clear"});
-        if (isObj(e) && e.status === 404) return known ? askLive(body, known.refs, known.names, null) : askLive(body, [], [], null);
+        if (isObj(e) && e.status === 404) return known ? askLive(body, known.refs, known.names, null, asked) : askLive(body, [], [], null, asked);
         if (isObj(e) && e.code === "not_retryable") {
           state.note = "That message was answered already.";
           changed();
@@ -668,13 +759,28 @@
       return pending;
     }
 
-    return {state: () => state, setMode, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
+    return {state: () => state, setMode, enableAsk, setAsk, draft, say, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
       live: () => live !== null, frame: raw => { if (live) live.frame(raw); }, reconnect: () => (live && project().active ? live.reconnect() : Promise.resolve(false)), setPolling: on => { if (live) live.setPolling(on); },
       offer: rows => (live ? live.offer(rows) : (Array.isArray(rows) ? rows : [])), liveView: () => (live ? live.view() : null), pendingLine: messages => (live ? pendingLine(messages) : null),
       close: () => { if (live) live.close(); }};
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, MAX_FILES, MAX_MESSAGE};
+  // A draft into a message box (DV-1, "Turn this into work"): the words, the caret at their end, the box focused, and an `input` event so the page saves the draft and
+  // resizes the box as it does for typing. It sends nothing; false when there is no box.
+  function fillBox(box, words) {
+    if (!box || typeof box !== "object") return false;
+    const value = text(words);
+    box.value = value;
+    try { if (typeof box.setSelectionRange === "function") box.setSelectionRange(value.length, value.length); } catch (e) { /* a box that cannot place a caret still has its words */ }
+    try { if (typeof box.focus === "function") box.focus(); } catch (e) { /* the words are in */ }
+    try {
+      const Ev = root.Event;
+      if (typeof box.dispatchEvent === "function" && typeof Ev === "function") box.dispatchEvent(new Ev("input", {bubbles: true}));
+    } catch (e) { /* no event, no autosave of this draft: the words are still in the box */ }
+    return true;
+  }
+
+  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, fillBox, MAX_FILES, MAX_MESSAGE};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

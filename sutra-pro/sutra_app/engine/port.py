@@ -49,6 +49,10 @@ class CallTag(BaseModel):
     # files, so each agent's folder text says what the TEAM may do and not only what its own tools do (D135): Identity's tools only read, and
     # it must not take that for a limit of the run. "none": nothing is said about the team. The router caps it by the owner's access choice.
     team_workspace: Literal["none", "read", "edit"] = "none"
+    # Who the call is for when the run is a node of a multi-agent project (D283): the node's id (`nd_<12 hex>`) and role. Empty for every other call, which is every call
+    # while SUTRA_NODES_V1 is off. They ride the tag so the usage row, the egress audit row and the router's allowance can name the node; they decide nothing here.
+    node_id: str = Field("", pattern=r"^(nd_[0-9a-f]{12})?$")
+    node_role: str = Field("", pattern=r"^(planner|worker|reviewer)?$")
 
 
 class Allowance(BaseModel):
@@ -74,6 +78,18 @@ class PortSpec(BaseModel):
     dept_id: str
     task_id: Optional[str] = None
     data_dir: str
+    # the app tools a node of a multi-agent project was granted (`sutra`, `github`; MAN-8, D298). Empty for every run there was before. The RouterPort puts them on the run's own agent-turn
+    # calls only, never on a builder-tools call (`run_tools`), so a grant of GitHub reads reaches the agents the engine asks and nothing else.
+    tools: tuple[str, ...] = ()
+    # the paths of the owner's folder a step of a project may change (MAN-10): the router narrows an editing call's tools to them. Empty for every run that is not a node and for a node with no scope.
+    scope: tuple[str, ...] = ()
+    slots: bool = False                           # SUTRA_NODES_SLOTS: the router takes a machine-wide slot (a lock file) for each model program it starts (MAN-12)
+    # what the frozen grant of a node says about its builder tools (D380): the tiers it holds and its commands level. The router takes a builder tools call of a node down to them. A node whose
+    # rights are not given gets the narrowest list; a call with no node in its tag is never touched.
+    node_tiers: tuple[int, ...] = ()
+    node_commands: str = "none"
+    project_id: str = ""                          # the project this node belongs to: its process reads what a call may still spend from the database before each builder call (D409, R-2)
+    node: bool = False                            # this process is a node's (its task file has a node block), whatever tiers the block carries: its router narrows every builder call (D407, m-8)
 
 
 class ToolGrant(BaseModel):

@@ -1,4 +1,4 @@
-"""The chat agent's prompts: four template files in `templates/` read with `str.format` (orchestrator 5.3, S4-fnodes-12).
+"""The chat agent's prompts: template files in `templates/` (four for the plan, a fifth, `nodeplan`, for a project's step requests, D306) read with `str.format` (orchestrator 5.3, S4-fnodes-12).
 
     render("decide", revision=..., digest=..., ...)    the text of one prompt
     PLACEHOLDERS                                       template name -> the placeholders it has (exactly these are passed)
@@ -25,12 +25,13 @@ __all__ = ["TEMPLATES", "PLACEHOLDERS", "PromptError", "template", "render", "fi
            "violation_lines", "changed_keys"]
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
-TEMPLATES = ("decide", "change", "assign", "retry")
+TEMPLATES = ("decide", "change", "assign", "retry", "nodeplan")
 PLACEHOLDERS: dict[str, frozenset[str]] = {
     "decide": frozenset({"revision", "digest", "conversation", "pending", "message", "notes", "field_digest", "schema"}),
     "change": frozenset({"revision", "digest", "field_digest", "message", "decision", "kind", "schema"}),
     "assign": frozenset({"digest", "field_digest", "message", "notes", "schema"}),
     "retry": frozenset({"n", "max", "violations", "delta"}),
+    "nodeplan": frozenset({"steps", "message", "schema"}),
 }
 
 

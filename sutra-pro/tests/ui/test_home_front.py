@@ -156,7 +156,7 @@ def test_the_box_starts_a_new_project_through_the_org_chat(browser, fake):
     browser.wait_for("document.getElementById('fdbox').value === ''")
 
 
-# D257: the Budget chip is a pill beside Go and a popover that opens below it (R1-8: above, it covered the text box). What the layout must keep,
+# D423: the Budget chip is a pill beside Go and a popover that opens below it (R1-8: above, it covered the text box). What the layout must keep,
 # open or closed: the row's height, the hint on its one line, and the popover inside the window and below the pill.
 LAYOUT_JS = """((row, hint) => {
   const r = document.querySelector(row), h = document.querySelector(hint), pill = r.querySelector('.bchippill'), pop = r.querySelector('.bchippop');
@@ -274,7 +274,7 @@ def test_home_custom_pill_is_the_box(browser, fake, screens_dir, theme, width):
 
 @browser_only
 def test_home_chip_sends_dollars_once_and_nothing_for_the_default(browser, fake):
-    """D257: nothing is sent for the default; a pick or a typed amount rides with the next request only as usd_budget; Custom applies as you type and a
+    """D423: nothing is sent for the default; a pick or a typed amount rides with the next request only as usd_budget; Custom applies as you type and a
     bad amount marks the box and changes nothing."""
     load(browser, fake, stage="1")
     browser.wait_for("document.querySelector('#fdbudget .bchippill') !== null")
@@ -324,7 +324,7 @@ def test_home_takes_the_owner_to_the_project_once_a_team_has_the_work(browser, f
 
 @browser_only
 def test_home_stop_after_send(browser, fake):
-    """D254: while the card shows the work this box started and its team's task is live, Go is Stop (box empty); typing turns it back into
+    """D420: while the card shows the work this box started and its team's task is live, Go is Stop (box empty); typing turns it back into
     Go; Stop asks first and on yes calls the stop ladder once with {} (no force); the team's task ends and Go is back."""
     load(browser, fake)                                                                # stage 2: the Web team's task tsk_a1b2c3d4e5f6 is live
     browser.js("""(() => { const S = HomePage.state(); S.front.sent = true; S.front.going = true;      // stay on Home (no landing)
@@ -347,8 +347,24 @@ def test_home_stop_after_send(browser, fake):
 
 
 @browser_only
+def test_home_stop_on_a_project_step_stops_the_project(browser, fake):
+    """D424: when the work this box started is a step of a project (its card carries project_id), Stop asks about the project and calls the project's own stop."""
+    load(browser, fake)
+    browser.js("""(() => { const S = HomePage.state(); S.front.sent = true; S.front.going = true;
+      S.messages.push({id: 900, role: "user", text: "A cafe site and its ads"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A cafe site",
+        project_id: "prj_bbbbbbbbbbbb"}});
+      HomePage.renderFront(); })()""")
+    browser.js("window.ASKED = []; window.confirm = q => { ASKED.push(q); return true; }")
+    browser.click("#fdsend")
+    browser.wait_for("document.getElementById('fdsend').textContent.trim() === 'Go'")
+    assert browser.js("ASKED") == ["Stop this project? What's built so far is kept."]
+    assert [(r["path"], r["body"]) for r in posts(fake, "/api/")] == [("/api/projects/prj_bbbbbbbbbbbb/stop", {})]
+    assert browser.console_errors == []
+
+
+@browser_only
 def test_needs_you_raise_input(browser, fake):
-    """D257: a dollar raise question on Home's Needs you card takes a typed amount (the suggested one filled in) and answers the team with
+    """D423: a dollar raise question on Home's Needs you card takes a typed amount (the suggested one filled in) and answers the team with
     "Add $N and keep going"; a bad amount marks the box and sends nothing."""
     load(browser, fake)
     browser.wait_for("document.querySelector('#fdattn .fdcard') !== null")

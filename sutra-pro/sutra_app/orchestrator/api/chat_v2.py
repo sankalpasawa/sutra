@@ -49,10 +49,11 @@ from sutra_app.library.gate import GATE
 from sutra_app.library.types import violation
 from sutra_app.orchestrator.api.chat import ID_PATTERN, respond
 from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token, services_of
-from sutra_app.orchestrator import direct_running
+from sutra_app.orchestrator import ask_mode, direct_running
 from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
 from sutra_app.orchestrator import live_checkpoint
+from sutra_app.orchestrator.chats import mode_of as stored_mode_of
 from sutra_app.orchestrator.chat_v2 import (DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch, attempts_stored, find_owner_line, last_outcome, newest_owner_line,
                                             next_attempt)
 from sutra_app.orchestrator.live_turn import LiveConfig, LiveTurn
@@ -168,8 +169,11 @@ def build_router() -> APIRouter:
                     shown["chat_model"] = shown.get("chat_model") or own.model
                     shown["chat_effort"] = shown.get("chat_effort") or own.effort
                 out.append(shown)
-            return {"providers": out, "chosen": own.provider or None, "kind": session.kind, "agent": ref.agent if ref is not None else None,
-                    "own": pick_dict(own), "effective": effective(conn, sid, _default_of(port))}
+            shown = {"providers": out, "chosen": own.provider or None, "kind": session.kind, "agent": ref.agent if ref is not None else None,
+                     "own": pick_dict(own), "effective": effective(conn, sid, _default_of(port))}
+            if ask_mode.ask_on(services_of(request)):          # DV-1: the page learns here that Ask exists; with the flag off the answer has no such key
+                shown["ask"] = True
+            return shown
 
         return respond(request, await run_blocking(read))
 
@@ -227,7 +231,6 @@ def build_router() -> APIRouter:
             raise AppError("validation", exc.user_message()) from None
         return respond(request, ref.model_dump(mode="json"))
 
-    @router.post("/chats/{sid}/direct", summary="Ask the chat model directly", dependencies=[Depends(require_token)])
     async def direct(request: Request, body: DirectIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         services = services_of(request)
         chats, port, attachments = _need(request, "chats"), _need(request, "chat_port"), _need(request, "attachments")
@@ -248,22 +251,29 @@ def build_router() -> APIRouter:
             # the model is told the owner's file name (cleaned), never the content hash the store keeps the file under
             named = clean_name(owner_names[n]) if owner_names else ""
             refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
+        # DV-1: the Ask mode, only when the flag is on and the request named `ask` (a request without a mode never gets here, and the flag off never reads one)
+        asking = (await run_blocking(ask_mode.begin, services, port, session, _clean(services, body.text), lambda value: _clean(services, value))
+                  if ask_mode.requested(request) == "ask" else None)
         if _live_on(services):
             return await _start_live(request, services, port, sid, said=_clean(services, body.text),
-                                     attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id)
+                                     attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id, ask=asking)
         if not direct_running.begin(sid):
             raise Busy("This chat is already answering")
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
-            message_id = await run_blocking(_store_user_line, services, sid, said, attached)
+            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None)
             direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
-            await run_blocking(_ground, services, port, sid)
+            await run_blocking(_ground, services, port, sid, asking is not None)
         except BaseException:
             direct_running.end(sid)
             raise
-        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs)))
+        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs) if asking is None else asking.turn_in(said, refs), 1, asking))
         return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
+
+    # DV-1: registered here, where the decorator was, with the route class that takes `mode` out of the body when the flag is on (orchestrator/ask_mode.py); inert while it is off
+    router.add_api_route("/chats/{sid}/direct", direct, methods=["POST"], summary="Ask the chat model directly", dependencies=[Depends(require_token)],
+                         route_class_override=ask_mode.AskRoute)
 
     @router.post("/chats/{sid}/direct/stop", summary="Stop the turn that is answering", dependencies=[Depends(require_token)])
     async def stop(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
@@ -285,7 +295,6 @@ def build_router() -> APIRouter:
             return respond(request, await run_blocking(live.snapshot))
         return respond(request, await run_blocking(_last_turn, services, sid))
 
-    @router.post("/chats/{sid}/direct/retry", status_code=202, summary="Answer the owner's last line again", dependencies=[Depends(require_token)])
     async def retry(request: Request, body: RetryIn, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
         services = services_of(request)
         chats, port = _need(request, "chats"), _need(request, "chat_port")
@@ -296,8 +305,11 @@ def build_router() -> APIRouter:
             raise ReadOnly("This chat was archived. Open the team's current chat to write.")
         if not session.writable or session.kind not in ("org", "department", "division"):
             raise ReadOnly("This chat cannot be asked directly")
-        return await _retry_live(request, services, port, sid, body)
+        return await _retry_live(request, services, port, sid, body, session)
 
+    # the same route as ever, in the same place (the order of /openapi.json is the order of registration); `AskRoute` is inert while the flag is off (orchestrator/ask_mode.py)
+    router.add_api_route("/chats/{sid}/direct/retry", retry, methods=["POST"], status_code=202, summary="Answer the owner's last line again",
+                         dependencies=[Depends(require_token)], route_class_override=ask_mode.AskRoute)
     return router
 
 
@@ -307,13 +319,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None) -> int | None:
+          src_ref: str | None = None, mode: str | None = None) -> int | None:
     """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
     not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
-            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now()), ctx=tx.ctx))
+            kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now(),
+            **({"mode": mode} if mode else {})), ctx=tx.ctx))
     return None if out is None else out.id
 
 
@@ -332,19 +345,19 @@ def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: s
         for e in endings:
             out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
                 kind=e.kind, session_id=sid, role="agent", who="sutra", text=redact(e.text)[:200_000], blocks=e.blocks, ordered=e.ordered, via=e.via,
-                src_ref=e.src_ref, at=tx.now()), ctx=tx.ctx))
+                src_ref=e.src_ref, at=tx.now(), **({"card": e.card} if isinstance(e, direct_turns.CardEnding) else {})), ctx=tx.ctx))
             ids[e.src_ref] = None if out is None else out.id
         if drop_generation:
             live_checkpoint.drop(tx, drop_generation)
     return ids
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None) -> int:
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
     start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
     `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
     ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
-    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref)
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode)
     if stored is None:                                      # the ref was stored already: this is the same line
         found = find_owner_line(services.db.conn(), sid, client_id or "")
         if found is None:
@@ -353,16 +366,16 @@ def _store_user_line(services: Any, sid: str, text: str, attached: str = "", cli
     return stored
 
 
-def _ground(services: Any, port: Any, sid: str) -> None:
+def _ground(services: Any, port: Any, sid: str, ask: bool = False) -> None:
     """The session's system text for this turn: the node's own record and the rules (`orchestrator/chat_ground.py`), rebuilt every turn so it
-    is current. A grounding that cannot be built or written is logged and the turn runs without a new one; it never fails the turn."""
+    is current. A grounding that cannot be built or written is logged and the turn runs without a new one; it never fails the turn. `ask` (DV-1) adds the Ask mode's words."""
     try:
-        port.set_system(sid, ground(services, sid))
+        port.set_system(sid, ground(services, sid, ask=True) if ask else ground(services, sid))
     except Exception:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
 
 
-def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, attempt: int = 1) -> None:
+def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, attempt: int = 1, ask: "ask_mode.AskTurn | None" = None) -> None:
     """The turn, on a worker thread: partials out as control events, the stored reply once at the end. A stop keeps what was written
     with a calm note; a failure keeps it with the real reason (direct_turns). `attempt` is the try of the owner's line (1; N for a retry): it names the refs
     the endings are stored under (D216)."""
@@ -396,7 +409,10 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
         flush()
         if done is None:
             raise RuntimeError("the turn ended without a result")
-        _post_all(services, sid, finished(user_message_id, done, attempt))
+        endings = finished(user_message_id, done, attempt)
+        if ask is not None:                                          # DV-1: the card of the answer's sources, in the same transaction as the answer
+            endings = ask.with_card(endings, user_message_id, attempt, str(done.get("text") or ""), done.get("blocks"))
+        _post_all(services, sid, endings)
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         flush()
         log.warning("direct chat turn failed for %s: %s", sid, type(exc).__name__)
@@ -404,6 +420,8 @@ def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: Chat
             endings = stopped(user_message_id, shown, attempt)
         else:
             message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
+            if ask is not None and ask_mode.failure_words(exc):      # DV-1: the limit of an Ask, in plain words
+                message = ask_mode.failure_words(exc)
             if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
                 message += " Ask for a shorter answer, or say \"continue\"."
             endings = failed(user_message_id, shown, message, attempt)
@@ -429,7 +447,8 @@ def _duplicate(sid: str, services: Any, client_id: str, message_id: int | None, 
         "generation_id": live.generation_id if live is not None else None})
 
 
-async def _start_live(request: Request, services: Any, port: Any, sid: str, *, said: str, attached: str, refs: list, client_id: str | None) -> RedactedJSONResponse:
+async def _start_live(request: Request, services: Any, port: Any, sid: str, *, said: str, attached: str, refs: list, client_id: str | None,
+                      ask: "ask_mode.AskTurn | None" = None) -> RedactedJSONResponse:
     """One send as a live turn. The order matters (D220): look the `client_id` up, claim the chat (which also creates the stop token), store the owner's line, ground the chat,
     build and bind the live turn, publish `turn.accepted` (seq 1), and only then return the 202."""
     if client_id:
@@ -445,9 +464,9 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     generation = uuid.uuid4().hex
     live: LiveTurn | None = None
     try:
-        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id)
+        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None)
         direct_running.attach(sid, message_id)
-        await run_blocking(_ground, services, port, sid)
+        await run_blocking(_ground, services, port, sid, ask is not None)
         live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)
         direct_running.bind(sid, live)
         live.start()
@@ -459,7 +478,8 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
             live.close()
         direct_running.end(sid)
         raise
-    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs), live, 1))
+    turn = ChatTurnIn(text=said, attachments=refs) if ask is None else ask.turn_in(said, refs)
+    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, message_id, turn, live, 1, ask))
     return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", "generation_id": generation, "attempt_no": 1,
                                                           "client_id": client_id or _client_of_line(services, sid, message_id)})
 
@@ -475,19 +495,23 @@ def _new_live(services: Any, sid: str, message_id: int, generation: str, client_
                     db=services.db, redact=services.redact, config=LiveConfig.from_settings(services.settings))
 
 
-async def _retry_live(request: Request, services: Any, port: Any, sid: str, body: RetryIn) -> RedactedJSONResponse:
+async def _retry_live(request: Request, services: Any, port: Any, sid: str, body: RetryIn, session: Any = None) -> RedactedJSONResponse:
     """Answer the owner's newest line again: the same owner line, a new generation, attempt-scoped refs (D216). Only a failed or stopped try can be retried."""
-    def check() -> tuple[str, int]:
+    def check() -> tuple[str, int, str | None]:
         conn = services.db.conn()
-        row = conn.execute("SELECT id, role, text, src_ref FROM chat_messages WHERE id = ? AND session_id = ?", (body.message_id, sid)).fetchone()
+        row = conn.execute("SELECT id, role, text, src_ref, meta_json FROM chat_messages WHERE id = ? AND session_id = ?", (body.message_id, sid)).fetchone()
         if row is None or row["role"] != "user" or not str(row["src_ref"] or "").startswith(DIRECT_ASK):
             raise NotFound("that line")
         if newest_owner_line(conn, sid) != body.message_id:
             raise AppError("not_retryable", "Only the last question of a chat can be answered again.")
         if last_outcome(conn, sid, body.message_id) == "done":
             raise AppError("not_retryable", "That question was answered. Ask it again as a new message.")
-        return str(row["text"]), next_attempt(conn, sid, body.message_id)
-    text, attempt = await run_blocking(check)
+        return str(row["text"]), next_attempt(conn, sid, body.message_id), stored_mode_of(row["meta_json"])
+    text, attempt, line_mode = await run_blocking(check)
+    said = re.sub(r"\n\(attached: [^\n]*\)$", "", text)          # the files of the first send cannot be sent again: the question can
+    # DV-1 (D350): the mode of the owner's line is stored with it. A retry of an Ask is an Ask whatever the body says (a body that names `do` is refused); a body may only narrow: `ask` on a line that was not
+    wanted = ask_mode.retry_mode(line_mode, ask_mode.requested(request))
+    asking = await run_blocking(ask_mode.begin, services, port, session, said, lambda value: _clean(services, value)) if wanted == "ask" else None
     claim = direct_running.begin_turn(sid, body.client_id)
     if isinstance(claim, direct_running.Busy):
         raise Busy("This chat is already answering")
@@ -497,7 +521,7 @@ async def _retry_live(request: Request, services: Any, port: Any, sid: str, body
         if attempt > direct_turns.MAX_ATTEMPT:
             raise AppError("not_retryable", "That question was already answered again as often as the chat allows.")
         direct_running.attach(sid, body.message_id)
-        await run_blocking(_ground, services, port, sid)
+        await run_blocking(_ground, services, port, sid, asking is not None)
         live = _new_live(services, sid, body.message_id, generation, body.client_id, attempt, claim.token)
         direct_running.bind(sid, live)
         live.start()
@@ -509,8 +533,8 @@ async def _retry_live(request: Request, services: Any, port: Any, sid: str, body
             live.close()
         direct_running.end(sid)
         raise
-    said = re.sub(r"\n\(attached: [^\n]*\)$", "", text)          # the files of the first send cannot be sent again: the question can
-    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, body.message_id, ChatTurnIn(text=said), live, attempt))
+    turn = ChatTurnIn(text=said) if asking is None else asking.turn_in(said, [])
+    asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, body.message_id, turn, live, attempt, asking))
     return RedactedJSONResponse(status_code=202, content={"message_id": body.message_id, "turn": "started", "generation_id": generation, "attempt_no": attempt,
                                                           "client_id": body.client_id})
 
@@ -544,14 +568,16 @@ def _last_turn(services: Any, sid: str) -> dict[str, Any]:
     return out
 
 
-def _failure_text(exc: BaseException) -> str:
+def _failure_text(exc: BaseException, ask: "ask_mode.AskTurn | None" = None) -> str:
+    if ask is not None and ask_mode.failure_words(exc):               # DV-1: the limit of an Ask, in plain words
+        return ask_mode.failure_words(exc)
     message = exc.user_message() if isinstance(exc, ConnectorError) else (exc.message if isinstance(exc, AppError) else "The model could not answer.")
     if isinstance(exc, ReplyTruncatedError):                 # the part that was written is kept above; say what the owner can do next
         message += " Ask for a shorter answer, or say \"continue\"."
     return message
 
 
-def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, live: LiveTurn, attempt: int) -> None:
+def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, live: LiveTurn, attempt: int, ask: "ask_mode.AskTurn | None" = None) -> None:
     """The turn, on a worker thread, as a live turn: the port's events go to the live turn, which publishes them; the reply is stored once at the end, in one transaction with the
     deletion of its checkpoint, and only then does `turn.done` go out (so a page that hears it can fetch the stored message). A Stop keeps what was written (and the tools that
     ran, ended `interrupted`) with a calm note; a failure keeps it with the real reason. `live.close()` and `direct_running.end` run whatever happens."""
@@ -571,7 +597,10 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
         plain = "".join(str(b.get("text") or "") for b in stored["blocks"] if isinstance(b, dict) and b.get("type") == "text")
         if str(done.get("text") or "") == plain and plain:            # the provider's text is the blocks' text run together: store it as the page draws it, paragraphs apart
             stored["text"] = join_text((b.get("type") == "text", str(b.get("text") or "")) for b in stored["blocks"] if isinstance(b, dict))
-        ids = _post_all(services, sid, finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier"), via=live.via()), drop_generation=live.generation_id)
+        endings = finished(user_message_id, stored, attempt, ordered=True, earlier=done.get("earlier"), via=live.via())
+        if ask is not None:                                          # DV-1: the card of the answer's sources, in the same transaction as the answer
+            endings = ask.with_card(endings, user_message_id, attempt, str(stored["text"]), stored.get("blocks"))
+        ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
         live.finish(ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0, {**done, "text": stored["text"]})
     except Exception as exc:                                         # a failed turn is a message, not a lost line
         log.warning("live direct chat turn failed for %s: %s", sid, type(exc).__name__)
@@ -583,13 +612,13 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
             if isinstance(exc, CallCancelledError):
                 endings = stopped(user_message_id, shown, attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             else:
-                endings = failed(user_message_id, shown, _failure_text(exc), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
+                endings = failed(user_message_id, shown, _failure_text(exc, ask), attempt, blocks=blocks, ordered=True, earlier=earlier, via=live.via())
             ids = _post_all(services, sid, endings, drop_generation=live.generation_id)
             reply = ids.get(direct_turns.ref_of(user_message_id, "", attempt)) or 0
             if isinstance(exc, CallCancelledError):
                 live.stopped(reply)
             else:
-                live.failed(_failure_text(exc), getattr(exc, "code", "failed") if isinstance(exc, ConnectorError) else "failed", reply)
+                live.failed(_failure_text(exc, ask), getattr(exc, "code", "failed") if isinstance(exc, ConnectorError) else "failed", reply)
         except Exception:
             log.exception("could not store the failed turn of %s", sid)
     finally:

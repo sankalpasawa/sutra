@@ -24,11 +24,12 @@ from sutra_app.engine.port import (
 
 def test_call_tag_has_exactly_these_fields_and_defaults():
     assert list(CallTag.model_fields) == ["run_id", "dept_id", "task_id", "function", "role", "stage", "step", "cycle",
-                                          "call_no", "atom", "purpose", "workspace", "team_workspace"]
+                                          "call_no", "atom", "purpose", "workspace", "team_workspace", "node_id", "node_role"]
     tag = CallTag()
     assert (tag.run_id, tag.dept_id, tag.task_id, tag.function, tag.role, tag.stage) == ("", "", None, "", None, None)
     assert (tag.step, tag.cycle, tag.call_no, tag.atom, tag.purpose) == (0, 0, 0, None, "agent_turn")
     assert (tag.workspace, tag.team_workspace) == ("none", "none")
+    assert (tag.node_id, tag.node_role) == ("", "")                       # empty unless the run is a node of a project (D283)
 
 
 def test_call_tag_is_frozen_and_closed():
@@ -89,7 +90,7 @@ def test_allowance_accepts_the_envelope_of_one_request():
 
 
 def test_port_spec_has_exactly_its_fields():
-    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir"]
+    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir", "tools", "scope", "slots", "node_tiers", "node_commands", "project_id", "node"]       # `tools` added on purpose (MAN-8, D298); the last two (D380): the grant's tiers and commands level, empty for every run that is not a node
     spec = PortSpec(mock=False, run_id="j2-1", dept_id="web", data_dir="/tmp/d")
     assert (spec.connector, spec.task_id) == ("auto", None)
     with pytest.raises(ValidationError):

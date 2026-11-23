@@ -243,7 +243,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E24e", '`<a href="${esc(`/library?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow',
          '`<a href="${esc(`${SutraCtx.libraryPath}?view=artifacts&run=${encodeURIComponent(s.made_by.run)}`)}">${esc(s.made_by.run)}</a> ${esc(s.made_by.workflow', 1),
     Edit("E24f", 'const rtHref = (id, keys) => `/?view=simple&template=', 'const rtHref = (id, keys) => `${SutraCtx.pagePath}?view=simple&template=', 1),
-    # E25 (D257, amends D251 and D252): the start page's Budget chip (budget_chip.js) in dollars (API price): the team's own budget (GET
+    # E25 (D423, amends D251 and D252): the start page's Budget chip (budget_chip.js) in dollars (API price): the team's own budget (GET
     # /api/engine/settings?dept=, effective.usd_budget), drawn once that answers; half, double or a typed amount go with this request only as
     # `usd_budget` (the route makes it the task setting J2_USD_BUDGET). Nothing is sent for the team default.
     Edit("E25a", '<div class="schips" id="schips"></div><button class="sgo" id="lsend" type="submit"',
@@ -254,14 +254,14 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E25d", '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; '
                  '$("lsend").disabled = true; sendText(t); });',
          _lines(
-             "// E25 (D257): the Budget chip in dollars (API price); null is the team's own budget, so nothing is sent",
+             "// E25 (D423): the Budget chip in dollars (API price); null is the team's own budget, so nothing is sent",
              "let LCHIP = null;",
              'document.addEventListener("DOMContentLoaded", () => { if (!window.BudgetChip || !$("lbudget")) return;',
              '  SutraCtx.api.get("/api/engine/settings", {dept: SutraCtx.dept}).then(s => { const v = s && s.effective && s.effective.usd_budget;',
              '    if (Number.isFinite(v)) LCHIP = BudgetChip.mount($("lbudget"), v, "team"); }).catch(() => {}); });',
              '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; const b = LCHIP ? LCHIP.value() : null; '
              '$("lbox").value = ""; $("lsend").disabled = true; sendText(t, b); if (LCHIP) LCHIP.reset(); });'), 1),
-    # E26 (D254): the studio's send button is Stop while the team's run is live: always while it works (the box is disabled), and while it waits
+    # E26 (D420): the studio's send button is Stop while the team's run is live: always while it works (the box is disabled), and while it waits
     # for an answer until the owner types. Stop asks first, then calls the existing stop ladder (POST /api/tasks/{id}/stop, no force).
     Edit("E26a", '<button class="sgo" id="ssend" type="submit" aria-label="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
                  'stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>',
@@ -269,11 +269,11 @@ PAGE_EDITS: tuple[Edit, ...] = (
          'stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><svg data-icon="stop" width="13" height="13" '
          'viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg></button></form>', 1),
     Edit("E26b", '$("sbox").disabled = $("ssend").disabled = busy;',
-         'const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D254)', 1),
+         'const stop = sStopOn(s); $("sbox").disabled = busy; $("ssend").disabled = busy && !stop; sStopMode(stop);      // E26 (D420)', 1),
     Edit("E26c", '$("sform").addEventListener("submit", e => { e.preventDefault(); const t = $("sbox").value.trim(); if (!t || $("sbox").disabled) return; '
                  '$("sbox").value = ""; sendText(t); });',
          _lines(
-             "// E26 (D254): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only",
+             "// E26 (D420): Stop while this team's run is live (not a saved run): always while it works, and while it waits for an answer only",
              "// until the owner types. Stop asks first, then calls the stop ladder once; 409 means the run already ended: refresh only",
              'function sStopOn(s){ return !!s && !s.saved && (s.status === "running" || (!!s.paused && !$("sbox").value.trim())); }',
              'function sStopMode(on){ const b = $("ssend"); b.dataset.stop = on ? "1" : ""; b.setAttribute("aria-label", on ? "Stop the run" : "Send");',
@@ -289,12 +289,12 @@ PAGE_EDITS: tuple[Edit, ...] = (
              '$("sbox").addEventListener("input", () => { if (!state) return; const stop = sStopOn(state); $("ssend").disabled = $("sbox").disabled && !stop; sStopMode(stop); });',
              '$("sform").addEventListener("submit", e => { e.preventDefault(); if ($("ssend").dataset.stop === "1") return sStop(); const t = $("sbox").value.trim(); '
              'if (!t || $("sbox").disabled) return; $("sbox").value = ""; sendText(t); });'), 1),
-    # E27 (D257): a dollar raise question's card takes a typed amount (budget_chip.js raiseHtml), the suggested one filled in; it sends
+    # E27 (D423): a dollar raise question's card takes a typed amount (budget_chip.js raiseHtml), the suggested one filled in; it sends
     # "Add $N and keep going", which the engine reads (P26 parse_usd); a bad amount marks the box and sends nothing. The option tail "[adds $Z]"
     # is stripped like the credits one.
     Edit("E27a", '  else h += `<div class="own"><input aria-label="Your answer"', '  else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer"', 1),
     Edit("E27b", "function sCardClick(e){",
-         _lines("function sRaise(s, kind, live){      // E27 (D257): the raise input, only on a live dollar question whose continue option adds dollars",
+         _lines("function sRaise(s, kind, live){      // E27 (D423): the raise input, only on a live dollar question whose continue option adds dollars",
                 '  const q = live && (kind === "limit" || kind === "ruling_budget") && s.paused && (s.paused.questions || [])[0], dollars = q && (q.options || []).some(o => /^Add \\$/.test(o));',
                 "  const add = dollars ? Math.max(0, ...(q.budget || []).map(Number).filter(Number.isFinite)) : 0;",
                 '  return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }',
@@ -304,7 +304,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
                 '    if (n === null){ if (i) i.setAttribute("aria-invalid", "true"); return; } return sendText("Add $" + n + " and keep going"); }',
                 '  const inp = c.querySelector(".own input");', ""), 1),
     Edit("E27d", r"\[adds \d+ (?:units|work credits)[^\]]*\]", r"\[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]", 2),
-    # E27e (D256 R2-2): the ruling's dollar question is an approval card; it takes a typed amount too, above Approve / Not now
+    # E27e (D422 R2-2): the ruling's dollar question is an approval card; it takes a typed amount too, above Approve / Not now
     Edit("E27e", '  if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">',
          '  if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">', 1),
 )

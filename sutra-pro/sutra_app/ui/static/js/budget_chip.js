@@ -1,4 +1,4 @@
-/* budget_chip.js - the Budget chip (D257): what one run may use, in dollars (API price), on the home box and the team page's start form.
+/* budget_chip.js - the Budget chip (D423): what one run may use, in dollars (API price), on the home box and the team page's start form.
 
    A pill beside Go reads "$20 budget ▾". It opens a popover above it (an overlay: the row under it never moves) titled "Run budget": one row of
    pills, half, the default (tagged "default"), double and Custom, and the line "Asks before going over · estimated at API prices, not billed."

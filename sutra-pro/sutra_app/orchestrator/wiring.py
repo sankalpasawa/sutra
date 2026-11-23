@@ -21,6 +21,7 @@ import asyncio
 import logging
 import sys
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from typing import Any
 
 import sutra_app
@@ -48,7 +49,10 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.departments import DepartmentStore
 from sutra_app.orchestrator.events import EventBus
 from sutra_app.orchestrator.graph import GraphStore
+from sutra_app.orchestrator.killswitch import KillSwitch, NodeControl
 from sutra_app.orchestrator.limits import LIMITS_FILE, Limits
+from sutra_app.orchestrator.nodes_store import NodeStore, has_waiting_node_tasks, held_while_off
+from sutra_app.orchestrator.projects import ProjectService, default_output_name, default_output_of
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock
 from sutra_app.orchestrator.notes import prompt_notes
 from sutra_app.orchestrator.projector import Projector
@@ -77,6 +81,8 @@ class AppServices(Services):
     chat_port: Any = None              # ChatPort over the router (ABS-1), for the direct chat routes
     attachments: Any = None            # the attachment service (ABS-4)
     recurring: Any = None              # the schedules of recurring work and their ticker (GAP2 routines-limits)
+    projects: Any = None               # the `ProjectService` (MAN-5); built only while SUTRA_NODES_V1 is on
+    node_control: Any = None           # `killswitch.NodeControl`: the kill switch, pause and node stop; built only while SUTRA_NODES_V1 is on (MAN-4)
     limits: Any = None                 # the monthly spending limit and the plan-window guard, TaskService's start gate (GAP2 routines-limits)
     agent_chat: Any = None             # `AgentAsk.turn`: a function's question as a turn of its own chat session, for POST /api/ask (J2 sync 4, D147); the engine's routes read it optionally
     send_setting: Any = None           # what the engine's POST /api/settings calls: a setting as an inbox line to the team's live run (J2 sync 4)
@@ -173,6 +179,9 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     router = build_connector_router(router_settings, usage_sink=usage, events=lambda type_, data: bus.publish_one(type_, data),
                                     transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
                                     replybook=demo_book() if router_settings.offline else None, redactor=redactor)
+    if settings.slots_on and not router_settings.offline:                     # SUTRA_NODES_SLOTS: the model-program limits count the whole computer, engine processes too (MAN-12)
+        from sutra_app.connectors.slots import SlotPool
+        router.slots = SlotPool(settings.data_dir / "connectors" / "slots", {name: router.policy.max_concurrency(name) for name in ("claude", "codex") if name in router.policy.providers})
     port = connector if connector is not None else AsyncConnector(router)
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
     attachments = Attachments(settings.data_dir)
@@ -184,15 +193,37 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
+    node_control = projects = None
+    if settings.nodes_v1:                                  # multi-agent nodes, D254: with the flag off nothing of it is built, watched or gated
+        node_control = NodeControl(KillSwitch(settings.nodes_dir, clock=clock), tasks=tasks, db=db, store=NodeStore(db, ids=ids, redact=redactor), clock=clock,
+                                   kick=tasks.start_ready)
+        tasks.spawn_guard = node_control.spawn_guard
+
+        def owner_access() -> str:                         # what the owner allowed in the working folder: none (no folder), read, or edit
+            folders = getattr(router, "folders", None)
+            grant = folders.grant() if folders is not None else None
+            return "none" if grant is None else ("edit" if getattr(grant, "edit", False) else "read")
+
+        projects = ProjectService(db, store=node_control.store, ids=ids, clock=clock, settings=settings, owner_access=owner_access,
+                                  output_of=default_output_of(settings.data_dir), output_name=default_output_name(settings.data_dir), node_control=node_control, tasks=tasks, chats=chats,
+                                  owner_decides=_owner_decides(settings.data_dir), providers=_providers_of(port), monthly_limit=limits.monthly_limit, folder_of=lambda: (str(router.folders.grant()) if getattr(router, "folders", None) is not None and router.folders.grant() is not None else None))
+        node_control.projects = projects
+        tasks.task_gate = projects.gate                    # the Conductor's gate asks the switch and the grant first (`node_control.gate`), then the project's own rules (D303)
+        tasks.node_usd_left = projects.usd_left                # a step's dollar cap is what the project and the owner's month have left when it starts (D381)
+        tasks.before_prepare = projects.conductor.warm_scopes   # the links of the steps' scopes are looked at before the start transaction opens (N-6)
+        tasks.node_sync = projector.node_sync = projects.sync_task
+        projector.before_drain = projects.prepare_handoff
+        if settings.slots_on:                              # SUTRA_NODES_SLOTS: a node's heartbeat-only batches are not written every time (MAN-12)
+            projector.coalesce = lambda tx, row: tx.conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
-                        publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor)
+                        publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor, projects=projects)
     return AppServices(
         settings=settings, version=sutra_app.__version__, db=db, redact=redactor, clock=clock, ids=ids,
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
-        limits=limits, agent_chat=agent_chat, send_setting=tasks.send_setting)
+        limits=limits, agent_chat=agent_chat, send_setting=_send_setting(tasks, projects), node_control=node_control, projects=projects)
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------
@@ -215,6 +246,53 @@ def refresh_function_nodes(services: Services) -> int:
     return changed
 
 
+def _send_setting(tasks: Any, projects: Any) -> Callable[[str, dict], Any]:
+    """What the engine's `POST /api/settings` calls: the setting goes to the team's live run as before; and when the owner turns Decide for me ON, the open questions of the team's projects are
+    answered at once (P2, D319). Turning it off changes nothing for a question already asked."""
+    if projects is None:
+        return tasks.send_setting
+
+    def send(dept_id: str, setting: dict) -> Any:
+        sent = tasks.send_setting(dept_id, setting)
+        if setting.get("decide_for_me") is True:
+            try:
+                if projects.owner_turned_on(dept_id):
+                    tasks.kick()                              # thread-safe: the route runs this in a worker thread, which has no loop of its own (PA-1)
+            except Exception:                               # noqa: BLE001  (a setting must still be kept when the projects cannot be reached)
+                log.exception("could not apply Decide for me to the open questions")
+        return sent
+    return send
+
+
+def _providers_of(router: Any) -> Callable[[], list[str]]:
+    """The model programs that are installed and not known to be signed out: what the reviewer may pick from (MAN-11)."""
+    def names() -> list[str]:
+        status = router.status() if hasattr(router, "status") else {}
+        return [name for name, entry in dict(status).items() if name in ("claude", "codex") and isinstance(entry, dict) and entry.get("installed", True) and entry.get("signed_in") is not False]
+    return names
+
+
+def _owner_decides(data_dir: Any) -> Callable[[Any], bool]:
+    """The owner's own Decide for me setting (the Simple view's switch, `POST /api/settings`: kept in a team's `page.json` as `next_settings.J2_DECIDE_FOR_ME`; else the engine setting, `engine.json`
+    or `J2_DECIDE_FOR_ME`): true when it is on for ANY team of the plan (D319). Read when the project is reserved; never raises."""
+    def on(depts: Any) -> bool:
+        try:
+            import os
+            from sutra_app.engine.api import ctx as page_ctx
+            from sutra_app.engine.spec import read_settings_file
+            from pathlib import Path
+            engine = read_settings_file(Path(data_dir) / "engine.json") or {}
+            fallback = bool(engine.get("decide_for_me")) or os.environ.get("J2_DECIDE_FOR_ME") == "1"
+            for dept in depts:
+                kept = page_ctx.read_page(data_dir, dept).next_settings.get("J2_DECIDE_FOR_ME")
+                if kept == "1" or (kept is None and fallback):
+                    return True
+            return False
+        except Exception:                                   # noqa: BLE001  (an unreadable setting means the owner answers)
+            return False
+    return on
+
+
 async def start_services(services: AppServices) -> AppServices:
     """Orchestrator 5.1 steps 2, 3, 5, 6 and 7, in this order: migrate; sync an existing template library with the seed (D144: adds what a
     newer seed has, once per seed, never overwrites, never stops the start); bootstrap the chart when there is no root; sweep empty
@@ -226,6 +304,8 @@ async def start_services(services: AppServices) -> AppServices:
         return services
     from sutra_app.ops.doctor import sync_seed_once         # the ops package is not imported by `import sutra_app` (D144)
     await run_blocking(services.db.migrate)
+    if not services.settings.nodes_v1 and await run_blocking(lambda: has_waiting_node_tasks(services.db.conn())):
+        services.tasks.task_gate = held_while_off           # the flag was turned off while a project's steps were waiting: they stay held, never run as ordinary tasks (D313)
     await run_blocking(sync_seed_once, services.settings.data_dir)          # an existing template library gains what a newer seed has, once per seed; never raises
     await run_blocking(services.chart.bootstrap)
     services.tasks.bind_loop(asyncio.get_running_loop())
@@ -234,6 +314,8 @@ async def start_services(services: AppServices) -> AppServices:
     services.reconciled = await reconcile(
         tasks=services.tasks.store, projector=services.projector, watcher=services.watcher, launcher=services.launcher,
         publish=services.bus.publish_one, clock=services.clock)
+    if services.projects is not None:                       # nodes follow the tasks reconcile settled; an open gate left by a closed app is refused (D277, D296)
+        await services.projects.reconcile_projects()
     await run_blocking(services.tasks.reconcile_choices)          # the agents' picks of every live run are rebuilt from the database (D131)
     marked = await run_blocking(recover_interrupted, services.db, services.chats)     # a direct turn the last process did not finish gets its error line
     if marked:
@@ -241,6 +323,10 @@ async def start_services(services: AppServices) -> AppServices:
     services.interrupted = await run_blocking(services.runner.recover)         # an owner line the last run accepted and never answered becomes an error with Retry
     if services.recurring is not None:                      # the one catch-up for the time the app was away, before the first start_ready
         await services.recurring.start()
+    if services.node_control is not None:                   # a KILL file the owner made by hand is acted on within two seconds, and one that was there at the start before anything starts
+        await services.node_control.enforce()
+        services.node_control.start_watching()
+        services.projects.start_ticking()
     await services.tasks.start_ready()
     services.started = True
     services.stopped = False
@@ -269,6 +355,10 @@ async def stop_services(services: AppServices) -> None:
         return
     services.stopped = True
     services.started = False
+    if services.projects is not None:
+        await _quietly("project tick", services.projects.stop_ticking, services)
+    if services.node_control is not None:
+        await _quietly("node switch watcher", services.node_control.stop_watching, services)
     if services.recurring is not None:                      # first: no schedule may make a task while the rest closes
         await _quietly("scheduler", services.recurring.stop, services)
     await _quietly("turn runner", services.runner.close, services)

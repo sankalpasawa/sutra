@@ -110,7 +110,7 @@ def test_saved_goes_as_soon_as_a_field_of_its_group_is_edited_again(browser, fak
     browser.type("#set-notices [data-input=nudges_per_hour]", "9")
     assert status_of(browser, "notices") == ""
     open_settings(browser, "engine")
-    present(browser, '#set-engine [data-input="usd_budget"]')                       # D257: the team default is dollars; credits are hidden
+    present(browser, '#set-engine [data-input="usd_budget"]')                       # D423: the team default is dollars; credits are hidden
     browser.js("document.querySelector('#set-engine [data-input=usd_budget]').value = '25'")
     press(browser, '#set-engine [data-act="save-engine"]')
     browser.wait_for("document.querySelector('#set-engine .setstatus').textContent.indexOf('Saved.') === 0")
@@ -136,7 +136,7 @@ def test_enter_in_a_settings_field_presses_the_save_of_its_group(browser, fake):
     browser.wait_for("document.querySelector('#set-notices .setstatus').textContent === 'Saved.'")
     assert [r["body"] for r in posts(fake) if r["path"] == "/api/ops/attention"] == [{"quiet_hours": None, "nudges_per_hour": 4}]
     open_settings(browser, "engine")
-    present(browser, '#set-engine [data-input="usd_budget"]')                       # D257: the team default is dollars
+    present(browser, '#set-engine [data-input="usd_budget"]')                       # D423: the team default is dollars
     browser.js("document.querySelector('#set-engine [data-input=usd_budget]').value = ''")
     browser.type("#set-engine [data-input=usd_budget]", "12.5")
     browser.press("Enter")

@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError,
 
 __all__ = [
     "DEPT_ID_RE", "RUN_ID_RE", "SETTING_KEY_RE", "TASK_SCHEMA", "TASK_SETTING_KEYS", "CONNECTORS", "is_dept_id",
-    "is_run_id", "OUTPUT_NAME_RE", "is_output_name", "TaskSpec", "EngineSettings", "EffectiveFlags", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES",
+    "is_run_id", "OUTPUT_NAME_RE", "is_output_name", "TaskSpec", "NodeSpec", "NodeCapsSpec", "EngineSettings", "EffectiveFlags", "LOCKED_FIELDS", "EDITABLE_FIELDS", "ENV_NAMES",
     "SettingsError", "read_settings_file", "SETTINGS_SCHEMA", "RUN_TEMPLATE_ID_RE", "RUN_TEMPLATE_KEYS_MAX", "RUN_TEMPLATE_KEY_CHARS",
     "RUN_TEMPLATE_WORKFLOWS_MAX", "is_run_template_id", "run_template_keys",
 ]
@@ -81,6 +81,37 @@ def run_template_keys(value: object) -> Optional[list[str]]:
     return [] if [key.lower() for key in keys] in ([], ["all"]) else keys
 
 
+class NodeCapsSpec(BaseModel):
+    """What one node may spend (D272): model calls, dollars where the provider reports them, wall time. Read only here: the host uses it when the node meter exists (MAN-9)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    calls: int = Field(60, ge=1, le=10_000)
+    usd: Optional[float] = Field(None, gt=0, le=100_000, allow_inf_nan=False)
+    wall_s: int = Field(1800, ge=1, le=86_400)
+
+
+class NodeSpec(BaseModel):
+    """The optional `node` block of `task.json` (multi-agent nodes, D283): who this run is inside a project. The orchestrator writes it only while SUTRA_NODES_V1 is on; a reader
+    that has no such field ignores it (`TaskSpec` drops unknown keys), and this reader always accepts it. The host turns `id` and `role` into the base `CallTag` of every call of the
+    process; it decides nothing else from the block yet. The shape is the orchestrator's `NodeBlock`, read tolerantly (unknown keys ignored)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(pattern=r"^nd_[0-9a-f]{12}$")
+    project_id: str = Field(pattern=r"^prj_[0-9a-f]{12}$")
+    role: Literal["worker", "reviewer"]
+    runtime: Literal["engine", "light"]
+    attempt: int = Field(1, ge=1, le=10)
+    grants_id: str = Field(pattern=r"^gr_[0-9a-f]{12}$")
+    caps: NodeCapsSpec = NodeCapsSpec()
+    scope: list[str] = Field(default_factory=list, max_length=50)
+    tool_profile: Literal["none", "sutra", "github", "sutra+github"] = "none"      # the app tools the grant gives this node's own agent-turn calls (MAN-8, D298)
+    slots: bool = False                                                            # take a machine-wide provider slot for each model program (MAN-12)
+    tiers: list[int] = Field(default_factory=list, max_length=8)                   # the tiers the frozen grant holds (D380): they decide the builder tools of this node's calls; none given = the narrowest
+    commands: str = Field("none", max_length=40)                                    # the grant's commands level (D380)
+
+
 class TaskSpec(BaseModel):
     """`task.json`, read by the engine host. Unknown keys are ignored (a newer orchestrator may add some).
 
@@ -104,6 +135,7 @@ class TaskSpec(BaseModel):
     upstream: list[dict] = []
     settings: dict[str, str] = {}
     connector: Literal["auto", "claude", "codex", "stub"] = "auto"
+    node: Optional[NodeSpec] = None                 # present only for a node of a multi-agent project (D283); absent in every task of today
     _dropped_settings: list[str] = PrivateAttr(default_factory=list)
 
     @field_validator("schema_")
@@ -193,7 +225,7 @@ class EngineSettings(BaseModel):
     fixes: Literal[0, 1] = 0
     budget: int = Field(100, ge=1, le=100000)
     budget_cap: Optional[int] = Field(None, ge=1, le=100000)      # None: no cap (D251, P25)
-    usd_budget: float = Field(20.0, ge=1, le=10_000, allow_inf_nan=False)      # D255, D256: a run's limit in dollars (API price); turns dollar mode on (P26)
+    usd_budget: float = Field(20.0, ge=1, le=10_000, allow_inf_nan=False)      # D421, D422: a run's limit in dollars (API price); turns dollar mode on (P26)
     usd_cap: Optional[float] = Field(None, ge=1, le=10_000, allow_inf_nan=False)      # the most a run may be raised to; None: no cap (P26)
     max_cycles: int = Field(6, ge=1)
     limit_add: int = Field(30, ge=0)

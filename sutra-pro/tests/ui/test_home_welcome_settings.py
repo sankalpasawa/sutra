@@ -228,7 +228,7 @@ def test_a_page_that_outlives_a_restart_takes_the_new_token_from_its_own_boot_bl
 
 @browser_only
 def test_settings_show_dollars_hide_credits(browser, fake):
-    """D257: the Engine group sets the budget in dollars (API price) with the not-billed hint; the credit fields are hidden (still valid when stored)."""
+    """D423: the Engine group sets the budget in dollars (API price) with the not-billed hint; the credit fields are hidden (still valid when stored)."""
     load(browser, fake)
     open_settings(browser, "engine")
     present(browser, '[data-input="usd_budget"]')

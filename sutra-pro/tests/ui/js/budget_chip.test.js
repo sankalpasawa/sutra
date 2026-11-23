@@ -1,5 +1,5 @@
 "use strict";
-// BudgetChip (sutra_app/ui/static/js/budget_chip.js), D257: the Budget chip in dollars (API price) on the home box and the team page:
+// BudgetChip (sutra_app/ui/static/js/budget_chip.js), D423: the Budget chip in dollars (API price) on the home box and the team page:
 // a pill ("$20 budget ▾") and a popover above it.
 // Run with: node --test tests/ui/js/budget_chip.test.js
 const test = require("node:test");

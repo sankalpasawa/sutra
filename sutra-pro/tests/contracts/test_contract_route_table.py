@@ -25,7 +25,7 @@ UI = REPO / "sutra_app" / "ui"
 PAGE_FILES = [UI / "pages" / "j2_ui.html", UI / "pages" / "j2_ui_render.js"]
 STATIC_JS = sorted((UI / "static" / "js").glob("*.js")) + [UI / "pages" / "home.html"]
 SETTINGS_PATH = "/api/engine/settings"
-# D254: the Stop button reads the team's live task and calls the stop ladder through SutraCtx.api: the orchestrator's routes, not J2's
+# D420: the Stop button reads the team's live task and calls the stop ladder through SutraCtx.api: the orchestrator's routes, not J2's
 STOP_PATHS = {"/api/departments/", "/api/tasks/"}
 CAPABILITIES_PATH = "/api/engine/capabilities"      # D126: what the engine can do (a read for the owner and the doctor; no page calls it, no team)
 # served by a package that has not merged yet (ORCH-8: health); the page calls them, no router of this repo has them

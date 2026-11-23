@@ -13,7 +13,7 @@ import warnings
 from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from sutra_app.engine.port import Allowance, CallTag, ToolGrant
 
@@ -146,6 +146,9 @@ with warnings.catch_warnings():
     class JsonRequest(AskRequest):
         kind: Literal["json"] = "json"
         schema: Optional[type[BaseModel] | dict] = None
+        # a stop token of the caller (a planner call of a multi-agent project, D291): checked before every attempt, fallback and back-off of the router. It does not reach into a
+        # connector's running process (a chat turn's token does, D215): a request asked to stop ends at the next of those points. None for every request there was before.
+        cancel: Any = Field(None, exclude=True)                # a `cancel.CancelToken` (typed Any: that module is imported by the connectors, not by this one)
 
 
 class TurnResult(M):
@@ -231,6 +234,7 @@ class SessionState(M):
     tool_profile: str = "none"
     workdir: str
     work_folder: str = ""          # the owner's working folder this provider session was started in ("" none); Claude keys a session by its cwd
+    thread_mode: str = ""          # `ask` when this provider session was started by an Ask turn (DV-1): Codex keeps the system text of a thread's first turn, so a thread is one mode ("" otherwise)
     turns: int = Field(0, ge=0)
     switches: int = Field(0, ge=0)
     pinned: Optional[Provider] = None
@@ -239,6 +243,14 @@ class SessionState(M):
     created_at: float
 
     _check_id = field_validator("session_id")(_directory_name)
+
+    @model_serializer(mode="wrap")
+    def _no_thread_mode_unless_ask(self, handler: Any) -> dict[str, Any]:
+        """session.json of a chat that never asked is what it always was: the key is left out when empty."""
+        data = handler(self)
+        if not data.get("thread_mode"):
+            data.pop("thread_mode", None)
+        return data
 
 
 class ConnectorEvent(M):

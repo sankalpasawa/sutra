@@ -1,4 +1,4 @@
-"""D257 (port edit E25, amends D251 and D252): a team page's Budget chip in dollars (API price). It shows the team's own budget once
+"""D423 (port edit E25, amends D251 and D252): a team page's Budget chip in dollars (API price). It shows the team's own budget once
 GET /api/engine/settings?dept= answers, and sends nothing for it; a choice (half, double, a typed amount) is sent with the next request only
 as `usd_budget`, then the chip (a pill, "$20 budget ▾", and its popover) shows the team default again. The page's own `sendText` and submit handler run in node with a stub `$`."""
 import json
@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 PAGE = (ROOT / "sutra_app" / "ui" / "pages" / "j2_ui.html").read_text(encoding="utf-8")
 SEND = re.search(r"async function sendText\(text, usdBudget\)\{.*?\n\}\n", PAGE, re.S).group(0)
-E25 = PAGE[PAGE.index("// E25 (D257)"):PAGE.index("if (LCHIP) LCHIP.reset(); });") + len("if (LCHIP) LCHIP.reset(); });")]
+E25 = PAGE[PAGE.index("// E25 (D423)"):PAGE.index("if (LCHIP) LCHIP.reset(); });") + len("if (LCHIP) LCHIP.reset(); });")]
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 
 
@@ -77,7 +77,7 @@ def test_only_the_start_form_sends_a_budget():
     assert [c for c in calls if re.fullmatch(r"\w+, \w+", c)] == ["text, usdBudget", "t, b"], calls
 
 
-# ---- E27 (D257): the team page's raise card takes a typed amount in dollars ---------------------------------------------------------
+# ---- E27 (D423): the team page's raise card takes a typed amount in dollars ---------------------------------------------------------
 SRAISE = PAGE[PAGE.index("function sRaise(s, kind, live){"):PAGE.index("function sCardClick(e){")]
 RAISE_CLICK = PAGE[PAGE.index("  if (b.dataset.raise !== undefined){"):PAGE.index('  const inp = c.querySelector(".own input");')]
 PAUSED = {"kind": "limit", "questions": [{"question": "This run has used $20.40 of $20 (API price). Add $10? So far: $20 approved.",

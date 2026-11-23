@@ -1,4 +1,4 @@
-"""D254 (port edit E26): the team page's send button is Stop while the team's run is live. While the team works the box is disabled and
+"""D420 (port edit E26): the team page's send button is Stop while the team's run is live. While the team works the box is disabled and
 Stop stays pressable; while it waits for an answer it is Stop until the owner types, then Send again. Stop asks "Stop this run? What's
 built so far is kept." and on yes calls the existing stop ladder once (POST /api/tasks/{id}/stop with {}, no force); 409 (already ended)
 only refreshes. The page's own E26 code runs in node with a stub `$`, `confirm`, `SutraCtx.api`, `sToast` and `poll`."""
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 PAGE = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "pages" / "j2_ui.html").read_text(encoding="utf-8")
-E26 = PAGE[PAGE.index("// E26 (D254): Stop while"):PAGE.index('$("smsgs").addEventListener("click"')]
+E26 = PAGE[PAGE.index("// E26 (D420): Stop while"):PAGE.index('$("smsgs").addEventListener("click"')]
 PAINT = re.search(r"const stop = sStopOn\(s\);[^\n]*?sStopMode\(stop\);", PAGE).group(0)
 TASK = "tsk_a1b2c3d4e5f6"
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")

@@ -17,6 +17,7 @@ Events: `chat.turn` `{session_id, turn, message_id, phase, detail}` with phases 
 handing_off, done, or error. The org chat's `phase` (reading, planning, building) is kept in `ChatStore.set_turn_phase`.
 """
 import asyncio
+import dataclasses
 import inspect
 import json
 import logging
@@ -28,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sutra_app.connectors.egress import scrubbed
+from sutra_app.connectors.errors import CallCancelledError
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import AddOp, MergeOp, MoveOp, OrgChart, RenameOp, SplitOp
 from sutra_app.library.practice import load_packs, pack_by_id
@@ -45,12 +47,23 @@ from sutra_app.orchestrator.models import Accepted, ChangeContext, ChangeResult,
 from sutra_app.orchestrator.reorg_preview import ReorgPreview, card_lines
 from sutra_app.orchestrator.standing_rules import StandingRules
 from sutra_app.orchestrator.tasks import TaskService
-from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no
+from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no, project_title
 
 __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO", "NONE_OPTION"]
 
 log = logging.getLogger(__name__)
 ORG = ORG_SESSION_ID
+def step_framing(brief: str, number: int, total: int, title: str, others: list[str]) -> str:
+    """The step's own framing for a project: what the planner wrote for it, then the rule that it does ONLY its own job (D414). Run 4: step 1 named the one improvement that was step 2's job, so the money
+    was spent twice. The others are named by their titles so the step knows what is not its to do."""
+    rule = (f"THIS IS STEP {number} OF {total} OF A PROJECT. Do ONLY this step's own job: {title}. The other steps do their own work"
+            + (f" ({'; '.join(t for t in others if t)[:600]})" if any(others) else "")
+            + ". Do not do, start or answer the job of another step, not even in part; leave it to that step.")
+    return (brief.rstrip() + "\n\n" if brief and brief.strip() else "") + rule
+
+
+_NO_PROJECT_ADDRESS = re.compile(r"/p/(?=prj_)")        # the shape the chat page turns into a link: only the app writes it
+PROJECT_SRC = "project:"        # the `src_ref` prefix of a line the owner sent with `POST /api/projects` (MAN-13): a repeated `client_id` finds the same line
 TITLE_CHARS = 60
 YES, NO, NONE_OPTION = "yes", "no", "none"
 PHASE_DETAIL = {
@@ -98,12 +111,13 @@ class _Applied:
 class TurnRunner:
     def __init__(self, *, db: Database, chart: ChartStore, chats: ChatStore, tasks: TaskService, agent: ChatAgent, connector: ConnectorPort,
                  publish: Callable[[str, dict], Any] | None = None, redact: Callable[[str], str] | None = None,
-                 hooks: TurnHooks | None = None, pending_turns: int = PENDING_TURNS) -> None:
+                 hooks: TurnHooks | None = None, pending_turns: int = PENDING_TURNS, projects: Any = None) -> None:
         self.db, self.chart, self.chats, self.tasks, self.agent, self.connector = db, chart, chats, tasks, agent, connector
         self._publish = publish or (lambda _type, _data: None)
         self._redact = redact or (lambda text: text)
         self.hooks = hooks or TurnHooks()
         self.pending_turns = pending_turns
+        self.projects = projects                    # the `ProjectService` while SUTRA_NODES_V1 is on (MAN-5), else None: with None this runner is what it was
         self._waiting: deque[_Item] = deque()
         self._active: _Item | None = None
         self._wake: asyncio.Event | None = None
@@ -113,13 +127,14 @@ class TurnRunner:
     # T0: accept
     # =================================================================================================================
 
-    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None,
-                                usd_budget: float | None = None) -> Accepted:
+    async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None, decide_for_me: bool = False,
+                                 failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None) -> Accepted:
         """Store the owner's line (state `pending`), queue the turn and return at once. A click on a card button (`choice`) is stored
         as the owner's line with the option's label. Raises 503 `provider_unavailable` / `cli_missing` before anything is stored when
         a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`.
         `budget` (D252): the home screen's Budget field, kept with the owner's line; every task this request makes runs with it as J2_BUDGET.
-        `usd_budget` (D257): the same for the dollar budget (API price), as J2_USD_BUDGET."""
+        `failure_policy` and `client_id` come only from `POST /api/projects` (MAN-13, D310 c, D326): the first is kept with the line for the project it may become, the second makes a repeated send find the
+        same line (`AlreadyDecided`). `usd_budget` (D423): the same as `budget` for the dollar budget (API price), as J2_USD_BUDGET."""
         if session_id != ORG:
             raise AppError("validation", f"only the org chat {ORG} is answered by the chat agent")
         body = scrubbed(text.strip(), self._redact)                # a secret never lands in the chat store, the team's first line or a prompt
@@ -129,7 +144,8 @@ class TurnRunner:
         if resolved is None and not await run_blocking(self._is_answer, body):
             self._preflight()                                   # only a request that may call a model needs one
         self._room()
-        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget, usd_budget)
+        message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget, decide_for_me, failure_policy, client_id,
+                                        usd_budget)
         turn = "queued" if (self._active is not None or self._waiting) else "started"
         self._enqueue(_Item(message_id, resolved.pick if resolved is not None else None))
         return Accepted(message_id=message_id, turn=turn)
@@ -239,20 +255,25 @@ class TurnRunner:
         kind = "none" if option["id"] == NONE_OPTION else "team"
         return _Resolved(_Pick(kind, node_id=None if kind == "none" else option["id"], origin=int(origin.group(1))), option["label"])
 
-    def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None, usd_budget: float | None = None) -> int:
+    def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None, decide_for_me: bool = False,
+                         failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None) -> int:
         with self.db.tx() as tx:
-            src = f"choice:{choice.message_id}" if choice is not None else None
+            src = f"choice:{choice.message_id}" if choice is not None else f"{PROJECT_SRC}{client_id}" if client_id else None
             posted = self._post(tx, kind="text", text=text, role="user", who="user", state="pending", src_ref=src)
             if posted is None:
                 raise AlreadyDecided(None)
             if budget is not None:      # D252: a sibling key of meta_json, as `via` and `blocks` are; read back by _budget_of
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.budget', ?) WHERE id = ?", (int(budget), posted.id))
-            if usd_budget is not None:      # D257: the dollar budget, the same way
+            if usd_budget is not None:      # D423: the dollar budget, the same way
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.usd_budget', ?) WHERE id = ?", (float(usd_budget), posted.id))
+            if decide_for_me and self.projects is not None:           # MAN-8: the owner's switch for this request; read back by _decide_for_me_of. Not stored with the flag off (G13)
+                tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.decide_for_me', 1) WHERE id = ?", (posted.id,))
+            if failure_policy == "stop_all" and self.projects is not None:           # MAN-13, D310 c: only the owner's own route sets it; stop_branch is the default and is not stored
+                tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.failure_policy', 'stop_all') WHERE id = ?", (posted.id,))
             return posted.id
 
     def _usd_budget_of(self, message_id: int) -> float | None:
-        """D257: the dollar budget the owner gave with the request line `message_id` (None: the team's own)."""
+        """D423: the dollar budget the owner gave with the request line `message_id` (None: the team's own)."""
         row = self.db.conn().execute("SELECT json_extract(meta_json, '$.usd_budget') AS b FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
         return float(row["b"]) if row is not None and row["b"] is not None else None
 
@@ -260,6 +281,21 @@ class TurnRunner:
         """D252: the Budget the owner gave with the request line `message_id` (None: the team's own budget)."""
         row = self.db.conn().execute("SELECT json_extract(meta_json, '$.budget') AS b FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
         return int(row["b"]) if row is not None and row["b"] is not None else None
+
+    def _decide_for_me_of(self, message_id: int) -> bool:
+        """MAN-8: whether the owner turned Decide for me on with the request line `message_id` (the request's `J2_DECIDE_FOR_ME`)."""
+        row = self.db.conn().execute("SELECT json_extract(meta_json, '$.decide_for_me') AS d FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return bool(row is not None and row["d"])
+
+    def _failure_policy_of(self, message_id: int) -> str:
+        """MAN-13, D310 c: `stop_all` when the owner started this request with that policy, else the default `stop_branch`."""
+        row = self.db.conn().execute("SELECT json_extract(meta_json, '$.failure_policy') AS f FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        return "stop_all" if row is not None and row["f"] == "stop_all" else "stop_branch"
+
+    def line_of(self, client_id: str) -> int | None:
+        """The org-chat line a `POST /api/projects` send with this `client_id` stored, or None (a repeated send finds the first one)."""
+        row = self.db.conn().execute("SELECT id FROM chat_messages WHERE session_id = ? AND src_ref = ?", (ORG, f"{PROJECT_SRC}{client_id}")).fetchone()
+        return int(row["id"]) if row is not None else None
 
     def _last_user_line(self) -> sqlite3.Row | None:
         return self.db.conn().execute(
@@ -335,25 +371,44 @@ class TurnRunner:
             await self._decide_flow(pending[0].id, answer, mid, raise_already=False)
             return
         request = await run_blocking(self._request_of, mid, msg.text)
-        stale = 0
-        while True:
-            try:
-                plan = await self.agent.plan(request, phase=lambda name: self._phase(mid, name))
-                done = await self._carry_out(mid, request, plan)
-            except ConnectorFailure as exc:
-                await self._connector_down(mid, exc)
-                return
-            except ChartBusy as exc:
-                await self._reply(mid, [line("busy", reason=exc.violations[0].message)])
-                return
-            except StaleChart:
-                done = False
-            if done:
-                return
-            stale += 1
-            if stale >= 2:
-                await self._finish_error(mid, line("stale"))
-                return
+        request = self._as_planner(request)
+        try:
+            stale = 0
+            while True:
+                try:
+                    plan = await self.agent.plan(request, phase=lambda name: self._phase(mid, name))
+                    done = await self._carry_out(mid, request, plan)
+                except CallCancelledError:                                  # the owner's Stop (node stop, project stop, kill all) ended the planner's running call: no plan is adopted (D301)
+                    self._release_planner(request)
+                    await self._finish_error(mid, line("stopped"))              # a stop, not "something went wrong" (G7, D308)
+                    return
+                except ConnectorFailure as exc:
+                    await self._connector_down(mid, exc)
+                    return
+                except ChartBusy as exc:
+                    await self._reply(mid, [line("busy", reason=exc.violations[0].message)])
+                    return
+                except StaleChart:
+                    done = False
+                if done:
+                    return
+                stale += 1
+                if stale >= 2:
+                    await self._finish_error(mid, line("stale"))
+                    return
+        finally:
+            self._release_planner(request)                              # the planner's token lives only while the request is planned (D301)
+
+    def _as_planner(self, request: PlanRequest) -> PlanRequest:
+        """With nodes on, the planner's calls carry its node identity and a stop token that the project service keeps while the request is planned (D291, D301). Without: the request as it is."""
+        if self.projects is None:
+            return request
+        node_id, token = self.projects.planner_for(request.request_id)
+        return dataclasses.replace(request, node_id=node_id, cancel=token)
+
+    def _release_planner(self, request: PlanRequest) -> None:
+        if self.projects is not None:
+            self.projects.release_planner(request.request_id)
 
     async def _picked(self, pick: _Pick, mid: int) -> None:
         if pick.kind == "approval":
@@ -439,11 +494,38 @@ class TurnRunner:
         drafts = dependency_order(plan.drafts)
         task_ids: list[str] = []
         failure: str | None = None
+        waits = ""
+        project_id = ""
+        asked_system = False
         if drafts:
             self._phase(mid, "handing_off")
             change_id = applied.result.id if applied is not None else None
+            reservation = None
             try:
-                task_ids = await run_blocking(self._create_tasks, request, drafts, change_id)
+                if self.projects is not None and len(drafts) >= 2:      # nodes on and two or more steps: a project (D255); one step keeps today's path
+                    asked, defaulted = await self.agent.node_plan(request, drafts)       # stage D (D306): the scope and the needs the steps ask for; flag on and two or more steps only
+                    reservation = await run_blocking(self._reserve_project, request, drafts, asked, defaulted)
+                    if reservation is not None and not reservation.ok:  # the Gatekeeper refused the plan: no node, no task, and the owner is told why
+                        raise AppError("validation", reservation.why or "the plan was refused")
+                    if reservation is not None:
+                        try:
+                            if await self.projects.probe_system(reservation.project_id):   # what the computer has allowed, before any task exists (MAN-15): the steps it affects wait, the rest run
+                                asked_system = True
+                        except Exception:                                           # noqa: BLE001  (a probe that fails for any reason must not leave a reserved project with no tasks; a refusal found late is still caught)
+                            log.exception("the permission probe of request %s failed", request.request_id)
+                task_ids = await run_blocking(self._create_tasks, request, drafts, change_id, reservation)
+                if reservation is not None and reservation.ok and task_ids:
+                    project_id = reservation.project_id                                       # D382: the reply ends with the project's address, whichever way the line came in
+                if reservation is not None:                                             # every question the owner has to answer is said in plain words, not only the estimate (D308, D317)
+                    said = []
+                    if reservation.waits is not None:
+                        said.append(line("project_waits", title=reservation.title, credits=str(reservation.waits[0]), limit=str(reservation.waits[1])))
+                    if reservation.asks:
+                        what = " and ".join({"tier": "Reading GitHub", "scope": "Changing files in several places", "sutra_tools": "Reading this app\u2019s own data"}[k] for k in reservation.asks)
+                        said.append(line("project_asks", title=reservation.title, what=what))
+                    if asked_system:
+                        said.append(line("project_system", title=reservation.title))
+                    waits = " ".join(said)
             except AppError as exc:
                 failure = exc.message
             if task_ids:
@@ -451,7 +533,7 @@ class TurnRunner:
                     await self.tasks.start_ready()
                 except Exception:                                           # noqa: BLE001  (a task that cannot start is that task's problem)
                     log.exception("start_ready failed after request %s", request.request_id)
-        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure)
+        await run_blocking(self._write_outcome, mid, plan, applied, drafts, task_ids, failure, waits, project_id)
         self._phase(mid, "done")
         await self._call_hook(self.hooks.on_done, mid)
 
@@ -505,20 +587,26 @@ class TurnRunner:
         if note is None or stored.change is None:
             await self._reply(mid, [])
             return result
-        request = PlanRequest(text=note["text"], message_id=int(note["message_id"]))
+        request = self._as_planner(PlanRequest(text=note["text"], message_id=int(note["message_id"])))     # a resumed request has its planner node and stop token too (G5, D301)
         decision = ChatDecision.model_validate(note["decision"]) if note.get("decision") else None
         try:
-            plan = await self.agent.resume(request, decision)
-        except ConnectorFailure as exc:
-            await self._connector_down(mid, exc)
+            try:
+                plan = await self.agent.resume(request, decision)
+            except CallCancelledError:                                    # the owner's Stop ended the planner's running call: no plan is adopted (D301)
+                await self._finish_error(mid, line("stopped"))
+                return result
+            except ConnectorFailure as exc:
+                await self._connector_down(mid, exc)
+                return result
+            plan = _with_change(plan, stored.change)
+            applied = await run_blocking(self._applied_of, stored.change, result)
+            shown = mid if mid is not None else request.message_id
+            await self._hand_off(shown, request, plan, applied)
+            if plan.outcome in ("none", "clarify"):                       # the keywords found no team for the work: ask the owner
+                await self._offer(shown, request, plan)
             return result
-        plan = _with_change(plan, stored.change)
-        applied = await run_blocking(self._applied_of, stored.change, result)
-        shown = mid if mid is not None else request.message_id
-        await self._hand_off(shown, request, plan, applied)
-        if plan.outcome in ("none", "clarify"):                       # the keywords found no team for the work: ask the owner
-            await self._offer(shown, request, plan)
-        return result
+        finally:
+            self._release_planner(request)
 
     # =================================================================================================================
     # the database work (each runs in one worker thread)
@@ -542,23 +630,40 @@ class TurnRunner:
         return {"v": 1, "message_id": request.message_id, "text": request.text, "keywords": plan.keywords,
                 "decision": json.loads(plan.decision.model_dump_json()) if plan.decision is not None else None}
 
-    def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None) -> list[str]:
+    def _reserve_project(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], asked: Any = None, defaulted: bool = False) -> Any:
+        """The project of a request with two or more steps, made before its tasks (MAN-5): the plan goes through the Gatekeeper's rules, each step gets a node and a frozen grant."""
+        from sutra_app.orchestrator.projects import ProjectStep
+        asked = asked or {}
+        steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
+        title = project_title(request.text)                       # the request's own short title, a whole phrase and not 80 characters cut mid-sentence (D394, D404)
+        return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
+                                      plan_defaults=defaulted, decide_for_me=self._decide_for_me_of(request.message_id),
+                                      failure_policy=self._failure_policy_of(request.message_id), usd=self._usd_budget_of(request.message_id))
+
+    def _create_tasks(self, request: PlanRequest, drafts: Sequence[AssignmentDraft], change_id: str | None, reservation: Any = None) -> list[str]:
         """One transaction per assignment, dependencies first. The owner's words become the first line of the team's chat (the
         engine never echoes them)."""
         made: dict[str, str] = {}
         budget = self._budget_of(request.message_id)
         usd = self._usd_budget_of(request.message_id)
         settings = {**({"J2_BUDGET": str(budget)} if budget is not None else {}),      # D252: every task of the request runs with the owner's Budget
-                    **({"J2_USD_BUDGET": f"{usd:g}"} if usd is not None else {})} or None      # D257: and with its dollar budget
-        for draft in drafts:
+                    **({"J2_USD_BUDGET": f"{usd:g}"} if usd is not None else {})} or None      # D423: and with its dollar budget
+        if self.projects is not None and self._decide_for_me_of(request.message_id):
+            settings = {**(settings or {}), "J2_DECIDE_FOR_ME": "1"}               # Decide for me reaches the workers as their own switch (D294)
+        for index, draft in enumerate(drafts, start=1):
             follows = draft.follows
+            framing = draft.brief
+            if reservation is not None and reservation.ok:                           # a step of a project is told to do its own job only (D414); an ordinary request keeps its framing as it was
+                framing = step_framing(draft.brief, index, len(drafts), draft.title, [d.title for d in drafts if d is not draft])
             while True:
                 try:
                     with self.db.tx() as tx:
                         task = self.tasks.create(
-                            tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=draft.brief,
+                            tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=framing,
                             depends_on=[made[ref] for ref in draft.depends_on if ref in made], follows=follows,
                             request=request.request_id, change_id=change_id, settings=settings)
+                        if reservation is not None and reservation.ok:           # the node and its task become one thing in the transaction that makes the task (MAN-5)
+                            self.projects.link_task(tx, reservation, draft.ref, task.id)
                         sid = tx.conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (draft.dept,)).fetchone()["chat_session_id"]
                         self._post(tx, session_id=sid, kind="text", text=request.text, role="user", who="user",
                                    src_ref=f"req:{request.message_id}:{task.id}", task_id=task.id)
@@ -571,10 +676,20 @@ class TurnRunner:
             made[draft.ref] = task.id
         return list(made.values())
 
+    def _project_exists(self, project_id: str) -> bool:
+        return self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None
+
     def _write_outcome(self, mid: int, plan: Plan, applied: _Applied | None, drafts: Sequence[AssignmentDraft], task_ids: Sequence[str],
-                       failure: str | None) -> None:
-        """T8: the template line, the chart card and a task card per task; the request is `ok`."""
+                       failure: str | None, waits: str = "", project_id: str = "") -> None:
+        """T8: the template line, the chart card and a task card per task; the request is `ok`. `waits`: the sentence of a project that waits for the owner's OK (D308)."""
         sentences = self._sentences(plan, applied, drafts)
+        if waits:
+            sentences = sentences + [waits]
+        sentences = [_NO_PROJECT_ADDRESS.sub("/p/ ", text) for text in sentences]     # a word of the model's (a title) that looks like a project address is not one (D389, m11)
+        if project_id and not self._project_exists(project_id):
+            project_id = ""                                                          # only a project that exists is linked, in the reply and on the cards (D389, D408)
+        if project_id and failure is None:
+            sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]
         cards: list[dict] = []
@@ -584,8 +699,10 @@ class TurnRunner:
         cards.extend(self._started_cards(conn, applied))
         for task_id in task_ids:
             task = self.tasks.store.out_in(conn, task_id)
-            cards.append({"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title,
-                          "status": task.status})
+            card = {"type": "task", "task_id": task.id, "dept_id": task.dept_id, "dept_name": task.dept_name, "title": task.title, "status": task.status}
+            if project_id and failure is None:
+                card["project_id"] = project_id                                        # D382: a step's card links to the project's page
+            cards.append(card)
         self._write_cards(mid, sentences, cards, error=failure is not None)
         if failure is None:
             self._suggest_packs(applied)

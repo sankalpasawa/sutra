@@ -18,14 +18,15 @@ starts the stop ladder; the owner's words of the server's own ending ('stopped b
 """
 import json
 import sqlite3
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import StringConstraints
+from pydantic import StringConstraints, model_serializer
 
 from sutra_app.library.base import Value
 from sutra_app.library.types import clip
 from sutra_app.orchestrator.db import Database
 from sutra_app.orchestrator.ids import iso_z
+from sutra_app.orchestrator.nodes_store import is_node_task, project_of_task
 from sutra_app.orchestrator.models import Count, Iso, Name, NodeId, TaskId, TaskStatus
 from sutra_app.orchestrator.waiting import age_words
 
@@ -53,6 +54,15 @@ class HeadsUpOut(Value):
     at: Iso                                                             # when it ended (quiet: its last sign of life)
     since_s: Count
     retry: bool = False                                                 # Try again is offered
+    project_id: Annotated[str, StringConstraints(pattern=r"^prj_[0-9a-f]{12}$")] | None = None     # the project this task is a step of (nodes on): the row opens the project's page (D412)
+
+    @model_serializer(mode="wrap")
+    def _project_only_when_there_is_one(self, handler: Any) -> dict[str, Any]:
+        """A row of an ordinary task keeps the wire shape it always had: no `project_id` key."""
+        data = handler(self)
+        if data.get("project_id") is None:
+            data.pop("project_id", None)
+        return data
 
 
 def _one_line(value: str | None, limit: int) -> str:
@@ -70,8 +80,9 @@ def _stopped_by(settings_json: str | None) -> str:
 class HeadsUp:
     """Reads only; one call is one consistent read of `tasks` (a `db.read()` block)."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, *, nodes: bool = False) -> None:
         self.db = db
+        self.nodes = nodes                  # SUTRA_NODES_V1 is on (D383): only then is a step of a stopped project looked for; off, no node table is read
 
     def items(self, now: int) -> list[HeadsUpOut]:
         with self.db.read() as conn:
@@ -96,12 +107,28 @@ class HeadsUp:
             "SELECT 1 FROM tasks WHERE dept_id = ? AND id != ? AND (parent_task_id = ? OR (created_at >= ? AND rowid > ?)) LIMIT 1",
             (r["dept_id"], r["id"], r["id"], r["ended_at"], r["seq"])).fetchone() is not None
 
+    @staticmethod
+    def _of_a_project_that_did_not_finish(conn: sqlite3.Connection, task_id: str) -> bool:
+        return conn.execute("SELECT 1 FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ? AND p.status IN ('stopped','failed') LIMIT 1", (task_id,)).fetchone() is not None
+
+    @staticmethod
+    def _of_an_ended_project(conn: sqlite3.Connection, task_id: str) -> bool:
+        """The task is a step of a project that is over: stopped (by the owner, the kill switch or a limit), could not finish, or done."""
+        return conn.execute("SELECT 1 FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ? AND p.status IN ('stopped','failed','done','done_with_open_items') LIMIT 1",
+                            (task_id,)).fetchone() is not None
+
+    @staticmethod
+    def _of_a_step(conn: sqlite3.Connection, task_id: str) -> bool:
+        return is_node_task(conn, task_id)
+
     def _item(self, conn: sqlite3.Connection, r: sqlite3.Row, now: int) -> HeadsUpOut | None:
         status = r["status"]
         team = _one_line(r["name"] or r["dept_id"], 200)
         title = _one_line(r["title"], 200)
         outcome = _one_line(r["outcome"], 300)
         base = dict(task_id=r["id"], dept_id=r["dept_id"], dept_name=team, title=title, status=status, outcome=outcome)
+        if self.nodes:
+            base["project_id"] = project_of_task(conn, r["id"])
         if status in _WORKING:
             seen = r["last_event_at"] or r["started_at"] or r["created_at"]
             since = max(0, now - int(seen))
@@ -109,6 +136,12 @@ class HeadsUp:
                 return None
             return HeadsUpOut(kind="quiet", tone="warn", text=f'{team} has gone quiet on "{title}": no sign of work for {age_words(since)}',
                               at=iso_z(seen), since_s=since, **base)
+        if self.nodes and status in ("done", "done_with_open_items") and self._of_a_project_that_did_not_finish(conn, r["id"]):
+            return None                                                          # D403: a step finished, but its project was stopped or could not finish: Home does not say "just finished"
+        ended_project = self.nodes and status in ("stopped", "crashed", "done_with_open_items") and self._of_an_ended_project(conn, r["id"])
+        if ended_project and status != "done_with_open_items":
+            return None                                                          # D383, D390: the project is over (stopped, failed or done); its page says how. Not a problem to try again
+        step = bool(self.nodes) and status in ("stopped", "crashed", "done_with_open_items") and self._of_a_step(conn, r["id"])    # D398: a step is tried again by its project, never from here
         since = max(0, now - int(r["ended_at"]))
         ended = dict(at=iso_z(r["ended_at"]), since_s=since)
         app_closed = outcome.lower().startswith("the app was closed")
@@ -116,7 +149,7 @@ class HeadsUp:
             return HeadsUpOut(kind="finished", tone="ok", text=f'{team} finished "{title}"', **ended, **base)
         if status == "done_with_open_items":
             return HeadsUpOut(kind="finished", tone="warn", text=f'{team} finished "{title}" with some things left open',
-                              retry=not self._replaced(conn, r), **ended, **base)
+                              retry=not step and not self._replaced(conn, r), **ended, **base)
         if status == "stopped":
             by = _stopped_by(r["settings_json"])
             if by == "owner" or (by != "app" and outcome.lower().rstrip(".") in OWNER_STOP_WORDS):
@@ -125,8 +158,8 @@ class HeadsUp:
                 return None
             text = (f'{team} was working on "{title}" when the app closed' if by == "app" or app_closed
                     else f'{team} stopped before it finished "{title}"')
-            return HeadsUpOut(kind="problem", tone="stop", text=text, retry=True, **ended, **base)
+            return HeadsUpOut(kind="problem", tone="stop", text=text, retry=not step, **ended, **base)
         if self._replaced(conn, r):                                            # crashed
             return None
         text = f'{team} was working on "{title}" when the app closed' if app_closed else f'{team} ran into a problem on "{title}"'
-        return HeadsUpOut(kind="problem", tone="err", text=text, retry=True, **ended, **base)
+        return HeadsUpOut(kind="problem", tone="err", text=text, retry=not step, **ended, **base)

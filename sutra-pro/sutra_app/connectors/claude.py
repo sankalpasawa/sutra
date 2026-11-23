@@ -66,7 +66,12 @@ def _folder_tools(folder: str) -> tuple[list[str], list[str], list[str]]:
     edit = bool(getattr(folder, "edit", False))
     git = bool(getattr(folder, "git", False)) and not edit          # a call that checks what changed (Audit, D135): the git reads, and no tool that writes
     offered = [*READ_TOOLS] + ([*EDIT_TOOLS, "Bash"] if edit else ["Bash"] if git else [])
-    allowed = [*READ_TOOLS] + ([*EDIT_TOOLS, *GIT_READ] if edit else [*GIT_READ] if git else [])
+    scope = tuple(getattr(folder, "scope", ()) or ())
+    if edit and scope:                                           # a step with a write scope: the edit tools only inside its paths (rules `Edit(path/**)` bind Write and MultiEdit too); the rest is not allowed
+        inside = [rule for entry in scope for rule in (f"Edit({entry.rstrip('/')})", f"Edit({entry.rstrip('/')}/**)")]
+        allowed = [*READ_TOOLS, *inside, *GIT_READ]
+    else:
+        allowed = [*READ_TOOLS] + ([*EDIT_TOOLS, *GIT_READ] if edit else [*GIT_READ] if git else [])
     denied = [name for name in _DENIED_TOOLS if name not in offered]
     return offered, allowed, denied + ([*GIT_DENY, *DOT_GIT_DENY] if edit else [*GIT_DENY] if git else [])
 _IMAGE_MAGIC = ((b"\x89PNG\r\n\x1a\n", "image/png"), (b"\xff\xd8\xff", "image/jpeg"), (b"GIF87a", "image/gif"), (b"GIF89a", "image/gif"),

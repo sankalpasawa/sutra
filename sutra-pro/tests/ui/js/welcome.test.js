@@ -29,7 +29,7 @@ test("the four facts are there, numbered, each with a reading", () => {
   assert.match(html, /12\.5 MB/);
   assert.match(html, /40\.0 GB is free/);
   assert.match(html, /<code>sutra-pro backup<\/code>/);
-  assert.match(html, /inside a budget of \$20 \(API price\) for each run/);      // D257: dollars, never credits
+  assert.match(html, /inside a budget of \$20 \(API price\) for each run/);      // D423: dollars, never credits
   assert.doesNotMatch(html, /credit/i);
   assert.match(welcomeHtml({...FACTS, autonomy: {usd_budget: 12.5, send_mode: "dry-run"}}), /budget of \$12\.50 \(API price\)/);
   assert.match(html, /drafts only: nothing is sent/);

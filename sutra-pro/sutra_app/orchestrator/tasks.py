@@ -57,6 +57,7 @@ from sutra_app.orchestrator.models import (
     LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
+from sutra_app.orchestrator.nodes_store import is_node_task, node_block_of
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
@@ -77,6 +78,7 @@ GOOD_END = ("done", "done_with_open_items")
 BAD_END = ("stopped", "crashed", "cancelled")
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
+    "handoff.json",                         # a node's own hand-off is never offered to a dependant: only what the server checked and scrubbed (`handoff.accepted.json`, MAN-6)
     "task.json", "inbox.jsonl", "events.jsonl", "trace.jsonl", "snapshot.json", "live.json", "settings.json", "run.stdout.log",
     "run.stderr.log", "choices.json", "node_context.json", "deliverable.json",
 })
@@ -225,7 +227,7 @@ class TaskStore:
 
     def live_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
         found = conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()
+            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()      # lane '': the team's own task, not a step in a lane (MAN-10)
         return _row_of(found) if found is not None else None
 
     def latest_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
@@ -445,6 +447,15 @@ class TaskService:
         # limits.py (gap routines-limits): called as gate(conn, now, dept_id) for a queued task that may otherwise start; a non-empty answer
         # is the words it keeps waiting with. Only starts are gated: a run in flight is never touched.
         self.start_gate: Callable[[sqlite3.Connection, int, str], str] | None = None
+        # asked about ONE task after `start_gate`, in the same transaction: a waiting sentence, or "" to let it start (multi-agent nodes, D257; set only while SUTRA_NODES_V1 is on).
+        # MAN-4 uses it for the kill switch and pause; the Conductor's task gate (MAN-5) takes its place and keeps that rule.
+        self.task_gate: Callable[[sqlite3.Connection, int, TaskRow], str] | None = None
+        self.node_usd_left: Callable[[sqlite3.Connection, str, float], float | None] | None = None      # the dollars a step that starts now may still spend (D381); None with SUTRA_NODES_V1 off
+        self.before_prepare: Callable[[], None] | None = None          # the project service's look at the links of the steps' scopes, run BEFORE the start transaction (N-6); None with SUTRA_NODES_V1 off
+        # asked just before and just after a process is started: an outcome sentence ends the start (a kill that came in between); "" lets it go on (MAN-4, M1)
+        self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
+        # called in the transaction of any change of a task's state that is made here (starting, cancelled): the project service moves the node of a task with it (MAN-5); None while off
+        self.node_sync: Callable[[Tx, str], None] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -603,6 +614,8 @@ class TaskService:
         started: list[str] = []
         async with self._gate():
             while True:
+                if self.before_prepare is not None:
+                    await run_blocking(self.before_prepare)
                 prepared = await run_blocking(self._prepare_next)
                 if prepared is None:
                     return started
@@ -613,6 +626,8 @@ class TaskService:
     async def start(self, task_id: str) -> bool:
         """Start one queued task now (the caps still apply: False when it has to wait)."""
         async with self._gate():
+            if self.before_prepare is not None:
+                await run_blocking(self.before_prepare)
             prepared = await run_blocking(self._prepare_next, task_id)
             if prepared is None:
                 return False
@@ -623,23 +638,37 @@ class TaskService:
         """In one transaction: settle blocked tasks, pick the first queued task that may start, make its run folder and mark it
         `starting`. None when nothing may start (the others get their waiting detail)."""
         with self.db.tx() as tx:
-            self.store.settle_blocked(tx, lambda row: self.taskgraph.sync(tx, row))
+            self.store.settle_blocked(tx, lambda row: self._moved(tx, row))
             working, live = self.store.counts_in(tx.conn)
-            busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))})", LIVE_STATUSES)}
+            busy = {r[0]: r[1] for r in tx.conn.execute(f"SELECT dept_id, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))}) AND lane = ''", LIVE_STATUSES)}
+            laned = tx.conn.execute(f"SELECT dept_id, lane, status FROM tasks WHERE status IN ({_marks(len(LIVE_STATUSES))}) AND lane <> ''", LIVE_STATUSES).fetchall()    # steps of a project in a lane (MAN-10)
+            lanes_of = {r[0]: r[1] for r in tx.conn.execute("SELECT id, lane FROM tasks WHERE status = 'queued' AND lane <> ''").fetchall()} if laned or self.settings.lanes_on else {}
             queued = [_row_of(r) for r in tx.conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE status = 'queued' ORDER BY created_at, rowid")]
             for row in queued:
                 if only is not None and row.id != only:
                     continue
-                waiting = why_waiting(busy_status=busy.get(row.dept_id), working=working, live=live,              # names the owner when it is the owner
+                waiting = why_waiting(busy_status=self._busy_of(busy, laned, lanes_of, row), working=working, live=live,              # names the owner when it is the owner
                                       max_runs=self.settings.max_runs, max_live=self.settings.max_live)
                 if not waiting and self.start_gate is not None:                                                  # the spending limit, the plan window
                     waiting = self.start_gate(tx.conn, tx.now(), row.dept_id)
+                if not waiting and self.task_gate is not None:
+                    waiting = self.task_gate(tx.conn, tx.now(), row)
                 if waiting:
                     self.taskgraph.sync(tx, row, waiting=waiting, announce=False)
                     continue
                 spec, run_dir = self._begin(tx, row)
                 return row.id, spec, run_dir
             return None
+
+    @staticmethod
+    def _busy_of(busy: dict[str, str], laned: list[Any], lanes_of: dict[str, str], row: TaskRow) -> str | None:
+        """The status of the live task that keeps `row` waiting. An ordinary task (lane '') waits for ANY live task of its team, a step in a lane too (P11 holds for ordinary tasks); a step in a lane
+        waits only for a live task of the same lane or an ordinary one, so two steps of one team may run together (MAN-10). With no lanes in use this is `busy.get(dept)` as it always was."""
+        lane = lanes_of.get(row.id, "")
+        found = [r["status"] for r in laned if r["dept_id"] == row.dept_id and (lane == "" or r["lane"] == lane)]
+        own = busy.get(row.dept_id)
+        statuses = ([own] if own is not None else []) + found
+        return "waiting_user" if "waiting_user" in statuses else (statuses[0] if statuses else None)
 
     def _begin(self, tx: Tx, row: TaskRow) -> tuple[RunSpec, Path]:
         """Allocate the run id, make the folder and its three files, and mark the task `starting`."""
@@ -669,6 +698,8 @@ class TaskService:
             now = tx.now()
             started = self.store.update(tx, row.id, status="starting", run_id=run_id, started_at=now, last_event_at=now)
             self.taskgraph.sync(tx, started)
+            if self.node_sync is not None:
+                self.node_sync(tx, row.id)                                      # a node takes its lease in the transaction that starts it: two starts cannot both take the last slot
             self.graph.aggregate(tx)
         except BaseException:
             shutil.rmtree(run_dir, ignore_errors=True)
@@ -691,12 +722,32 @@ class TaskService:
                                   (row.dept_id,)).fetchone()
             if chosen is not None and chosen["pinned"] in ("claude", "codex"):
                 connector = chosen["pinned"]
+        node = None
+        if self.settings.nodes_v1:                                   # the identity block is written only while SUTRA_NODES_V1 is on: off, nothing of it is read or written (D254)
+            node = node_block_of(conn, row.id)                       # a node with no usable grant raises: the task gate holds such a node, so it never gets here, and it is never started as an ordinary task (D302)
+        settings = row.settings
+        if node is not None and self.settings.slots_on:
+            node = node.model_copy(update={"slots": True})              # SUTRA_NODES_SLOTS: this run takes machine-wide provider slots (MAN-12)
+        if node is not None:                                         # the node's slice, read from its row now (not rewritten into the task's settings): a retry or a later move cannot drift (MAN-9)
+            sliced = conn.execute("SELECT slice_credits FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone()
+            if sliced is not None and sliced["slice_credits"]:
+                from sutra_app.orchestrator.budgets import chain_spend, slice_left
+                left = max(1, slice_left(int(sliced["slice_credits"]), chain_spend(conn, row.parent_task_id)[0]))      # a retry or a restart: the slice minus what earlier attempts spent (D324)
+                settings = {**settings, "J2_BUDGET": str(left), "J2_BUDGET_CAP": str(left)}      # start with it and never go past it (P25: no raise without the Requester)
+        if node is not None and self.node_usd_left is not None:             # D381: a step is never given more dollars than the project and the owner's month have left; its meter stops it between calls
+            left = self.node_usd_left(conn, node.project_id, float(self.clock.now()))
+            if left is not None and (node.caps.usd is None or left < node.caps.usd):
+                node = node.model_copy(update={"caps": node.caps.model_copy(update={"usd": max(0.01, round(left, 6))})})
+        if node is not None and node.runtime == "light":                                 # the reviewer uses a program that did not build the work, when there is one (MAN-11)
+            picked = json.loads((conn.execute("SELECT caps_json FROM projects WHERE id = ?", (node.project_id,)).fetchone() or {"caps_json": "{}"})["caps_json"] or "{}").get("reviewer_connector")
+            if picked in ("claude", "codex") and connector != "stub":
+                connector = picked
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,
             framing=framing_for(conn, row.dept_id, row.framing),                  # the team's standing rules in front, read now (GAP2 rules-notes)
             parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
-            settings=TaskSettings.model_validate(row.settings), connector=connector)
+            settings=TaskSettings.model_validate(settings), connector=connector, node=node)
 
     def _files_of(self, conn: sqlite3.Connection, dep: TaskRow) -> list[str]:
         """The files an upstream run left at the top of its folder (the engine's own plumbing is left out), up to 200."""
@@ -708,6 +759,15 @@ class TaskService:
         return names[:200]
 
     async def _launch(self, task_id: str, spec: RunSpec, run_dir: Path) -> None:
+        """Start the process of a task that is `starting`. A stop or a kill that came after the task was marked `starting` and before the process existed must not be lost (a stop
+        of a task with no pid has nothing to signal): so the task and the node switch are looked at again just before the start (a task that is no longer `starting` is not started; a
+        node under a kill is ended as stopped) and just after it (a process that began for a task that ended meanwhile is stopped at once; a node under a kill goes through the ladder)."""
+        refused = await run_blocking(self._launch_refused, task_id, False)
+        if refused == "gone":
+            return
+        if refused:
+            await run_blocking(self.projector.mark_ended, task_id, "stopped", refused)
+            return
         try:
             pid = await self.launcher.start(spec, run_dir)
         except Exception as exc:                          # noqa: BLE001  (a spawn failure ends this task only)
@@ -716,8 +776,32 @@ class TaskService:
             await run_blocking(self.projector.mark_ended, task_id, "crashed", f"could not start: {said}", "start_failed")
             return
         alive = await run_blocking(self._store_pid, task_id, pid)
-        if alive and self.watcher is not None:
+        if not alive:                                     # the task ended while its process was starting: nothing may be left running
+            await self.launcher.stop(run_dir, pid)
+            return
+        if self.watcher is not None:
             self.watcher.watch(task_id)
+        late = await run_blocking(self._launch_refused, task_id, True)
+        if late and late != "gone":
+            await self._stop_from_launch(task_id, run_dir, pid, late)
+
+    async def _stop_from_launch(self, task_id: str, run_dir: Path, pid: int, outcome: str) -> None:
+        """The stop ladder for a task whose process has only just begun, called from inside the start loop. `_stop` cannot be used here: it drains through the watcher, whose
+        `after_drain` is `start_ready`, and the start loop holds that lock (it would wait for itself). The same steps without that."""
+        await run_blocking(self._mark_stop, task_id, "app")
+        await self.launcher.stop(run_dir, pid)
+        await run_blocking(self.projector.drain, task_id)
+        await run_blocking(self.projector.mark_ended, task_id, "stopped", outcome)
+        if self.watcher is not None:
+            self.watcher.unwatch(task_id)
+
+    def _launch_refused(self, task_id: str, started: bool) -> str:
+        """"" to go on, `gone` when the task is not `starting` any more (before the start) or not live (after it), else the outcome sentence of a guard (the kill switch)."""
+        conn = self.db.conn()
+        row = self.store.row_in(conn, task_id)
+        if row is None or (row.status != "starting" if not started else not row.live):
+            return "gone"
+        return self.spawn_guard(conn, row) if self.spawn_guard is not None else ""
 
     def _store_pid(self, task_id: str, pid: int) -> bool:
         with self.db.tx() as tx:
@@ -792,6 +876,14 @@ class TaskService:
         return self.deliver_to_department(dept["department_id"], text, scope_id=found["node_id"])
 
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None) -> Delivery:
+        return self._deliver(dept_id, text, scope_id=scope_id, settings=settings)
+
+    def answer_waiting(self, dept_id: str, text: str) -> Delivery:
+        """An ANSWER to the team's open question and nothing else (D415): when the team has no task that waits for the owner this raises Busy ("not open any more") and makes no task, where
+        `deliver_to_department` would make a follow-up. The engine's protocol keeps its own signature."""
+        return self._deliver(dept_id, text, answer_only=True)
+
+    def _deliver(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, answer_only: bool = False) -> Delivery:
         """What the engine's `POST /api/say` calls. Strips the text. A team waiting for the owner gets it as an answer (or as an
         override when it starts with the override key); a working team is 409 `busy`; with no live task a follow-up is created
         and scheduled. Raises `Busy`."""
@@ -816,6 +908,8 @@ class TaskService:
                     result = self._answer(tx, live, sid, "Owner override sent", {"kind": "override", "cmd": override}, answered=False)
             elif live is not None and live.status == "waiting_user":
                 result = self._answer(tx, live, sid, said, {"kind": "user", "text": said}, answered=True)
+            elif answer_only:
+                raise Busy("That question is not open any more")                  # an answer is never turned into a new task (D415)
             elif live is not None:
                 raise Busy()
             elif tx.conn.execute("SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
@@ -935,7 +1029,7 @@ class TaskService:
         nothing, when a task is starting or running. May block for the stop ladder (12 s)."""
         conn = self.db.conn()
         rows = [_row_of(r) for r in conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued','starting','running','waiting_user')", (dept_id,))]
+            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ('blocked','queued','starting','running','waiting_user')", (dept_id,))]
         if any(r.status in ("starting", "running") for r in rows):
             return False
         for row in rows:
@@ -950,12 +1044,27 @@ class TaskService:
 
     def _cancel(self, tx: Tx, task_id: str, outcome: str) -> TaskRow:
         row = self.store.update(tx, task_id, status="cancelled", ended_at=tx.now(), outcome=outcome)
-        self.taskgraph.sync(tx, row)
-        self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
+        self.taskgraph.sync(tx, row)                                 # the one `task.updated` of a cancel, as before nodes existed (Minor 1)
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
+        self.store.settle_blocked(tx, lambda moved: self._moved(tx, moved))
         return row
 
+    def cancel_in(self, tx: Tx, task_id: str, outcome: str) -> TaskRow:
+        """Cancel a blocked or queued task inside the caller's transaction (the project service, when a step a node needed did not finish)."""
+        row = self.store.row_in(tx.conn, task_id)
+        if row is None or row.status not in ("blocked", "queued"):
+            raise Busy("That task is not waiting")
+        return self._cancel(tx, task_id, outcome)
+
+    def _moved(self, tx: Tx, row: TaskRow) -> None:
+        """A task changed state here: its step node, and (with nodes on) its agent node."""
+        self.taskgraph.sync(tx, row)
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
+
     def _mark_stop(self, task_id: str, by: str) -> None:
-        """Remember who asked a live task to stop, "owner" or "app", in the reserved settings key `_stopped_by` (the first one to ask
+        """Remember who asked a live task to stop, "owner", "app" or "system", in the reserved settings key `_stopped_by` (the first one to ask
         wins). The engine ends a stopped run with the same words for both, and the Heads up lane must never list the owner's own stop
         (headsup.py)."""
         with self.db.tx() as tx:
@@ -963,16 +1072,26 @@ class TaskService:
             if found is None:
                 return
             stored = json.loads(found["settings_json"] or "{}")
-            if stored.get(STOP_KEY):
-                return
+            if stored.get(STOP_KEY) and not (by == "owner" and stored.get(STOP_KEY) != "owner"):
+                return                                           # the first one to ask wins, except that the owner's own stop always wins over the app's or the system's (D406)
             stored[STOP_KEY] = by
             self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
+
+    async def stop_node(self, task_id: str, outcome: str = "stopped by you", *, by: str = "owner") -> bool:
+        """Stop the task of a node of a multi-agent project through the ordinary ladder (`_stop`: a live task through the launcher's stop ladder, a queued or blocked one cancelled).
+        False, touching nothing, when the task is over already or there is none. `outcome` is what the owner reads as the end ("stopped by you", "stopped by the kill switch"). `by` is who asked: "owner", or "system" for a lease that ran
+        out, a kill, a project the app stopped: the Heads up lane lists a system stop and never the owner's own (Minor 2)."""
+        row = await run_blocking(self.store.find_row, task_id)
+        if row is None or row.terminal:
+            return False
+        await self._stop(task_id, outcome, by=by)
+        return True
 
     async def stop(self, task_id: str) -> TaskOut:
         """Stop a task ('stopped by you'): a live task through the ladder, a queued or blocked one is cancelled; a finished one is 409."""
         return await self._stop(task_id, "stopped by you")
 
-    async def _stop(self, task_id: str, outcome: str) -> TaskOut:
+    async def _stop(self, task_id: str, outcome: str, by: str = "owner") -> TaskOut:
         row = await run_blocking(self.store.row, task_id)
         if row.terminal:
             raise Busy("That task has already ended")
@@ -983,7 +1102,7 @@ class TaskService:
                     self.graph.aggregate(tx)
                 return self.store.get(task_id)
             return await run_blocking(cancel)
-        await run_blocking(self._mark_stop, task_id, "owner")
+        await run_blocking(self._mark_stop, task_id, by)
         run_dir = await run_blocking(self.store.run_dir_of, row)
         await self.launcher.stop(run_dir, row.pid)
         if self.watcher is not None:
@@ -1003,25 +1122,31 @@ class TaskService:
         carries its attempt number."""
         def make() -> str:
             with self.db.tx() as tx:
-                old = self.store.row_in(tx.conn, task_id)
-                if old is None:
-                    raise NotFound("that task")
-                if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items"):
-                    raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
-                earlier = attempts.chain(tx.conn, old.id)
-                number = attempts.attempt_of(earlier[-1]) + 1
-                note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
-                                      scrub=lambda text: scan(self.redact(text), replace=True)[0])
-                base = earlier[0]["framing"].strip()
-                framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
-                row = self._insert(
-                    tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=(),
-                    follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
-                    attempt=number)
-                return row.id
+                return self.retry_in(tx, task_id).id
         new_id = await run_blocking(make)
         await self.start_ready()
         return await run_blocking(self.store.get, new_id)
+
+    def retry_in(self, tx: Tx, task_id: str, *, force: bool = False) -> TaskRow:
+        """The retry of `retry`, inside the caller's transaction: a new queued task with the same words, team, scope and settings, `parent_task_id` = the old task, the earlier attempts' brief in
+        its framing and its attempt number. `force` (the project service, for a node: MAN-7) also allows an old task that ended `done`, because the node's hand-off was refused, and keeps the old task's `depends_on`."""
+        old = self.store.row_in(tx.conn, task_id)
+        if old is None:
+            raise NotFound("that task")
+        if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items") and not (force and old.status in ("done",)):
+            raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
+        if not force and self.settings.nodes_v1 and is_node_task(tx.conn, old.id):
+            raise Busy("A step of a project is tried again by its project, not by hand")                      # D398: a task made by hand would run with no grant, no narrowing and no dollar limit
+        earlier = attempts.chain(tx.conn, old.id)
+        number = attempts.attempt_of(earlier[-1]) + 1
+        note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,
+                              scrub=lambda text: scan(self.redact(text), replace=True)[0])
+        base = earlier[0]["framing"].strip()
+        framing = f"{clip(base, 20_000 - len(note) - 2)}\n\n{note}" if base else note          # the brief is never the part cut
+        return self._insert(
+            tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=old.depends_on if force else (),
+            follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
+            attempt=number)         # a node's retry (`force`) keeps what the node waited for, so the new attempt is given the same upstream (G4, D310); the owner's own retry stays as it was
 
     # ---- reads the engine plug-in needs ---------------------------------------------------------------------------------------
 

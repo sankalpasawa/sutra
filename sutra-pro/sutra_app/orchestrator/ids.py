@@ -1,6 +1,7 @@
 """Ids and time (orchestrator 3.1): `Clock`, `IdFactory` and the patterns of the ids the server hands out.
 
     task      tsk_<12 hex>                      session   cs_<12 hex> (the org chat is the fixed `cs_org`)
+    project   prj_<12 hex>  node  nd_<12 hex>  grant  gr_<12 hex>  approval  ap_<12 hex>      (multi-agent nodes: a node is a runtime agent, not a graph node)
     run       j2-YYYYMMDD-HHMMSS-<4 hex>        request   req-<message id>
     change    chg-NNNN (4 digits or more, the library's ChangeId)
 
@@ -96,6 +97,22 @@ class IdFactory:
 
     def session_id(self) -> str:
         return f"cs_{self._hex(6)}"
+
+    def project_id(self) -> str:
+        """`prj_<12 hex>` (multi-agent nodes: a project groups the nodes of one request)."""
+        return f"prj_{self._hex(6)}"
+
+    def node_id(self) -> str:
+        """`nd_<12 hex>`: a runtime node, an agent of a project (not a graph node)."""
+        return f"nd_{self._hex(6)}"
+
+    def grant_id(self) -> str:
+        """`gr_<12 hex>`: the frozen grant of one node."""
+        return f"gr_{self._hex(6)}"
+
+    def approval_id(self) -> str:
+        """`ap_<12 hex>`: one question to the owner at a gate."""
+        return f"ap_{self._hex(6)}"
 
     def run_id(self) -> str:
         """`j2-YYYYMMDD-HHMMSS-<4 hex>` (UTC). The caller retries on a collision (the folder is made with exist_ok=False)."""

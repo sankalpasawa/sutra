@@ -29,7 +29,7 @@ EXAMPLE = json.loads(
 
 # the fields of the orchestrator's RunSpec (orchestrator.md 3.3): every one must exist in TaskSpec
 RUN_SPEC_FIELDS = ["run_id", "task_id", "dept_id", "dept_label", "scope_id", "scope_label", "user_text", "framing", "parent_run_id",
-                   "seed_from", "upstream", "settings", "connector"]
+                   "seed_from", "upstream", "settings", "connector", "node"]
 
 
 def task(**changes):
@@ -202,8 +202,8 @@ J2_DEFAULTS = {
     "fixes": 0,                       # :2837 == "1"
     "budget": 100,                    # :66
     "budget_cap": None,               # :67 default 2 x budget
-    "usd_budget": 20.0,               # D255, D256: not J2's; Sutra always sets it, so P26's dollar mode is on in the app
-    "usd_cap": None,                  # D256: no cap unless set
+    "usd_budget": 20.0,               # D421, D422: not J2's; Sutra always sets it, so P26's dollar mode is on in the app
+    "usd_cap": None,                  # D422: no cap unless set
     "max_cycles": 6,                  # :71
     "limit_add": 30,                  # :72
     "bargain_minutes": 15.0,          # :69

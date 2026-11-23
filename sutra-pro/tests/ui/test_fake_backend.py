@@ -2152,7 +2152,7 @@ def test_a_working_log_and_a_step_are_read_only_and_an_unknown_chat_is_gone(fake
 
 
 BODY_MESSAGE = "the body is {text, choice?, budget?, usd_budget?}"
-USD_MESSAGE = "usd_budget must be dollars from 1 to 10000"      # D257
+USD_MESSAGE = "usd_budget must be dollars from 1 to 10000"      # D423
 TEXT_MESSAGE = "text must be 1 to 8000 characters"
 CHOICE_MESSAGE = "choice is {message_id, option}"
 

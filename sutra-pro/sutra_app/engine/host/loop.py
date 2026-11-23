@@ -50,6 +50,9 @@ from ..spec import (
 )
 from .heartbeat import Heartbeat, heartbeat_interval
 from .inbox import Inbox
+from .toollog import ToolLog, log_path
+from .toolscrub import blank_tool_inputs
+from .handoff import CHANGES_FILE
 
 __all__ = ["main", "Host", "StartFailed", "TICK_S", "STOP_WAIT_S", "DEAD_THREAD_GRACE_S", "REVIEWER_SETTLE_S", "DEFAULT_HOOKS", "outcome_status",
            "EXIT_OK", "EXIT_BAD_TASK", "EXIT_START_FAILED", "EXIT_INTERNAL", "EXIT_TERM"]
@@ -75,6 +78,21 @@ class StartFailed(Exception):
     def __init__(self, reason: str, exit_code: int = EXIT_START_FAILED, chat: bool = False):
         super().__init__(reason)
         self.reason, self.exit_code, self.chat = reason, exit_code, chat
+
+
+NEEDS_PERMISSION = "Your computer did not allow it"          # the outcome prefix (plain words: the owner reads it) of a run the computer refused a file to (MAN-15): written by the host, read by the orchestrator, nothing a node writes
+_OS_REFUSAL = re.compile(r"^(?:Crashed: )?(?:\[(?:Errno (?:1|13)|WinError 5)\]|(?:PermissionError)\b)")      # the start of the text of a Python OSError that the system refused
+
+
+def permission_outcome(exc_or_text: Any) -> Optional[str]:
+    """`Your computer did not allow it: ...` when `exc_or_text` is a refusal of the computer: a PermissionError (or an OSError with EPERM, EACCES, WinError 5), or the text a Python OSError of that kind makes
+    (J2 keeps only the text of the error that crashed a run). None otherwise. Only this prefix is read as a permission need: the words of a node are never matched (m5)."""
+    import errno
+    if isinstance(exc_or_text, PermissionError) or (isinstance(exc_or_text, OSError) and (exc_or_text.errno in (errno.EPERM, errno.EACCES) or getattr(exc_or_text, "winerror", None) == 5)):
+        return f"{NEEDS_PERMISSION}: {type(exc_or_text).__name__}"
+    if isinstance(exc_or_text, str) and _OS_REFUSAL.match(exc_or_text.strip()):
+        return f"{NEEDS_PERMISSION}: {clip(exc_or_text.strip(), 300)}"
+    return None
 
 
 def outcome_status(outcome: Optional[str]) -> str:
@@ -122,6 +140,7 @@ class Host:
         self.settings: Optional[EngineSettings] = None
         self.mock = False
         self.port = None
+        self.meter = None                    # the node meter (MAN-9), made when the port is
         self.sink: Optional[EventUsageSink] = None
         self.hooks = None
         self.publisher = None
@@ -180,8 +199,28 @@ class Host:
         _stderr("engine host: internal error\n" + "".join(traceback.format_exception(exc)))
         if self.run is not None:
             self.stopping.set()
-        self._emit_ended("crashed", clip(f"Crashed: {type(exc).__name__}: {exc}", 2000), "internal")
+        said = self._permission_said(exc)
+        if said:
+            self._emit_ended("crashed", clip(f"{said}. ", 100) + clip(f"Crashed: {type(exc).__name__}: {exc}", 1900), "internal")
+        else:
+            self._emit_ended("crashed", clip(f"Crashed: {type(exc).__name__}: {exc}", 2000), "internal")           # exactly what an ordinary run always wrote (G24)
         return EXIT_INTERNAL
+
+    def _blank_tool_inputs(self) -> None:
+        """For a run that is a node of a project only: the inputs of the tool calls in `calls.jsonl` and `snapshot.json` are emptied (names and results stay). Never fails the end of a run."""
+        if getattr(getattr(self, "task", None), "node", None) is None or self.paths is None:
+            return
+        try:
+            failed: list[str] = []
+            blank_tool_inputs(self.paths.run_dir, failed)
+            if failed:                                                            # the inputs stay in that file: the trace says so, the run still ends (N-12)
+                self.trace("publish.error", {"where": "tool inputs", "error": clip("could not empty the tool inputs of " + ", ".join(failed), 300)})
+        except Exception as exc:  # noqa: BLE001
+            self.trace("publish.error", {"where": "tool inputs", "error": clip(f"{type(exc).__name__}: {exc}", 300)})
+
+    def _permission_said(self, what: Any) -> Optional[str]:
+        """The "Your computer did not allow it" prefix, only for a run that is a node of a project (G24, D340 b): an ordinary run's crash text is what it always was, byte for byte."""
+        return permission_outcome(what) if getattr(getattr(self, "task", None), "node", None) is not None else None
 
     def _emit_ended(self, status: str, outcome: str, code: Optional[str]) -> None:
         """`run.ended`, once, the last line. Best effort: a closed or missing writer is only a stderr line."""
@@ -191,6 +230,7 @@ class Host:
         if self.writer is None:
             return
         self._write_deliverable()                   # before the last line: the server reads the file when it applies run.ended
+        self._blank_tool_inputs()                   # a node's tool inputs are not kept in its record (R11, D344)
         try:
             self.writer.emit(run_ended_event(status=status, outcome=outcome, code=code))
         except (EventError, OSError) as exc:
@@ -271,6 +311,8 @@ class Host:
         except OSError as exc:
             raise StartFailed(f"settings.json cannot be written: {exc}") from None
         os.environ.update(self.settings.to_env())
+        if task.node is not None:
+            os.environ.pop("J2_USD_BUDGET", None)      # D424: a project's step is held by the project's dollars (D381, D418) and its slice (D320), not by P26
         if self.settings.output == "auto":
             os.environ.pop("J2_OUTPUT", None)          # no type chosen: J2 leaves it to its planner (D165)
         os.environ.update(paths.j2_env())
@@ -372,16 +414,44 @@ class Host:
             raise
         except ModelError as exc:
             raise StartFailed(f"{type(exc).__name__}: {exc}", EXIT_START_FAILED, chat=True) from None
-        llm.configure(self.port, mock=self.mock, base_tag=CallTag(run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id))
+        self.meter = self._node_meter()
+        self._watch_tools()
+        llm.configure(self.port, mock=self.mock, base_tag=self._base_tag(), meter=self.meter)
         llm.bind_atom(overhead)                  # a call made before the first turn carries the run overhead key
+
+    def _watch_tools(self) -> None:
+        """MAN-14, D327: a node's router tells the host about each tool call (a name and a kind, a file's base name at most) and the host appends it to `tools.jsonl` in the run folder; the Conductor
+        turns the file into audit rows when the node ends. Only for a run that is a node and a port that has a router: every other run is exactly as it was."""
+        router = getattr(self.port, "router", None)
+        if getattr(self.task, "node", None) is None or router is None or self.paths is None:
+            return
+        router.on_tool = ToolLog(log_path(self.paths.data_dir, self.task.run_id))       # outside the step's own folder (PB-6)
+
+    def _node_meter(self) -> Optional["llm.NodeMeter"]:
+        """The meter of a node of a multi-agent project (MAN-9, D272): its calls, dollars and wall time from the `node` block's caps, cumulative for the whole process. None for every run that is
+        not a node: such a run sends the allowance it always sent (none)."""
+        node = getattr(self.task, "node", None)
+        if node is None:
+            return None
+        return llm.NodeMeter(max_calls=node.caps.calls, max_usd=node.caps.usd, wall_s=node.caps.wall_s)
+
+    def _base_tag(self) -> CallTag:
+        """The tag every call of this process starts from. A run that is a node of a multi-agent project (the optional `node` block of `task.json`, D283) also says which node and
+        what role, so every usage row, egress row and allowance of its calls can name it; any other run gets exactly the tag it always got."""
+        task = self.task
+        who = {"node_id": task.node.id, "node_role": task.node.role} if task.node is not None else {}
+        return CallTag(run_id=task.run_id, dept_id=task.dept_id, task_id=task.task_id, **who)
 
     def _connector_port(self):
         try:
             from sutra_app.connectors.engine_port import make_port
         except ImportError as exc:
             raise StartFailed(f"the model connectors are not available ({exc})") from None
+        node = getattr(self.task, "node", None)
+        tools = tuple(node.tool_profile.split("+")) if node is not None and node.tool_profile != "none" else ()       # a node's granted app tools (MAN-8, D298)
         spec = PortSpec(mock=False, connector=self.task.connector, run_id=self.task.run_id, dept_id=self.task.dept_id,
-                        task_id=self.task.task_id, data_dir=str(self.paths.data_dir))
+                        task_id=self.task.task_id, data_dir=str(self.paths.data_dir), tools=tools, scope=tuple(node.scope) if node is not None else (), slots=bool(node is not None and node.slots),
+                        node_tiers=tuple(node.tiers) if node is not None else (), node_commands=node.commands if node is not None else "none", node=node is not None, project_id=node.project_id if node is not None else "")
         return make_port(spec, usage_sink=self.sink)
 
     def _hooks_off(self, target: str, exc: BaseException) -> None:
@@ -672,8 +742,12 @@ class Host:
                                       "label": clip(f"{out.get('label') or ''} {out.get('noun') or ''}".strip(), 80)}
             if self.folder_watch is not None:
                 grant = self._owner_grant()
-                changes = self.folder_watch.finish(bool(getattr(grant, "edit", False)))
+                node = getattr(self.task, "node", None) is not None
+                changes = self.folder_watch.finish(bool(getattr(grant, "edit", False)), full=node)
                 if changes is not None:
+                    every = changes.pop("all", None)
+                    if every is not None:                                             # a node's whole list, up to 5000 paths, for the server's scope check (the hand-off names the first 100)
+                        _atomic_write(self.paths.run_dir / CHANGES_FILE, json.dumps({"schema": "changes/1", "files": every}, ensure_ascii=False) + "\n")
                     record["changes"] = changes
                     self.trace("folder_watch.finished", {"files": len(changes["files"]), "more": changes["more"]})
             _atomic_write(self.paths.run_dir / "deliverable.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
@@ -752,9 +826,13 @@ class Host:
         run = self.run
         status = outcome_status(run.outcome)
         code = None
+        outcome = run.outcome or ""
         if status == "crashed":
             code = getattr(self.hooks, "error_code", None) or "internal"
-        self._conclude(status, run.outcome or "", code)
+            said = self._permission_said(getattr(run, "error", None) or outcome)       # the computer refused a file: the outcome starts with the word the orchestrator reads (MAN-15)
+            if said and not outcome.startswith(NEEDS_PERMISSION):
+                outcome = f"{said}. {outcome}"
+        self._conclude(status, outcome, code)
         return EXIT_OK
 
     def _stop_run(self, outcome: str, exit_code: int) -> int:
@@ -817,6 +895,11 @@ class Host:
         self._join_reviewer()                      # D179: the run folder must be stable before anything collects, publishes or closes the writer
         self.publisher.stop()
         from . import finish
+        reached = getattr(getattr(self, "meter", None), "reached", None)
+        if reached and status != "stopped":                            # the node used up its allowance: it FAILED, whatever J2 would have called the run (D321 a); the outcome says which one in plain words
+            status = "crashed"
+            outcome = f"stopped: this step {llm.CAP_WORDS.get(reached, 'reached a limit')}"
+        self.ended_status, self.ended_outcome = status, outcome        # what the `handoff` step of a node's run says (MAN-6)
         finish.run_steps(self, status)             # D142, D143: the steps of a run that ended well; the heartbeat still beats
         self.heartbeat.stop()
         try:

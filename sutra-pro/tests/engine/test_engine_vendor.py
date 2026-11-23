@@ -169,7 +169,7 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
 def test_the_patch_table_has_p1_to_p26_without_p6_p13_and_p20():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
-    Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D255, D256)."""
+    Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
     assert ids == [f"P{n}" for n in range(1, 27) if n not in (6, 13, 20)]

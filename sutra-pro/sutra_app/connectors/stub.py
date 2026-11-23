@@ -209,7 +209,11 @@ class StubConnector(ModelConnector):
 
     def call_json_result(self, prompt: str, tools: Sequence[str] = (), schema: "type[BaseModel] | dict | None" = None,
                          *args: Any, scripted: Optional[Callable[[], Any]] = None, **kw: Any) -> JsonResult:
-        """As the base, plus `scripted`. `how` is always `"stub"` (3.7), whatever path the base took."""
+        """As the base, plus `scripted`. `how` is always `"stub"` (3.7), whatever path the base took. A `cancel` token (D301) that was requested ends the call before it answers: the stub
+        has no process to bind it to, so this is where the token reaches it."""
+        cancel = kw.get("cancel")
+        if cancel is not None and cancel.requested:
+            raise CallCancelledError("the turn was stopped", provider=self.name)
         schema_dict = to_json_schema(schema) if schema is not None else None
         with self._request(schema_dict, scripted):
             result = super().call_json_result(prompt, tools, schema, *args, **kw)

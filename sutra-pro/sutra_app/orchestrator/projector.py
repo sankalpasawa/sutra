@@ -22,6 +22,7 @@ import logging
 import re
 import sqlite3
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from pydantic import ValidationError
@@ -35,6 +36,7 @@ from sutra_app.orchestrator.attempts import attempt_in
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.deliverable import Deliverable, read_deliverable
 from sutra_app.orchestrator.errors import AppError, NotFound
+from sutra_app.orchestrator.stopwords import plain_outcome
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
     DeliverableCard, DoneCard, DoneReceipt, DoneReport, EventParseError, RunAtom, RunEnded, RunNode, RunSay, RunStarted, RunStep, RunUsage, TeamChatCard,
@@ -46,6 +48,7 @@ from sutra_app.orchestrator.usage import UsageStore
 __all__ = ["Projector", "Drained", "MAX_CHUNK_BYTES", "MAX_LINE_BYTES", "DEFAULT_OUTCOMES"]
 
 log = logging.getLogger(__name__)
+HEARTBEAT_COALESCE_S = 15                         # a node's heartbeat-only batch within this many seconds of its last event writes nothing (MAN-12; a lease is 90 s)
 MAX_CHUNK_BYTES = 2_000_000
 MAX_LINE_BYTES = 64_000_000
 DEFAULT_OUTCOMES = {
@@ -99,6 +102,9 @@ class Projector:
         self.taskgraph = taskgraph
         self.sessions = taskgraph.sessions                   # which chat session an agent's line goes to in this run (D130)
         self.clock = clock or SystemClock()
+        self.coalesce: Callable[[Tx, TaskRow], bool] | None = None   # SUTRA_NODES_SLOTS: True for a task whose heartbeat-only batches need not be written every time (a node's, MAN-12)
+        self.before_drain: Callable[[str], None] | None = None       # the project service's `prepare_handoff`: files of a node's hand-off are read and hashed BEFORE the transaction opens (MJ5)
+        self.node_sync: Callable[[Tx, str], None] | None = None      # the project service's `sync_task`, set only while SUTRA_NODES_V1 is on: a node follows its task (MAN-5)
 
     # =================================================================================================================
     # reading the file and applying a batch
@@ -107,6 +113,8 @@ class Projector:
     def drain(self, task_id: str) -> Drained:
         """Apply the complete lines of the task's `events.jsonl` that came after `events_offset`, with the new offset, in one
         transaction. A finished task is left alone."""
+        if self.before_drain is not None:
+            self.before_drain(task_id)                       # outside the transaction: a node's hand-off is read, hashed and written here (MJ5)
         with self.db.tx() as tx:
             row = self.store.row_in(tx.conn, task_id)
             if row is None:
@@ -145,6 +153,7 @@ class Projector:
             batch = _Batch(tx, row)
             dropped: list[str] = []
             applied, newest, position = 0, None, offset
+            kinds: set[str] = set()
             for raw in chunk.split(b"\n")[:-1]:
                 start, position = position, position + len(raw) + 1
                 if not raw.strip():
@@ -160,6 +169,7 @@ class Projector:
                 for key in dict.fromkeys(dropped):
                     self._note(batch, f"Ignored the unknown field {key} in a {event.t} event.", f"{batch.run}#dropped:{event.t}.{key}")
                 dropped.clear()
+                kinds.add(event.t)
                 if self._apply_guarded(batch, event, start):
                     applied += 1
                 try:
@@ -167,6 +177,9 @@ class Projector:
                 except ValueError:
                     pass
             new_offset = offset + len(chunk)                  # nothing is read after run.ended, so the rest of a chunk may be dropped
+            if (self.coalesce is not None and kinds == {"heartbeat"} and row.last_event_at is not None and newest is not None and 0 <= newest - row.last_event_at < HEARTBEAT_COALESCE_S
+                    and not batch.skipped and self.coalesce(tx, row)):
+                return Drained(applied=applied, skipped=0, ended=False, status=row.status, offset=row.events_offset, more=offset + len(data) < size)       # nothing is written: the same lines are read again next time, which is harmless (every projection is idempotent)
             self.store.touch(tx, task_id, events_offset=new_offset, last_event_at=newest)
             if batch.changed or applied:
                 self._refresh(batch)
@@ -259,6 +272,8 @@ class Projector:
         if row.status == "starting":
             row = self.store.update(batch.tx, row.id, status="running", pid=ev.pid)
             self.taskgraph.sync(batch.tx, row)
+            if self.node_sync is not None:
+                self.node_sync(batch.tx, row.id)
         elif row.pid != ev.pid:
             self.store.update(batch.tx, row.id, pid=ev.pid)
 
@@ -468,12 +483,33 @@ class Projector:
         self._abandon_open_atoms(batch, status)
         self._settle_nodes(batch, status)
         self.taskgraph.sync(tx, row)
-        self.store.settle_blocked(tx, lambda moved: self.taskgraph.sync(tx, moved))
+        if self.node_sync is not None:
+            self.node_sync(tx, row.id)
+        self.store.settle_blocked(tx, lambda moved: (self.taskgraph.sync(tx, moved), self.node_sync(tx, moved.id) if self.node_sync is not None else None))
         name = tx.conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
         left = self._deliverable(row)
         report = DoneReport(dept_id=row.dept_id, run_id=row.run_id or "", label=left.label) if left is not None and left.has_report and row.run_id else None
+        project_id, shown = None, text
+        if self.node_sync is not None:                                      # nodes on: a step of a project links to the project and says how it was stopped in the owner's words (D394)
+            # the node may already follow a fresh attempt (`node_sync` above moved it): so the step is found through the task's own chain, not through the node's current task (D400)
+            step = tx.conn.execute(
+                "WITH RECURSIVE chain(id, node) AS (SELECT task_id, id FROM agent_nodes WHERE task_id IS NOT NULL UNION SELECT t.parent_task_id, c.node FROM tasks t JOIN chain c ON t.id = c.id "
+                "WHERE t.parent_task_id IS NOT NULL) SELECT p.id AS id, p.status AS status, p.stop_reason AS why, n.task_id AS current FROM chain c JOIN agent_nodes n ON n.id = c.node "
+                "JOIN projects p ON p.id = n.project_id WHERE c.id = ? LIMIT 1", (row.id,)).fetchone()
+            if step is not None:
+                project_id = step["id"]
+                if step["current"] != row.id and step["status"] not in ("stopped", "failed", "done", "done_with_open_items"):
+                    # this attempt was replaced by a fresh one while the project goes on (a close of the app, a retry, a send-back): no "stopped" card for it, one plain line that says so
+                    again = "The app was closed, so" if (text.lower().startswith("the app was closed") or text.lower().startswith("stopped: stopped on request")) else "This try ended, so"
+                    note = f"{again} the step \u201c{clip(row.title, 120)}\u201d starts again. /p/{project_id}"
+                    self._post(batch, ORG_SESSION_ID, who="sutra", kind="note", text=note, src_ref=f"{batch.run}#again", at=ended_at)
+                    session = self._session_of(tx, row.dept_id)
+                    if left is not None and session is not None and row.run_id:
+                        self._post_deliverable(batch, session, left, ended_at)
+                    return
+                shown = plain_outcome(text, step["why"] if step["status"] == "stopped" else "")
         card = DoneCard(type="done", task_id=row.id, dept_name=name["name"] if name is not None else row.dept_id, title=clip(row.title, 200),
-                        status=status, outcome=text, receipt=self._receipt(tx.conn, row), report=report)
+                        status=status, outcome=shown, receipt=self._receipt(tx.conn, row), report=report, project_id=project_id)
         self._post(batch, ORG_SESSION_ID, who="sutra", kind="card", card=card.model_dump(mode="json"), src_ref=f"{batch.run}#done", at=ended_at)
         session = self._session_of(tx, row.dept_id)
         if left is not None and session is not None and row.run_id:

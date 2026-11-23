@@ -2,7 +2,7 @@
    S4-fnodes-12).
 
    Strings in, strings out: transcript() draws a session's messages in J2's bubble look (.sb.team, .sb.me, .opts), card() draws one chat card
-   (task, chart_change, approval, choice, needs_you, team_chat, done, deliverable and, in a function node's working log, atom), composerState() says whether the
+   (task, chart_change, approval, choice, node_approval, needs_you, team_chat, done, deliverable, answer_sources and, in a function node's working log, atom), composerState() says whether the
    message box shows, is disabled and what it says, whoLabel() names an author, and safeText() is the one door a message text goes through.
    Nothing touches the DOM, every word that came from the wire is escaped, and the markup is well formed XML.
 
@@ -12,7 +12,11 @@
    script is on the page: escaped first too, then paragraphs, lists, code blocks, tables, headings and quotes, and still no link and no HTML.
    Every other line (the owner's, a team's, Sutra's, a note, an error, a card) keeps safeText.
 
-   Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct) and the data they need; the page that
+   An `answer_sources` card (DV-1, Ask mode) follows a cited answer: every source the answer named with the label code gave it ("checked" or "could not find"; the page never makes one),
+   a sentence that says what "checked" covers, and "Turn this into work", a button whose data-draft holds a request the page puts in the box for the owner to finish and send. An answer
+   that named no source says so ("No sources given"); one whose sources are all wrong says none could be found. workDraft(card) is that request, a pure function.
+
+   Buttons carry data-act (open-team, open-team-chat, show-node, show-change, choose, option, answer-option, answer, retry, retry-task, retry-direct, ask-to-work) and the data they need; the page that
    shows the transcript (the node panel, Home) listens for them. A link that opens a team page is a real <a href>, so it also works without a script.
    The finished report of a run (D135) is a `deliverable` card in the team's chat: the report as markdown (ChatMarkdown, folded by ChatFold.longText when long),
    the files git saw change in the owner's folder (nothing at all when git could not say) and "Open the full report", a real link to the team page's Preview tab
@@ -94,7 +98,7 @@
   const stripTag = value => text(value).replace(/^\s*@[\w-]+[,:]?[ \t]*/, "");
 
   /* ---------------------------------------------------------------- a question with options (J2's parseAsk, j2_ui.html:1070) */
-  const OPTION = /^\s+Option \d+: (.*?)(?: \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\])?$/;      // D257: or "[adds $10]"
+  const OPTION = /^\s+Option \d+: (.*?)(?: \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\])?$/;      // D423: or "[adds $10]"
   const OPTION_START = /^\s+Option \d+: /;
   const OPTION_TAIL = / \[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]$/;
   const NOT_A_QUESTION = /^-|^Still not right|^Some parts|^I couldn't tell/;
@@ -153,7 +157,7 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team is on it</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + (status ? ' <span class="cstat st-' + esc(status) + '">' + esc(taskWord(status)) + "</span>" : "") + "</p>" +
       '<div class="acts">' + openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '"') +
-      (deptId !== "" ? ' <button type="button" class="lbtn" data-act="show-node" data-node="' + esc(deptId) + '">See it on the graph</button>' : "") + "</div></div>";
+      (deptId !== "" ? ' <button type="button" class="lbtn" data-act="show-node" data-node="' + esc(deptId) + '">See it on the graph</button>' : "") + "</div>" + projectLink(c.project_id) + "</div>";
   }
 
   // The lists of a chart_change card: {id, name, kind} added, {id, name, from_name, to_name} moved, {id, name, into_name} merged. A plain id is
@@ -208,6 +212,31 @@
       (done ? '<p class="canswer">' + (answer ? "You answered: <b>" + esc(answer) + "</b>" : "Answered") + "</p>"
         : '<div class="opts">' + options.map(o => '<button type="button" data-act="choose" data-id="' + esc(o.id) + '" data-option="' + esc(o.label) + '">' + esc(o.label) + "</button>").join("") + "</div>") +
       "</div>";
+  }
+
+  // A question of a multi-agent project (D317, a `node_approval` card): what is asked in plain words and its answers as buttons. A button posts to the project's answer route
+  // (`allow_once`, `allow_project`, `deny`) or, for a permission of the computer, to its check or skip route (`check_again`, `skip`). An answered or ended card reads "Answered".
+  const NODE_ANSWER_WORDS = freeze({allow_once: "Allow once", allow_project: "Allow for this project", deny: "No", check_again: "Check again", skip: "Skip"});
+  // MAN-13: the way to the project's own page, where everything about it is. Only for an id of the project shape, so a hostile word is never a link.
+  function projectLink(id) {
+    const project = clean(id);
+    return /^prj_[0-9a-f]{12}$/.test(project) ? '<p class="plinkrow"><a class="plink" href="/p/' + esc(project) + '">Open the project</a></p>' : "";
+  }
+  // R6: a note about a project ends with its page address (`/p/prj_...`); the address becomes the way back into the project. Only that exact shape; a note without it comes out unchanged.
+  function projectAddress(html) {
+    return html.replace(/\/p\/(prj_[0-9a-f]{12})(?![0-9a-zA-Z_])/g, '<a class="plink" href="/p/$1">Open the project</a>');
+  }
+  // The reviewer's question is "send the steps back?" (D393): its two answers say that, not "Allow once" and "No".
+  const REVIEW_ANSWER_WORDS = freeze({allow_once: "Send them back", deny: "Leave as it is"});
+  function nodeApprovalCard(c, ctx) {
+    const words = clean(c.kind) === "review" ? Object.assign({}, NODE_ANSWER_WORDS, REVIEW_ANSWER_WORDS) : NODE_ANSWER_WORDS;
+    const done = ctx.answered === true || clean(ctx.answer) !== "";
+    const options = (Array.isArray(c.options) ? c.options : []).map(clean).filter(o => hasOwn(NODE_ANSWER_WORDS, o));
+    const buttons = options.map(o => '<button type="button" data-act="node-answer" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '" data-item="' +
+      esc(clean(c.item)) + '" data-decision="' + o + '">' + esc(words[o]) + "</button>").join("");
+    return '<div class="ncard c-nodeapproval" data-card="node_approval" data-kind="' + esc(clean(c.kind)) + '" data-project="' + esc(clean(c.project_id)) + '" data-approval="' + esc(clean(c.approval_id)) + '"' +
+      (done ? ' data-answered="true"' : "") + '><p class="sq">' + safeText(clean(c.question)) + "</p>" +
+      (done ? '<p class="canswer">Answered</p>' : '<div class="opts">' + buttons + "</div>") + projectLink(c.project_id) + "</div>";
   }
 
   // The team's Identity question, as it said it. The answer goes to the DEPARTMENT's session (data-session, from ctx.deptSession), never to the org chat.
@@ -283,8 +312,8 @@
       "<h2>Your " + (dept ? esc(dept) + " " : "") + "team " + esc(hasOwn(DONE_HEAD, status) ? DONE_HEAD[status] : taskWord(status)) + "</h2>" +
       '<p class="ctitle">' + esc(clean(c.title)) + "</p>" + (clean(c.outcome) ? '<p class="coutcome">' + safeText(clean(c.outcome)) + "</p>" : "") +
       receiptLine(c.receipt) +
-      '<div class="acts">' + retryButton(c, ctx) + reportLink(c.report, "Open the report") +
-      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div></div>";
+      '<div class="acts">' + (projectLink(c.project_id) === "" ? retryButton(c, ctx) : "") + reportLink(c.report, "Open the report") +
+      openTeam(deptId, ' data-task="' + esc(clean(c.task_id)) + '" data-dept-name="' + esc(dept) + '"') + "</div>" + projectLink(c.project_id) + "</div>";      // a step of a project is tried again by its project, never by this card (D394)
   }
 
   // The finished deliverable of a run in the team's chat (D135, a `deliverable` card): the report as the team wrote it, the files git saw change in the owner's
@@ -318,6 +347,62 @@
       '<h2 class="cdtitle">' + esc(clean(c.label) || "Report") + "</h2>" + '<div class="cdreport">' + report + "</div>" +
       (c.cut === true ? '<p class="cdcut">The report is longer than shown here. Open the full report to read all of it.</p>' : "") + changedFiles(c.changes) +
       (href !== "" ? '<div class="acts"><a class="lbtn" data-act="open-team" href="' + esc(href) + '">Open the full report</a></div>' : "") + "</div>";
+  }
+
+  // The sources of a cited answer (DV-1, an `answer_sources` card), drawn from what code decided: a label is "checked" only when the wire says exactly that, anything else is "could not
+  // find". Words that came with the card (a path, a quote, a reason) are escaped; the words that say what a label means are ours.
+  const MISSING = "could not find";
+  const isChecked = src => clean(src.label) === "checked";
+  const linesOf = src => {
+    const a = count(src.start);
+    const b = count(src.end);
+    if (a === null) return "";
+    return b === null || b === a ? "line " + a : "lines " + a + " to " + b;
+  };
+  const sentence = reason => { const r = clean(reason); return r === "" ? "It could not be found." : "It could not be found: " + r.charAt(0).toLowerCase() + r.slice(1) + (/[.!?]$/.test(r) ? "" : "."); };
+
+  function sourceLine(src) {
+    const ok = isChecked(src);
+    const how = clean(src.how);
+    const why = ok ? (how === "quote" ? "The file is there and the quoted words are on those lines." : "The file and those lines are there.") : sentence(src.reason);
+    const quote = clean(src.quote) !== "" ? ' <q class="asq">' + esc(clean(src.quote)) + "</q>" : "";
+    return '<li class="asrc ' + (ok ? "st-checked" : "st-missing") + '" data-label="' + (ok ? "checked" : MISSING) + '"><code class="aspath">' + esc(clean(src.path)) + "</code>" +
+      (linesOf(src) !== "" ? ' <span class="asln">' + esc(linesOf(src)) + "</span>" : "") + quote + ' <span class="aslabel">' + (ok ? "checked" : MISSING) + "</span>" +
+      '<small class="ashow">' + esc(why) + "</small></li>";
+  }
+
+  // "Turn this into work": the request the owner finishes in the box. It starts a sentence and stops, so it cannot be sent by habit as a finished request: it names the question that
+  // was asked and the sources that were checked (up to five), and leaves the rest to the owner. At most 8000 characters, like any message.
+  function workDraft(c) {
+    const card = isObj(c) ? c : {};
+    const question = clean(card.question).slice(0, 200);
+    const files = (Array.isArray(card.sources) ? card.sources : []).filter(isObj).filter(isChecked).filter(s => clean(s.path) !== "");
+    const seen = [];
+    files.forEach(s => { const name = clean(s.path) + (linesOf(s) !== "" ? " (" + linesOf(s) + ")" : ""); if (!seen.includes(name)) seen.push(name); });
+    const named = seen.slice(0, 5).join(", ") + (seen.length > 5 ? " and " + (seen.length - 5) + " more" : "");
+    const from = question !== "" ? 'Based on my question "' + question + '"' + (named !== "" ? " and what you found in " + named : "") : (named !== "" ? "Based on what you found in " + named : "");
+    return Array.from(from !== "" ? from + ", please " : "Please ").slice(0, 8000).join("");
+  }
+
+  function answerCard(c) {
+    const list = (Array.isArray(c.sources) ? c.sources : []).filter(isObj);
+    const ok = list.filter(isChecked).length;
+    const bad = list.length - ok;
+    const more = count(c.more) || 0;
+    let tone = "mixed";
+    let head;
+    if (list.length === 0) { tone = "none"; head = "No sources given. Nothing in this answer points to a file, so none of it was checked."; }
+    else if (ok === 0) { tone = "bad"; head = (list.length === 1 ? "The source could not be found" : "None of the " + list.length + " sources could be found") + ". Do not rely on this answer until you have looked yourself."; }
+    else if (bad === 0) { tone = "ok"; head = (list.length === 1 ? "The source was checked." : "All " + list.length + " sources were checked."); }
+    else head = ok + " of " + list.length + " sources checked; " + bad + " could not be found.";
+    const tried = count(c.tried) || 0;
+    const refused = tried > 0 ? '<p class="asnote asrefused">This answer also tried ' + (tried === 1 ? "one action that changes something or reaches the web" : tried + " actions that change something or reach the web") + ". Ask does not allow that.</p>" : "";
+    const what = list.length === 0 ? "" : '<p class="asnote">Checked means Sutra looked: the file and the lines are there, and so are the quoted words when there are any. It does not mean the answer is right.</p>';
+    return '<div class="ncard c-answer t-' + tone + '" data-card="answer_sources" data-tone="' + tone + '" data-checked="' + ok + '" data-missing="' + bad + '">' +
+      '<h2 class="cdtitle">Sources</h2><p class="ashead">' + esc(head) + "</p>" +
+      (list.length ? '<ul class="assrcs">' + list.map(sourceLine).join("") + "</ul>" : "") +
+      (more > 0 ? '<p class="asmore">and ' + more + " more marks that were not checked.</p>" : "") + refused + what +
+      '<div class="acts"><button type="button" class="lbtn" data-act="ask-to-work" data-draft="' + esc(workDraft(c)) + '" title="This only writes a request in the box for you to change and send.">Turn this into work</button></div></div>';
   }
 
   // The receipt of a finished task, evidence only (GAP-model-quality): "Attempt 2 . Took 6 min . about $0.42 . 7 of 8 items passed their checks".
@@ -373,10 +458,12 @@
       case "chart_change": return chartChangeCard(value);
       case "approval": return choiceCard(value, c, "approval");
       case "choice": return choiceCard(value, c, "choice");
+      case "node_approval": return nodeApprovalCard(value, c);
       case "needs_you": return needsYouCard(value, c);
       case "team_chat": return teamChatCard(value, c);
       case "done": return doneCard(value, c);
       case "deliverable": return deliverableCard(value);
+      case "answer_sources": return answerCard(value);
       case "atom": return c.sessionKind === "function" ? atomCard(value) : plainCard(Object.assign({}, value, {text: clean(value.label) + (clean(value.goal) ? ": " + clean(value.goal) : "")}));
       default: return plainCard(value);
     }
@@ -473,7 +560,7 @@
           safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
-      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + safeText(text(m.text)) + retryOf(m) + "</div>";
+      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + (clean(s.kind) === "org" ? projectAddress(safeText(text(m.text))) : safeText(text(m.text))) + retryOf(m) + "</div>";      // D389, D408: the app's own address, in the org chat only
       if (cardIn) {
         const ctx = {deptName: dept, sessionKind: clean(s.kind), answer: answers[m.id], answered: answers[m.id] !== undefined,
           deptSession: sessions[clean(cardIn.dept_id)], retry: isObj(o.retryTasks) && o.retryTasks[clean(cardIn.task_id)] === true};
@@ -487,7 +574,7 @@
       } else if (directReply(m) && root.ChatMarkdown) {
         inner = root.ChatMarkdown.render(text(m.text));                 // as the model wrote it: an "@name" at its start is not an agent's address
       } else {
-        inner = safeText(body);
+        inner = clean(s.kind) === "org" ? projectAddress(safeText(body)) : safeText(body);      // D382, D389: in the org chat only (the app's own reply there); only that exact shape, any other text is as it was
       }
       // a settled provider turn: its tool calls fold into ONE row (ChatFold, ABS-10); nothing is drawn while the message is pending
       if (root.ChatFold && Array.isArray(m.blocks) && m.blocks.length > 0) inner += root.ChatFold.fold(m.blocks, {settled: clean(m.state) !== "pending"});
@@ -545,7 +632,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, BUSY, ONE_AT_A_TIME, ASK_WORDS,
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, workDraft, BUSY, ONE_AT_A_TIME, ASK_WORDS,
     PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;

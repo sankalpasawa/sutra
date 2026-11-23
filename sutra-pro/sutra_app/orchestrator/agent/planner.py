@@ -22,7 +22,7 @@ from sutra_app.orchestrator.textutil import tokens
 from sutra_app.orchestrator.waiting import age_words
 
 __all__ = [
-    "LINES", "STATUS_HEADER", "NO_TEAMS", "NONE_OF_THESE", "Candidate", "Fallback", "TaskLine", "line", "names_phrase", "added",
+    "LINES", "NODE_LINES", "STATUS_HEADER", "NO_TEAMS", "NONE_OF_THESE", "Candidate", "Fallback", "TaskLine", "line", "names_phrase", "added",
     "matches_template", "candidates", "fallback_plan", "status_report", "MIN_SCORE",
 ]
 
@@ -61,6 +61,15 @@ LINES: dict[str, str] = {
     "pack_yes": "The {name} team now runs the {pack} practice.",
     "pack_no": "Okay, the {name} team stays on the defaults.",
 }
+# The two sentences of multi-agent projects (D308, G7). They are a separate table on purpose: with SUTRA_NODES_V1 off the set above is the whole set, as it always was, and nothing here is said.
+NODE_LINES: dict[str, str] = {
+    "stopped": "Stopped. I did not start anything.",                                                  # the owner's Stop ended the planner's call (D301)
+    "project_waits": "I set up the project \u201c{title}\u201d. It is estimated at about {credits} credits, which is over {limit}, so it waits for your OK. Nothing has started. "
+                     "If nobody answers it is cancelled after 24 hours.",                              # a project made `awaiting_approval` (D308); MAN-8 replaces it with the card
+    "project_asks": "I set up the project \u201c{title}\u201d. {what} needs your OK. Nothing has started. If nobody answers it is cancelled after 24 hours.",     # a tier-4 or a wide-scope question (D317)
+    "project_system": "I set up the project \u201c{title}\u201d. Your computer must allow something first. Open the card, follow the steps, then press Check again. Steps that do not need it can go on.",
+}
+_ALL_LINES: dict[str, str] = {**LINES, **NODE_LINES}
 _SPECIAL = {
     "busy": r".+? is busy with .+?",                                      # {reason} alone would match anything: the rules' sentence has this shape
     "add": r"I set up an? .+? and gave it your request\.",                 # {what} alone would match anything: it begins with its article ...
@@ -70,7 +79,7 @@ _SPECIAL = {
 
 def line(key: str, **values: str) -> str:
     """One Sutra sentence. A missing or an unknown value is a KeyError / ValueError, so a typo is found by the tests."""
-    template = LINES[key]
+    template = _ALL_LINES[key]
     wanted = {field for _, field, _, _ in string.Formatter().parse(template) if field}
     if wanted != set(values):
         raise ValueError(f"line {key!r} takes {sorted(wanted)}, got {sorted(values)}")
@@ -113,14 +122,14 @@ def _pattern(key: str) -> str:
     if key in _SPECIAL:
         return _SPECIAL[key]
     parts = []
-    for text, name, _, _ in string.Formatter().parse(LINES[key]):
+    for text, name, _, _ in string.Formatter().parse(_ALL_LINES[key]):
         parts.append(re.escape(text))
         if name:
             parts.append(r".+?")
     return "".join(parts)
 
 
-_ONE = "|".join(f"(?:{_pattern(key)})" for key in LINES)
+_ONE = "|".join(f"(?:{_pattern(key)})" for key in _ALL_LINES)
 _ALL = re.compile(rf"^(?:{_ONE})(?: (?:{_ONE}))*$", re.S)
 
 

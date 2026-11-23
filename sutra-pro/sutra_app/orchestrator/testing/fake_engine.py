@@ -43,6 +43,16 @@ def ev(t: str, **fields: Any) -> dict[str, Any]:
     return {"t": t, **fields}
 
 
+def node_script(spec: Any, *, outcome: str = "Done.", status: str = "done") -> list[dict[str, Any]]:
+    """The script of a run that may be a node: run.started, the hand-off when `spec` has a node block, then run.ended. A run that is not a node plays `standard_script`."""
+    steps: list[dict[str, Any]] = [{"emit": ev("run.started", schema="events/1", mock=True, seed="none")}]
+    node = getattr(spec, "node", None)
+    if node is not None and status in ("done", "done_with_open_items"):
+        steps.append({"handoff": {"node_id": node.id, "status": status, "outcome": outcome}})
+    steps.append({"emit": ev("run.ended", status=status, outcome=outcome)})
+    return steps
+
+
 def standard_script(*, outcome: str = "Done.", status: str = "done") -> list[dict[str, Any]]:
     """run.started, then run.ended."""
     return [{"emit": ev("run.started", schema="events/1", mock=True, seed="none")}, {"emit": ev("run.ended", status=status, outcome=outcome)}]
@@ -109,6 +119,15 @@ async def play(run_dir: Path, steps: list[dict[str, Any]], *, pid: int | None = 
                 await asyncio.sleep(_POLL_S)
             await end_stopped()
             return 0
+        elif "handoff" in step:                                  # a node's run leaves its hand-off, built from its own folder as the host's `handoff` step does (MAN-6)
+            from sutra_app.engine.host import handoff as handoff_file
+            spec = step["handoff"]
+            document = handoff_file.build(run_dir, spec["node_id"], spec.get("status", "done"), spec.get("outcome", "Done."))
+            for key, value in (spec.get("override") or {}).items():
+                document[key] = value
+            handoff_file.write(run_dir, document)
+        elif "write_file" in step:
+            (run_dir / step["write_file"]["name"]).write_bytes(step["write_file"]["text"].encode("utf-8"))
         elif "die" in step:
             return int(step["die"])
         elif "ignore_stop" in step:

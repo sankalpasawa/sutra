@@ -1,0 +1,188 @@
+"""Node identity in the engine (MAN-3, D283): the optional `node` block of `task.json` is read, the host puts the node's id and role on the base tag of every call of the process,
+and a run with no block gets exactly the tag it always got. The block is read tolerantly: an older reader ignores it."""
+import json
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ConfigDict, ValidationError, create_model
+
+from sutra_app.engine import llm
+from sutra_app.engine.host import loop
+from sutra_app.engine.port import CallTag
+from sutra_app.engine.spec import NodeSpec, TaskSpec
+
+from test_engine_host import BREW_LAB, QUIET, Running, j2  # noqa: F401  (j2 is a fixture)
+
+EXAMPLE_TASK = {"schema": "run-spec/1", "run_id": "j2-20261104-100004-7f3a", "task_id": "tsk_a1b2c3d4e5f6", "dept_id": "web", "dept_label": "Web", "user_text": "A website for my cafe",
+                "settings": {"J2_BUDGET": "100"}, "connector": "auto"}           # the same run the engine conftest makes (its folder has no importable name)
+NODE = {"id": "nd_" + "a" * 12, "project_id": "prj_" + "b" * 12, "role": "worker", "runtime": "engine", "attempt": 1, "grants_id": "gr_" + "c" * 12,
+        "caps": {"calls": 60, "usd": None, "wall_s": 1800}, "scope": ["site/pricing/"]}
+
+
+class TaggingPort(llm.ScriptedPort):
+    """A scripted port that keeps the tag of every request it is given."""
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.tags: list[CallTag] = []
+
+    def complete(self, req, on_progress=None):
+        self.tags.append(req.tag)
+        return super().complete(req, on_progress)
+
+
+def run_with(make_run_dir, **task_fields):
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET, **task_fields)
+    holder = {}
+
+    def make(*, sink, mock, task, paths):
+        holder["port"] = TaggingPort(usage_sink=sink)
+        return holder["port"]
+
+    assert Running(run_dir, "--mock", make_port=make).wait() == 0
+    return holder["port"].tags
+
+
+# ---- the spec ---------------------------------------------------------------------------------------------------------------------
+
+def test_a_task_spec_with_a_node_block_validates_and_without_one_has_none():
+    spec = TaskSpec.model_validate({**EXAMPLE_TASK, "node": NODE})
+    assert isinstance(spec.node, NodeSpec) and (spec.node.id, spec.node.role, spec.node.runtime, spec.node.attempt) == (NODE["id"], "worker", "engine", 1)
+    assert spec.node.caps.calls == 60 and spec.node.caps.usd is None and spec.node.caps.wall_s == 1800 and spec.node.scope == ["site/pricing/"]
+    assert TaskSpec.model_validate(EXAMPLE_TASK).node is None
+
+
+def test_the_node_block_is_read_tolerantly_unknown_keys_are_ignored_but_a_wrong_id_or_role_is_not_accepted():
+    spec = TaskSpec.model_validate({**EXAMPLE_TASK, "node": {**NODE, "added_later": 1, "caps": {**NODE["caps"], "tokens": 5}}})
+    assert spec.node.id == NODE["id"]
+    for bad in ({"id": "nd_x"}, {"id": "tsk_" + "a" * 12}, {"project_id": "p1"}, {"role": "planner"}, {"role": "owner"}, {"runtime": "inline"}, {"grants_id": ""}, {"attempt": 0},
+                {"caps": {"calls": 0}}, {"scope": ["a"] * 51}):
+        with pytest.raises(ValidationError):
+            TaskSpec.model_validate({**EXAMPLE_TASK, "node": {**NODE, **bad}})
+    with pytest.raises(ValidationError):
+        TaskSpec.model_validate({**EXAMPLE_TASK, "node": {"id": NODE["id"]}})
+
+
+def test_an_older_reader_that_has_no_node_field_ignores_the_block():
+    """An older engine's `TaskSpec` had `extra="ignore"` and no `node`: the same file reads as before."""
+    older = create_model("OlderTaskSpec", __config__=ConfigDict(extra="ignore"), run_id=(str, ...), task_id=(str, ...), dept_id=(str, ...), user_text=(str, ...))
+    read = older.model_validate({**EXAMPLE_TASK, "node": NODE})
+    assert read.task_id == EXAMPLE_TASK["task_id"] and not hasattr(read, "node")
+    assert TaskSpec.model_config["extra"] == "ignore"
+
+
+# ---- the base tag -----------------------------------------------------------------------------------------------------------------
+
+def test_the_base_tag_of_a_node_run_names_the_node_and_its_role():
+    task = TaskSpec.model_validate({**EXAMPLE_TASK, "node": NODE})
+    tag = loop.Host._base_tag(SimpleNamespace(task=task))
+    assert (tag.run_id, tag.dept_id, tag.task_id, tag.node_id, tag.node_role) == (task.run_id, "web", task.task_id, NODE["id"], "worker")
+
+
+def test_the_base_tag_of_a_run_that_is_not_a_node_is_exactly_what_it_was():
+    task = TaskSpec.model_validate(EXAMPLE_TASK)
+    tag = loop.Host._base_tag(SimpleNamespace(task=task))
+    assert tag == CallTag(run_id=task.run_id, dept_id="web", task_id=task.task_id) and (tag.node_id, tag.node_role) == ("", "")
+
+
+def test_every_call_of_a_node_run_carries_the_node_and_a_plain_run_carries_none(j2, make_run_dir):
+    tags = run_with(make_run_dir, node=NODE)
+    assert len(tags) > 5 and {(t.node_id, t.node_role) for t in tags} == {(NODE["id"], "worker")}
+    assert all(t.run_id == EXAMPLE_TASK["run_id"] and t.task_id == EXAMPLE_TASK["task_id"] for t in tags)
+
+
+def test_a_run_with_no_node_block_makes_calls_with_empty_node_fields(j2, make_run_dir):
+    tags = run_with(make_run_dir)
+    assert len(tags) > 5 and {(t.node_id, t.node_role) for t in tags} == {("", "")}
+
+
+def test_the_node_fields_appear_in_a_tag_dump_only_with_their_empty_defaults_for_other_calls():
+    dump = CallTag(function="audit").model_dump()
+    assert dump["node_id"] == "" and dump["node_role"] == ""
+    assert json.loads(CallTag(node_id=NODE["id"], node_role="reviewer").model_dump_json())["node_role"] == "reviewer"
+    for bad in ({"node_id": "nd_1"}, {"node_id": "x" * 15}, {"node_role": "boss"}, {"node_role": "Worker"}):
+        with pytest.raises(ValidationError):
+            CallTag(**bad)
+
+
+# ---- the node meter (MAN-9) -----------------------------------------------------------------------------------------------------------
+
+def ended_of(run_dir):
+    import json as _json
+    lines = [_json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [event for event in lines if event.get("t") == "run.ended"][-1]
+
+
+def test_a_node_whose_calls_cap_is_one_ends_with_the_cap_named(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET, node={**NODE, "caps": {"calls": 1, "usd": None, "wall_s": 1800}})
+    Running(run_dir, "--mock").wait()
+    ended = ended_of(run_dir)
+    assert ended["outcome"] == "stopped: this step used up its model calls" and ended["status"] == "crashed"          # never `done`, whatever J2 made of the failed call (D321 a)
+    assert not (run_dir / "handoff.json").exists()                                                                  # a failed run hands nothing on
+
+
+def test_a_run_without_a_node_is_not_metered(j2, make_run_dir):
+    plain = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    assert Running(plain, "--mock").wait() == 0 and "reached its" not in ended_of(plain)["outcome"]
+
+
+def test_the_host_marks_a_refusal_of_the_computer_with_the_word_the_orchestrator_reads():
+    from sutra_app.engine.host.loop import NEEDS_PERMISSION, permission_outcome
+    assert permission_outcome(PermissionError(1, "Operation not permitted", "/x")).startswith(NEEDS_PERMISSION + ": PermissionError")
+    assert permission_outcome("[Errno 13] Permission denied: '/Users/x/Desktop/a'").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("[WinError 5] Access is denied: 'C:\\\\work'").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("Crashed: PermissionError: [Errno 1] x").startswith(NEEDS_PERMISSION)
+    assert permission_outcome("the model said permission denied") is None and permission_outcome(ValueError("x")) is None and permission_outcome("[Errno 2] No such file") is None
+
+
+def test_only_a_node_run_gets_the_permission_prefix_an_ordinary_run_crashes_with_the_text_it_always_had():          # G24, D340 b
+    from types import SimpleNamespace
+
+    from sutra_app.engine.host.loop import NEEDS_PERMISSION, Host
+    ended = []
+    exc = PermissionError(1, "Operation not permitted", "/x")
+
+    def host(node):
+        stand_in = SimpleNamespace(task=SimpleNamespace(node=node), run=None, stopping=SimpleNamespace(set=lambda: None))
+        stand_in._permission_said = lambda what: Host._permission_said(stand_in, what)
+        stand_in._emit_ended = lambda status, outcome, code: ended.append((status, outcome, code))
+        return stand_in
+    Host._internal(host(None), exc)
+    assert ended[-1] == ("crashed", "Crashed: PermissionError: [Errno 1] Operation not permitted: '/x'", "internal")             # byte for byte as before
+    Host._internal(host(object()), exc)
+    assert ended[-1][1].startswith(NEEDS_PERMISSION + ": PermissionError. Crashed: PermissionError")
+    long = host(None)
+    Host._internal(long, RuntimeError("x" * 3000))
+    assert len(ended[-1][1]) == 2000 and ended[-1][1].startswith("Crashed: RuntimeError")                                       # the whole 2000, not 1900 plus 100 of a prefix
+
+
+# ---- the builder tools of a node (D380) -------------------------------------------------------------------------------------------
+
+def _spec_of(monkeypatch, node):
+    seen = {}
+    monkeypatch.setattr("sutra_app.connectors.engine_port.make_port", lambda spec, usage_sink=None: seen.setdefault("spec", spec))
+    task = TaskSpec.model_validate({**EXAMPLE_TASK, **({"node": node} if node is not None else {})})
+    loop.Host._connector_port(SimpleNamespace(task=task, paths=SimpleNamespace(data_dir="/tmp/x"), sink=None))
+    return seen["spec"]
+
+
+def test_the_port_spec_of_a_node_carries_the_tiers_and_commands_of_its_grant(monkeypatch):
+    spec = _spec_of(monkeypatch, {**NODE, "tiers": [0, 1, 2, 3], "commands": "git_reads"})
+    assert spec.node_tiers == (0, 1, 2, 3) and spec.node_commands == "git_reads" and spec.node is True
+
+
+def test_a_node_block_without_rights_means_none_given_and_an_ordinary_run_has_none(monkeypatch):
+    spec = _spec_of(monkeypatch, NODE)                          # an older task file: the router then holds the narrowest rights
+    assert spec.node_tiers == () and spec.node_commands == "none" and spec.node is True, "a node block without tiers is still a node"
+    ordinary = _spec_of(monkeypatch, None)
+    assert ordinary.node_tiers == () and ordinary.node_commands == "none" and ordinary.scope == () and ordinary.node is False
+
+
+def test_a_project_step_runs_without_dollar_mode_and_an_ordinary_run_keeps_it(j2, make_run_dir, monkeypatch):
+    """D424: a node's dollars are the project's (D381, D418) and its credits its slice (D320), so the host drops J2_USD_BUDGET (P26) for it; an ordinary run keeps the team's."""
+    import os
+    run_with(make_run_dir, node=NODE)
+    assert "J2_USD_BUDGET" not in os.environ
+    monkeypatch.delenv("J2_USD_BUDGET", raising=False)
+    run_with(make_run_dir, run_id="j2-20261104-100005-7f3b")
+    assert os.environ["J2_USD_BUDGET"] == "20.0"

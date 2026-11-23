@@ -140,7 +140,7 @@ def test_two_departments_run_side_by_side_and_share_nothing_but_the_library(make
         assert rows[-1]["t"] == "run.ended" and rows[-1]["status"] in ("done", "done_with_open_items")
         assert {u["call_ref"].split(":")[0] for u in of(rows, "usage") if not u["call_ref"].startswith("r:")} == {mine}
     assert (json.loads((a / "settings.json").read_text())["budget"], json.loads((b / "settings.json").read_text())["budget"]) == (95, 120)
-    # D256: dollar mode is on in the app (EngineSettings.usd_budget), so each process's starting credits come from its own J2_USD_BUDGET
+    # D422: dollar mode is on in the app (EngineSettings.usd_budget), so each process's starting credits come from its own J2_USD_BUDGET
     budgets = [json.loads((d / "summary.json").read_text())["budget"] for d in (a, b)]
     assert [(x["start"], x["usd"]["limit"]) for x in budgets] == [(81, 1.5), (107, 2.0)], "each process has its own J2 constants"
     assert json.loads((a / "summary.json").read_text())["realization"]["applied"] is True

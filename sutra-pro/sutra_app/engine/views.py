@@ -760,7 +760,7 @@ def _say_budget(body: dict) -> Tuple[Optional[str], Optional[str]]:
 
 
 def _say_usd_budget(body: dict) -> Tuple[Optional[str], Optional[str]]:
-    """(the J2_USD_BUDGET text, the violation) of a `POST /api/say` body's `usd_budget` (D257): the team page's Budget chip, in dollars (API
+    """(the J2_USD_BUDGET text, the violation) of a `POST /api/say` body's `usd_budget` (D423): the team page's Budget chip, in dollars (API
     price). Absent or empty is None (the team's own budget applies). A number (or its digits) of dollars with at most two decimals, within
     `EngineSettings.usd_budget`'s limits; the violation is the 400's text."""
     raw = body.get("usd_budget")

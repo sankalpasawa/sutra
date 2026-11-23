@@ -1,5 +1,5 @@
-"""D256 (patch P26), the owner's flows with dollar mode on (NFR-6): whole Brew Lab runs of the vendored J2 in mock mode, where every call
-is priced by the estimate rule (characters / 4 at the fallback rate, D255). A first probe run with a large limit measures what a run costs,
+"""D422 (patch P26), the owner's flows with dollar mode on (NFR-6): whole Brew Lab runs of the vendored J2 in mock mode, where every call
+is priced by the estimate rule (characters / 4 at the fallback rate, D421). A first probe run with a large limit measures what a run costs,
 and each scenario sets its limit from it, so a change in prompt sizes moves the figures, not the tests.
 
   1. a run reaches its limit and asks the dollar question, with no "credit" anywhere the Requester reads

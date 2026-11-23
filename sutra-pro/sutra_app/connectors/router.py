@@ -38,11 +38,12 @@ from sutra_app.engine.port import Allowance, CallTag, CompletionRequest, Complet
 from .base import ModelConnector, Hooks, CallInfo, CallRecord, prompted_prompt
 from .cancel import CancelToken
 from .errors import (
-    CallCancelledError, ConnectorError, EnvelopeExceededError, InvalidJsonError, InvalidRequestError, NoProviderError,
+    CallCancelledError, ConnectorError, EnvelopeExceededError, InvalidJsonError, InvalidRequestError, NoProviderError, OverloadedError,
     SessionLostError, StructuredError,
 )
 from .health import API_KEY_REFUSED, HealthBook, HealthState
 from .jsonio import parse_reply
+from .node_tools import NARROWEST, NodeRights, narrow as narrow_tools
 from .models import (
     AskRequest, ConnectorEvent, JsonRequest, JsonResult, M, Message, Pick, Provider, Quota, RouteContext, SESSION_ID_PATTERN,
     SessionSpec, SessionState, TurnResult,
@@ -55,6 +56,7 @@ from .discover import explain_missing
 from .transcript import render_carry_over
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
+from . import tool_audit
 from .egress import scan
 from .workdir import Folder, grounding_text
 
@@ -196,7 +198,7 @@ class _Request(Hooks):
         self.default_provider: Optional[str] = None
         self.last_native = False
         self.row: Optional[UsageIn] = None
-        self._held: list[threading.Semaphore] = []
+        self._held: list[tuple[threading.Semaphore, Any]] = []
         self.cancel: Optional[CancelToken] = None     # a chat turn's stop token (D215); None for every other request
         self.routes = False                            # a chat turn that asked for the router's own events (route plan, attempt, failed; D217)
 
@@ -225,6 +227,11 @@ class _Request(Hooks):
             return self.ctx
         return self.ctx.model_copy(update={"allowance": a.model_copy(update={"max_usd": max(0.0, a.max_usd - self.usd_spent)})})
 
+    def money_left(self) -> Optional[float]:
+        """What the allowance still lets the request's NEXT process spend (the limit less what earlier processes of the request cost), or None when the allowance has no dollar limit."""
+        limit = self.ctx.allowance.max_usd
+        return None if limit is None else max(0.0, limit - self.usd_spent)
+
     def timeout_s(self) -> float:
         """The call timeout, cut to the time left until the envelope's deadline (at least one second)."""
         timeout = self.resolved.timeout_s
@@ -238,20 +245,30 @@ class _Request(Hooks):
         self.check_gate()
         sem = self.router._semaphore(info.provider)
         sem.acquire()
+        slot = None
         try:
+            slots = getattr(self.router, "slots", None)
+            if slots is not None:                      # SUTRA_NODES_SLOTS: the limit across processes too (MAN-12); the wait ends when the request is stopped
+                slot = slots.acquire(info.provider, timeout=self.timeout_s(), cancelled=lambda: bool(getattr(getattr(self.ctx, "cancel", None), "requested", False)))
+                if slot is None:
+                    raise OverloadedError(f"the {info.provider} program is busy with other work on this computer", provider=info.provider, detail={"slots": True})      # never started: a node's meter does not count it (PB-14)
             self.check_gate()                         # the deadline may have passed while this request waited for the cap
         except BaseException:
+            if slot is not None:
+                self.router.slots.release(slot)
             sem.release()
             raise
-        self._held.append(sem)
+        self._held.append((sem, slot))
         self.spawns += 1
         self.last_native = info.native
 
     def after_call(self, record: CallRecord) -> None:
-        sem = self._held.pop() if self._held else None
+        sem, slot = self._held.pop() if self._held else (None, None)
         try:
             self._record(record)
         finally:
+            if slot is not None:
+                self.router.slots.release(slot)
             if sem is not None:
                 sem.release()
 
@@ -349,6 +366,9 @@ class Router:
         self.finish_hooks: list[Callable[[CallTag], None]] = []              # called with the tag when an engine call (`complete`) ends, ok or not (D133)
         self.egress: Optional[Any] = None                      # an `egress.Egress`, set by the factory (ABS-2); None = no scrub, no row
         self.folders: Optional[Any] = None                     # a `workdir.WorkFolder`, set by the factory (GAP3-workdir); None = no working folder
+        self.on_tool: Optional[Callable[[Any, str, str, str], None]] = None   # MAN-14: `(tag, name, kind, base_name)` for each tool call of a call whose tag names a node; set by the node's host
+        self.live_cap: Optional[Callable[[], Optional[float]]] = None      # D409: what the next builder call of this step may spend NOW (the project's and the month's remainder, shared by the steps that run); None = nothing limits it
+        self.node_rights: Optional[NodeRights] = None          # D380: what a step's frozen grant lets its builder tools be; set by the factory for a node's host, None = the narrowest
         self.independence = Independence()                     # who built a run's work, so Audit can go to the other model (off unless the policy says so)
         self._today: dict[str, list] = {}                      # provider -> [date, calls, tokens, usd]
         self._background: list[threading.Thread] = []
@@ -389,7 +409,7 @@ class Router:
             return ""
         allowed = bool(getattr(grant, "edit", False))
         crew = ("edit" if allowed else "read") if getattr(tag, "team_workspace", "none") == "edit" else ""
-        return Folder(str(grant), edit=want == "edit" and allowed, team=crew, git=want == "inspect" and allowed)
+        return Folder(str(grant), edit=want == "edit" and allowed, team=crew, git=want == "inspect" and allowed, scope=tuple(getattr(self, "node_scope", ()) or ()) if getattr(tag, "node_id", "") else ())
 
     @staticmethod
     def _grounded(system: str, folder: "Folder | str") -> str:
@@ -711,7 +731,7 @@ class Router:
             plan = self._plan(resolved, req)
             state.default_provider = plan.order[0]
             if self.egress is not None:                      # J2's prompts are not ours to edit: observe only, byte-identical
-                self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False)
+                self.egress.check(req.user, system=req.system, session=req.ctx.session_id, provider=plan.order[0], replace=False, **_node_of(req.ctx.tag))
             turn = self._consume(self._drive(state, plan, make, retries=req.run_tools is None))
             ok = True
             if state.note and on_progress is not None:
@@ -726,7 +746,7 @@ class Router:
     def _text_call(self, state: _Request, plan: Plan, req: AskRequest, provider: str, connector: ModelConnector,
                    on_progress: Optional[Callable[[dict], None]]) -> TurnResult:
         """One connector call for a text request (or a text request that carries a schema: the engine's `json_schema`)."""
-        on_event = _progress(on_progress)
+        on_event = self._watched(req.ctx.tag, provider, _progress(on_progress))
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
         # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D245) works in its run folder only
@@ -787,6 +807,7 @@ class Router:
 
         resolved = self.policy.resolve(req)
         state = _Request(self, req.ctx, resolved, kind="json")
+        state.cancel = req.cancel                              # a planner call's stop token (D291); None for any other JSON request
         ok, failure, result = False, None, None
         try:
             self._reject_closed()
@@ -795,8 +816,8 @@ class Router:
             state.default_provider = plan.order[0]
             if self.egress is not None:
                 req = req.model_copy(update={
-                    "user": self.egress.check(req.user, session=req.ctx.session_id, provider=plan.order[0], replace=True),
-                    "system": self.egress.check(req.system, session=req.ctx.session_id, provider=plan.order[0], replace=True) if req.system else ""})
+                    "user": self.egress.check(req.user, session=req.ctx.session_id, provider=plan.order[0], replace=True, **_node_of(req.ctx.tag)),
+                    "system": self.egress.check(req.system, session=req.ctx.session_id, provider=plan.order[0], replace=True, **_node_of(req.ctx.tag)) if req.system else ""})
             result = self._consume(self._drive(state, plan, make))
             ok = True
             if state.note and on_progress is not None:
@@ -816,20 +837,65 @@ class Router:
         kw: dict[str, Any] = {"scripted": req.scripted} if provider == "stub" and req.scripted is not None else {}
         folder = self.folder_for(req.ctx.tag)              # the call's tag decides (the org chat agent tags itself `edit`); the owner's access caps it
         system = self._grounded(req.system, folder)
+        if state.cancel is not None:                          # a planner call's stop token reaches the spawned process (D301); a request with none passes nothing new
+            kw["cancel"] = state.cancel
         return connector.call_json_result(
             req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.effort_for(provider),
-            model=plan.models[provider], images=req.images, hooks=state, on_event=_progress(on_progress), force_prompted=force,
+            model=plan.models[provider], images=req.images, hooks=state, on_event=self._watched(req.ctx.tag, provider, _progress(on_progress)), force_prompted=force,
             repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
 
+    def _watched(self, tag: Any, provider: str, on_event: Optional[Callable[[ConnectorEvent], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
+        """MAN-14: `on_event` that also tells `on_tool` about each tool call, for a call whose tag names a node and only when a hook is set; every other call gets `on_event` unchanged (the very
+        same object, or None). The hook gets names and kinds, never an input; a hook that fails is logged and never stops the call."""
+        hook = self.on_tool
+        if hook is None or not getattr(tag, "node_id", ""):
+            return on_event
+
+        def watch(event: ConnectorEvent) -> None:
+            if event.kind == "tool_call":
+                found = tool_audit.facts(event.data, provider)
+                if found is not None:
+                    try:
+                        hook(tag, *found)
+                    except Exception:                          # noqa: BLE001
+                        log.exception("the tool hook failed")
+            if on_event is not None:
+                on_event(event)
+
+        return watch
+
     # ---- the engine seam ------------------------------------------------------------------------------------------------------
-    def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None) -> CompletionResult:
+    def tools_for(self, tag: Any, grant: Any, allowance: Any = None) -> Any:
+        """The builder tools grant a call is planned with (D380). A call with no builder tools, or whose tag names no node, is returned as it came (the very same object): an ordinary run keeps
+        J2's whole list. A call of a step of a project is taken down to what that step's frozen grant allows; with no rights known it is the narrowest list."""
+        if grant is None or not (getattr(tag, "node_id", "") or self.node_rights is not None):
+            return grant                                        # a router made for a step's process (`node_rights` set from its task file) narrows even a call whose tag lost the node
+        narrowed = narrow_tools(grant, self.node_rights or NARROWEST)
+        left = getattr(allowance, "max_usd", None)
+        live = None
+        if self.live_cap is not None:
+            try:
+                live = self.live_cap()
+            except Exception:                                    # noqa: BLE001  (a reading that fails leaves the step's own meter and the Conductor's tick)
+                log.warning("the live dollar cap could not be read", exc_info=True)
+        if live is not None:
+            left = live if left is None else min(left, live)
+        if left is not None:                                     # D387: one builder call is bounded by what the step has left, not by the engine's $2 per call; none left: no program is started
+            if left <= 0:
+                raise EnvelopeExceededError("this step has no dollars left", detail={"max_usd": 0.0})
+            if left < narrowed.usd:
+                narrowed = narrowed.model_copy(update={"usd": round(left, 6)})
+        return narrowed
+
+    def complete(self, req: CompletionRequest, on_progress: Optional[Callable[[dict], None]] = None, *, tools: Sequence[str] = ()) -> CompletionResult:
         """`CompletionRequest` in, `CompletionResult` out (connectors 3.10). With a `json_schema` only the native step runs and the
         reply text comes back as it is; the router never repairs here, so every call the engine pays for is a call it sees."""
+        run_tools = self.tools_for(req.tag, req.run_tools, req.allowance)
         ask = AskRequest(
             system=req.system, user=req.user, ctx=RouteContext(tag=req.tag, allowance=req.allowance or Allowance()),
             kind="json" if (req.json_mode or req.json_schema is not None) else "text", effort=req.effort, images=list(req.images),
             schema=req.json_schema, timeout_s=req.timeout_s, partials=on_progress is not None and req.json_schema is None,
-            scripted=req.scripted, run_tools=req.run_tools)
+            scripted=req.scripted, run_tools=run_tools, tools=tuple(tools) if req.run_tools is None else ())
         try:
             turn, state = self._ask(ask, on_progress)
         finally:
@@ -1010,6 +1076,7 @@ class Router:
         fresh.turns = old.turns if old is not None else 0
         fresh.switches = (old.switches + (1 if replaces else 0)) if old is not None else 0
         fresh.pinned = pinned          # type: ignore[assignment]
+        fresh.thread_mode = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""       # the mode this thread's first turn (its system text) was written for
         save_session_state(fresh)
         window = carry_chars(provider, fresh.model)
         carry = render_carry_over(self._transcript(sid, m), from_provider=old.provider if old is not None else None, to_provider=provider,
@@ -1021,6 +1088,8 @@ class Router:
         sid = state.ctx.session_id or ""
         lost = False
         folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
+        if folder and getattr(state.ctx.tag, "workspace", "none") == "read":
+            folder = Folder(str(folder), edit=False)       # a turn that asks for `read` (the Ask mode, DV-1) never gets more than the file tools that look: the owner's "edit" is capped here
         for round_no in (1, 2):
             self._check_cancel(state, provider)
             old = load_session_state(self._workdir(sid))
@@ -1029,6 +1098,12 @@ class Router:
             # a provider session belongs to the folder it began in (Claude stores and resumes it per working directory): in another folder
             # it starts a new one with the carry-over below, and the chat's transcript, which is the app's own, is untouched
             moved = old is not None and old.provider == provider and old.provider_session_id is not None and old.work_folder != folder
+            # Codex keeps the system text of a thread's first turn and never reads it again, so a thread is one mode (DV-1, D350): a turn of the other mode starts a new thread, with the
+            # carry-over, and what the Ask words said (or did not say) can never be stale. Claude is given the text on every turn and keeps its thread.
+            mode_now = "ask" if getattr(state.ctx.tag, "workspace", "none") == "read" else ""
+            mode_moved = (not moved and provider == "codex" and old is not None and old.provider == provider and old.provider_session_id is not None
+                          and old.thread_mode != mode_now)
+            moved = moved or mode_moved
             if old is not None and not lost and old.provider == provider and old.provider_session_id is not None and not moved:
                 session = connector.resume(old)
                 if session.provider_session_id is None:         # the work dir was lost: the provider session went with it
@@ -1049,6 +1124,11 @@ class Router:
             token_kw: dict[str, Any] = {} if state.cancel is None else {"cancel": state.cancel}
             try:
                 self._check_cancel(state, provider)
+                left = state.money_left()                         # DV-1: what this turn may still spend (None: no limit, nothing is passed, as it always was)
+                if left is not None:
+                    token_kw = {**token_kw, "max_usd": left}
+                if mode_now == "ask" and not folder:              # an Ask with no folder at all is still read only (Codex's policy sandbox may allow writing in its private work dir)
+                    token_kw = {**token_kw, "read_only": True}
                 for event in connector.stream(session, Message(role="user", text=text, images=list(m.images)),
                                               timeout_s=state.timeout_s(), partials=partials, hooks=state, folder=folder, **token_kw):
                     if event.kind == "turn_done":
@@ -1065,18 +1145,18 @@ class Router:
                     if self._chat_active.get(sid, (None, None))[1] is session:
                         del self._chat_active[sid]
             assert turn is not None
-            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, moved and not lost)
+            self._after_turn(state, provider, old, session, previous_id, replaces, lost, plan, ("the Ask mode changed" if mode_moved else True) if moved and not lost else False)
             return turn
         raise AssertionError("unreachable")       # pragma: no cover
 
     def _after_turn(self, state: _Request, provider: str, old: Optional[SessionState], session: SessionState,
-                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: bool = False) -> None:
+                    previous_id: Optional[str], replaces: bool, lost: bool, plan: Plan, folder_moved: "bool | str" = False) -> None:
         sid = state.ctx.session_id or ""
         if replaces and old is not None:
             if lost:
                 reason = "session lost"
             elif folder_moved:
-                reason = "working folder changed"
+                reason = folder_moved if isinstance(folder_moved, str) else "working folder changed"
             elif state.failures:
                 reason = fallback_phrase(state.failures[-1][1].code)
             elif old.pinned == provider:
@@ -1171,6 +1251,13 @@ class Router:
             except Exception:
                 log.warning("stop_all failed for %s", connector.name, exc_info=True)
         self.drain(2.0)
+
+
+def _node_of(tag: Any) -> dict[str, str]:
+    """The node a call is for, as the keyword arguments of `Egress.check`: empty for every call that is not a node's (so an `Egress` stand-in that does not know them is never given
+    any), `node_id` and `node_role` for the call of a node of a multi-agent project (D282, D283)."""
+    node_id = getattr(tag, "node_id", "")
+    return {"node_id": node_id, "node_role": getattr(tag, "node_role", "")} if node_id else {}
 
 
 def _short(reason: str) -> str:

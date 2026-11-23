@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "DDL_V6_NODES", "DDL_V7_WORK", "DDL_V8_RECIPES", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -246,10 +246,97 @@ DDL_V5_TURN_CHECKPOINT: tuple[str, ...] = (
     "CREATE INDEX chat_turn_checkpoint_session ON chat_turn_checkpoint(session_id)",
 )
 
+# Multi-agent nodes (design docs/design/multi-agent-nodes, D253, D254, D258, D262, D264, D280; migration v6). Inert: nothing reads these tables or the `lane` column until
+# SUTRA_NODES_V1 is on and a later package wires them. Additive: five new tables, one new column with an empty default on `tasks`, and one index swap.
+# * `projects`, `agent_nodes`, `approvals`: the identity and the permissions of a request's nodes. A node is a `tasks` row plus a row in `agent_nodes` (D253).
+# * `node_messages`: written only by the server. `seq` is per project and gap-free, so the primary key is (project_id, seq) and the writer takes `MAX(seq) + 1` inside its one
+#   write transaction (a table-wide AUTOINCREMENT would leave holes inside a project: see docs/design/multi-agent-nodes/dev-notes.md). `src_ref` is unique per project, so a
+#   message that arrives twice is stored once (D264). Append-only, like the audit.
+# * `node_audit`: append-only (the triggers copy `atom_ledger`), names and shapes and hashes only, never a payload (D280). No foreign keys: the audit outlives what it names.
+# * `tasks.lane`: '' for every task there is. The one-live-task rule becomes "one live task per (team, lane)"; with lane '' on every row it forbids exactly what the old index
+#   forbade (D258).
+DDL_V6_NODES: tuple[str, ...] = (
+    """CREATE TABLE projects (
+  id TEXT PRIMARY KEY, request_id TEXT UNIQUE, title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'planning' CHECK (status IN ('planning','awaiting_approval','running','reviewing','done','done_with_open_items','stopped','failed')),
+  failure_policy TEXT NOT NULL DEFAULT 'stop_branch' CHECK (failure_policy IN ('stop_branch','stop_all')),
+  decide_for_me INTEGER NOT NULL DEFAULT 0 CHECK (decide_for_me IN (0,1)),
+  paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0,1)),
+  review_loops INTEGER NOT NULL DEFAULT 0 CHECK (review_loops >= 0),
+  caps_json TEXT NOT NULL DEFAULT '{}', budget_credits INTEGER CHECK (budget_credits IS NULL OR budget_credits >= 0),
+  budget_usd REAL CHECK (budget_usd IS NULL OR budget_usd >= 0),
+  client_id TEXT UNIQUE, created_at INTEGER NOT NULL, ended_at INTEGER, stop_reason TEXT NOT NULL DEFAULT '')""",
+    "CREATE INDEX projects_status ON projects(status)",
+    """CREATE TABLE agent_nodes (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), task_id TEXT UNIQUE REFERENCES tasks(id),
+  role TEXT NOT NULL CHECK (role IN ('planner','worker','reviewer')),
+  runtime TEXT NOT NULL CHECK (runtime IN ('inline','engine','light')),
+  plan_ref TEXT NOT NULL DEFAULT '', depends_on TEXT NOT NULL DEFAULT '[]',
+  state TEXT NOT NULL DEFAULT 'planned' CHECK (state IN ('planned','awaiting_approval','awaiting_system','ready','queued','leased','running','handing_off',
+                                                          'done','failed','cancelled','expired')),
+  attempt INTEGER NOT NULL DEFAULT 1 CHECK (attempt >= 1), grants_json TEXT NOT NULL DEFAULT '{}', writes_json TEXT NOT NULL DEFAULT '[]',
+  slice_credits INTEGER CHECK (slice_credits IS NULL OR slice_credits >= 0),
+  lease_expires_at INTEGER, last_beat_at INTEGER, failure_reason TEXT NOT NULL DEFAULT '', torn_down_at INTEGER,
+  created_at INTEGER NOT NULL, ended_at INTEGER)""",
+    "CREATE INDEX agent_nodes_project ON agent_nodes(project_id, state)",
+    "CREATE INDEX agent_nodes_live ON agent_nodes(state) WHERE state IN ('leased','running','handing_off')",
+    """CREATE TABLE node_messages (
+  project_id TEXT NOT NULL REFERENCES projects(id), seq INTEGER NOT NULL CHECK (seq >= 1),
+  from_node TEXT NOT NULL DEFAULT '', to_node TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL CHECK (kind IN ('handoff','verdict','gate_request','gate_decision','control','status')),
+  src_ref TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', body_sha256 TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, seq), UNIQUE (project_id, src_ref))""",
+    "CREATE TRIGGER node_messages_no_update BEFORE UPDATE ON node_messages BEGIN SELECT RAISE(ABORT, 'node messages are append-only'); END",
+    "CREATE TRIGGER node_messages_no_delete BEFORE DELETE ON node_messages BEGIN SELECT RAISE(ABORT, 'node messages are append-only'); END",
+    """CREATE TABLE node_audit (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, project_id TEXT, node_id TEXT, role TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL CHECK (actor IN ('conductor','gatekeeper','node','owner','system')),
+  action TEXT NOT NULL CHECK (length(action) BETWEEN 1 AND 80), tier INTEGER CHECK (tier IS NULL OR tier BETWEEN 0 AND 6),
+  target TEXT NOT NULL DEFAULT '', decision TEXT NOT NULL DEFAULT 'n/a' CHECK (decision IN ('allow','deny','ask','asked_allow','asked_deny','n/a')),
+  reason TEXT NOT NULL DEFAULT '' CHECK (length(reason) <= 200), ref TEXT NOT NULL DEFAULT '', hash TEXT NOT NULL DEFAULT '')""",
+    "CREATE INDEX node_audit_project ON node_audit(project_id, seq)",
+    "CREATE TRIGGER node_audit_no_update BEFORE UPDATE ON node_audit BEGIN SELECT RAISE(ABORT, 'node audit is append-only'); END",
+    "CREATE TRIGGER node_audit_no_delete BEFORE DELETE ON node_audit BEGIN SELECT RAISE(ABORT, 'node audit is append-only'); END",
+    """CREATE TABLE approvals (
+  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), node_id TEXT NOT NULL DEFAULT '',
+  tier INTEGER NOT NULL CHECK (tier BETWEEN 0 AND 6), request_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','allowed_once','allowed_project','denied','expired')),
+  decided_by TEXT NOT NULL DEFAULT '', decided_at INTEGER, expires_at INTEGER NOT NULL, client_id TEXT, created_at INTEGER NOT NULL)""",
+    "CREATE INDEX approvals_open ON approvals(project_id, status)",
+    "CREATE UNIQUE INDEX approvals_client ON approvals(project_id, client_id) WHERE client_id IS NOT NULL",
+    "ALTER TABLE tasks ADD COLUMN lane TEXT NOT NULL DEFAULT ''",
+    "DROP INDEX tasks_one_live_per_dept",
+    "CREATE UNIQUE INDEX tasks_one_live_per_dept_lane ON tasks(dept_id, lane) WHERE status IN ('starting','running','waiting_user')",
+)
+
+# The work list (Devin parity DV-2, docs/design/devin-parity.md; migration v7). Inert: nothing reads the table until SUTRA_WORK_V1 is on. Additive: one new table. A tag is a plain word the
+# owner puts on a task or a project so the Work page can find it; `item_id` names a task or a project and has no foreign key (a tag outlives nothing it depends on and is never a reason a
+# task or a project cannot be removed).
+DDL_V7_WORK: tuple[str, ...] = (
+    """CREATE TABLE work_tags (
+  item_kind TEXT NOT NULL CHECK (item_kind IN ('task','project')), item_id TEXT NOT NULL, tag TEXT NOT NULL CHECK (length(tag) BETWEEN 1 AND 30),
+  created_at INTEGER NOT NULL, PRIMARY KEY (item_kind, item_id, tag))""",
+    "CREATE INDEX work_tags_tag ON work_tags(tag, item_kind)",
+)
+
+# Recipes (Devin parity DV-3; migration v8). Inert until SUTRA_RECIPES_V1 is on; additive: two new tables. A recipe is a title and a status; its words live in `recipe_versions`, which only
+# ever grows (the triggers copy `node_audit`): a change is a new version, a revert is a new version that copies an old one, so the owner can always go back and nothing is lost.
+DDL_V8_RECIPES: tuple[str, ...] = (
+    """CREATE TABLE recipes (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 80), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+  current_version INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
+    """CREATE TABLE recipe_versions (
+  recipe_id TEXT NOT NULL REFERENCES recipes(id), version INTEGER NOT NULL CHECK (version >= 1), body_json TEXT NOT NULL, sha256 TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL, PRIMARY KEY (recipe_id, version))""",
+    "CREATE TRIGGER recipe_versions_no_update BEFORE UPDATE ON recipe_versions BEGIN SELECT RAISE(ABORT, 'recipe versions are append-only'); END",
+    "CREATE TRIGGER recipe_versions_no_delete BEFORE DELETE ON recipe_versions BEGIN SELECT RAISE(ABORT, 'recipe versions are append-only'); END",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES, DDL_V7_WORK, DDL_V8_RECIPES)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
     "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs", "chat_turn_checkpoint",
+    "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions",
 )

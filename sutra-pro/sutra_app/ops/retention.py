@@ -5,7 +5,7 @@
 
 Only files of runs whose task is over (done, done_with_open_items, stopped, crashed, cancelled) and ended more than the age ago:
 screenshots (`site/shots/**`, `screenshots/**`, `*.png` in the run folder), `trace.jsonl`, `events.jsonl` (only when the task's
-`events_offset` equals the file's size, that is when the server has projected every byte of it), `run.stdout.log`, `run.stderr.log`.
+`events_offset` equals the file's size, that is when the server has projected every byte of it), `run.stdout.log`, `run.stderr.log`, and (with the multi-agent nodes) the step's tool log `<data>/nodes/tools/<run id>.jsonl`.
 Plus the automatic backups beyond the newest 7 in `<data>/backups/` (the `pre-upgrade-*.sqlite3` copies are kept).
 
 Never touched: `summary.json`, `goal.json`, site versions, documents, `chat.jsonl`, `calls.jsonl`, anything of a run that is still open or
@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from sutra_app.config import Settings
+from sutra_app.engine.host.toollog import log_path
 from sutra_app.engine.spec import is_dept_id, is_run_id
 from sutra_app.ops import backup, cli, lock
 
@@ -44,7 +45,7 @@ class Candidate:
     size: int
     dept_id: str
     run_id: str
-    what: str                        # screenshot | trace | events | log
+    what: str                        # screenshot | trace | events | log | tool log
 
 
 @dataclass
@@ -140,7 +141,7 @@ def plan(settings: Settings, older_than_s: float, *, now: Callable[[], float] = 
                 if run_dir.is_symlink() or not run_dir.is_dir():
                     continue
                 result.runs += 1
-                _plan_run(result, run_dir, row)
+                _plan_run(result, run_dir, row, settings.data_dir)
         finally:
             conn.close()
     stale = backups_beyond(settings)
@@ -149,7 +150,7 @@ def plan(settings: Settings, older_than_s: float, *, now: Callable[[], float] = 
     return result
 
 
-def _plan_run(result: Plan, run_dir: Path, row: sqlite3.Row) -> None:
+def _plan_run(result: Plan, run_dir: Path, row: sqlite3.Row, data_dir: Path | None = None) -> None:
     dept, run = row["dept_id"], row["run_id"]
 
     def add(path: Path, what: str) -> None:
@@ -166,6 +167,10 @@ def _plan_run(result: Plan, run_dir: Path, row: sqlite3.Row) -> None:
             add(events, "events")
         else:
             result.kept.append(f"{dept}/{run}: events.jsonl kept (the server has projected {row['events_offset']} of its {size} bytes)")
+    if data_dir is not None:                                                  # the list of tool calls of a project step's run is kept beside no run folder: it goes with the run (N-15, D349)
+        tools = log_path(data_dir, run)
+        if tools.is_file() and not tools.is_symlink():
+            add(tools, "tool log")
     for png in run_dir.glob("*.png"):
         if png.is_file() and not png.is_symlink():
             add(png, "screenshot")

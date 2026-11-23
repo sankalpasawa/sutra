@@ -1260,23 +1260,798 @@
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
+  "id": "D253",
+  "label": "node = a run + an identity row",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
   "id": "D254",
-  "label": "Stop button on team page + home box (stop ladder)",
-  "anchor": "band:DEPARTMENT RUNTIME"
+  "label": "SUTRA_NODES_V1, default 0; off = today",
+  "anchor": "band:ORCHESTRATION"
  },
  {
   "id": "D255",
-  "label": "Run cost = reported API price; unpriced calls estimated; $/credit measured",
-  "anchor": "band:DEPARTMENT RUNTIME"
+  "label": "project groups one request's nodes",
+  "anchor": "band:ORCHESTRATION"
  },
  {
   "id": "D256",
-  "label": "P26 dollar mode: credits follow dollars, only the dollar limit asks",
+  "label": "planner inline, worker = J2 run, reviewer light",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
   "id": "D257",
+  "label": "one scheduler; Conductor is a task gate",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D258",
+  "label": "lane column; (team, lane) unique",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D259",
+  "label": "plan edges + conflict edges (delay only)",
+  "anchor": null
+ },
+ {
+  "id": "D260",
+  "label": "write scopes: exclusive leases; narrow only",
+  "anchor": null
+ },
+ {
+  "id": "D261",
+  "label": "no git worktrees; scope fence + path check",
+  "anchor": null
+ },
+ {
+  "id": "D262",
+  "label": "server is the only DB writer; nodes use files",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D263",
+  "label": "handoff/verdict/needs are files; eight events stay",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D264",
+  "label": "node_messages: append-only, gap-free seq",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D265",
+  "label": "upstream via folder + hand-off, never framing",
+  "anchor": null
+ },
+ {
+  "id": "D266",
+  "label": "Gatekeeper is code; a model never approves",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D267",
+  "label": "grant = intersection, frozen at spawn",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D268",
+  "label": "six tiers by blast radius",
+  "anchor": null
+ },
+ {
+  "id": "D269",
+  "label": "deny by default; tier 6 never granted",
+  "anchor": null
+ },
+ {
+  "id": "D270",
+  "label": "approvals at three gates; 24 h; expired = denied",
+  "anchor": null
+ },
+ {
+  "id": "D271",
+  "label": "budget slices; sum never over the ceiling",
+  "anchor": null
+ },
+ {
+  "id": "D272",
+  "label": "NodeMeter: cumulative calls, dollars, time",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D273",
+  "label": "default caps: 3 parallel, 60 calls, 30 min",
+  "anchor": null
+ },
+ {
+  "id": "D274",
+  "label": "nodes never spawn nodes (depth 1)",
+  "anchor": null
+ },
+ {
+  "id": "D275",
+  "label": "lease 90 s; silent node stopped, retried once",
+  "anchor": null
+ },
+ {
+  "id": "D276",
+  "label": "teardown keeps run folders",
+  "anchor": null
+ },
+ {
+  "id": "D277",
+  "label": "reconcile, then reconcile_projects",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D278",
+  "label": "failure policy stop_branch; never a silent done",
+  "anchor": null
+ },
+ {
+  "id": "D279",
+  "label": "kill switch: 4 levels + KILL file",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D280",
+  "label": "append-only node_audit, no payloads",
+  "anchor": null
+ },
+ {
+  "id": "D281",
+  "label": "injection boundary: hand-off is data",
+  "anchor": null
+ },
+ {
+  "id": "D282",
+  "label": "egress per node: observe / replace",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D283",
+  "label": "node identity in CallTag, task.json, env",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D284",
+  "label": "machine-wide provider slots (file locks)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D285",
+  "label": "reviewer independence across processes",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D286",
+  "label": "reviewer: read-only, verdict enum, 2 loops",
+  "anchor": null
+ },
+ {
+  "id": "D287",
+  "label": "project events on the bus; heartbeats coalesced",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D288",
+  "label": "SQLite stays; the load test decides",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D289",
+  "label": "nodes are local processes only",
+  "anchor": null
+ },
+ {
+  "id": "D290",
+  "label": "'runtime node' vs 'graph node'",
+  "anchor": null
+ },
+ {
+  "id": "D291",
+  "label": "planner = chat agent with identity and slice",
+  "anchor": "Chat agent (orchestrator)"
+ },
+ {
+  "id": "D292",
+  "label": "fake engine tests; no live smoke",
+  "anchor": null
+ },
+ {
+  "id": "D293",
+  "label": "registered in log, diagram, traceability, env docs",
+  "anchor": null
+ },
+ {
+  "id": "D294",
+  "label": "Decide for me for projects: a rule table",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D295",
+  "label": "OS permissions: check first, the owner clicks",
+  "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D296",
+  "label": "closed laptop = refusal; gates end, project stops",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D297",
+  "label": "message seq: 1..n per project, no gap",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D298",
+  "label": "tier 4 independent of folder; sutra / github split",
+  "anchor": null
+ },
+ {
+  "id": "D299",
+  "label": "builder tools = run_tools, not a tier",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D300",
+  "label": "plan confirm threshold: 500 credits",
+  "anchor": null
+ },
+ {
+  "id": "D301",
+  "label": "planner Stop ends the running call",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D302",
+  "label": "no valid grant, no start",
+  "anchor": "band:ORCHESTRATION"
+ },
+ {
+  "id": "D303",
+  "label": "kill switch: watcher stays; ladders together; kill ends project",
+  "anchor": "Operator"
+ },
+ {
+  "id": "D304",
+  "label": "phase 1 findings adopted (N2..N25)",
+  "anchor": null
+ },
+ {
+  "id": "D305",
+  "label": "small rules: workers counted, task_id = current attempt",
+  "anchor": null
+ },
+ {
+  "id": "D306",
+  "label": "node plan: scope and needs from stage D",
+  "anchor": null
+ },
+ {
+  "id": "D307",
+  "label": "output auto = read; planner only reads",
+  "anchor": null
+ },
+ {
+  "id": "D308",
+  "label": "unanswerable gate: held and said",
+  "anchor": null
+ },
+ {
+  "id": "D309",
+  "label": "hand-off: 64 MB hash budget, handoff step first",
+  "anchor": null
+ },
+ {
+  "id": "D310",
+  "label": "retry keeps upstream; no grant fails; reserve fails closed",
+  "anchor": null
+ },
+ {
+  "id": "D311",
+  "label": "sleep gap on the wall clock; receipt is a note",
+  "anchor": null
+ },
+ {
+  "id": "D312",
+  "label": "Conductor in conductor.py; node states as built",
+  "anchor": null
+ },
+ {
+  "id": "D313",
+  "label": "flag off: waiting project steps stay on hold",
+  "anchor": null
+ },
+ {
+  "id": "D314",
+  "label": "app closed: fresh attempt, retry not spent, cap 2",
+  "anchor": null
+ },
+ {
+  "id": "D315",
+  "label": "a no is as wide as its question",
+  "anchor": null
+ },
+ {
+  "id": "D316",
+  "label": "MAN-8 as built: plan in caps_json, route shape",
+  "anchor": null
+ },
+ {
+  "id": "D317",
+  "label": "approval card in the chat, before phase 4",
+  "anchor": null
+ },
+ {
+  "id": "D318",
+  "label": "confirm 400, project_credits 1000",
+  "anchor": null
+ },
+ {
+  "id": "D319",
+  "label": "Decide for me: also the owner's own switch",
+  "anchor": null
+ },
+ {
+  "id": "D320",
+  "label": "slice is final; ceiling per attempt",
+  "anchor": null
+ },
+ {
+  "id": "D321",
+  "label": "cap hit = failed; wall time from first start",
+  "anchor": null
+ },
+ {
+  "id": "D322",
+  "label": "system probe as built; 45 s limit",
+  "anchor": null
+ },
+ {
+  "id": "D323",
+  "label": "runs alone is MAN-10's promise",
+  "anchor": null
+ },
+ {
+  "id": "D324",
+  "label": "ceiling real: retry gets slice minus spend",
+  "anchor": null
+ },
+ {
+  "id": "D325",
+  "label": "sutra tools only on the owner's yes",
+  "anchor": null
+ },
+ {
+  "id": "D326",
+  "label": "project page /p/id; POST /api/projects, 202",
+  "anchor": null
+ },
+ {
+  "id": "D327",
+  "label": "tool audit: names + kinds, no inputs",
+  "anchor": null
+ },
+ {
+  "id": "D328",
+  "label": "scope leases always; lanes = sub-flag",
+  "anchor": null
+ },
+ {
+  "id": "D329",
+  "label": "path nobody owns: ask, no = quarantine",
+  "anchor": null
+ },
+ {
+  "id": "D330",
+  "label": "reviewer verdict informs; owner decides",
+  "anchor": null
+ },
+ {
+  "id": "D331",
+  "label": "slots by file lock; 960 -> 72 writes",
+  "anchor": null
+ },
+ {
+  "id": "D332",
+  "label": "follow-up as built; credit = one call",
+  "anchor": null
+ },
+ {
+  "id": "D333",
+  "label": "m6 skipped for beta, built for release",
+  "anchor": null
+ },
+ {
+  "id": "D334",
+  "label": "202 accepted; way back before release",
+  "anchor": null
+ },
+ {
+  "id": "D335",
+  "label": "no grant gate in v1: nobody can ask",
+  "anchor": null
+ },
+ {
+  "id": "D336",
+  "label": "scope check = git only; says so when blind",
+  "anchor": null
+ },
+ {
+  "id": "D337",
+  "label": "leases among project steps only",
+  "anchor": null
+ },
+ {
+  "id": "D338",
+  "label": "reviewer independence from the Conductor",
+  "anchor": null
+ },
+ {
+  "id": "D339",
+  "label": "tool audit and network: say it",
+  "anchor": null
+ },
+ {
+  "id": "D340",
+  "label": "flag-off holds: lane filter, crash prefix",
+  "anchor": null
+ },
+ {
+  "id": "D341",
+  "label": "beta conditions; flag 0 in every release",
+  "anchor": null
+ },
+ {
+  "id": "D342",
+  "label": "Codex limit kept and told",
+  "anchor": null
+ },
+ {
+  "id": "D343",
+  "label": "credits not reported; one call = one credit",
+  "anchor": null
+ },
+ {
+  "id": "D344",
+  "label": "tool inputs removed at the end of a step",
+  "anchor": null
+ },
+ {
+  "id": "D345",
+  "label": "phase 4 review fixes as built",
+  "anchor": null
+ },
+ {
+  "id": "D346",
+  "label": "fix-round deviations accepted; limits written",
+  "anchor": null
+ },
+ {
+  "id": "D347",
+  "label": "real-Claude beta: go, read-only, 3 runs",
+  "anchor": null
+ },
+ {
+  "id": "D360",
+  "label": "work list + tags + code-made summary (DV-2)",
+  "anchor": null
+ },
+ {
+  "id": "D361",
+  "label": "recipes: owner-written, versions only grow (DV-3)",
+  "anchor": null
+ },
+ {
+  "id": "D362",
+  "label": "flag per package; routes mounted only when on",
+  "anchor": null
+ },
+ {
+  "id": "D363",
+  "label": "DV-2/DV-3 accepted with changes; way in needed",
+  "anchor": null
+ },
+ {
+  "id": "D364",
+  "label": "merge order; decision blocks; one release",
+  "anchor": null
+ },
+ {
+  "id": "D348",
+  "label": "wall time: union of pauses and gaps; closed app = sleep",
+  "anchor": null
+ },
+ {
+  "id": "D349",
+  "label": "tool records: prune, sweep, durable debt",
+  "anchor": null
+ },
+ {
+  "id": "D365",
+  "label": "DV-2/DV-3 review fixes as built",
+  "anchor": null
+ },
+ {
+  "id": "D366",
+  "label": "Home rows for Work/Recipes, only while mounted",
+  "anchor": null
+ },
+ {
+  "id": "D367",
+  "label": "hidden text refused in recipes and tags",
+  "anchor": null
+ },
+ {
+  "id": "D380",
+  "label": "step tools = grant: reads, own-folder writes, no shell, no web",
+  "anchor": null
+ },
+ {
+  "id": "D381",
+  "label": "month limit stops project + caps each step",
+  "anchor": null
+ },
+ {
+  "id": "D382",
+  "label": "project reply + step cards link to /p/id",
+  "anchor": null
+ },
+ {
+  "id": "D383",
+  "label": "page: plain words, ledger cost, phone graph",
+  "anchor": null
+ },
+ {
+  "id": "D384",
+  "label": "nodes status: shell vs app; resume audited",
+  "anchor": null
+ },
+ {
+  "id": "D385",
+  "label": "checklist fixed; run 1 unseen listed",
+  "anchor": null
+ },
+ {
+  "id": "D386",
+  "label": "no web for a step; tier 4 = GitHub reads only",
+  "anchor": null
+ },
+ {
+  "id": "D387",
+  "label": "per-call dollar clamp; node router narrows all; no shell level",
+  "anchor": null
+ },
+ {
+  "id": "D388",
+  "label": "limit counts project spend; removed/new month ignored",
+  "anchor": null
+ },
+ {
+  "id": "D389",
+  "label": "reply links only a real project, only in org chat",
+  "anchor": null
+ },
+ {
+  "id": "D390",
+  "label": "no Try again for steps of ended projects",
+  "anchor": null
+ },
+ {
+  "id": "D391",
+  "label": "status read-only; app audits resume",
+  "anchor": null
+ },
+ {
+  "id": "D392",
+  "label": "resume hint: app python or sutra-pro",
+  "anchor": null
+ },
+ {
+  "id": "D393",
+  "label": "reviewer: Send back/Leave; reads what steps wrote",
+  "anchor": null
+ },
+ {
+  "id": "D394",
+  "label": "step cards link; plain stops; no plumbing",
+  "anchor": null
+ },
+ {
+  "id": "D395",
+  "label": "page: per-step calls, minutes, dollars",
+  "anchor": null
+ },
+ {
+  "id": "D396",
+  "label": "project theme: choice wins, else follows OS live",
+  "anchor": null
+ },
+ {
+  "id": "D397",
+  "label": "graceful close = fresh attempt, project goes on",
+  "anchor": null
+ },
+ {
+  "id": "D350",
+  "label": "Ask: read-only cited answer (DV-1)",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D351",
+  "label": "sources checked by code, never by the model",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D352",
+  "label": "Ask off: mode refused, no new field",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D353",
+  "label": "sources card + draft-only Turn this into work",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D354",
+  "label": "Ask mode stored with the line; a retry only narrows",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D355",
+  "label": "Codex: one thread per mode; Ask read-only even with no folder",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D356",
+  "label": "Ask $ cap: Claude yes, Codex a check; limit as for Do",
+  "anchor": "Connector router"
+ },
+ {
+  "id": "D357",
+  "label": "path refused by spelling before any file call",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D358",
+  "label": "flag off: OpenAPI bytes and bad bodies unchanged",
+  "anchor": "Chat sessions"
+ },
+ {
+  "id": "D398",
+  "label": "no retry by hand of a step; API 409",
+  "anchor": null
+ },
+ {
+  "id": "D399",
+  "label": "one engine-files list: page, hand-off, reviewer",
+  "anchor": null
+ },
+ {
+  "id": "D400",
+  "label": "replaced attempt: plain line + link, no stopped card",
+  "anchor": null
+ },
+ {
+  "id": "D401",
+  "label": "engine question on page; Decide for me never answers",
+  "anchor": null
+ },
+ {
+  "id": "D402",
+  "label": "open items said plainly",
+  "anchor": null
+ },
+ {
+  "id": "D403",
+  "label": "no 'just finished' for stopped projects",
+  "anchor": null
+ },
+ {
+  "id": "D404",
+  "label": "short title + full request on page",
+  "anchor": null
+ },
+ {
+  "id": "D405",
+  "label": "owner words; no .git tool rows",
+  "anchor": null
+ },
+ {
+  "id": "D406",
+  "label": "owner stop wins; audit before unlink; no price yet",
+  "anchor": null
+ },
+ {
+  "id": "D407",
+  "label": "unguessable fence; node block marks router",
+  "anchor": null
+ },
+ {
+  "id": "D408",
+  "label": "org-only link; path-free hint",
+  "anchor": null
+ },
+ {
+  "id": "D409",
+  "label": "parallel steps share the remainder",
+  "anchor": null
+ },
+ {
+  "id": "D410",
+  "label": "engine outcomes plain; scanned for jargon",
+  "anchor": null
+ },
+ {
+  "id": "D411",
+  "label": "reads of own output = its own notes",
+  "anchor": null
+ },
+ {
+  "id": "D412",
+  "label": "Home step row opens /p/id",
+  "anchor": null
+ },
+ {
+  "id": "D413",
+  "label": "Live only while running",
+  "anchor": null
+ },
+ {
+  "id": "D414",
+  "label": "step prompt + framing: only its own job",
+  "anchor": null
+ },
+ {
+  "id": "D415",
+  "label": "step-question buttons host-parsed; stale answer 409",
+  "anchor": null
+ },
+ {
+  "id": "D416",
+  "label": "kill enforced first; audit never blocks",
+  "anchor": null
+ },
+ {
+  "id": "D417",
+  "label": "audit keeps all calls incl. .git paths",
+  "anchor": null
+ },
+ {
+  "id": "D418",
+  "label": "per-call cap read live, shared by running steps",
+  "anchor": null
+ },
+ {
+  "id": "D419",
+  "label": "D402 completed; tests; titles; names",
+  "anchor": null
+ },
+ {
+  "id": "D420",
+  "label": "Stop button on team page + home box (stop ladder)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D421",
+  "label": "Run cost = reported API price; unpriced calls estimated; $/credit measured",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D422",
+  "label": "P26 dollar mode: credits follow dollars, only the dollar limit asks",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D423",
   "label": "Budget chip in dollars (API price); Settings in dollars; raise input on both cards",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D424",
+  "label": "projects: P26 off per step; chip $ = project's own; Home Stop stops the project",
   "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

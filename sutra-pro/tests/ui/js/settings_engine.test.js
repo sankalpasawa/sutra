@@ -23,7 +23,7 @@ const FOR_ALL = (() => {
   return all;
 })();
 const DEPARTMENTS = [{id: "web", name: "Web"}, {id: "content", name: "Content"}];
-// D257: the budget is set in dollars; the credit fields stay valid when stored but get no row
+// D423: the budget is set in dollars; the credit fields stay valid when stored but get no row
 const HIDDEN = ["budget", "budget_cap", "limit_add"];
 const SHOWN = FOR_ALL.editable.filter(f => !HIDDEN.includes(f));
 
@@ -69,7 +69,7 @@ test("every editable field has a control and no locked field has one", () => {
   HIDDEN.forEach(field => assert.equal(found[field], undefined, field + " has no row"));
 });
 
-test("the budget is in dollars (API price) with the not-billed hint, and no credit field is shown (D257)", () => {
+test("the budget is in dollars (API price) with the not-billed hint, and no credit field is shown (D423)", () => {
   const html = engineHtml(FOR_ALL, {scope: ""});
   const found = rows(html);
   assert.match(found.usd_budget, /<label class="setlabel" for="setf-usd_budget">Budget \(API price, \$\)<\/label>/);
@@ -105,12 +105,12 @@ test("a numeric setting is a number field holding the effective value; whole num
   assert.match(inputOf(found.max_cycles)[0], /type="number"/);
   assert.match(inputOf(found.max_cycles)[0], /step="1"/);
   assert.match(inputOf(found.max_cycles)[0], /value="4"/);                    // from the team's file
-  assert.match(inputOf(found.usd_budget)[0], /step="any"/);                   // D257: dollars to the cent
+  assert.match(inputOf(found.usd_budget)[0], /step="any"/);                   // D423: dollars to the cent
   assert.match(inputOf(found.delay)[0], /step="any"/);
   assert.match(inputOf(found.bargain_minutes)[0], /step="any"/);
 });
 
-test("usd_cap, which is not set by default, is an empty number field (D257: budget_cap is hidden)", () => {
+test("usd_cap, which is not set by default, is an empty number field (D423: budget_cap is hidden)", () => {
   const found = rows(engineHtml(FOR_ALL, {}));
   assert.match(inputOf(found.usd_cap)[0], /type="number" step="any"/);
   assert.match(inputOf(found.usd_cap)[0], /value=""/);
@@ -165,7 +165,7 @@ test("the template library flag says what the catalog's By run list shows while 
 test("the reuse switches and the reviewer pair are five more rows: four toggles and one number, under their own headings", () => {
   const html = engineHtml(FOR_ALL, {scope: "", departments: DEPARTMENTS});
   const found = rows(html);
-  assert.equal(Object.keys(found).length, 36, "26 editable rows (29 less the three hidden credit ones, D257) and 10 locked ones");
+  assert.equal(Object.keys(found).length, 36, "26 editable rows (29 less the three hidden credit ones, D423) and 10 locked ones");
   ["run_templates", "auto_reuse", "artifact_library", "reviewer"].forEach(f => assert.match(inputOf(found[f])[0], /type="checkbox"/, f));
   assert.match(inputOf(found.reviewer_wait)[0], /type="number" step="any"/);
   assert.match(inputOf(found.reviewer_wait)[0], /value="120"/);

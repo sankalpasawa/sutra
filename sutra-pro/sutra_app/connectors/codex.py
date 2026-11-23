@@ -509,8 +509,10 @@ class CodexConnector(ModelConnector):
         return super().call_text(prompt, **kw)
 
     def stream(self, s: SessionState, m: Any, *, timeout_s: Optional[float] = None, partials: bool = False,
-               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None) -> Iterator[ConnectorEvent]:
-        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel)
+               hooks: Optional[Hooks] = None, folder: str = "", cancel: Any = None, max_usd: Optional[float] = None,
+               read_only: bool = False) -> Iterator[ConnectorEvent]:
+        # Codex has no flag that caps what one process spends: `max_usd` is accepted and not used (the router's gate before each spawn still holds the calls and the deadline)
+        return super().stream(s, m, timeout_s=timeout_s, partials=False, hooks=hooks, folder=folder, cancel=cancel, max_usd=max_usd, read_only=read_only)
 
     # ---- one spawn: notices before the first event, the rollout quota after the last --------------------------------------------
     def _spawn(self, plan: TurnPlan, hooks: Hooks, box: dict) -> Iterator[ConnectorEvent]:
@@ -593,7 +595,9 @@ class CodexConnector(ModelConnector):
             argv.append("resume")
         argv += ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules"]
         # the owner's working folder (GAP3-workdir) is read, or changed inside the folder only when the owner chose "edit", whatever the policy says
-        sandbox = ("workspace-write" if getattr(plan.folder, "edit", False) else "read-only") if plan.folder else self.sandbox
+        sandbox = ("workspace-write" if getattr(plan.folder, "edit", False) else "read-only") if plan.folder else ("read-only" if plan.read_only else self.sandbox)
+        if not plan.folder and getattr(getattr(plan.ctx, "tag", None), "node_id", ""):
+            sandbox = "read-only"                            # a call of a step of a project with no folder of its own (the reviewer, an owner access of none) reads only, whatever the policy's sandbox says (D387, m9)
         cwd = plan.folder or plan.workdir
         if not plan.resume:                                  # `exec resume` takes no -s and no -C: sandbox_mode below, cwd of the process
             if plan.oneshot:

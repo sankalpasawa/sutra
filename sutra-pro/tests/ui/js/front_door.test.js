@@ -153,7 +153,7 @@ test("a team's question says who asks in plain words: Asha needs one answer (or 
   assert.match(FD.needCard(approval(11), {}), /Asha needs your OK/);
 });
 
-test("the home box (D257): an empty holder for the Budget chip beside Go, the chip script before home.js, no credits field", () => {
+test("the home box (D423): an empty holder for the Budget chip beside Go, the chip script before home.js, no credits field", () => {
   const fs = require("node:fs");
   const html = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/pages/home.html"), "utf8");
   const box = html.slice(html.indexOf('<div class="fdcompose">'), html.indexOf('id="fdsend"'));
@@ -166,7 +166,7 @@ test("the home box (D257): an empty holder for the Budget chip beside Go, the ch
   assert.match(js, /send\(body, null, \{plan: true, usd_budget: usd\}\)/);
 });
 
-test("stopOf (D254): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {
+test("stopOf (D420): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {
   const sent = [{id: 900, role: "user", text: "A cafe site"}, {id: 901, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A cafe site"}}];
   const base = {show: true, messages: sent, answers: {}, box: "", departments: [dept("web", "running", {live_task_id: tid(7)}), dept("ads", "idle", {live_task_id: tid(8)})]};
   assert.deepEqual(FD.stopOf(base), {show: true, taskId: tid(7)});
@@ -180,9 +180,11 @@ test("stopOf (D254): Stop while the box is empty, the card shows the work this s
   const choice = {id: 902, role: "agent", text: "", card: {type: "choice", question: "Which team?", options: [{id: "web", label: "Web"}]}};
   assert.deepEqual(FD.stopOf({...base, messages: [...sent, choice]}), no);                              // the card is a question, not the work
   assert.deepEqual(FD.stopOf(null), no);
+  const step = [sent[0], {...sent[1], card: {...sent[1].card, project_id: "prj_1"}}];                    // D424: a step of a project
+  assert.deepEqual(FD.stopOf({...base, messages: step}), {show: true, taskId: tid(7), project: "prj_1"});
 });
 
-test("raise input (D257): a dollar question's card takes a typed amount; the option tail is stripped; no credits; every $ says API price", () => {
+test("raise input (D423): a dollar question's card takes a typed amount; the option tail is stripped; no credits; every $ says API price", () => {
   const text = "@Requester The site isn't finished yet.\nThis run has used $20.40 of $20 (API price). Add $10? So far: $20 approved. 3 calls estimated: Codex reports no price." +
     "\n   Option 1: Add $10 and keep going: you get more of the missing parts built. Or type your own amount [adds $10]\n   Option 2: Finish as it is: you get the site";
   const html = FD.needCard(question(12, {text}), {});

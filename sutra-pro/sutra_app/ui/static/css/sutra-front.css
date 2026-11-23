@@ -130,7 +130,7 @@ body.home .swacts .sethint { color: var(--s-muted); font-size: 13px; }
 .fdyes { background: var(--s-accent); color: var(--s-accentink); border-color: var(--s-accent); }
 .fdyes:hover { box-shadow: 0 6px 16px -8px var(--s-shadow); }
 .fdstart { padding: 12px 28px; font-size: 16px; }
-.fdstart.fdstop { display: inline-flex; align-items: center; gap: 8px; }      /* D254: Go becomes Stop while the run it started is live */
+.fdstart.fdstop { display: inline-flex; align-items: center; gap: 8px; }      /* D420: Go becomes Stop while the run it started is live */
 .fdghost { background: none; color: var(--s-muted); border-color: transparent; }
 .fdghost:hover { color: var(--s-ink); }
 .fdopt { padding: 12px 18px; font-size: 15px; }

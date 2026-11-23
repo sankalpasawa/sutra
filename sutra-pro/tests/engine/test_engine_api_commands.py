@@ -612,7 +612,7 @@ def test_the_route_limits_are_the_budget_settings_and_the_task_setting_takes_wha
             TaskSettings(J2_BUDGET=bad)
 
 
-# ---- D257: the Budget chip's dollars (API price) are this delivery's J2_USD_BUDGET ----------------------------------------------------
+# ---- D423: the Budget chip's dollars (API price) are this delivery's J2_USD_BUDGET ----------------------------------------------------
 @pytest.mark.parametrize("usd, want", [(20, "20"), (12.5, "12.5"), ("12.50", "12.5"), (1, "1"), (10000, "10000"), ("7", "7")])
 def test_say_usd_budget(api, usd, want):
     got = api.client.post("/api/say?dept=web", json={"text": "a cafe site", "usd_budget": usd}, headers=TOKEN)
