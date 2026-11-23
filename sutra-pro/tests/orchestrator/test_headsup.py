@@ -241,3 +241,27 @@ def test_an_earlier_attempt_of_a_step_is_a_step_too(db, clock):
     world.sql("INSERT INTO agent_nodes(id, project_id, task_id, role, runtime, state, created_at) VALUES ('nd_0123456789ab', 'prj_0123456789ab', ?, 'worker', 'engine', 'failed', ?)", second, NOW)
     for item in HeadsUp(db, nodes=True).items(NOW):
         assert item.retry is False, (item.task_id, item.kind)
+
+
+def test_a_step_that_finished_in_a_project_that_was_stopped_or_failed_is_not_just_finished_on_home(db, clock):
+    """D403: run 3 showed 'Just finished: Done' for the first step of a project the kill switch stopped afterwards."""
+    world = World(db, clock)
+    for index, project_status in enumerate(("stopped", "failed")):
+        task = put(world, 60 + index, "web", "done", ended=NOW - 120, outcome="Done: the notes are written")
+        _step_of(world, task, project_status)
+        assert HeadsUp(db, nodes=True).items(NOW) == [], project_status
+        assert [(i.kind, i.task_id) for i in HeadsUp(db).items(NOW)] == [("finished", task)], "flag off: what it was"
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
+
+
+def test_a_step_that_finished_in_a_project_that_runs_or_is_done_is_still_news(db, clock):
+    world = World(db, clock)
+    for project_status in ("running", "done"):
+        task = put(world, 70, "web", "done", ended=NOW - 120, outcome="Done")
+        _step_of(world, task, project_status)
+        assert [(i.kind, i.task_id) for i in HeadsUp(db, nodes=True).items(NOW)] == [("finished", task)], project_status
+        world.sql("DELETE FROM agent_nodes")
+        world.sql("DELETE FROM projects")
+        world.sql("DELETE FROM tasks")
