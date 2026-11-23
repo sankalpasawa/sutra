@@ -1,0 +1,192 @@
+"""Named projects, task 9 (R1.12, R1.14, D428): a run that ended well copies its deliverables into its project's own folder, under the same
+relative paths. Sutra's records (*.json, *.jsonl, site/, out/) stay in the run. `<folder>/.sutra/manifest.json` keeps the sha256 of what Sutra
+last wrote: a file Sutra never wrote, or one changed since, is never overwritten, and the chat names it."""
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from sutra_app import oslayer
+from sutra_app.connectors.workdir import WorkFolder
+from sutra_app.engine.host import export, finish
+
+from test_engine_host import j2   # noqa: F401  (the J2 fixture)
+
+ROWS = [{"file": "prd.md", "form": "document"}, {"file": "pulse_app/main.py", "form": "agent"}, {"file": "pulse_app/config.py", "form": "agent"},
+        {"file": "site/index.html", "form": "page"}, {"file": "goal.json", "form": "document"}]
+
+
+def write(path: Path, text: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def run(tmp_path):
+    d = tmp_path / "run"
+    write(d / "prd.md", "# PRD v1\n")
+    write(d / "prd.docx", "docx bytes")
+    write(d / "pulse_app" / "main.py", "print('digest at 08:00')\n")
+    write(d / "pulse_app" / "config.py", "TIME = '08:00'\n")
+    write(d / "site" / "index.html", "<html></html>")
+    write(d / "goal.json", "{}")
+    return d
+
+
+@pytest.fixture
+def folder(tmp_path):
+    f = tmp_path / "Pulse"
+    f.mkdir()
+    return f
+
+
+def manifest(folder: Path) -> dict:
+    return json.loads((folder / ".sutra" / "manifest.json").read_text(encoding="utf-8"))
+
+
+def test_deliverable_files_skip_sutras_records(run):
+    assert export.deliverable_files(run, ROWS) == ["prd.docx", "prd.md", "pulse_app/config.py", "pulse_app/main.py"]
+
+
+def test_deliverables_go_to_the_folder_under_the_same_paths(run, folder):
+    result = export.export_run(run, folder, "j2-1", ROWS)
+    assert sorted(result.new) == ["prd.docx", "prd.md", "pulse_app/config.py", "pulse_app/main.py"]
+    assert (folder / "pulse_app" / "main.py").read_text(encoding="utf-8") == "print('digest at 08:00')\n"
+    assert not (folder / "site").exists() and not (folder / "goal.json").exists()
+    body = manifest(folder)
+    assert body["version"] == 1 and body["run_id"] == "j2-1" and sorted(body["files"]) == sorted(result.new)
+
+
+def test_a_file_sutra_never_wrote_is_untouched(run, folder):
+    write(folder / "prd.md", "the owner's own notes")
+    result = export.export_run(run, folder, "j2-1", ROWS)
+    assert (folder / "prd.md").read_text(encoding="utf-8") == "the owner's own notes"
+    assert result.outside == ["prd.md"] and "prd.md" not in manifest(folder)["files"]
+
+
+def test_a_file_changed_since_sutra_wrote_it_is_not_overwritten(run, folder):
+    export.export_run(run, folder, "j2-1", ROWS)
+    write(folder / "prd.md", "# PRD edited by hand\n")
+    write(run / "prd.md", "# PRD v2\n")
+    result = export.export_run(run, folder, "j2-2", ROWS)
+    assert (folder / "prd.md").read_text(encoding="utf-8") == "# PRD edited by hand\n"
+    assert result.outside == ["prd.md"]
+
+
+def test_a_changed_deliverable_is_updated_and_an_unchanged_one_is_not_rewritten(run, folder):
+    export.export_run(run, folder, "j2-1", ROWS)
+    before = os.stat(folder / "pulse_app" / "main.py").st_mtime_ns
+    write(run / "pulse_app" / "config.py", "TIME = '08:30'\n")
+    result = export.export_run(run, folder, "j2-2", ROWS)
+    assert result.updated == ["pulse_app/config.py"] and "pulse_app/main.py" in result.unchanged and result.new == []
+    assert os.stat(folder / "pulse_app" / "main.py").st_mtime_ns == before
+    assert (folder / "pulse_app" / "config.py").read_text(encoding="utf-8") == "TIME = '08:30'\n"
+
+
+def test_a_locked_file_is_skipped_and_named(run, folder, monkeypatch):
+    real = oslayer.replace
+
+    def locked(src, dst):
+        if str(dst).endswith("main.py"):
+            raise PermissionError(13, "in use")
+        return real(src, dst)
+
+    monkeypatch.setattr(oslayer, "replace", locked)
+    result = export.export_run(run, folder, "j2-1", ROWS)
+    assert result.failed == ["pulse_app/main.py"] and "prd.md" in result.new
+    assert not (folder / "pulse_app" / "main.py").exists() and "pulse_app/main.py" not in manifest(folder)["files"]
+    assert not [p for p in folder.rglob("*.tmp")]
+
+
+def test_a_path_that_leaves_the_folder_is_skipped(run, folder):
+    result = export.export_run(run, folder, "j2-1", [{"file": "../escape.md", "form": "document"}, {"file": "prd.md", "form": "document"}])
+    assert result.new == ["prd.docx", "prd.md"] and not (folder.parent / "escape.md").exists()
+
+
+# ---- the finish step -------------------------------------------------------------------------------------------------------------
+
+def host_for(run, data, dept="pulse"):
+    lines = []
+    return SimpleNamespace(task=SimpleNamespace(dept_id=dept, run_id="j2-1"), paths=SimpleNamespace(run_dir=run, data_dir=data, run_id="j2-1"),
+                           run=SimpleNamespace(post=lambda who, text: lines.append((who, text))), stopping=None, lines=lines)
+
+
+def test_the_step_saves_and_says_so(run, folder, tmp_path, monkeypatch):
+    monkeypatch.setattr(export, "_rows", lambda run_dir, own=None: ROWS)
+    data = tmp_path / "data"
+    WorkFolder(data, dept_id="pulse").set(str(folder), access="edit")
+    host = host_for(run, data)
+    facts = export.step(host)
+    assert facts["new"] == 4 and json.loads((run / "export.json").read_text())["folder"] == os.path.realpath(folder)
+    assert host.lines == [("system", f"Saved to {os.path.realpath(folder)}: 4 files (4 new, 0 updated).")]
+
+
+def test_the_step_names_files_changed_outside_sutra(run, folder, tmp_path, monkeypatch):
+    monkeypatch.setattr(export, "_rows", lambda run_dir, own=None: ROWS)
+    data = tmp_path / "data"
+    WorkFolder(data, dept_id="pulse").set(str(folder), access="edit")
+    write(folder / "prd.md", "mine")
+    host = host_for(run, data)
+    export.step(host)
+    assert ("system", "Not updated: prd.md was changed outside Sutra") in host.lines
+
+
+def test_a_vanished_folder_is_reported_not_made(run, folder, tmp_path, monkeypatch):
+    monkeypatch.setattr(export, "_rows", lambda run_dir, own=None: ROWS)
+    data = tmp_path / "data"
+    WorkFolder(data, dept_id="pulse").set(str(folder), access="edit")
+    gone = os.path.realpath(folder)
+    folder.rmdir()
+    host = host_for(run, data)
+    with pytest.raises(finish.Skip):
+        export.step(host)
+    assert host.lines == [("system", f"Not saved: {gone} is not there any more")] and not os.path.exists(gone)
+
+
+def test_a_read_only_project_folder_gets_nothing(run, folder, tmp_path):
+    data = tmp_path / "data"
+    WorkFolder(data, dept_id="pulse").set(str(folder), access="read")
+    with pytest.raises(finish.Skip, match="may only read"):
+        export.step(host_for(run, data))
+    assert list(folder.iterdir()) == []
+
+
+def test_a_team_without_its_own_folder_gets_nothing_even_with_an_app_wide_one(run, folder, tmp_path):
+    data = tmp_path / "data"
+    WorkFolder(data).set(str(folder), access="edit")
+    with pytest.raises(finish.Skip, match="no project folder"):
+        export.step(host_for(run, data))
+    assert list(folder.iterdir()) == []
+
+
+def test_a_stopped_run_writes_nothing(run, folder, tmp_path, monkeypatch):
+    monkeypatch.setattr(export, "_rows", lambda run_dir, own=None: ROWS)
+    data = tmp_path / "data"
+    WorkFolder(data, dept_id="pulse").set(str(folder), access="edit")
+    for status in ("stopped", "crashed"):
+        assert finish.run_steps(host_for(run, data), status, (("export", export.step),)) == []
+    assert list(folder.iterdir()) == [] and not (run / "export.json").exists()
+
+
+def test_export_is_a_finish_step():
+    assert "export" in [name for name, _ in finish.STEPS]
+
+
+# ---- a real (mock) run to Done ----------------------------------------------------------------------------------------------------
+
+def test_a_finished_mock_run_writes_into_the_team_folder(j2, make_run_dir, data_dir, tmp_path):
+    from test_engine_project import BRIEF, QUIET, chat, go
+    team = tmp_path / "Pulse"
+    team.mkdir()
+    WorkFolder(data_dir, dept_id="web").set(str(team), access="edit")
+    run_dir = make_run_dir(dept_id="web", user_text=BRIEF, settings=QUIET)
+    go(run_dir)
+    assert (team / "project.md").read_bytes() == (run_dir / "project.md").read_bytes()
+    assert "project.md" in manifest(team)["files"]
+    assert not [p for p in team.rglob("*.json") if ".sutra" not in p.parts]                # Sutra's records stay in the run
+    record = json.loads((run_dir / "export.json").read_text())
+    assert record["folder"] == os.path.realpath(team) and "project.md" in record["new"]
+    assert [m for m in chat(run_dir) if m["text"].startswith(f"Saved to {os.path.realpath(team)}: ")]

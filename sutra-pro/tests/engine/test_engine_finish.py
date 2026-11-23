@@ -78,7 +78,7 @@ def test_a_run_that_did_not_end_well_gets_no_step_and_no_trace_line(status):
 
 
 def test_the_default_steps_are_agent_views_then_catalog_and_the_good_endings_are_the_two_that_finished_the_work():
-    assert [name for name, _ in finish.STEPS] == ["agent_views", "catalog"] and [name for name, _ in finish.NODE_STEPS] == ["handoff"]
+    assert [name for name, _ in finish.STEPS] == ["agent_views", "catalog", "export"] and [name for name, _ in finish.NODE_STEPS] == ["handoff"]
     assert finish.ENDED_WELL == ("done", "done_with_open_items") and finish.STEP_SECONDS == 10.0 and finish.TRACE_TYPE == "finish.step"
 
 
@@ -298,10 +298,11 @@ def test_a_finished_mock_run_has_its_agent_readable_json_before_run_ended_and_th
     assert {"agent/goal.json", "agent/workflows.json", "agent/receipts.json", "agent/conditions.json", "agent/audits/A-1.json"} <= agent_files, \
         "the files were there when run.ended was written"
     assert any(name.startswith("site/sections/") for name in seen["files"]), "a website's sections get their JSON too"
-    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog"], "both lines were written before run.ended too"
-    views, library = seen["trace"]
+    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog", "export"], "every line was written before run.ended too"     # export: D428
+    views, library, saved = seen["trace"]
     assert views["result"] == "ok" and views["valid"] >= len(agent_files) and views["files"] == views["valid"] + len(views["invalid"])
     assert library["result"] == "skipped" and library["why"] == "the template library is off for this run", "the library is off by default (D18)"
+    assert saved["result"] == "skipped" and saved["why"] == "no project folder", "a team with no folder of its own gets no export (D428)"
 
 
 def test_the_artifacts_pane_finds_the_validated_json_of_a_run_of_the_app(j2, make_run_dir):
@@ -546,7 +547,7 @@ def test_a_run_of_the_app_with_the_library_on_reaches_the_catalog_through_the_ho
 
     monkeypatch.setattr(loop.Host, "_emit_ended", ended)
     assert Running(run_dir, "--mock").wait() == 0
-    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog"]
+    assert [line["step"] for line in seen["trace"]] == ["agent_views", "catalog", "export"]
     assert seen["trace"][1]["result"] == "ok" and seen["trace"][1]["not_recorded"] == 0
     assert run_dir.name in seen["index"]["runs"] and seen["agent"] is True
     assert events(run_dir)[-1]["t"] == "run.ended"

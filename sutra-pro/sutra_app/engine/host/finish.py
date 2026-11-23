@@ -12,6 +12,7 @@ steps below, in this order (a node's `handoff` first, G1); a stopped or crashed 
                   (`python -m sutra_app.engine.j2_agent_views build <run folder>`).
     handoff       `handoff.json`, only for a node of a multi-agent project (the optional `node` block of `task.json`, `NODE_STEPS`: any other run does not even get a trace line for it): the files of
                   the run folder with their checksums and the run's own outcome sentence, for the server to check and scrub (handoff.py).
+    export        the run's deliverables into its project's own folder, guarded by `<folder>/.sutra/manifest.json` (export.py, D428).
     catalog       `j2_template_lib.collect(<team runs folder>, runs=[<this run>])` under the library lock (P10): the templates this run
                   stored reach the catalog. Only when the template library is on for the run (`EngineSettings.effective()`, D178: `auto_reuse` turns it on in J2 too), the run is not a mock run (a scripted
                   run teaches the library nothing) and it stored templates. A lock that stays taken for the whole wait skips the step.
@@ -37,7 +38,7 @@ from sutra_app.library.types import clip
 
 from ..events import END_STATUSES
 
-__all__ = ["run_steps", "agent_views", "catalog", "handoff", "Skip", "STEPS", "NODE_STEPS", "ENDED_WELL", "STEP_SECONDS", "TRACE_TYPE"]
+__all__ = ["run_steps", "agent_views", "catalog", "export", "handoff", "Skip", "STEPS", "NODE_STEPS", "ENDED_WELL", "STEP_SECONDS", "TRACE_TYPE"]
 
 ENDED_WELL = END_STATUSES[:2]                      # the `run.ended` statuses that get the steps (`done`, `done_with_open_items`): the statuses have one owner, events.py (D188, R-3)
 STEP_SECONDS = 10.0                                # a step that takes longer ends the rest (D142)
@@ -98,7 +99,13 @@ def handoff(host) -> dict:
     return {"files": len(document["files"]), "status": document["status"]}
 
 
-STEPS: tuple[tuple[str, Step], ...] = (("agent_views", agent_views), ("catalog", catalog))
+def export(host) -> dict:
+    """The run's results into its project's folder (named projects, D428): see export.py."""
+    from . import export as export_module
+    return export_module.step(host)
+
+
+STEPS: tuple[tuple[str, Step], ...] = (("agent_views", agent_views), ("catalog", catalog), ("export", export))
 NODE_STEPS: tuple[tuple[str, Step], ...] = (("handoff", handoff),)       # added after `STEPS` for the run of a node only: any other run has the steps (and the trace lines) it always had (MAN-6)
 
 
