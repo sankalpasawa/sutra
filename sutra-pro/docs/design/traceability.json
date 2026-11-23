@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 387,
+  "decisions": 397,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 409,
+ "max_decision": 419,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -576,7 +576,17 @@
     "D406",
     "D407",
     "D408",
-    "D409"
+    "D409",
+    "D410",
+    "D411",
+    "D412",
+    "D413",
+    "D414",
+    "D415",
+    "D416",
+    "D417",
+    "D418",
+    "D419"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5891,8 +5901,10 @@
   {
    "id": "D401",
    "title": "A step's engine question is shown on the project page",
-   "packages": [],
-   "status": "documented only",
+   "packages": [
+    "ORCH-3"
+   ],
+   "status": "implemented",
    "superseded_by": [],
    "diagram": "label \"engine question on page; Decide for me never answers\", key only."
   },
@@ -5965,10 +5977,97 @@
   {
    "id": "D409",
    "title": "Steps that start together share the dollar remainder",
+   "packages": [
+    "CN-7",
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"parallel steps share the remainder\", key only."
+  },
+  {
+   "id": "D410",
+   "title": "Every engine outcome sentence in plain words",
    "packages": [],
    "status": "documented only",
    "superseded_by": [],
-   "diagram": "label \"parallel steps share the remainder\", key only."
+   "diagram": "label \"engine outcomes plain; scanned for jargon\", key only."
+  },
+  {
+   "id": "D411",
+   "title": "A step's own files are 'its own notes'",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reads of own output = its own notes\", key only."
+  },
+  {
+   "id": "D412",
+   "title": "Home opens the project page for a step",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Home step row opens /p/id\", key only."
+  },
+  {
+   "id": "D413",
+   "title": "Live badge only while the project runs",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Live only while running\", key only."
+  },
+  {
+   "id": "D414",
+   "title": "Each step does only its own job",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"step prompt + framing: only its own job\", key only."
+  },
+  {
+   "id": "D415",
+   "title": "Host-parsed buttons and a refused stale answer",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"step-question buttons host-parsed; stale answer 409\", key only."
+  },
+  {
+   "id": "D416",
+   "title": "Kill first, resume audit second",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"kill enforced first; audit never blocks\", key only."
+  },
+  {
+   "id": "D417",
+   "title": "The tool audit records every call",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"audit keeps all calls incl. .git paths\", key only."
+  },
+  {
+   "id": "D418",
+   "title": "The per-call dollar cap is read on every call",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"per-call cap read live, shared by running steps\", key only."
+  },
+  {
+   "id": "D419",
+   "title": "The rest of the review of D398 to D409",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"D402 completed; tests; titles; names\", key only."
   }
  ],
  "packages": [

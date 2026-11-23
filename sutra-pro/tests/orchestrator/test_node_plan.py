@@ -98,3 +98,19 @@ def test_a_model_that_cannot_be_reached_for_the_node_plan_gives_the_defaults_too
         assert [r["action"] for r in rows(services, "SELECT action FROM node_audit WHERE action = 'plan.defaults'")] == ["plan.defaults"] and len(rows(services, "SELECT * FROM projects")) == 1
     finally:
         client.__exit__(None, None, None)
+
+
+# ---- each step does only its own job (D414, run 4 item 5) ------------------------------------------------------------------------------------------
+
+def test_the_step_request_prompt_says_each_step_does_only_its_own_job():
+    from sutra_app.orchestrator.agent import prompts
+    text = prompts.render("nodeplan", steps="a1 web: List the files\na2 sales: Suggest one improvement", message="Do two jobs", schema="{}")
+    assert "each step does ONLY its own job and must not do the work of the next step" in text
+
+
+def test_a_step_of_a_project_is_framed_to_do_only_its_own_job_and_an_ordinary_request_keeps_its_framing():
+    from sutra_app.orchestrator.agent.runner import step_framing
+    framed = step_framing("Be brief.", 1, 2, "List what each file is for", ["Suggest the one improvement"])
+    assert framed.startswith("Be brief.\n\n") and "STEP 1 OF 2" in framed and "Do ONLY this step's own job: List what each file is for" in framed
+    assert "Suggest the one improvement" in framed and "Do not do, start or answer the job of another step" in framed
+    assert step_framing("", 2, 2, "B", []).startswith("THIS IS STEP 2 OF 2") and "(" not in step_framing("", 2, 2, "B", [])

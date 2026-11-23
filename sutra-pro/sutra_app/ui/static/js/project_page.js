@@ -71,7 +71,8 @@
       paint("p-head", S.snapshot ? view.header(S.snapshot) : "");
       paint("p-body", view.page(S, location));
       const live = el("p-live");
-      if (live) live.textContent = S.live === "live" ? "Live" : S.live === "polling" ? "Updating every few seconds" : "Not connected";
+      const over = S.snapshot && S.snapshot.project && ["done", "done_with_open_items", "stopped", "failed"].indexOf(S.snapshot.project.status) >= 0;      // "Live" says it is being watched: nothing runs any more (D413)
+      if (live) live.textContent = over ? "" : S.live === "live" ? "Live" : S.live === "polling" ? "Updating every few seconds" : "Not connected";
       if (S.snapshot && doc && doc.title !== undefined) doc.title = (S.snapshot.project.title || "Project") + " - Sutra";
     }
 
@@ -173,10 +174,10 @@
         if (!ID.test(d.project || "") || d.project !== id) return false;
         if (d.decision === "check_again" || d.decision === "skip") { url = "/api/projects/" + enc(id) + "/system/" + enc(d.item || "") + "/" + (d.decision === "skip" ? "skip" : "check"); }
         else { url = "/api/projects/" + enc(id) + "/approvals/" + enc(d.approval || ""); body = {decision: d.decision}; }
-      } else if (act === "step-answer") {                      // the answer to a question of a step's own engine: the chat route of that team, as Home does (D401)
-        if (!/^cs_[A-Za-z0-9_-]{1,64}$/.test(d.session || "") || !/^Option \d{1,2}$/.test(d.text || "")) return false;
-        url = "/api/chats/" + enc(d.session) + "/messages";
-        body = {text: d.text};
+      } else if (act === "step-answer") {                      // the answer to a question of a step's own engine, by the question's number and the button's: the project's route refuses it when the question is no longer open (D415)
+        if (!ID.test(d.project || "") || d.project !== id || !/^[0-9]{1,9}$/.test(d.message || "") || !/^[0-9]{1,2}$/.test(d.option || "")) return false;
+        url = "/api/projects/" + enc(id) + "/questions/" + d.message + "/answer";
+        body = {option: Number(d.option)};
       } else if (act === "project-stop") {
         url = "/api/projects/" + enc(id) + "/stop";
       } else if (act === "project-pause") {
@@ -195,6 +196,7 @@
       } catch (e) {
         store.setError(errorWords(e));
         button.disabled = false;
+        if (act === "step-answer") await refresh();                  // the question was answered or ended meanwhile: the page reads the project again instead of leaving a stale card
         render();
         return false;
       }

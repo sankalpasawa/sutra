@@ -94,6 +94,12 @@
     return '<small class="nwait' + (stale ? " stale" : "") + '"' + (stale ? ' title="Unanswered for more than a day"' : "") + ">" + esc(words) + "</small>";
   }
 
+  // A step of a project opens the project's page first (D412); the team's page stays beside it.
+  function projectLink(i) {
+    const id = clean(i.project_id);
+    return /^prj_[0-9a-f]{12}$/.test(id) ? '<a class="huopen" href="/p/' + id + '">Open the project</a>' : "";
+  }
+
   function teamLink(i) {
     const dept = idOf(i.dept_id);
     return dept ? '<a class="huopen" href="/d/' + encodeURIComponent(dept) + '/?view=simple">Open team</a>' : "";
@@ -115,6 +121,8 @@
     if (i.retry === true && i.kind !== "quiet") acts.push('<button type="button" data-act="retry-task" data-task="' + esc(task) + '">Try again</button>');
     const chat = chatButton(i);
     if (chat) acts.push(chat);
+    const project = projectLink(i);
+    if (project) acts.push(project);
     const link = teamLink(i);
     if (link) acts.push(link);
     if (i.kind !== "quiet") acts.push('<button type="button" class="linkbtn" data-act="headsup-seen" data-task="' + esc(task) + '">Got it</button>');

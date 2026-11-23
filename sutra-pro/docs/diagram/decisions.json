@@ -1933,5 +1933,55 @@
   "id": "D409",
   "label": "parallel steps share the remainder",
   "anchor": null
+ },
+ {
+  "id": "D410",
+  "label": "engine outcomes plain; scanned for jargon",
+  "anchor": null
+ },
+ {
+  "id": "D411",
+  "label": "reads of own output = its own notes",
+  "anchor": null
+ },
+ {
+  "id": "D412",
+  "label": "Home step row opens /p/id",
+  "anchor": null
+ },
+ {
+  "id": "D413",
+  "label": "Live only while running",
+  "anchor": null
+ },
+ {
+  "id": "D414",
+  "label": "step prompt + framing: only its own job",
+  "anchor": null
+ },
+ {
+  "id": "D415",
+  "label": "step-question buttons host-parsed; stale answer 409",
+  "anchor": null
+ },
+ {
+  "id": "D416",
+  "label": "kill enforced first; audit never blocks",
+  "anchor": null
+ },
+ {
+  "id": "D417",
+  "label": "audit keeps all calls incl. .git paths",
+  "anchor": null
+ },
+ {
+  "id": "D418",
+  "label": "per-call cap read live, shared by running steps",
+  "anchor": null
+ },
+ {
+  "id": "D419",
+  "label": "D402 completed; tests; titles; names",
+  "anchor": null
  }
 ]

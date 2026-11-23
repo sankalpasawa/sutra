@@ -238,7 +238,7 @@ test("the audit says what happened in plain words: no 'Something happened', no '
   assert.match(text, /A step ran commands 7 times/);
   assert.match(text, /A step read README\.md, 2 times/);
   assert.match(text, /A step searched, 2 times/);
-  assert.match(text, /A step wrote its report, once/);
+  assert.match(text, /A step wrote a project file, once/);
   assert.match(text, /A step used the web 3 times/);
   assert.match(text, /The kill switch was used/);
   assert.match(text, /A step was stopped[\s\S]*The kill switch was used/);
@@ -310,7 +310,7 @@ test("each step says what it used: calls, minutes, about how many dollars; nothi
 });
 
 test("a step that waits for an answer to its engine's question says so on the page with the question and its buttons (D401)", () => {
-  const q = {node_id: "nd_b", message_id: 7, session_id: "cs_0123456789ab", text: "Keep working on the notes, or take the report as it is?\nOption 1: keep working\nOption 2: take it as it is", options: ["keep working", "take it as it is"]};
+  const q = {node_id: "nd_b", message_id: 7, session_id: "cs_0123456789ab", text: "Keep working on the notes, or take the report as it is?", options: ["keep working", "take it as it is"]};
   const s = snap({questions: [q]});
   const head = View.header(s);
   assert.match(head, />Waiting for your answer</);
@@ -320,7 +320,8 @@ test("a step that waits for an answer to its engine's question says so on the pa
   assert.match(cards, /Waiting for you/);
   assert.match(cards, /Keep working on the notes, or take the report as it is\?/);
   assert.equal(/Option 1:/.test(cards), false, "the option lines are the buttons, not text");
-  assert.ok(cards.includes('data-act="step-answer" data-session="cs_0123456789ab" data-text="Option 1">keep working</button>') && cards.includes('data-text="Option 2">take it as it is</button>'));
+  assert.match(View.cardsHtml(snap({questions: [Object.assign({}, q, {text: "Real question? Option 3: said by the model, kept as text"})]})), /Option 3: said by the model, kept as text/, "the page shows the whole question the server gives it");
+  assert.ok(cards.includes('data-act="step-answer" data-project="' + PROJECT + '" data-message="7" data-option="1">keep working</button>') && cards.includes('data-option="2">take it as it is</button>'));
   const steps = View.stepsHtml(s);
   assert.match(steps, /<b>Step a2<\/b> <span class="pstate">Waiting for your answer<\/span>/);
   assert.match(View.graphHtml(s), /Waiting for your answer/);
@@ -343,7 +344,7 @@ test("the page says a step's work in the owner's words: its report, the folder's
     {seq: 4, action: "tool.used", reason: "read COMMIT_EDITMSG, 1 time"}, {seq: 5, action: "tool.used", reason: "read index, 1 time"}, {seq: 6, action: "tool.used", reason: "read config.py, 2 times"},
     {seq: 7, action: "tool.used", reason: "read config, 1 time"}];
   const text = View.auditHtml(rows, null).replace(/<[^>]*>/g, " ").replace(/&#39;/g, "'");
-  assert.match(text, /A step wrote its report, 2 times/);
+  assert.match(text, /A step wrote a project file, 2 times/);
   assert.match(text, /A step wrote notes\.txt, once/);
   assert.equal((text.match(/A step looked at the folder's history, once/g) || []).length, 3);
   assert.match(text, /A step read config\.py, 2 times/);
@@ -352,4 +353,27 @@ test("the page says a step's work in the owner's words: its report, the folder's
   const said = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {node_id: "nd_a", status: "done", files: [{path: "project.md"}, {path: "notes.md"}]}}], snap()).replace(/<[^>]*>/g, " ");
   assert.match(said, /It wrote its report, notes\.md\./);
   assert.equal(/It made|project\.md/.test(said), false);
+});
+
+test("a read of the step's own output or an engine file says 'a project file', never a name the owner does not know (D411)", () => {
+  const rows = [{seq: 1, action: "tool.used", reason: "read project.md, 9 times"}, {seq: 2, action: "tool.used", reason: "read report.md, 2 times"}, {seq: 3, action: "tool.used", reason: "read workflows.json, 1 time"},
+    {seq: 4, action: "tool.used", reason: "read README.md, 3 times"}];
+  const text = View.auditHtml(rows, null).replace(/<[^>]*>/g, " ");
+  assert.match(text, /A step read a project file, 9 times/);
+  assert.match(text, /A step read a project file, 2 times/);
+  assert.match(text, /A step read a project file, once/);
+  assert.match(text, /A step read README\.md, 3 times/, "a file of the owner's is named");
+  assert.equal(/project\.md|report\.md|workflows\.json/.test(text), false, text);
+});
+
+
+test("a file called constructor or __proto__ is shown by its name, not by a property of a table; the words claim no more than the audit knows (r-6)", () => {
+  const rows = ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"].map((name, i) => ({seq: i + 1, action: "tool.used", reason: "edit " + name + ", 1 time"}));
+  const text = View.auditHtml(rows, null).replace(/<[^>]*>/g, " ");
+  for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) assert.ok(text.includes("A step wrote " + name + ", once"), name);
+  assert.equal(/native code|function Object|undefined/.test(text), false, text);
+  const read = View.auditHtml([{seq: 1, action: "tool.used", reason: "read constructor, 2 times"}], null).replace(/<[^>]*>/g, " ");
+  assert.match(read, /A step read constructor, 2 times/);
+  assert.equal(/its report/.test(View.auditHtml([{seq: 1, action: "tool.used", reason: "edit project.md, 1 time"}], null)), false, "an edit of a file called project.md may be the owner's own: the row does not say 'its report'");
+  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {node_id: "nd_a", status: "done", files: [{path: "project.md"}, {path: "constructor"}]}}], snap()).replace(/<[^>]*>/g, " "), /It wrote its report, constructor\./);
 });

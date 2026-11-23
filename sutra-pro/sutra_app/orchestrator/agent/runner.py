@@ -53,6 +53,15 @@ __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO"
 
 log = logging.getLogger(__name__)
 ORG = ORG_SESSION_ID
+def step_framing(brief: str, number: int, total: int, title: str, others: list[str]) -> str:
+    """The step's own framing for a project: what the planner wrote for it, then the rule that it does ONLY its own job (D414). Run 4: step 1 named the one improvement that was step 2's job, so the money
+    was spent twice. The others are named by their titles so the step knows what is not its to do."""
+    rule = (f"THIS IS STEP {number} OF {total} OF A PROJECT. Do ONLY this step's own job: {title}. The other steps do their own work"
+            + (f" ({'; '.join(t for t in others if t)[:600]})" if any(others) else "")
+            + ". Do not do, start or answer the job of another step, not even in part; leave it to that step.")
+    return (brief.rstrip() + "\n\n" if brief and brief.strip() else "") + rule
+
+
 _NO_PROJECT_ADDRESS = re.compile(r"/p/(?=prj_)")        # the shape the chat page turns into a link: only the app writes it
 PROJECT_SRC = "project:"        # the `src_ref` prefix of a line the owner sent with `POST /api/projects` (MAN-13): a repeated `client_id` finds the same line
 TITLE_CHARS = 60
@@ -631,13 +640,16 @@ class TurnRunner:
         settings = {"J2_BUDGET": str(budget)} if budget is not None else None      # D252: every task of the request runs with the owner's Budget
         if self.projects is not None and self._decide_for_me_of(request.message_id):
             settings = {**(settings or {}), "J2_DECIDE_FOR_ME": "1"}               # Decide for me reaches the workers as their own switch (D294)
-        for draft in drafts:
+        for index, draft in enumerate(drafts, start=1):
             follows = draft.follows
+            framing = draft.brief
+            if reservation is not None and reservation.ok:                           # a step of a project is told to do its own job only (D414); an ordinary request keeps its framing as it was
+                framing = step_framing(draft.brief, index, len(drafts), draft.title, [d.title for d in drafts if d is not draft])
             while True:
                 try:
                     with self.db.tx() as tx:
                         task = self.tasks.create(
-                            tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=draft.brief,
+                            tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=framing,
                             depends_on=[made[ref] for ref in draft.depends_on if ref in made], follows=follows,
                             request=request.request_id, change_id=change_id, settings=settings)
                         if reservation is not None and reservation.ok:           # the node and its task become one thing in the transaction that makes the task (MAN-5)

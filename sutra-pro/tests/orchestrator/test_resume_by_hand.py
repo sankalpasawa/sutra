@@ -93,8 +93,7 @@ def test_the_audit_row_is_written_before_the_marker_goes_so_a_failure_between_th
     def broken(ref, removed):
         raise RuntimeError("the database said no")
     monkeypatch.setattr(rig.control, "_audit_resume_once", broken)
-    with pytest.raises(RuntimeError):
-        rig.t.run(rig.control.enforce())
+    rig.t.run(rig.control.enforce())                                                   # a failing audit never raises out of enforce (D416, r-3)
     assert marker.exists() and resumes(rig) == [], "the failure left the marker in place: nothing was lost"
     monkeypatch.setattr(rig.control, "_audit_resume_once", real)
     rig.t.run(rig.control.enforce())
@@ -119,3 +118,20 @@ def test_a_resume_written_while_the_app_was_between_its_read_and_its_unlink_is_k
     assert rig.switch.resume_marker().exists(), "the newer resume is still there"
     rig.t.run(rig.control.enforce())
     assert len(resumes(rig)) == 1 and not rig.switch.resume_marker().exists()
+
+
+def test_a_hand_made_kill_file_is_enforced_even_when_the_resume_audit_cannot_be_written(rig, capsys, monkeypatch):
+    """r-3: the audit row used to come first, so a failing write kept a KILL file from being enforced on every tick (and failed the app's start while a stale marker stayed)."""
+    reservation, tasks = running_steps(rig)
+    command(rig, "pause")
+    command(rig, "resume")                                                             # a marker is waiting for its row
+    monkeypatch.setattr(rig.control, "_audit_resume_once", lambda ref, removed: (_ for _ in ()).throw(RuntimeError("the database is full")))
+    (rig.switch.directory / "KILL").write_text("by hand\n")
+    stopped = rig.t.run(rig.control.enforce())
+    assert stopped >= 1 and {r["state"] for r in rig.sql("SELECT state FROM agent_nodes WHERE role = 'worker'")} == {"cancelled"}, "the kill was enforced first"
+    assert rig.switch.resume_marker().exists() and resumes(rig) == []
+
+
+def running_steps(rig):
+    from orchestrator.test_reconcile_projects import running
+    return running(rig, [("a1", "web", []), ("a2", "sales", [])])
