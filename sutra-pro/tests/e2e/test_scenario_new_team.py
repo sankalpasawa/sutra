@@ -205,7 +205,8 @@ def test_step6_the_stream_carries_graph_and_atom_updates_while_the_run_works(jou
     ids = [f["id"] for f in frames if "id" in f]
     assert ids == sorted(ids) and len(set(ids)) == len(ids)                              # one ordered stream, no repeats
     types = [f["type"] for f in frames]
-    asked = types.index("needs_you.changed")
+    # Identity's question: the last needs-you change before the owner answered (an earlier one is the new team's approval card, D427)
+    asked = max(i for i, t in enumerate(types[:journey.sse_before_answer]) if t == "needs_you.changed")
     after = frames[journey.sse_before_answer:]
     run_types = [f["type"] for f in after]
     assert {"atom.updated", "graph.updated", "usage.recorded"} <= set(run_types)

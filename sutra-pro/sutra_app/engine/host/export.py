@@ -252,7 +252,7 @@ def _rows(run_dir: Path, own: Optional[str] = None) -> list[dict]:
         except (OSError, ValueError, AttributeError):
             own = None
     if isinstance(own, str) and own:
-        rows.append({"file": own, "form": "document"})
+        rows.append({"file": own})                    # the run's own single file: no form needed (only a folder output's form is read)
     return rows
 
 

@@ -28,14 +28,22 @@ class Owner:
     def __init__(self, client, app) -> None:
         self.client, self.services = client, app.state.services
 
-    def say(self, text: str) -> int:
-        response = self.client.post("/api/chats/cs_org/messages", json={"text": text}, headers=HEADERS)
+    def say(self, text: str, choice: dict | None = None) -> int:
+        """The owner writes in the org chat; a new team the org chat would add waits for the owner (D427), who says yes on its card."""
+        response = self.client.post("/api/chats/cs_org/messages", json={"text": text, **({"choice": choice} if choice else {})}, headers=HEADERS)
         assert response.status_code == 202, response.text
+        self.idle()
+        if choice is None:
+            for need in self.client.get("/api/needs-you").json():
+                if need["kind"] == "approval" and need.get("adds"):
+                    self.say("Yes", choice={"message_id": need["message_id"], "option": "yes"})
+        return response.json()["message_id"]
+
+    def idle(self) -> None:
         end = time.time() + 15
         while self.services.runner.busy and time.time() < end:
             time.sleep(0.01)
         assert not self.services.runner.busy
-        return response.json()["message_id"]
 
     def sql(self, text, *args):
         return [tuple(r) for r in self.services.db.conn().execute(text, args)]

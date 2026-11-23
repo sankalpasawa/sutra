@@ -129,6 +129,7 @@ The API answers errors as `{"error": {"code", "message", "details"}}`; the code 
 | `rules` | 422 | the org chart rules refused a well-formed change; the message says which rule |
 | `not_found` | 404 | no such team, task, node or run |
 | `busy` | 409 | the team already runs a task, or the task has ended. Wait, or stop it first |
+| `name_taken` | 409 | another project already has that name (case and spaces do not count). Choose another name, or rename or delete the other project first (D426) |
 | `stale_chart` | 409 | the chart changed under the request (F4). Send it again |
 | `already_decided` | 409 | that change was already approved or declined |
 | `not_running` | 409 | you wrote a note to an agent whose run is over. The agent can no longer read it; start a new run |

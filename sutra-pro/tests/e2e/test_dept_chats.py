@@ -33,6 +33,7 @@ def test_two_teams_from_one_org_message_each_get_their_own_chat_end_to_end(tmp_p
     live = LiveApp(tmp_path, connector=ScriptedConnector()).start()
     try:
         mid = live.say(ASK, *two_team_script())
+        live.yes_to_the_card()                                          # the two new teams wait for the owner's yes (D427)
         print_sid, legal_sid = live.session_of("print"), live.session_of("legal")
         # (a) the sessions: one each, titled by the team, writable, listed by the API next to the org chat
         listed = {s["id"]: s for s in live.get("/api/chats")}
@@ -111,6 +112,7 @@ def test_a_teams_first_turn_starts_its_own_provider_session_and_carries_nothing_
     live = LiveApp(tmp_path, cli=cli, connector_name="auto", offline=False).start()
     try:
         mid = live.say(ASK)
+        live.yes_to_the_card()                                          # the two new teams wait for the owner's yes (D427); stage C runs after it
         print_sid, legal_sid = live.session_of("print"), live.session_of("legal")
         agent_calls = [c for c in cli.calls("claude") if "--json-schema" in c["argv"]]
         assert len(agent_calls) == 3 and not chat_calls(cli)                                      # the planning is three one-shot calls: no chat session yet

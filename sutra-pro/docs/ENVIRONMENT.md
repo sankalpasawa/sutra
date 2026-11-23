@@ -128,6 +128,7 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `SUTRA_NODE_ID` | `unset` | set by Sutra, never by you, in the environment of a run that is a node of a multi-agent project (a plain id like `nd_3f9a1c0b2d44`, not a secret): programs the node starts can say whose they are. Whatever the server's own environment holds under this name is not passed on |
 | `SUTRA_CLAUDE_MODEL` | `unset` | overrides the model the Claude connector asks for (the policy default is `sonnet`); wins over `CLAUDE_CLI_MODEL` |
 | `CLAUDE_CLI_MODEL` | `unset` | the same, under J2's old name |
+| `SUTRA_DOCUMENTS_DIR` | `unset` | the folder that holds `Sutra Pro/<project name>`, the folder a new project gets when the owner picks none (D426); unset is the system's Documents folder. For tests and local checks that must not write into the owner's Documents |
 | `SUTRA_NODES` | `on` | `off` runs the engine without the function-node layer (no atoms); `enforce` is reserved and refused |
 | `SUTRA_HOOKS` | `sutra_app.engine.fnodes.layer:factory` | `package.module:function` that builds the engine's hooks (tests) |
 | `J2_TYPES_DIR` | `<data>/types` | where J2 keeps the types a run makes (`types.local.json` and `templates/<name>/`); the host sets it for every engine process and the server exports it before it first imports J2 (D163); do not set it by hand |
