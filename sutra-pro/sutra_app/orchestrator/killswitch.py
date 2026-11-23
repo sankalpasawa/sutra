@@ -40,7 +40,7 @@ from sutra_app.orchestrator.db import Database, run_blocking
 from sutra_app.orchestrator.ids import Clock, SystemClock, iso_z
 from sutra_app.orchestrator.nodes_store import NodeBlockError, node_block_of
 
-__all__ = ["resume_command", "KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
+__all__ = ["resume_command", "resume_words", "KillSwitch", "NodeControl", "KILL_FILE", "PAUSE_FILE", "LEVELS", "WATCH_S", "REASON_MAX", "LIVE_TASK_STATUSES", "OPEN_TASK_STATUSES", "NO_GRANT_HELD", "KillResult", "NOTE_MAX_BYTES"]
 
 log = logging.getLogger(__name__)
 KILL_FILE = "KILL"
@@ -54,6 +54,16 @@ LIVE_TASK_STATUSES = ("starting", "running", "waiting_user")
 OPEN_TASK_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 KILL_OUTCOME = "stopped by the kill switch"
 NO_GRANT_HELD = "Held: this step has no permissions set, so it cannot start"
+
+
+def resume_words(executable: str | None = None) -> str:
+    """The same hint with NO path in it, for the sentences Sutra stores (a held step's detail, the audit): a path holds the owner's home folder name, and a stored sentence is kept and read elsewhere (D408, m-12).
+    The command line prints the whole command (`resume_command`) in the terminal, where it is typed."""
+    exe = executable if executable is not None else sys.executable
+    flat = (exe or "").replace("\\", "/")
+    if "/Contents/Resources/python/" in flat or "/resources/python/" in flat.lower():
+        return "nodes resume --data-dir <this data folder>, run with the Python inside this app (-I -B -m sutra_app)"
+    return "sutra-pro nodes resume"
 
 
 def resume_command(data_dir: str | os.PathLike[str], executable: str | None = None) -> str:
@@ -169,11 +179,11 @@ class KillSwitch:
         """The sentence a node that waits for this shows, or "" when nothing holds it (the waiting detail of a held task)."""
         level = self.level()
         if level == "kill" and self.broken():
-            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `{resume_command(self.directory.parent)}`"
+            return f"Stopped: the folder Sutra keeps its stop switch in ({self.directory}) is a file, not a folder. Rename or remove that file, then run `{resume_words()}`"
         if level == "kill":
-            return f"Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `{resume_command(self.directory.parent)}`)"
+            return f"Stopped: the kill switch is on, so no agent starts (remove the KILL file or run `{resume_words()}`)"
         if level == "pause":
-            return f"Paused: no new agent starts until you resume (remove the PAUSE file or run `{resume_command(self.directory.parent)}`)"
+            return f"Paused: no new agent starts until you resume (remove the PAUSE file or run `{resume_words()}`)"
         return ""
 
     def _note(self, name: str) -> dict[str, Any] | None:

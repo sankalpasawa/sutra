@@ -72,9 +72,12 @@ def test_the_hint_names_the_command_of_this_install_the_apps_own_python_for_an_a
     assert resume_command("/data/d", bundle) == f'"{bundle}" -I -B -m sutra_app nodes resume --data-dir "/data/d"'
     assert resume_command("/data/d", "C:\\Program Files\\Sutra Pro\\resources\\python\\python.exe").endswith('-m sutra_app nodes resume --data-dir "/data/d"')
     assert resume_command("/data/d", "/usr/bin/python3") == "sutra-pro nodes resume"
+    from sutra_app.orchestrator.killswitch import resume_words
+    assert resume_words(bundle) == "nodes resume --data-dir <this data folder>, run with the Python inside this app (-I -B -m sutra_app)"
+    assert resume_words("/usr/bin/python3") == "sutra-pro nodes resume" and "/" not in resume_words(bundle).replace("-I -B -m sutra_app", "").replace("(", "").replace(")", "")
     command(rig, "kill")
     held = rig.switch.held()
-    assert "kill switch is on" in held and "nodes resume" in held, held
+    assert "kill switch is on" in held and "nodes resume" in held and "/Users" not in held and "/home" not in held and str(rig.t.settings.data_dir) not in held, held
     code = command(rig, "pause")
     out = capsys.readouterr().out
     assert code == 0 and "nodes resume" in out
