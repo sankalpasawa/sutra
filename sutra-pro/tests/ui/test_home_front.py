@@ -219,6 +219,59 @@ def test_home_chip_popover_stays_on_a_phone_screen(browser, fake):
     assert browser.js("document.documentElement.scrollWidth <= window.innerWidth + 1")
 
 
+# The Custom pill, picked, is the box: its place, height and radius in the one row of pills. Focus is the accent border and a ring that follows the
+# radius (no rectangular outline); a bad amount is the --s-bad border and a line under the row that describes the box.
+CUSTOM_JS = """((root) => {
+  const pop = document.querySelector(root + ' .bchippop'), row = pop.querySelector('.bchiprow'), pick = row.querySelector('.bchippick');
+  const box = row.querySelector('.bchipcustom'), own = box.querySelector('.bchipown'), err = pop.querySelector('.bchiperr');
+  const r = e => e.getBoundingClientRect(), cs = e => getComputedStyle(e), tok = n => cs(pop).getPropertyValue(n).trim();
+  const rgb = c => { const d = document.createElement('i'); d.style.color = c; document.body.appendChild(d); const v = cs(d).color; d.remove(); return v; };
+  return {last: row.lastElementChild === box, kids: row.children.length, sameRow: Math.abs(r(box).top - r(pick).top) < 1,
+          height: [Math.round(r(box).height), Math.round(r(pick).height)], radius: [cs(box).borderTopLeftRadius, cs(pick).borderTopLeftRadius],
+          rowFits: r(row).height < 1.6 * r(pick).height, prefix: box.textContent.trim(), placeholder: own.placeholder,
+          focused: document.activeElement === own, outline: cs(own).outlineStyle + ' ' + cs(own).outlineWidth,
+          border: cs(box).borderTopColor, ring: cs(box).boxShadow, accent: rgb(tok('--s-accent')), bad: rgb(tok('--s-bad')),
+          invalid: own.getAttribute('aria-invalid'), describedby: own.getAttribute('aria-describedby'), errId: err.id,
+          errShown: !err.hidden && cs(err).display !== 'none', errText: err.textContent, errBelow: r(err).top >= r(row).bottom,
+          inside: r(pop).left >= 0 && r(pop).right <= innerWidth, noScroll: document.documentElement.scrollWidth <= innerWidth + 1};
+})(%s)"""
+
+
+def custom_look(browser, root):
+    return browser.js(CUSTOM_JS % q(root))
+
+
+@browser_only
+@pytest.mark.parametrize("theme", ["light", "dark"])
+@pytest.mark.parametrize("width", [390, 1280])
+def test_home_custom_pill_is_the_box(browser, fake, screens_dir, theme, width):
+    browser.set_theme(theme)
+    browser.set_size(width, 844)
+    load(browser, fake, stage="1")
+    browser.wait_for("document.querySelector('#fdbudget .bchippill') !== null")
+    browser.click("#fdbudget .bchippill")
+    browser.click("#fdbudget [data-custom]")
+    got = custom_look(browser, "#fdbudget")
+    assert got["last"] and got["kids"] == 4 and got["sameRow"] and got["rowFits"], got                 # the 4th pill, in the one row: no second row
+    assert got["height"][0] == got["height"][1] and got["radius"][0] == got["radius"][1], got
+    assert got["prefix"] == "$" and got["placeholder"] == "amount" and got["focused"], got
+    assert got["outline"].split()[0] == "none" or got["outline"].endswith(" 0px"), got                  # no rectangular outline
+    assert got["border"] == got["accent"] and got["accent"] in got["ring"], got                         # the pill's own border and a ring
+    assert got["invalid"] is None and got["errShown"] is False and got["inside"] and got["noScroll"], got
+    browser.shot(screens_dir / f"budget-chip__home__{theme}__{width}__custom.png")
+    browser.type("#fdbudget .bchipown", "0.5")
+    bad = custom_look(browser, "#fdbudget")
+    assert bad["invalid"] == "true" and bad["describedby"] == bad["errId"] and bad["errShown"] and bad["errBelow"], bad
+    assert bad["errText"] == "Dollars from $1 to $10,000" and bad["border"] == bad["bad"] and bad["bad"] in bad["ring"], bad
+    assert bad["sameRow"] and bad["rowFits"] and bad["inside"] and bad["noScroll"], bad
+    browser.shot(screens_dir / f"budget-chip__home__{theme}__{width}__custom-bad.png")
+    browser.js("document.querySelector('#fdbudget .bchipown').value = ''")
+    browser.type("#fdbudget .bchipown", "12")
+    ok = custom_look(browser, "#fdbudget")
+    assert ok["invalid"] is None and ok["describedby"] is None and ok["errShown"] is False and ok["border"] == ok["accent"], ok
+    assert browser.console_errors == []
+
+
 @browser_only
 def test_home_chip_sends_dollars_once_and_nothing_for_the_default(browser, fake):
     """D257: nothing is sent for the default; a pick or a typed amount rides with the next request only as usd_budget; Custom applies as you type and a
@@ -448,6 +501,10 @@ def test_team_chip_is_the_same_pill_and_popover_on_the_start_form(browser, fake,
     browser.click("#lbudget .bchippill")
     browser.click('#lbudget [data-custom]')
     browser.type("#lbudget .bchipown", "25")
+    got = custom_look(browser, "#lbudget")                                             # the Custom pill is the box here too: J2's own #sview focus
+    assert got["last"] and got["sameRow"] and got["height"][0] == got["height"][1] and got["radius"][0] == got["radius"][1], got   # rectangle is not drawn
+    assert got["focused"] and got["outline"].split()[0] == "none" and got["border"] == got["accent"] and got["accent"] in got["ring"], got
+    browser.shot(screens_dir / "budget-chip__team__custom.png")
     browser.press("Enter")                                                             # Enter in the box closes the popover and never sends the form
     assert texts(browser, "#lbudget .bchippill") == ["$25 budget ▾"] and not [r for r in posts(fake, "/api/say")]
     assert browser.js("document.activeElement.className") == "bchippill"

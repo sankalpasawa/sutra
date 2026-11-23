@@ -727,8 +727,17 @@ body { --accent: var(--s-accent); --vio: var(--s-accent); }
 .bchip .bchippick:hover{border-color:var(--s-accent)}
 .bchip .bchippick[aria-pressed="true"]{background:var(--s-accent);border-color:var(--s-accent);color:var(--s-accentink);font-weight:600}
 .bchiptag{font:600 11px/1 var(--s-body);letter-spacing:.02em;color:inherit}
-.bchipcustom{display:inline-flex;align-items:center;gap:2px;padding:0 12px;border-radius:999px;border:1px solid var(--s-muted);background:var(--s-surface);color:var(--s-ink)}
-.bchipcustom:focus-within{border-color:var(--s-accent)}
-.bchipcustom:has(.bchipown[aria-invalid="true"]){border-color:var(--s-bad)}
-.bchip .bchipown{width:5.5em;margin:0;padding:7px 0;border:0;outline:0;background:none;color:var(--s-ink);font:inherit;box-shadow:none}
+/* Custom, picked, is the box: the pill's own place, height and radius. Focus is the pill's border in the accent doubled by a 1px ring (accent on the
+   surface: 7.1:1 light, 7.5:1 and 7.8:1 dark) and a soft halo. A bad amount turns it --s-bad, doubled the same way (5.7:1 light, 6.5:1 dark; red is
+   close to --s-muted in lightness, so the width and the .bchiperr line under the row carry it too, not the hue alone). */
+.bchipcustom{display:inline-flex;align-items:center;gap:2px;padding:0 12px;border-radius:999px;border:1px solid var(--s-muted);background:var(--s-surface);color:var(--s-ink);cursor:text}
+.bchipcustom:focus-within{border-color:var(--s-accent);box-shadow:0 0 0 1px var(--s-accent),0 0 0 4px color-mix(in srgb,var(--s-accent) 28%,transparent)}
+.bchipcustom:has(.bchipown[aria-invalid="true"]){border-color:var(--s-bad);box-shadow:0 0 0 1px var(--s-bad)}
+.bchipcustom:has(.bchipown[aria-invalid="true"]):focus-within{box-shadow:0 0 0 1px var(--s-bad),0 0 0 4px color-mix(in srgb,var(--s-bad) 28%,transparent)}
+.bchip .bchipown{width:4.6em;margin:0;padding:7px 0;border:0;border-radius:0;outline:0;background:none;color:var(--s-ink);font:inherit;box-shadow:none;appearance:none}
+/* !important: the team page's `#sview :focus-visible` (an id, j2.css) would draw its rectangle inside the pill; the pill shows the focus instead */
+.bchip .bchipown:focus,.bchip .bchipown:focus-visible{outline:0!important;box-shadow:none}
+.bchip .bchipown::placeholder{color:var(--s-muted);opacity:1}
+.bchiperr{margin:8px 0 0;font-size:12.5px;line-height:1.4;color:var(--s-bad)}
+.bchiperr[hidden]{display:none}
 .bchipnote{margin:10px 0 0;font-size:12.5px;line-height:1.4;color:var(--s-muted)}

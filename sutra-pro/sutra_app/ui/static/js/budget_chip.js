@@ -2,7 +2,8 @@
 
    A pill beside Go reads "$20 budget ▾". It opens a popover above it (an overlay: the row under it never moves) titled "Run budget": one row of
    pills, half, the default (tagged "default"), double and Custom, and the line "Asks before going over · estimated at API prices, not billed."
-   Custom shows a "$" box in the same row that applies as you type; a bad amount marks the box and changes nothing. A click outside or Esc closes it.
+   Picked, the Custom pill itself becomes the box ("$", placeholder "amount"), in the same place in the row, and applies as you type; a bad amount
+   marks the box (aria-invalid) and shows a short line under the row (aria-describedby), and changes nothing. A click outside or Esc closes it.
    A choice goes with the next request only (`usd_budget`), then the chip shows the default again. Nothing is sent for the default.
 
      fmt(x)                      "$20", "$12.50"
@@ -26,6 +27,8 @@
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const cents = x => Math.round(x * 100) / 100;
+  const BAD = "Dollars from $1 to $10,000";
+  const bads = t => parse(t) === null && String(t || "").trim() !== "";   // typed, and not an amount
   let uid = 0;
 
   function fmt(x) {
@@ -46,15 +49,17 @@
 
   // o: {def, shown (the dollars in force), custom (Custom is picked), typed (the Custom box's text), open, id}
   function popHtml(o) {
-    const [half, def, double] = presets(o.def), on = !o.custom && cents(o.shown);
+    const [half, def, double] = presets(o.def), on = !o.custom && cents(o.shown), bad = !!o.custom && bads(o.typed);
     const pick = (n, words) => '<button type="button" class="bchippick" data-usd="' + n + '" aria-pressed="' + (on === n) + '">' + words + "</button>";
     return '<div class="bchippop" id="' + esc(o.id) + '" role="dialog" aria-label="Run budget"' + (o.open ? "" : " hidden") + ">" +
       '<p class="bchiptitle">Run budget</p><div class="bchiprow" role="group" aria-label="Budget for this request">' +
       pick(half, esc(fmt(half))) + pick(def, esc(fmt(def)) + ' <small class="bchiptag">default</small>') + pick(double, esc(fmt(double))) +
-      '<button type="button" class="bchippick" data-custom="1" aria-pressed="' + !!o.custom + '">Custom</button>' +
       (o.custom ? '<label class="bchipcustom"><span aria-hidden="true">$</span><input class="bchipown" inputmode="decimal" autocomplete="off" ' +
-        'value="' + esc(o.typed || "") + '" aria-label="Another amount, in dollars"></label>' : "") +
-      '</div><p class="bchipnote">' + esc(NOTE) + "</p></div>";
+        'placeholder="amount" value="' + esc(o.typed || "") + '" aria-label="Another amount, in dollars"' +
+        (bad ? ' aria-invalid="true" aria-describedby="' + esc(o.id) + 'err"' : "") + "></label>"
+        : '<button type="button" class="bchippick" data-custom="1" aria-pressed="false">Custom</button>') +
+      "</div>" + (o.custom ? '<p class="bchiperr" id="' + esc(o.id) + 'err"' + (bad ? "" : " hidden") + ">" + BAD + "</p>" : "") +
+      '<p class="bchipnote">' + esc(NOTE) + "</p></div>";
   }
 
   // Draws the chip in `el` (a <span>) and wires it. `def` is the team's own budget (GET /api/engine/settings, effective.usd_budget); the chip is
@@ -87,9 +92,11 @@
       const box = e.target;
       if (!box || !box.classList || !box.classList.contains("bchipown")) return;
       typed = box.value;
-      const n = parse(typed), bad = n === null && typed.trim() !== "";
-      if (bad) box.setAttribute("aria-invalid", "true"); else box.removeAttribute("aria-invalid");
-      box.setCustomValidity(bad ? "Dollars from $1 to $10,000" : "");
+      const n = parse(typed), bad = bads(typed), err = el.querySelector && el.querySelector(".bchiperr");
+      if (bad) { box.setAttribute("aria-invalid", "true"); box.setAttribute("aria-describedby", id + "err"); }
+      else { box.removeAttribute("aria-invalid"); box.removeAttribute("aria-describedby"); }
+      box.setCustomValidity(bad ? BAD : "");
+      if (err) err.hidden = !bad;
       if (n === null) return;
       take(n);
       const pill = el.querySelector(".bchippill");

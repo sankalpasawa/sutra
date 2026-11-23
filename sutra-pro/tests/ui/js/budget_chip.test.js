@@ -43,12 +43,20 @@ test("popover: Run budget, $10 · $20 (default tag) · $40 · Custom, the one mu
   assert.match(BC.popHtml({def: 20, shown: 20, custom: false, open: false, id: "p1"}), /aria-label="Run budget" hidden>/);
 });
 
-test("popover: a picked preset is the pressed one; Custom shows the $ box in the row with what was typed", () => {
+test("popover: a picked preset is the pressed one; picked, the Custom pill itself is the $ box, in its place in the row, with what was typed", () => {
   const pressed = html => [...html.matchAll(/class="bchippick" (?:data-usd="([^"]+)"|data-custom="1") aria-pressed="true"/g)].map(m => m[1] || "custom");
   assert.deepEqual(pressed(BC.popHtml({def: 20, shown: 40, custom: false, open: true, id: "p"})), ["40"]);
   const custom = BC.popHtml({def: 20, shown: 25, custom: true, typed: "25<", open: true, id: "p"});
-  assert.deepEqual(pressed(custom), ["custom"]);
-  assert.match(custom, /<div class="bchiprow"[^>]*>.*<label class="bchipcustom"><span aria-hidden="true">\$<\/span><input class="bchipown"[^>]*value="25&lt;"[^>]*><\/label><\/div>/);
+  assert.deepEqual(pressed(custom), []);                                                 // no preset is pressed, and the Custom button is gone
+  assert.doesNotMatch(custom, /data-custom/);
+  assert.match(custom, /<div class="bchiprow"[^>]*>(<button[^>]*data-usd[^>]*>.*?<\/button>){3}<label class="bchipcustom"><span aria-hidden="true">\$<\/span><input class="bchipown"[^>]*placeholder="amount"[^>]*value="25&lt;"[^>]*><\/label><\/div>/);
+  // "25<" is not an amount: the box is marked and the line under the row says why, tied to the box
+  assert.match(custom, /<input class="bchipown"[^>]*aria-invalid="true" aria-describedby="perr">/);
+  assert.match(custom, /<\/div><p class="bchiperr" id="perr">Dollars from \$1 to \$10,000<\/p><p class="bchipnote">/);
+  const good = BC.popHtml({def: 20, shown: 25, custom: true, typed: "25", open: true, id: "p"});
+  assert.doesNotMatch(good, /aria-invalid|aria-describedby/);
+  assert.match(good, /<p class="bchiperr" id="perr" hidden>/);
+  assert.match(BC.popHtml({def: 20, shown: 20, custom: true, typed: "", open: true, id: "p"}), /<p class="bchiperr" id="perr" hidden>/);   // empty is not bad
 });
 
 test("mount: picks, Custom as you type (bad marks the box and changes nothing), reset; Esc closes", () => {
@@ -69,6 +77,8 @@ test("mount: picks, Custom as you type (bad marks the box and changes nothing), 
   assert.equal(chip.value(), null);                                                     // the default is never sent
   on.click({target: btn({custom: "1"})});
   const attrs = {};
+  const err = {hidden: true};
+  el.querySelector = sel => sel === ".bchiperr" ? err : null;
   const box = v => ({value: v, classList: {contains: c => c === "bchipown"}, setAttribute: (k, x) => { attrs[k] = x; }, removeAttribute: k => { delete attrs[k]; },
                      setCustomValidity: m => { attrs.validity = m; }});
   on.input({target: box("12.5")});
@@ -77,9 +87,13 @@ test("mount: picks, Custom as you type (bad marks the box and changes nothing), 
   assert.equal(chip.value(), 12.5);                                                     // a bad amount changes nothing
   assert.equal(attrs["aria-invalid"], "true");
   assert.equal(attrs.validity, "Dollars from $1 to $10,000");
+  assert.match(attrs["aria-describedby"], /^bchippop\d+err$/);                          // the line under the row describes the box, and shows
+  assert.equal(err.hidden, false);
   on.input({target: box("$1,000")});
   assert.equal(chip.value(), 1000);
   assert.equal(attrs["aria-invalid"], undefined);
+  assert.equal(attrs["aria-describedby"], undefined);
+  assert.equal(err.hidden, true);
   assert.match(el.innerHTML, /class="bchipown"/);                                       // the box stays in the row while it is typed in
   chip.reset();
   assert.equal(chip.value(), null);
