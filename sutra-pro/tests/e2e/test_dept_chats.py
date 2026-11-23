@@ -127,8 +127,9 @@ def test_a_teams_first_turn_starts_its_own_provider_session_and_carries_nothing_
         assert all(ids) and len(set(ids)) == 3
         for call in (org_call, print_call, legal_call):
             assert opt(call, "--session-id") and opt(call, "--resume") is None, call["argv"]
-        # each runs in the work folder of its OWN chat session
-        assert [call["cwd"].rstrip("/").rsplit("/", 1)[-1] for call in (org_call, print_call, legal_call)] == [ORG, print_sid, legal_sid]
+        # the org chat runs in the work folder of its own session; a team's chat in its project's own folder (named projects, D425/D426:
+        # the folder the team got when the owner said yes, Documents/Sutra Pro/<name>)
+        assert [call["cwd"].rstrip("/").rsplit("/", 1)[-1] for call in (org_call, print_call, legal_call)] == [ORG, "Print", "Legal"]
         # what the model was given: the org chat's turn carries the org chat; a team's first turn carries ITS OWN chat (the request passed on to it)
         # and nothing of the org chat or of the other team
         assert ORG_MARK in org_call["stdin"] and PRINT_MARK not in org_call["stdin"] and LEGAL_MARK not in org_call["stdin"]

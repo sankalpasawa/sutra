@@ -53,8 +53,13 @@ def summary(out: str) -> dict[str, int]:
 
 
 def tail(proc: subprocess.CompletedProcess, limit: int = 6000) -> str:
+    """The failing tests first (every `not ok` line of the TAP output and the 30 lines after it), then the end of the output: with
+    1600 tests the end alone never names the one that failed."""
     text = proc.stdout + proc.stderr
-    return text if len(text) <= limit else "...\n" + text[-limit:]
+    lines = text.splitlines()
+    failing = [chunk for i, line in enumerate(lines) if line.lstrip().startswith("not ok") for chunk in lines[i:i + 30]]
+    head = ("FAILING:\n" + "\n".join(failing)[:limit] + "\n\n") if failing else ""
+    return head + (text if len(text) <= limit else "...\n" + text[-limit:])
 
 
 def test_node_is_new_enough_for_the_test_runner():
