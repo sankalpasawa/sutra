@@ -68,6 +68,7 @@
   // What a tool row says: its kind, the file when there is one, how many times ("run, 7 times" is "ran commands 7 times").
   const TOOL_VERBS = freeze({read: "read", edit: "changed", run: "ran commands", search: "searched", web: "used the web", sutra: "looked at Sutra's own data", github: "read GitHub", other: "used a tool"});
   const GIT_NAMES = freeze(["HEAD", "index", "COMMIT_EDITMSG", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "packed-refs"]);     // bare names inside a repository's .git folder (no other bare name is guessed at)
+  const has = (table, key) => Object.prototype.hasOwnProperty.call(table, key);           // a file called `constructor` or `__proto__` is a file, not a property of the table (r-6)
   const OWN_FILES = freeze({"project.md": "its report", "report.md": "its report"});
   function toolWords(reason) {
     const m = /^(read|edit|run|search|web|sutra|github|other)(?: (.+?))?, (\d+) times?$/.exec(clean(reason));
@@ -76,8 +77,9 @@
     const verb = TOOL_VERBS[m[1]];
     const n = times === 1 ? "once" : times + " times";
     if (m[1] === "read" && GIT_NAMES.indexOf(m[2]) >= 0) return "A step looked at the folder's history, " + n;                 // the repository's own files (D405)
-    if (m[1] === "read" && (OWN_FILES[m[2]] || PLUMBING.indexOf(m[2]) >= 0)) return "A step read its own " + (OWN_FILES[m[2]] ? "notes" : "working files") + ", " + n;     // its own output and the engine's files are not names the owner knows (D411)
-    if (m[1] === "edit") return "A step wrote " + (OWN_FILES[m[2]] || m[2] || "a file") + ", " + n;
+    const known = m[2] !== undefined && (has(OWN_FILES, m[2]) || PLUMBING.indexOf(m[2]) >= 0);          // the audit keeps a file's base name only, not whose folder it was in: the words claim no more than "a project file" (D411, r-6)
+    if (m[1] === "read" && known) return "A step read a project file, " + n;
+    if (m[1] === "edit") return "A step wrote " + (known ? "a project file" : m[2] || "a file") + ", " + n;
     const what = m[1] === "read" ? " " + m[2] : "";
     return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + n;
   }
@@ -292,7 +294,7 @@
     const files = arr(body.files).map(f => (isObj(f) ? clean(f.path) : "")).filter(f => f && PLUMBING.indexOf(f) < 0);
     const changed = arr(body.changes).map(clean).filter(Boolean);
     const open = body.status === "done_with_open_items";
-    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It wrote " + names(files.map(f => OWN_FILES[f] || f), 4) : "") + "." +
+    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It wrote " + names(files.map(f => (has(OWN_FILES, f) ? OWN_FILES[f] : f)), 4) : "") + "." +
       (changed.length ? " It changed " + (changed.length === 1 ? "1 file" : changed.length + " files") + " in your folder: " + names(changed, 3) + "." : "");
   }
   function textOf(body) {
