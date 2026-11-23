@@ -1062,8 +1062,8 @@ class TaskService:
             if found is None:
                 return
             stored = json.loads(found["settings_json"] or "{}")
-            if stored.get(STOP_KEY):
-                return
+            if stored.get(STOP_KEY) and not (by == "owner" and stored.get(STOP_KEY) != "owner"):
+                return                                           # the first one to ask wins, except that the owner's own stop always wins over the app's or the system's (D406)
             stored[STOP_KEY] = by
             self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
 
