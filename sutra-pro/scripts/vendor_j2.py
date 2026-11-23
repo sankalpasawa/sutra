@@ -1709,6 +1709,45 @@ def build_failure(w):
             # check always published a build first, so it never ends here)
             w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
 '''),
+    Edit("P28", "j2.py", r'''    def _turn_workflow_agent(self, h):
+''', r'''    def _turn_workflow_agent(self, h):
+        """P28 (D425): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
+        wid = h.get("wid") or self.turn
+        self._build_workflow(h)
+        self._repeat_build_stop(wid)
+
+    def _repeat_build_stop(self, wid):
+        """P28 (D425): the build that just finished failed exactly as the previous finished build did (build_failure: the
+        failure's kind and code-made detail, never a workflow's name or words), also when it is another workflow (a
+        replacement, a reworded copy): another attempt would likely repeat it, so the cycle stops and Identity asks the
+        Requester (a safety limit, as P22's _repeat_stop), resuming at Adaptation's hand-off when the build had one. The two
+        workflows become repeat_steps. A passing build clears the memory; the Requester's answer does not, so after "keep
+        going" the next identical failure asks again (run 17e1 went on to W-12 and W-13). True when it stopped."""
+        w = self._wf(wid)
+        if not w or w.get("status") not in ("failed", "done") or self.paused:
+            return False
+        sig, prev = build_failure(w), self.last_failure
+        if sig is None:
+            self.last_failure, self.repeat_steps = None, []
+            return False
+        self.last_failure = {"sig": sig, "wid": wid}
+        if not prev or prev["sig"] != sig or prev["wid"] == wid:
+            return False
+        self.repeat_steps = [prev["wid"], wid]
+        kind, detail = sig
+        words = ("changed files outside its folder: " + ", ".join(detail) if kind == "outside_write" else
+                 "the same checks failed: " + "; ".join(f"{t}: {e}" for t, e in detail) if kind == "checks" else
+                 str(detail) or kind)
+        self._event("system", "repeat", f"{prev['wid']} and {wid}: {words}")
+        self.post("system", f"{prev['wid']} and {wid} failed the same way ({words}). Code stops the cycle: Identity asks the "
+                            "Requester before another attempt.")
+        self._handoff("identity", kind="limit", reason=f"The same failure came back twice in a row: {prev['wid']} and {wid} "
+                                                       f"both failed ({words}), so another attempt would likely repeat it.",
+                      **({"resume": {"to": "adaptation", "handoff": dict(self.handoff)}} if self.turn == "adaptation" else {}))
+        return True
+
+    def _build_workflow(self, h):
+'''),
 )
 
 OTHER_EDITS = (

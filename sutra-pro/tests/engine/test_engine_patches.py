@@ -1898,3 +1898,122 @@ def test_p28_a_builder_tool_fault_keeps_every_outside_file_sorted(j2, make_run):
     with pytest.raises(j2.BuilderToolFault) as e:
         tools_call(j2, run, extra=names)
     assert e.value.files == sorted(names) and "and 2 more" in str(e.value)
+
+
+DONE_17E1 = ["The page shows the business name Bean There and its address 12 Park Road.",
+             "The page shows the opening hours 7am-6pm daily.",
+             "The page shows a menu listing espresso £2.50, flat white £3.20 and croissant £2.80.",
+             "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an "
+             "existing section."]
+
+
+@pytest.fixture
+def replay_17e1(j2, make_run, monkeypatch):
+    """Replay A: run 17e1's website run (4 done-when items, 100 credits) with builder tools on. A build whose `fault` entry
+    is a file list fails as the run's builders did (the CLI wrote those files outside its folder); None builds and passes.
+    Returns (run, add, fault, builder_calls)."""
+    run = make_run()
+    run.post("user", "A one-page website for Bean There")
+    run._apply_output("website")
+    run.goal, run.budget = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100
+    cwd = Path(run.dir) / "out"
+    cwd.mkdir(parents=True, exist_ok=True)
+    tools = {"tools": ["Write"], "allow": ["Write"], "cwd": str(cwd), "root": str(run.dir), "usd": 1.0, "log_chars": 200,
+             "max_files": 50, "max_bytes": 1_000_000}
+    monkeypatch.setattr(run, "_builder_tools", lambda: tools)
+    fault, builder_calls, real_call = {"files": list(OUTSIDE_17E1)}, [], run.call
+
+    def call(fn, fmt, task, mock, **kw):
+        if not str(fn).startswith("W-"):
+            return real_call(fn, fmt, task, mock, **kw)
+        builder_calls.append(fn)
+        if fault["files"] is None:
+            (cwd / run._main_file()).write_text("<!doctype html><title>Bean There</title><main>Bean There</main>")
+            return {"say": "built", "human_output": "I built it.", "atom_human_output": "Built."}
+        files = fault["files"]
+        raise j2.BuilderToolFault("outside", "changed outside its folder: " + ", ".join(files), files=files)
+    monkeypatch.setattr(run, "call", call)
+
+    def add(wid, name, cost=6, checks=(), **kw):
+        j2.add_workflow_agent(wid)
+        w = {"id": wid, "name": name, "section": wid, "status": "registered", "cost": cost, "charged": True, "cycle": 1,
+             "envelope": {"money_limit": cost, "model_call_limit": 2, "retry_limit": 1}, "calls_used": 0, "retries_used": 0,
+             "outputs": ["copy.md"], "covers": [], "covers_text": [], "dependencies": [], "kind": "build",
+             "atoms": [{"id": f"{wid}.a1", "goal": name, "verification": list(checks)}], **kw}
+        run.workflows.append(w)
+        run._recalc_spent()
+        return w
+    return run, add, fault, builder_calls
+
+
+def test_p28_replay_17e1_stops_after_the_second_identical_failure(replay_17e1):
+    run, add, fault, calls = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    assert run.turn == "coordination" and run._wf("W-1")["failure"] == ["outside_write", OUTSIDE_17E1]
+    add("W-6", "Write the exact copy sheet", replaces="W-1")       # Adaptation's reworded replacement
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"] == ("The same failure came back twice in a row: W-1 and W-6 both failed (changed files outside "
+                                     "its folder: agent_live.json, events.jsonl, snapshot.json), so another attempt would likely "
+                                     "repeat it.")
+    assert calls == ["W-1", "W-6"] and run.spent == 12 and run.repeat_steps == ["W-1", "W-6"]
+    assert [e for e in run.events if e["type"] == "repeat" and "W-1 and W-6" in json.dumps(e)]
+
+
+def test_p28_a_different_file_set_is_not_the_same_failure(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    fault["files"] = ["notes.txt"]
+    add("W-6", "Write the exact copy sheet", replaces="W-1")
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "coordination" and run.repeat_steps == []
+
+
+def test_p28_a_passing_build_in_between_clears_it(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    fault["files"] = None
+    add("W-2", "Build the page base")
+    run._turn_workflow_agent({"wid": "W-2"})
+    assert run._wf("W-2")["status"] == "done" and run.last_failure is None
+    fault["files"] = list(OUTSIDE_17E1)
+    add("W-6", "Write the exact copy sheet", replaces="W-1")
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "coordination", run.handoff
+
+
+def test_p28_the_same_failed_checks_across_reworded_workflows_stop_and_keep_going_resumes_atom_failed(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    fault["files"] = None                                            # both build, and the same check fails on the same evidence
+    menu = {"type": "file-exists", "target": "menu.html", "expect": True}
+    add("W-4", "Build the menu section", checks=[{**menu, "text": "The menu page is there"}])
+    run._turn_workflow_agent({"wid": "W-4"})
+    assert run.turn == "adaptation" and run.handoff["kind"] == "atom_failed"
+    add("W-9", "Build the menu section from the charter", checks=[{**menu, "text": "menu.html exists in the folder"}])
+    run._turn_workflow_agent({"wid": "W-9"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"].startswith("The same failure came back twice in a row: W-4 and W-9 both failed (the same "
+                                            "checks failed: file-exists: ")
+    assert run.handoff["resume"]["to"] == "adaptation" and run.handoff["resume"]["handoff"]["kind"] == "atom_failed"
+    assert run.handoff["resume"]["handoff"]["wid"] == "W-9"
+
+
+def test_p28_a_keep_going_answer_does_not_clear_the_memory(replay_17e1):
+    """OQ-1: "keep going" changes nothing about the cause, so the next identical failure asks again (run 17e1 went on to
+    W-12 and W-13 after "Option 1")."""
+    run, add, fault, calls = replay_17e1
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    run._identity_limit(run.handoff)
+    p = run.paused
+    assert p and p["kind"] == "limit" and p["handoff"]["choices"][0] == "continue", p
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Option 1"})
+    add("W-11", "Build the page base and intro from the charter", outputs=["index.html"])
+    run._turn_workflow_agent({"wid": "W-11"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and "W-6 and W-11" in run.handoff["reason"], run.handoff
+    assert calls == ["W-1", "W-6", "W-11"]
