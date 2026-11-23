@@ -109,7 +109,9 @@
     const buttons = final ? "" :
       (held ? "" : '<button type="button" data-act="project-pause" data-resume="' + (paused ? "1" : "0") + '">' + (paused ? "Continue" : "Pause") + "</button>") +
       '<button type="button" class="pbad" data-act="project-stop">Stop everything</button>';
-    return '<h1 class="ptitle">' + esc(clean(p.title) || "A project") + '</h1><p class="pstatus" data-status="' + esc(clean(p.status)) + '">' + esc(status) + (paused ? " (paused)" : "") + "</p>" +
+    const request = clean(isObj(snap) ? snap.request : "");
+    const full = request && request !== clean(p.title) && request.length > clean(p.title).length - 1 ? '<details class="prequest"><summary>Your request</summary><p>' + esc(request) + "</p></details>" : "";
+    return '<h1 class="ptitle">' + esc(clean(p.title) || "A project") + '</h1>' + full + '<p class="pstatus" data-status="' + esc(clean(p.status)) + '">' + esc(status) + (paused ? " (paused)" : "") + "</p>" +
       (held ? '<p class="cnote" role="status">It is held until you answer the question below about files. It goes on when you do.</p>' : "") +
       (p.failure_policy ? '<p class="cnote">' + esc(word(POLICY_WORDS, p.failure_policy, "")) + (p.decide_for_me ? ". Sutra answers the questions it may for you." : ".") + "</p>" : "") +
       '<div class="pbtns">' + buttons + "</div>";

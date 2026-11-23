@@ -76,6 +76,22 @@ def parse_yes_no(text: str) -> bool | None:
     return None
 
 
+def project_title(text: str, limit: int = 60) -> str:
+    """A short title for a project from the owner's request (D404): the first sentence when it fits, else the text cut at a word boundary with an ellipsis. Never cut inside a word, never ends on a
+    dangling "and", "then" or "after"; the whole request is on the project page."""
+    line = " ".join(str(text).split())
+    first = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0].rstrip(".!?:; ")
+    if 0 < len(first) <= limit:
+        return first
+    if len(line) <= limit:
+        return line.rstrip(".!?:; ")
+    cut = line[:limit + 1]
+    cut = cut[:cut.rfind(" ")] if " " in cut else line[:limit]
+    cut = re.sub(r"[\s,;:\-]+$", "", cut)
+    cut = re.sub(r"\s+(?:and|then|after|before|or|to|of|in|on|for|with|the|a|an)$", "", cut, flags=re.I)
+    return cut + "\u2026"
+
+
 def one_line_title(text: str, limit: int = 60) -> str:
     """The text on one line (runs of whitespace become one space), cut to `limit` characters at a word boundary. A first word
     longer than `limit` is cut hard. No ellipsis is added: this is a title, not an excerpt."""

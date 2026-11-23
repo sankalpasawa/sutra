@@ -184,3 +184,31 @@ def test_the_done_card_of_a_step_that_finished_with_open_items_says_it_plainly(r
     [card] = [c for _, _, c in org_lines(rig) if c and c.get("type") == "done" and c["task_id"] == tasks["a1"]]
     assert card["outcome"].startswith("Done, with some things still open.") and "rubric" not in card["outcome"] and card["project_id"] == reservation.project_id
     assert rig.t.row(tasks["a1"]).outcome.startswith("Done with open items"), "the record keeps the engine's words"
+
+
+# ---- a real short title, and the whole request on the page (D404, run 3 item 5) -----------------------------------------------------------------------
+
+def test_a_project_title_is_a_whole_phrase_never_cut_inside_a_word_or_left_dangling():
+    from sutra_app.orchestrator.textutil import project_title
+    req = "Do two separate read-only jobs in this folder and change nothing. Step 1: list the files. Run them as two steps, one after the other, then give me both answers."
+    assert project_title(req) == "Do two separate read-only jobs in this folder and change\u2026", "the first sentence is 63 characters: a clean cut, not 80 cut mid-sentence"
+    assert project_title("Review every file in the folder. Then write the gaps.") == "Review every file in the folder"
+    assert project_title("A page and a quote") == "A page and a quote"
+    long = "Make a complete review of every file in the folder and write what each one is for and then what is missing from it and after that one"
+    title = project_title(long)
+    assert title.endswith("…") and len(title) <= 61 and not title[:-1].endswith((" and", " then", " after")) and long.startswith(title[:-1])
+    assert project_title("x" * 100).endswith("…") and len(project_title("x" * 100)) <= 61
+    assert project_title("  Tidy   up\nthe notes  ") == "Tidy up the notes"
+    assert project_title("") == ""
+
+
+def test_the_snapshot_carries_the_whole_request_for_the_page(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], request_id="req-5")
+    rig.sql("INSERT INTO chat_messages(id, session_id, role, who, kind, text, state, at) VALUES (5, 'cs_org', 'user', 'user', 'text', ?, 'ok', ?)", "Do two jobs. Then the second. " * 5, BASE)
+    assert rig.projects.snapshot(reservation.project_id)["request"].startswith("Do two jobs. Then the second.")
+    assert rig.projects.snapshot(reservation.project_id)["request"] == "Do two jobs. Then the second. " * 5
+
+
+def test_without_a_found_request_the_snapshot_says_nothing_rather_than_guessing(rig):
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], request_id="req-999")
+    assert rig.projects.snapshot(reservation.project_id)["request"] == ""

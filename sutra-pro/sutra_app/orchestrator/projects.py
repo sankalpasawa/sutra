@@ -885,7 +885,16 @@ class ProjectService:
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
                 "spend": {"calls": calls, "usd": round(usd, 6) if calls or usd else None, "unpriced": unpriced}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
                 "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last,
-                "questions": self._step_questions(conn, project_id)}
+                "questions": self._step_questions(conn, project_id), "request": self._request_text(conn, project)}
+
+    @staticmethod
+    def _request_text(conn: sqlite3.Connection, project: ProjectOut) -> str:
+        """The owner's whole request, from the org chat line the project was made from (`request_id` is `req-<message id>`), at most 2000 characters; "" when it cannot be found (D404)."""
+        rid = project.request_id or ""
+        if not rid.startswith("req-") or not rid[4:].isdigit():
+            return ""
+        row = conn.execute("SELECT text FROM chat_messages WHERE id = ? AND role = 'user'", (int(rid[4:]),)).fetchone()
+        return (row["text"] if row is not None else "")[:2000]
 
     @staticmethod
     def _step_questions(conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:

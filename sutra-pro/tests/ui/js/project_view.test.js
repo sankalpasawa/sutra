@@ -326,3 +326,12 @@ test("a step that waits for an answer to its engine's question says so on the pa
   assert.match(View.cardsHtml(snap({questions: [Object.assign({}, q, {options: []})]})), /Answer it in that team's chat\./);
   assert.equal(/<img/.test(View.cardsHtml(snap({questions: [Object.assign({}, q, {text: "<img src=x>", options: ["<b>x</b>"]})]}))), false);
 });
+
+test("the page shows the whole request under a short title, and nothing extra when they are the same (D404)", () => {
+  const long = "Do two separate read-only jobs in this folder. Run them as two steps, one after the other, then give me both answers.";
+  const html = View.header(snap({request: long, project: Object.assign(snap().project, {title: "Do two separate read-only jobs in this folder"})}));
+  assert.match(html, /<details class="prequest"><summary>Your request<\/summary><p>Do two separate read-only jobs in this folder\. Run them as two steps/);
+  assert.equal(/prequest/.test(View.header(snap({request: "A page and a quote"}))), false, "the title is the whole request");
+  assert.equal(/prequest/.test(View.header(snap())), false);
+  assert.equal(/<img/.test(View.header(snap({request: "<img src=x> and more words than the title has"}))), false);
+});

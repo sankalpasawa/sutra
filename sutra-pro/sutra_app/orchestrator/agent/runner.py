@@ -47,7 +47,7 @@ from sutra_app.orchestrator.models import Accepted, ChangeContext, ChangeResult,
 from sutra_app.orchestrator.reorg_preview import ReorgPreview, card_lines
 from sutra_app.orchestrator.standing_rules import StandingRules
 from sutra_app.orchestrator.tasks import TaskService
-from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no
+from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no, project_title
 
 __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO", "NONE_OPTION"]
 
@@ -618,7 +618,7 @@ class TurnRunner:
         from sutra_app.orchestrator.projects import ProjectStep
         asked = asked or {}
         steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
-        title = one_line_title(request.text, 80)                  # the request's own short title, not the first step's (D394)
+        title = project_title(request.text)                       # the request's own short title, a whole phrase and not 80 characters cut mid-sentence (D394, D404)
         return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
                                       plan_defaults=defaulted, decide_for_me=self._decide_for_me_of(request.message_id),
                                       failure_policy=self._failure_policy_of(request.message_id))
