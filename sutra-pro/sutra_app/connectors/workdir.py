@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -43,6 +44,7 @@ __all__ = ["WorkFolder", "WorkdirFile", "Folder", "WORKDIR_FILE", "MAX_PATH", "P
 log = logging.getLogger("sutra_app.connectors.workdir")
 
 WORKDIR_FILE = "workdir.json"
+_DEPT_ID = re.compile(r"[a-z][a-z0-9-]{1,39}")                # the rule of engine/spec.py DEPT_ID_RE, matched whole (fullmatch)
 MAX_PATH = 1024
 PREVIEW_MAX = 60               # names shown in the preview
 SCAN_MAX = 20_000              # entries looked at before the count stops (a huge folder must not stall the page)
@@ -242,13 +244,29 @@ def grounding_text(folder: Optional[str], edit: Optional[bool] = None, team: Opt
 
 
 class WorkFolder:
-    """The store: one small file next to the connector policy. Safe to call from any thread; every read goes to the file."""
+    """The store: one small file next to the connector policy, or (named projects) one per team in `departments/<id>/workdir.json`, the same
+    body. Safe to call from any thread; every read goes to the file. `dept_id=""` is the app-wide file, the fallback of every team."""
 
-    def __init__(self, data_dir: "str | Path", work_root: "str | Path | None" = None) -> None:
+    def __init__(self, data_dir: "str | Path", work_root: "str | Path | None" = None, *, dept_id: str = "") -> None:
+        if dept_id and not _DEPT_ID.fullmatch(dept_id):
+            raise ValueError(f"not a team id: {dept_id!r}")
         self.data_dir = Path(data_dir)
         self.work_root = Path(work_root) if work_root is not None else None
-        self.path = self.data_dir / "connectors" / WORKDIR_FILE
+        self.dept_id = dept_id
+        self.path = (self.data_dir / "departments" / dept_id if dept_id else self.data_dir / "connectors") / WORKDIR_FILE
         self._lock = threading.Lock()
+
+    def for_team(self, dept_id: str) -> "WorkFolder":
+        """The store of one team's own folder, with the same data folder and work root."""
+        return WorkFolder(self.data_dir, self.work_root, dept_id=dept_id)
+
+    def team_grant(self, dept_id: str) -> Optional[Folder]:
+        """The folder a team's chats and runs use: its own while that is usable, else this store's own (the app-wide one). `""` is the app-wide one."""
+        if dept_id:
+            own = self.for_team(dept_id).grant()
+            if own is not None:
+                return own
+        return self.grant()
 
     # ---- reads -----------------------------------------------------------------------------------------------------------------
     def stored(self) -> Optional[str]:

@@ -325,10 +325,10 @@ class Host:
 
     # ---- the output: `auto` is decided here, once, before J2 is imported (D129) ------------------------------------------------
     def _has_folder(self) -> bool:
-        """True when the owner has set a working folder that is still usable (the same store the router reads per call)."""
+        """True when the team (else the app) has a working folder that is still usable (the same store the router reads per call)."""
         try:
             from sutra_app.connectors.workdir import WorkFolder      # read only: nothing is created in the data folder (the work root is not asked)
-            return WorkFolder(self.paths.data_dir).get() is not None
+            return WorkFolder(self.paths.data_dir).team_grant(self.task.dept_id) is not None
         except Exception:  # noqa: BLE001 - no connector layer or an unreadable file is "no folder", never a failed start
             return False
 
@@ -708,9 +708,9 @@ class Host:
         return bool(isinstance(out, dict) and out.get("deliver"))
 
     def _owner_grant(self):
-        """The working folder with the owner's access as it is now, or None (read from the same store the router reads per call)."""
+        """The team's working folder (else the app-wide one) with the owner's access as it is now, or None (the same store the router reads per call)."""
         from sutra_app.connectors.workdir import WorkFolder
-        return WorkFolder(self.paths.data_dir).grant()
+        return WorkFolder(self.paths.data_dir).team_grant(self.task.dept_id)
 
     def _start_folder_watch(self) -> None:
         """The baseline of the owner's working folder (`folder_watch.FolderWatch`, git, never an agent), taken once before the work starts, for an output

@@ -382,13 +382,13 @@ class Router:
     def mode(self) -> str:
         return "offline" if self._restrict == "stub" else "live"
 
-    def chat_folder(self) -> str:
+    def chat_folder(self, dept_id: str = "") -> str:
         """The owner's working folder for a chat turn that starts now ("" none), read from its file on every call so a change applies to the
-        next message. Offline nothing runs, so none."""
+        next message: the team's own folder when `dept_id` names a team that has one, else the app-wide folder. Offline nothing runs, so none."""
         if self.folders is None or self._restrict == "stub":
             return ""
         try:
-            return self.folders.grant() or ""
+            return self.folders.team_grant(dept_id) or ""
         except Exception:
             log.warning("could not read the working folder", exc_info=True)
             return ""
@@ -404,7 +404,7 @@ class Router:
         want = getattr(tag, "workspace", "")
         if want not in ("read", "inspect", "edit"):
             return ""
-        grant = self.chat_folder()
+        grant = self.chat_folder(getattr(tag, "dept_id", "") or "")
         if not grant:
             return ""
         allowed = bool(getattr(grant, "edit", False))
@@ -1087,7 +1087,7 @@ class Router:
                    partials: bool) -> Iterator[ConnectorEvent]:
         sid = state.ctx.session_id or ""
         lost = False
-        folder = self.chat_folder()            # the working folder of THIS turn (a change applies to the next message)
+        folder = self.chat_folder(getattr(state.ctx.tag, "dept_id", "") or "")            # the working folder of THIS turn (a change applies to the next message)
         if folder and getattr(state.ctx.tag, "workspace", "none") == "read":
             folder = Folder(str(folder), edit=False)       # a turn that asks for `read` (the Ask mode, DV-1) never gets more than the file tools that look: the owner's "edit" is capped here
         for round_no in (1, 2):

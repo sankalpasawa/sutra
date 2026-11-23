@@ -375,10 +375,23 @@ def _ground(services: Any, port: Any, sid: str, ask: bool = False) -> None:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
 
 
+def _for_team(services: Any, sid: str, turn: ChatTurnIn) -> ChatTurnIn:
+    """A team's own chat runs in that team's working folder (named projects): its tag names the team, so the router picks the team's folder,
+    falling back to the app-wide one. Any other chat, or a session that cannot be read, keeps the turn as it was."""
+    try:
+        session = services.chats.session(sid)
+    except Exception:  # noqa: BLE001 - the folder choice never fails a turn
+        return turn
+    if getattr(session, "kind", "") != "department" or not getattr(session, "node_id", ""):
+        return turn
+    return turn.model_copy(update={"tag": turn.tag.model_copy(update={"dept_id": session.node_id})})
+
+
 def _answer(services: Any, port: Any, sid: str, user_message_id: int, turn: ChatTurnIn, attempt: int = 1, ask: "ask_mode.AskTurn | None" = None) -> None:
     """The turn, on a worker thread: partials out as control events, the stored reply once at the end. A stop keeps what was written
     with a calm note; a failure keeps it with the real reason (direct_turns). `attempt` is the try of the owner's line (1; N for a retry): it names the refs
     the endings are stored under (D216)."""
+    turn = _for_team(services, sid, turn)
     bus = services.bus
     buffered = ""
     shown = ""                                                       # what the owner has seen stream in, redacted as it was sent
@@ -581,6 +594,7 @@ def _answer_live(services: Any, port: Any, sid: str, user_message_id: int, turn:
     """The turn, on a worker thread, as a live turn: the port's events go to the live turn, which publishes them; the reply is stored once at the end, in one transaction with the
     deletion of its checkpoint, and only then does `turn.done` go out (so a page that hears it can fetch the stored message). A Stop keeps what was written (and the tools that
     ran, ended `interrupted`) with a calm note; a failure keeps it with the real reason. `live.close()` and `direct_running.end` run whatever happens."""
+    turn = _for_team(services, sid, turn)
     try:
         done = None
         for event in port.stream(sid, turn, cancel=live.token, acc=live.acc):
