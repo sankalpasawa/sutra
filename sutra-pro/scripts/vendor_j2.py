@@ -1709,6 +1709,30 @@ def build_failure(w):
             # check always published a build first, so it never ends here)
             w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
 '''),
+    Edit("P28", "j2.py", r'''            remaining -= c
+            env = {k: (w.get("envelope") or {}).get(k) for k in ("money_limit", "model_call_limit", "time_limit_minutes",
+''', r'''            if (ids := self._redoes_repeat(w)) and not str(w.get("cause_change") or "").strip():      # P28 (D425)
+                refused.append(self._reject(name, f"it redoes {and_list(ids)}, which failed the same way twice, and its "
+                                                  "cause_change is empty: say what is different about the cause this time"))
+                self._refused_for(w, "its cause_change is empty")
+                continue
+            remaining -= c
+            env = {k: (w.get("envelope") or {}).get(k) for k in ("money_limit", "model_call_limit", "time_limit_minutes",
+'''),
+    Edit("P28", "j2.py", r'''            wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
+''', r'''            wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
+            if str(w.get("cause_change") or "").strip():      # P28 (D425): what is different about the cause this time
+                wf["cause_change"] = str(w["cause_change"]).strip()
+'''),
+    Edit("P28", "j2.py", r'''        real, replan = None, self.real_replan
+''', r'''        task += self._repeat_note()      # P28 (D425): only while a repeated step exists
+        real, replan = None, self.real_replan
+'''),
+    Edit("P28", "j2.py", r'''                      + self._priority_file_note(table))
+        p = self.call("priority", fmt, task, mock)
+''', r'''                      + self._priority_file_note(table) + self._repeat_price_note(table))      # P28 (D425)
+        p = self.call("priority", fmt, task, mock)
+'''),
     Edit("P28", "j2.py", r'''    def _turn_workflow_agent(self, h):
 ''', r'''    def _turn_workflow_agent(self, h):
         """P28 (D425): one workflow's build (_build_workflow), then the same build failure twice in a row stops the cycle."""
@@ -1734,10 +1758,7 @@ def build_failure(w):
         if not prev or prev["sig"] != sig or prev["wid"] == wid:
             return False
         self.repeat_steps = [prev["wid"], wid]
-        kind, detail = sig
-        words = ("changed files outside its folder: " + ", ".join(detail) if kind == "outside_write" else
-                 "the same checks failed: " + "; ".join(f"{t}: {e}" for t, e in detail) if kind == "checks" else
-                 str(detail) or kind)
+        words = self._failure_words(sig)
         self._event("system", "repeat", f"{prev['wid']} and {wid}: {words}")
         self.post("system", f"{prev['wid']} and {wid} failed the same way ({words}). Code stops the cycle: Identity asks the "
                             "Requester before another attempt.")
@@ -1745,6 +1766,43 @@ def build_failure(w):
                                                        f"both failed ({words}), so another attempt would likely repeat it.",
                       **({"resume": {"to": "adaptation", "handoff": dict(self.handoff)}} if self.turn == "adaptation" else {}))
         return True
+
+    @staticmethod
+    def _failure_words(sig):
+        """P28 (D425): a build failure's signature in words, by code: every outside file, or each failed check's type and
+        evidence, or the code-made detail."""
+        kind, detail = sig
+        return ("changed files outside its folder: " + ", ".join(detail) if kind == "outside_write" else
+                "the same checks failed: " + "; ".join(f"{t}: {e}" for t, e in detail) if kind == "checks" else
+                str(detail) or kind)
+
+    def _redoes_repeat(self, p):
+        """P28 (D425): the repeat_steps workflows proposal p redoes: it names one in revises or replaces, covers one of its
+        done-when items or writes one of its outputs. Ids, item numbers and file names are compared; no word of a name."""
+        rep = p.get("replaces") if isinstance(p.get("replaces"), list) else [p.get("replaces")]
+        named = {str(x).upper() for x in rep + [p.get("revises")] if x}
+        items, outs = set(self._covers(p)), {str(o) for o in p.get("outputs") or []}
+        return [wid for wid in self.repeat_steps if (s := self._wf(wid) or {}) and (
+            wid in named or items & set(self._wf_items(s)) or outs & {str(o) for o in s.get("outputs") or []})]
+
+    def _repeat_note(self):
+        """P28 (D425): Adaptation's line while a repeated step exists ("" otherwise, so its prompt is unchanged)."""
+        if not self.repeat_steps:
+            return ""
+        a, b = self.repeat_steps
+        return (f"\nA STEP FAILED THE SAME WAY TWICE: {a} and {b} failed the same way twice "
+                f"({self._failure_words(build_failure(self._wf(b)) or ('failed', ''))}). A workflow that redoes this step "
+                f"(names {a} or {b} in revises or replaces, covers one of their done-when items or writes one of their "
+                "outputs) must carry \"cause_change\": what is different about the cause this time; without one the "
+                "validator rejects it.")
+
+    def _repeat_price_note(self, table):
+        """P28 (D425): Priority's line when a proposal on the table redoes a repeated step ("" otherwise). Whether its
+        cause_change names something new is Priority's judgement; code only shows it."""
+        redo = {str(w.get("id") or w.get("name")): str(w.get("cause_change") or "").strip() for w in table
+                if isinstance(w, dict) and self._redoes_repeat(w)}
+        return (f" REDOES A STEP THAT FAILED THE SAME WAY TWICE: {json.dumps(redo, ensure_ascii=False)}. If a cause_change "
+                "names nothing new about the cause, the money buys the same failure: REFUSE it with that reason." if redo else "")
 
     def _build_workflow(self, h):
 '''),
