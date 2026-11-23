@@ -654,6 +654,9 @@ class TurnRunner:
             made[draft.ref] = task.id
         return list(made.values())
 
+    def _project_exists(self, project_id: str) -> bool:
+        return self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None
+
     def _write_outcome(self, mid: int, plan: Plan, applied: _Applied | None, drafts: Sequence[AssignmentDraft], task_ids: Sequence[str],
                        failure: str | None, waits: str = "", project_id: str = "") -> None:
         """T8: the template line, the chart card and a task card per task; the request is `ok`. `waits`: the sentence of a project that waits for the owner's OK (D308)."""
@@ -661,7 +664,9 @@ class TurnRunner:
         if waits:
             sentences = sentences + [waits]
         sentences = [_NO_PROJECT_ADDRESS.sub("/p/ ", text) for text in sentences]     # a word of the model's (a title) that looks like a project address is not one (D389, m11)
-        if project_id and failure is None and self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None:     # only a project that exists
+        if project_id and not self._project_exists(project_id):
+            project_id = ""                                                          # only a project that exists is linked, in the reply and on the cards (D389, D408)
+        if project_id and failure is None:
             sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]

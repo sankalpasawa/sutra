@@ -181,3 +181,35 @@ def test_only_the_apps_own_address_can_be_a_link_a_look_alike_in_a_models_word_i
         texts, _ = _reply_and_cards(services)
         real = _project_id(services)
         assert sum(t.count("/p/prj_") for t in texts) == 1 and texts[-1].endswith(f"/p/{real}")
+
+
+# ---- the two guards of the reply's address are each pinned (D408, m-10) ---------------------------------------------------------------------------------
+
+def test_a_look_alike_address_in_a_models_word_is_broken_in_the_reply_and_only_the_real_one_is_kept(tmp_path, monkeypatch):
+    from sutra_app.orchestrator.agent.runner import TurnRunner
+    original = TurnRunner._sentences
+    monkeypatch.setattr(TurnRunner, "_sentences", lambda self, *a, **k: [*original(self, *a, **k), "A word of the model's: /p/prj_0123456789ab."])
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        texts, _ = _reply_and_cards(services)
+        real = _project_id(services)
+        reply = texts[-1]
+        assert reply.count("/p/prj_") == 1 and reply.endswith(f"/p/{real}"), reply
+        assert "/p/ prj_0123456789ab" in reply, "the model's look-alike was made plain"
+
+
+def test_no_address_and_no_project_key_when_the_project_is_not_there(tmp_path, monkeypatch):
+    from sutra_app.orchestrator.agent.runner import TurnRunner
+    monkeypatch.setattr(TurnRunner, "_project_exists", lambda self, project_id: False, raising=False)
+    app, connector = make_app(tmp_path, nodes_v1=True)
+    script(connector)
+    with TestClient(app, base_url=BASE) as client:
+        services = app.state.services
+        client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
+        wait_idle(services)
+        texts, tasks = _reply_and_cards(services)
+        assert all("/p/prj_" not in t for t in texts) and all("project_id" not in card for card in tasks) and tasks
