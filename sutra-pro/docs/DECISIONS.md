@@ -2771,3 +2771,38 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-9.
 - Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
 - Diagram: label "parallel steps share the remainder", key only.
+
+## D410 — Every engine outcome sentence in plain words
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Every outcome sentence the engine can end a step with is said in plain words on the step's card ("Done. Every check passed." for "Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes."; the stop sentences of Identity, Adaptation and the dry run likewise). Anything else of the engine's that still has its words is said by how it began, never in them. A test reads the engine's own `Done` and `Stopped` sentences from its source and scans what each becomes for the engine's jargon. Package: MAN-13.
+- Why: D402 had covered only the open-items sentence.
+- Rejected: rewriting the stored outcome (the record keeps the engine's words).
+- Diagram: label "engine outcomes plain; scanned for jargon", key only.
+
+## D411 — A step's own files are 'its own notes'
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A read of the step's own output or of an engine file reads "its own notes" or "its own working files" on the page, never a file name the owner does not know. Package: MAN-13.
+- Why: "A step read project.md, 9 times". Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "reads of own output = its own notes", key only.
+
+## D412 — Home opens the project page for a step
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Home's row of a step of a project carries the project (`project_id`, left out of the wire shape for an ordinary task) and opens the project's page, with the team's page beside it. Package: MAN-13.
+- Why: Home's Open for a step went to the team page. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "Home step row opens /p/id", key only.
+
+## D413 — Live badge only while the project runs
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The "Live" badge of the project page shows only while the project runs. Package: MAN-13.
+- Why: it stayed after the project was done, stopped or failed. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "Live only while running", key only.
+
+## D414 — Each step does only its own job
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Each step of a project is told to do ONLY its own job. The step-request prompt (`nodeplan.md`, a stage only a project runs, so every flag-off prompt is byte for byte what it was) says so, and the framing of each step's task names its number, its own job and the other steps' jobs and says not to do, start or answer any of them. A single request keeps its framing. Package: MAN-13.
+- Why: in run 4 step 1's report already named the one improvement that was step 2's job, so the money was spent twice. Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "step prompt + framing: only its own job", key only.

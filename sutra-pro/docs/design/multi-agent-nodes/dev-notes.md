@@ -513,3 +513,17 @@ m-5: the page hides a tool row of no kind (`other`); the audit table keeps it, s
 
 ### N86. Decisions of this round the next reviewer may challenge
 D398 refuses the retry of ANY node task, also of a step whose project ended, because the project is what tries a step again. D401 lets the page answer an engine question with "Option N" through the chat route (the same route Home uses); the page accepts nothing else. D406 (d) lets the owner's stop win over the app's mark in `_stopped_by` (a stop of a step the shutdown had marked). D409 divides the remainder by the steps that are ready or running, not by those that will run at once: a step waiting for a slot takes a share it may not use (the safe side).
+
+## After the fourth real run (run 4, build `6091bf6`; D410 to D414)
+
+### N87. Run 4 results
+PASSED. A project reached DONE and ended with a real model. The numbers: step 1, 27 calls, 4.4 minutes, $1.41; step 2, 31 calls, 5.6 minutes, $1.68; the reviewer, 1 Codex call (read-only, independent, it read the steps' written text and approved with a verdict that fitted); the planner, 5 calls, $0.12; **total $3.22** (peak $3.22). No `Bash` and no web tool; the per-call dollar clamp held; the owner's folder was untouched. A trivial 3-file job therefore costs about $3.2, so a $5 monthly limit is tight (OPERATIONS says so).
+
+### N88. What run 4 did NOT see
+A send-back with a real model (the reviewer asking for changes and the owner saying "Send them back"); an engine question answered from the project page; Decide for me on a project; steps that run at the same time (parallel steps); Windows; the Mac permission window; slots; lanes; a writer step (a step that changes the owner's folder). All of these are unproven with a real model and stay so in the release.
+
+### N89. What shipped, and how it is to be read
+The release carries the feature OFF by default (`SUTRA_NODES_V1`, `SUTRA_WORK_V1`, `SUTRA_RECIPES_V1`, `SUTRA_ASK_V1` all `0`), for a read-only trial on a throw-away folder with a low dollar limit. The release note and OPERATIONS say so plainly, and name the unproven paths above.
+
+### N90. Found in run 4 and fixed
+The chat done card's engine sentence (D410), "A step read project.md, 9 times" (D411), Home's Open going to the team page for a step (D412), the Live badge after the end (D413), and step 1 doing step 2's job (D414).

@@ -503,3 +503,22 @@ Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 
 
 **D409. Steps that start together share the dollar remainder: a step's cap is what the project and the month have left divided by the steps of the project that run or are ready (the first, alone, gets all of it; two ready, half each), so together they cannot pass the limit by steps times the remainder before the tick sees it (m-13). Rejected: holding the extra step (it would idle for money it may not spend).**
 Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-9.
+
+## The fourth real run (run 4, build `6091bf6`) and its fixes (D410 to D414)
+
+Run 4 PASSED: a project reached DONE and ended with a real model; the reviewer (Codex, read-only, independent) read the steps' written text and approved with a fitting verdict; no `Bash` and no web tool; the dollar clamp held; the owner's folder was untouched; the peak spend was $3.22. The release goes out with every flag OFF by default. D410 to D414 answer what run 4 found; D415 and up are free.
+
+**D410. Every outcome sentence the engine can end a step with is said in plain words on the step's card ("Done. Every check passed." for "Done: the project work report is workable. Every done-when item, rubric item and necessary condition passes."; the stop sentences of Identity, Adaptation and the dry run likewise). Anything else of the engine's that still has its words is said by how it began, never in them. A test reads the engine's own `Done` and `Stopped` sentences from its source and scans what each becomes for the engine's jargon.**
+Why: D402 had covered only the open-items sentence. Rejected: rewriting the stored outcome (the record keeps the engine's words). Package: MAN-13.
+
+**D411. A read of the step's own output or of an engine file reads "its own notes" or "its own working files" on the page, never a file name the owner does not know.**
+Why: "A step read project.md, 9 times". Package: MAN-13.
+
+**D412. Home's row of a step of a project carries the project (`project_id`, left out of the wire shape for an ordinary task) and opens the project's page, with the team's page beside it.**
+Why: Home's Open for a step went to the team page. Package: MAN-13.
+
+**D413. The "Live" badge of the project page shows only while the project runs.**
+Why: it stayed after the project was done, stopped or failed. Package: MAN-13.
+
+**D414. Each step of a project is told to do ONLY its own job. The step-request prompt (`nodeplan.md`, a stage only a project runs, so every flag-off prompt is byte for byte what it was) says so, and the framing of each step's task names its number, its own job and the other steps' jobs and says not to do, start or answer any of them. A single request keeps its framing.**
+Why: in run 4 step 1's report already named the one improvement that was step 2's job, so the money was spent twice. Package: MAN-13.

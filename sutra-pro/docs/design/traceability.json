@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 379,
+  "decisions": 384,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 409,
+ "max_decision": 414,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -568,7 +568,12 @@
     "D406",
     "D407",
     "D408",
-    "D409"
+    "D409",
+    "D410",
+    "D411",
+    "D412",
+    "D413",
+    "D414"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5897,6 +5902,48 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"parallel steps share the remainder\", key only."
+  },
+  {
+   "id": "D410",
+   "title": "Every engine outcome sentence in plain words",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"engine outcomes plain; scanned for jargon\", key only."
+  },
+  {
+   "id": "D411",
+   "title": "A step's own files are 'its own notes'",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"reads of own output = its own notes\", key only."
+  },
+  {
+   "id": "D412",
+   "title": "Home opens the project page for a step",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Home step row opens /p/id\", key only."
+  },
+  {
+   "id": "D413",
+   "title": "Live badge only while the project runs",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"Live only while running\", key only."
+  },
+  {
+   "id": "D414",
+   "title": "Each step does only its own job",
+   "packages": [
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"step prompt + framing: only its own job\", key only."
   }
  ],
  "packages": [
