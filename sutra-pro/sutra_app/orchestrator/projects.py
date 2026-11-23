@@ -914,10 +914,12 @@ class ProjectService:
         if not node.task_id:
             return node
         calls, usd = chain_spend(conn, node.task_id)
+        priced = conn.execute("WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
+                              "SELECT count(*) FROM usage_ledger WHERE task_id IN (SELECT id FROM chain) AND provider != 'stub' AND usd IS NOT NULL", (node.task_id,)).fetchone()[0]
         span = conn.execute("WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
                             "SELECT MIN(started_at), MAX(COALESCE(ended_at, ?2)), SUM(started_at IS NOT NULL AND ended_at IS NULL) FROM tasks WHERE id IN (SELECT id FROM chain)", (node.task_id, now)).fetchone()
         minutes = round(max(0, int(span[1]) - int(span[0])) / 60, 1) if span[0] is not None and span[1] is not None else None
-        return node.model_copy(update={"calls": calls, "usd": round(usd, 6) if calls else None, "minutes": minutes})
+        return node.model_copy(update={"calls": calls, "usd": round(usd, 6) if priced else None, "minutes": minutes})          # no call priced (Codex): no dollars, not "$0.00" (D406, m-6)
 
     @staticmethod
     def _conflict_edges(project: ProjectOut, nodes: Sequence[NodeOut]) -> list[tuple[str, str]]:

@@ -219,7 +219,7 @@
     if (!Number.isFinite(n.calls) || n.calls <= 0) return "";
     const parts = [n.calls + (n.calls === 1 ? " call" : " calls")];
     if (Number.isFinite(n.minutes)) parts.push(n.minutes < 1 ? "under a minute" : (n.minutes >= 10 ? Math.round(n.minutes) : n.minutes) + (n.minutes === 1 ? " minute" : " minutes"));
-    if (Number.isFinite(n.usd)) parts.push("about $" + n.usd.toFixed(2));
+    parts.push(Number.isFinite(n.usd) ? "about $" + n.usd.toFixed(2) : "no price yet");          // calls with no dollar figure (Codex) are not "$0.00" (D406)
     return '<span class="cnote pused">Used: ' + esc(parts.join(", ")) + "</span>";
   }
 

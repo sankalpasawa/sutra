@@ -305,6 +305,8 @@ test("each step says what it used: calls, minutes, about how many dollars; nothi
   assert.match(html, /Used: 28 calls, 12 minutes, about \$1\.50/);
   assert.equal((html.match(/Used:/g) || []).length, 3, "a step that has made no call says nothing");
   assert.equal(/Used: 1 call[^U]*\$/.test(html), false, "no dollars known: none shown");
+  assert.match(html, /Used: 1 call, under a minute, no price yet/);
+  assert.match(html, /Used: 28 calls, 12 minutes, about \$1\.50/);
 });
 
 test("a step that waits for an answer to its engine's question says so on the page with the question and its buttons (D401)", () => {

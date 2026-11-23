@@ -75,3 +75,15 @@ def test_minutes_run_from_the_first_attempt_to_the_last_end(rig):
     ledger(rig, 0.1, task_id="tsk_aaaaaaaaaaaa")
     node = next(n for n in rig.projects.snapshot(reservation.project_id)["nodes"] if n["plan_ref"] == "a1")
     assert node["minutes"] == 12.0 and node["calls"] == 2 and node["usd"] == 0.2
+
+
+def test_a_step_whose_calls_carry_no_price_says_no_dollars_not_zero(rig):
+    """m-6: an all-Codex step showed 'about $0.00'."""
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])])
+    ledger(rig, None, task_id=tasks["a1"], provider="codex")
+    ledger(rig, None, task_id=tasks["a1"], provider="codex")
+    ledger(rig, 0.40, task_id=tasks["a2"])
+    ledger(rig, None, task_id=tasks["a2"])
+    by_ref = {n["plan_ref"]: n for n in rig.projects.snapshot(reservation.project_id)["nodes"]}
+    assert (by_ref["a1"]["calls"], by_ref["a1"]["usd"]) == (2, None)
+    assert (by_ref["a2"]["calls"], by_ref["a2"]["usd"]) == (2, 0.4), "one priced call: the dollars known so far, with 'about'"
