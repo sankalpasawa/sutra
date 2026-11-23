@@ -353,3 +353,14 @@ test("the page says a step's work in the owner's words: its report, the folder's
   assert.match(said, /It wrote its report, notes\.md\./);
   assert.equal(/It made|project\.md/.test(said), false);
 });
+
+test("a read of the step's own output or an engine file is 'its own notes', never a file name the owner does not know (D411)", () => {
+  const rows = [{seq: 1, action: "tool.used", reason: "read project.md, 9 times"}, {seq: 2, action: "tool.used", reason: "read report.md, 2 times"}, {seq: 3, action: "tool.used", reason: "read workflows.json, 1 time"},
+    {seq: 4, action: "tool.used", reason: "read README.md, 3 times"}];
+  const text = View.auditHtml(rows, null).replace(/<[^>]*>/g, " ");
+  assert.match(text, /A step read its own notes, 9 times/);
+  assert.match(text, /A step read its own notes, 2 times/);
+  assert.match(text, /A step read its own working files, once/);
+  assert.match(text, /A step read README\.md, 3 times/, "a file of the owner's is named");
+  assert.equal(/project\.md|report\.md|workflows\.json/.test(text), false, text);
+});

@@ -76,6 +76,7 @@
     const verb = TOOL_VERBS[m[1]];
     const n = times === 1 ? "once" : times + " times";
     if (m[1] === "read" && GIT_NAMES.indexOf(m[2]) >= 0) return "A step looked at the folder's history, " + n;                 // the repository's own files (D405)
+    if (m[1] === "read" && (OWN_FILES[m[2]] || PLUMBING.indexOf(m[2]) >= 0)) return "A step read its own " + (OWN_FILES[m[2]] ? "notes" : "working files") + ", " + n;     // its own output and the engine's files are not names the owner knows (D411)
     if (m[1] === "edit") return "A step wrote " + (OWN_FILES[m[2]] || m[2] || "a file") + ", " + n;
     const what = m[1] === "read" ? " " + m[2] : "";
     return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + n;
