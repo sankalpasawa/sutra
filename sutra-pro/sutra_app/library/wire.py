@@ -926,7 +926,7 @@ class PlanChange(Value):
 
 
 class PlanDeferred(Value):
-    item: Text
+    item: Item          # a done-when item number (J2 realization FORMAT, D430)
     until: Text
 
 
@@ -972,6 +972,7 @@ class PlanScore(Value):
     missing: seq(Text, 50)
     failed: seq(Text, 50)
     compare: Optional[Id] = None
+    second_look: Optional[seq(Score, 2)] = None      # near the gate: [first score, second score] (j2_realization, D430)
 
 
 class PlanRound(Value):
@@ -1065,6 +1066,16 @@ class SummaryRaise(Value):
     from_: int = Field(alias="from")
     to: int
     why: Optional[Text] = None
+    code: Optional[bool] = None       # a raise code made (a top-up from dollars left), not the Requester (D430)
+
+
+class SummaryUsd(Value):
+    """The budget in dollars when J2 counts dollars (J2 `_usd_metrics`, P26): used, the limit, each approval, calls estimated."""
+
+    used: Annotated[float, Field(ge=0)]
+    limit: Annotated[float, Field(ge=0)]
+    approved: seq(Annotated[float, Field(ge=0)], 100)
+    estimated_calls: Count
 
 
 class SummaryBudget(Value):
@@ -1075,6 +1086,7 @@ class SummaryBudget(Value):
     granted: Count
     used: Count
     raises: seq(SummaryRaise, 100)
+    usd: Optional[SummaryUsd] = None
 
     @model_validator(mode="after")
     def _granted_follows_the_raises(self) -> Self:
@@ -1241,7 +1253,7 @@ class RunSummary(Wire):
     """summary.json: how a run ended, written by code when it ends (j2._write_summary). It has no `schema` key."""
 
     run: Id
-    output_type: Id
+    output_type: Optional[Id]         # None when the run ended before a type was chosen (D430)
     j2_fixes: Count
     realization: Optional[SummaryRealization] = None
     design_documents: Optional[SummaryDocuments] = None

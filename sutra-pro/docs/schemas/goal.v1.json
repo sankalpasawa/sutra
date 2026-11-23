@@ -92,7 +92,6 @@
             "type": "string"
           },
           "maxItems": 40,
-          "minItems": 1,
           "title": "Done When",
           "type": "array"
         },
@@ -170,6 +169,17 @@
           "title": "Features",
           "type": "array"
         },
+        "files": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Files",
+          "type": "array"
+        },
         "item_kinds": {
           "additionalProperties": {
             "maxLength": 60,
@@ -188,6 +198,28 @@
           "default": "doc",
           "title": "Kind",
           "type": "string"
+        },
+        "may_touch": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "May Touch",
+          "type": "array"
+        },
+        "never_do": {
+          "default": [],
+          "items": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 40,
+          "title": "Never Do",
+          "type": "array"
         },
         "problem": {
           "default": "",
@@ -260,6 +292,12 @@
           "maxItems": 40,
           "title": "Success Measures",
           "type": "array"
+        },
+        "test": {
+          "default": "",
+          "maxLength": 120,
+          "title": "Test",
+          "type": "string"
         },
         "to_be_confirmed": {
           "default": [],
@@ -435,7 +473,6 @@
             "type": "string"
           },
           "maxItems": 40,
-          "minItems": 1,
           "title": "Done When",
           "type": "array"
         },

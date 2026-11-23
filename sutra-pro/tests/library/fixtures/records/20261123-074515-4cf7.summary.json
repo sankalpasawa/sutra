@@ -1,0 +1,317 @@
+{
+ "run": "20261123-074515-4cf7",
+ "output_type": "price_list",
+ "j2_fixes": 0,
+ "realization": {
+  "applied": false
+ },
+ "design_documents": {
+  "requested": [
+   "price_list"
+  ],
+  "stages": [
+   "price_list"
+  ],
+  "files": {
+   "price_list": "price_list.md"
+  },
+  "chain": [
+   {
+    "requirement": null,
+    "component": null,
+    "lld_section": null,
+    "atoms": []
+   }
+  ],
+  "lld_revisions": [],
+  "lld_compare": null
+ },
+ "provider": "claude",
+ "sections": [
+  {
+   "heading": "Practice",
+   "words": 6
+  },
+  {
+   "heading": "Opening hours",
+   "words": 5
+  },
+  {
+   "heading": "Prices",
+   "words": 7
+  }
+ ],
+ "conditions": {
+  "met": 4,
+  "total": 4,
+  "warnings": 0,
+  "list": [
+   {
+    "id": "C1",
+    "met": true,
+    "evidence": "all 3 sections present, none empty"
+   },
+   {
+    "id": "C2",
+    "met": true,
+    "evidence": "all 5 exact fact(s) appear"
+   },
+   {
+    "id": "C3",
+    "met": true,
+    "evidence": "every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line"
+   },
+   {
+    "id": "C4",
+    "met": true,
+    "evidence": "nothing to be confirmed"
+   }
+  ]
+ },
+ "necessary_conditions": {
+  "met": 4,
+  "total": 4,
+  "warnings": 0,
+  "list": [
+   {
+    "id": "C1",
+    "text": "Every section is present and not empty",
+    "met": true,
+    "evidence": "all 3 sections present, none empty",
+    "severity": "warn"
+   },
+   {
+    "id": "C2",
+    "text": "Every brief fact appears exactly",
+    "met": true,
+    "evidence": "all 5 exact fact(s) appear",
+    "severity": "warn"
+   },
+   {
+    "id": "C3",
+    "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line",
+    "met": true,
+    "evidence": "every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line",
+    "severity": "warn",
+    "assumptions": []
+   },
+   {
+    "id": "C4",
+    "text": "Nothing is \"to be confirmed\"",
+    "met": true,
+    "evidence": "nothing to be confirmed",
+    "severity": "warn"
+   }
+  ]
+ },
+ "export": {
+  "file": "price_list.docx",
+  "written": true,
+  "note": null
+ },
+ "force_audit_fail": null,
+ "test_lessons": false,
+ "force_question": null,
+ "has_board": false,
+ "model": "sonnet",
+ "mock": false,
+ "brief": "A one-page price list for Bright Smile Dental, 3 Example Street. Open Mon-Fri 9am-5pm. Prices: check-up £45, cleaning £60, filling £120.",
+ "change_requests": [
+  "A one-page price list for Bright Smile Dental, 3 Example Street. Open Mon-Fri 9am-5pm. Prices: check-up £45, cleaning £60, filling £120."
+ ],
+ "status": "done",
+ "outcome": "Done: the Price list is workable. Every done-when item, rubric item and necessary condition passes.",
+ "budget": {
+  "start": 1070,
+  "granted": 1159,
+  "used": 90,
+  "raises": [
+   {
+    "cycle": 1,
+    "asked": 7,
+    "from": 1152,
+    "to": 1159,
+    "why": "code top-up from dollars left",
+    "code": true
+   }
+  ],
+  "usd": {
+   "used": 0.1959,
+   "limit": 20.0,
+   "approved": [
+    20.0
+   ],
+   "estimated_calls": 0
+  }
+ },
+ "ai_calls": 14,
+ "cycles": 2,
+ "links": {
+  "identity->adaptation": 2,
+  "validator->adaptation": 1,
+  "adaptation->priority": 2,
+  "validator->coordination": 1,
+  "coordination->priority": 1,
+  "priority->W": 1,
+  "W->coordination": 1,
+  "audit->identity": 2,
+  "identity->requester": 2,
+  "adaptation->identity": 1
+ },
+ "verification": {
+  "passed": 1,
+  "failed": 0,
+  "escalated": 0,
+  "could_not_run": 0,
+  "checks_run": 11
+ },
+ "identity_to_requester_decisions": 0,
+ "identity_to_requester_facts": 0,
+ "priority_rulings": {
+  "grant": 1,
+  "counter": 0,
+  "refuse": 0
+ },
+ "questions_to_user": [],
+ "conflicts": [],
+ "validator_rejections": [],
+ "holds": [],
+ "audits": [
+  {
+   "cycle": 1,
+   "version": 1,
+   "all_pass": true,
+   "verdicts": [
+    {
+     "id": "F-1",
+     "item": 1,
+     "verdict": "PASS"
+    },
+    {
+     "id": "F-2",
+     "item": 2,
+     "verdict": "PASS"
+    },
+    {
+     "id": "F-3",
+     "item": 3,
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-1",
+     "item": "D-1",
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-2",
+     "item": "D-2",
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-3",
+     "item": "D-3",
+     "verdict": "PASS"
+    }
+   ]
+  },
+  {
+   "cycle": 2,
+   "version": 1,
+   "all_pass": true,
+   "verdicts": [
+    {
+     "id": "F-1",
+     "item": 1,
+     "verdict": "PASS"
+    },
+    {
+     "id": "F-2",
+     "item": 2,
+     "verdict": "PASS"
+    },
+    {
+     "id": "F-3",
+     "item": 3,
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-1",
+     "item": "D-1",
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-2",
+     "item": "D-2",
+     "verdict": "PASS"
+    },
+    {
+     "id": "D-3",
+     "item": "D-3",
+     "verdict": "PASS"
+    }
+   ]
+  }
+ ],
+ "site_versions": 1,
+ "workable": [],
+ "to_be_confirmed": [],
+ "dropped_by_requester": [],
+ "workflow_agents": [
+  {
+   "id": "W-1",
+   "agent": "W-1 Builder",
+   "section": "W-1",
+   "revises": null,
+   "status": "done",
+   "calls": 1,
+   "retries": 0
+  }
+ ],
+ "limits_hit": [],
+ "lessons": {
+  "memory": true,
+  "saved": [],
+  "used": []
+ },
+ "playbooks": {
+  "saved": null,
+  "used": []
+ },
+ "business_type": "price_list",
+ "style_guide": false,
+ "rubric": [
+  {
+   "id": "D-1",
+   "pass": true,
+   "verdict": "PASS"
+  },
+  {
+   "id": "D-2",
+   "pass": true,
+   "verdict": "PASS"
+  },
+  {
+   "id": "D-3",
+   "pass": true,
+   "verdict": "PASS"
+  }
+ ],
+ "done_when": [
+  {
+   "item": 1,
+   "criterion": "Practice section: names Bright Smile Dental and gives the address 3 Example Street",
+   "pass": true
+  },
+  {
+   "item": 2,
+   "criterion": "Opening hours section: states Open Mon-Fri 9am-5pm",
+   "pass": true
+  },
+  {
+   "item": 3,
+   "criterion": "Prices section: lists check-up £45, cleaning £60 and filling £120",
+   "pass": true
+  }
+ ],
+ "route_check_violations": []
+}

@@ -1,0 +1,1695 @@
+[
+ {
+  "id": "W-2",
+  "proposal_id": "page-base",
+  "name": "Build the page base and name and address section",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the business name Bean There and its address 1 Example Road."
+  ],
+  "purpose": "No page exists, so visitors cannot see the shop's name or address.",
+  "cost": 18,
+  "estimate": 18,
+  "envelope": {
+   "money_limit": 18,
+   "model_call_limit": 6,
+   "time_limit_minutes": 12,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html fails to parse or lacks Bean There or 1 Example Road after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "index.html parses and shows Bean There and 1 Example Road in #intro.",
+  "dependencies": [
+   "Write the exact copy sheet"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-2.a1",
+    "goal": "A valid single-file HTML page shows the name Bean There and the address 1 Example Road.",
+    "constraints": [
+     "Plain HTML, CSS and JS inline in one file",
+     "Facts copied from copy.md only",
+     "Create only section #intro and the base styles"
+    ],
+    "context": [
+     "charter item 1",
+     "copy.md"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create index.html with inline CSS and a header section #intro holding an h1 with Bean There and a paragraph .address with 1 Example Road."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The intro section",
+      "kind": "section",
+      "target": "#intro"
+     },
+     {
+      "text": "Name and address shown",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ]
+     },
+     {
+      "text": "The page parses",
+      "kind": "test",
+      "target": "page-parses"
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true
+     },
+     {
+      "text": "One #intro section is on the page",
+      "type": "element-count",
+      "target": "#intro",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Name and address appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ],
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-2",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-2 Builder",
+  "superseded_by": "W-7"
+ },
+ {
+  "id": "W-3",
+  "proposal_id": "hours",
+  "name": "Build the opening hours section",
+  "covers": [
+   2
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the opening hours 7am-6pm daily."
+  ],
+  "purpose": "Visitors cannot see when the shop is open.",
+  "cost": 14,
+  "estimate": 14,
+  "envelope": {
+   "money_limit": 14,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #hours is missing, duplicated or shows any time other than 7am-6pm daily after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "Exactly one #hours element contains 7am-6pm daily and no other times or days.",
+  "dependencies": [
+   "Write the exact copy sheet",
+   "Build the page base and name and address section"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-3.a1",
+    "goal": "The page shows the opening hours 7am-6pm daily.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "No other days or times",
+     "Create only section #hours"
+    ],
+    "context": [
+     "charter item 2",
+     "section W-2",
+     "copy.md"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #hours to index.html with a heading and a paragraph .hours-text reading 7am-6pm daily."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hours section",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The hours text",
+      "kind": "facts",
+      "target": [
+       "7am-6pm daily"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #hours section is on the page",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Hours appear exactly",
+      "type": "facts-present",
+      "target": [
+       "7am-6pm daily"
+      ],
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     }
+    ]
+   }
+  ],
+  "section": "W-3",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-3 Builder",
+  "superseded_by": "W-7"
+ },
+ {
+  "id": "W-4",
+  "proposal_id": "menu",
+  "name": "Build the menu section",
+  "covers": [
+   3
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows a menu listing espresso £2.50, flat white £3.20 and croissant £2.80."
+  ],
+  "purpose": "Visitors cannot see what is sold or the prices.",
+  "cost": 16,
+  "estimate": 16,
+  "envelope": {
+   "money_limit": 16,
+   "model_call_limit": 5,
+   "time_limit_minutes": 11,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #menu does not have exactly 3 .menu-item entries with the exact prices after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "#menu has exactly 3 .menu-item entries with the exact item prices and nothing else.",
+  "dependencies": [
+   "Write the exact copy sheet",
+   "Build the page base and name and address section"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-4.a1",
+    "goal": "The page lists espresso £2.50, flat white £3.20 and croissant £2.80, and nothing else.",
+    "constraints": [
+     "Other sections stay unchanged",
+     "Exactly three items, no other prices",
+     "Create only #menu and .menu-item entries"
+    ],
+    "context": [
+     "charter item 3",
+     "section W-2",
+     "copy.md"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #menu to index.html with a heading and a list of three li elements of class .menu-item, each holding an item name and its price: espresso £2.50, flat white £3.20, croissant £2.80."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "Three menu entries",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 3
+     },
+     {
+      "text": "Items and prices shown",
+      "kind": "facts",
+      "target": [
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Exactly 3 .menu-item entries",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 3,
+      "item": 2
+     },
+     {
+      "text": "Items and prices appear exactly",
+      "type": "facts-present",
+      "target": [
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     }
+    ]
+   }
+  ],
+  "section": "W-4",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-4 Builder",
+  "superseded_by": "W-7"
+ },
+ {
+  "id": "W-5",
+  "proposal_id": "finish",
+  "name": "Finish navigation, responsive layout and link integrity",
+  "covers": [
+   4
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "purpose": "The page has no navigation and is not yet confirmed to fit 360px and 1280px without errors.",
+  "cost": 20,
+  "estimate": 20,
+  "envelope": {
+   "money_limit": 20,
+   "model_call_limit": 6,
+   "time_limit_minutes": 12,
+   "retry_limit": 1,
+   "stop_loss": "Stop if any in-page link is broken, overflow appears at 360px or 1280px, or any fact changes after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All in-page links resolve, there is no overflow at 360px or 1280px, there are no JS errors, and all facts are still present.",
+  "dependencies": [
+   "Build the page base and name and address section",
+   "Build the opening hours section",
+   "Build the menu section"
+  ],
+  "status": "superseded",
+  "cycle": 1,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-5.a1",
+    "goal": "The page has working in-page navigation, fits 360px and 1280px, and has no JavaScript errors.",
+    "constraints": [
+     "All existing facts stay exact",
+     "No invented content",
+     "Create only nav #site-nav with links of class .nav-link, plus responsive CSS"
+    ],
+    "context": [
+     "charter item 4",
+     "sections W-2, W-3, W-4"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add nav #site-nav with three .nav-link anchors to #intro, #hours and #menu (each at least 44px tall). Add responsive CSS so nothing overflows at 360px or 1280px. Use no scripts that can error."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The navigation",
+      "kind": "element",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Three nav links",
+      "kind": "element",
+      "target": ".nav-link",
+      "count": 3
+     },
+     {
+      "text": "Nav links are big enough to tap",
+      "kind": "tap",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     },
+     {
+      "text": "All facts are still present",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm daily",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #site-nav is on the page",
+      "type": "element-count",
+      "target": "#site-nav",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Three .nav-link anchors",
+      "type": "element-count",
+      "target": ".nav-link",
+      "expect": 3,
+      "item": 2
+     },
+     {
+      "text": "Every in-page link resolves",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 4
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Nav links are at least 44px",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44,
+      "item": 3
+     },
+     {
+      "text": "All facts still appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm daily",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 5
+     }
+    ]
+   }
+  ],
+  "section": "W-5",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "plan",
+  "certainty": "operate",
+  "certainty_from": "plan",
+  "agent": "W-5 Builder",
+  "superseded_by": "W-7"
+ },
+ {
+  "id": "W-7",
+  "proposal_id": "page-base-2",
+  "name": "Build the page base and intro from the charter",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the business name Bean There and its address 1 Example Road."
+  ],
+  "purpose": "Create site/index.html as one plain HTML document with inline CSS and a visible #intro section that shows the business name Bean There and the address 1 Example Road, copied exactly from the copy sheet.",
+  "cost": 16,
+  "estimate": 16,
+  "envelope": {
+   "money_limit": 16,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html fails to parse, lacks Bean There or 1 Example Road, or any file other than index.html is changed, after one retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All checks pass on site/index.html. (1) The file parses with balanced tags, has a doctype, and its CSS and any JS are inline with no external src or href resources. (2) element-count: exactly one element has id=\"intro\". (3) named-test 'intro-name': the #intro element contains exactly one h1, and its visible text is exactly 'Bean There'. (4) named-test 'intro-address': #intro contains exactly one element with class=\"address\", and its visible text contains the exact string '1 Example Road'. (5) grep-count on the visible text of the whole page for an email pattern /\\S+@\\S+/ and for a phone pattern /\\+?\\d[\\d\\s-]{7,}\\d/ both return 0, so no invented contact details appear.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-7.a1",
+    "goal": "A valid single-file page shows the name Bean There and the address 1 Example Road under one main heading.",
+    "constraints": [
+     "Write only index.html and touch no other file",
+     "Plain HTML, CSS and JS inline in one file",
+     "Facts copied exactly from the charter, nothing invented",
+     "Create only #intro, .address and the base styles"
+    ],
+    "context": [
+     "charter item 1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Create index.html with inline CSS (dark text on a light background, readable at 360px and 1280px, no horizontal overflow, classes j2-btn and j2-card defined for later sections) and a section #intro holding one h1 reading Bean There and a paragraph .address reading 1 Example Road. Use no script that can error."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The intro section",
+      "kind": "section",
+      "target": "#intro"
+     },
+     {
+      "text": "Name and address shown",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ]
+     },
+     {
+      "text": "The page parses",
+      "kind": "test",
+      "target": "page-parses"
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true
+     },
+     {
+      "text": "One #intro section is on the page",
+      "type": "element-count",
+      "target": "#intro",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Name and address appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ],
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true,
+      "item": 3
+     }
+    ]
+   }
+  ],
+  "section": "W-7",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build the page base and name and address section",
+  "certainty": "operate",
+  "certainty_from": "covers as Build the page base and name and address section",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.45,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-7 Builder"
+ },
+ {
+  "id": "W-8",
+  "proposal_id": "hours-2",
+  "name": "Build the opening hours section from the charter",
+  "covers": [
+   2
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the opening hours 7am-6pm daily."
+  ],
+  "purpose": "Edit site/index.html, which the page-base workflow creates, to add an opening hours section with id=\"hours\" that shows 7am-6pm daily exactly as written in the copy sheet and no other times or days anywhere on the page.",
+  "cost": 12,
+  "estimate": 12,
+  "envelope": {
+   "money_limit": 12,
+   "model_call_limit": 4,
+   "time_limit_minutes": 8,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #hours is missing, duplicated or shows any time other than 7am-6pm daily, or any file other than index.html is changed, after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All four checks pass on site/index.html. (1) element-count: exactly one element has id=\"hours\". (2) facts-present: the exact string '7am-6pm daily' is in the visible text of that element. (3) grep-count of the pattern /\\b\\d{1,2}(:\\d{2})?\\s?(am|pm)\\b/i on the visible text of the whole page returns exactly 2, the 7am and the 6pm of the one range. (4) grep-count of the pattern /\\b(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\\b/i on the visible text of the whole page returns 0, so 'daily' is the only day word and no other days appear.",
+  "dependencies": [
+   "Build the page base and intro from the charter"
+  ],
+  "status": "superseded",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-8.a1",
+    "goal": "The page shows the opening hours 7am-6pm daily.",
+    "constraints": [
+     "Write only index.html and touch no other file",
+     "Other sections stay unchanged",
+     "No other days or times",
+     "Create only #hours and .hours-text"
+    ],
+    "context": [
+     "charter item 2",
+     "section W-2"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #hours to index.html with an h2 and a paragraph .hours-text reading 7am-6pm daily, styled with the existing page styles."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The hours section",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The hours text",
+      "kind": "facts",
+      "target": [
+       "7am-6pm"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #hours section is on the page",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Hours appear exactly",
+      "type": "facts-present",
+      "target": [
+       "7am-6pm"
+      ],
+      "expect": true,
+      "item": 2
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     }
+    ]
+   }
+  ],
+  "section": "W-8",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build the opening hours section",
+  "certainty": "operate",
+  "certainty_from": "covers as Build the opening hours section",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-8 Builder",
+  "superseded_by": "W-12"
+ },
+ {
+  "id": "W-9",
+  "proposal_id": "menu-2",
+  "name": "Build the menu section from the charter",
+  "covers": [
+   3
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows a menu listing espresso £2.50, flat white £3.20 and croissant £2.80."
+  ],
+  "purpose": "Add a menu section to site/index.html that lists espresso £2.50, flat white £3.20 and croissant £2.80, each price beside its own item, and nothing else.",
+  "cost": 14,
+  "estimate": 14,
+  "envelope": {
+   "money_limit": 14,
+   "model_call_limit": 4,
+   "time_limit_minutes": 9,
+   "retry_limit": 1,
+   "stop_loss": "Stop if #menu does not have exactly 3 .menu-item entries with the exact prices, or any file other than index.html is changed, after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All four checks pass on site/index.html. (1) element-count: exactly one element has id=\"menu\", and it contains exactly 3 entry elements (li.menu-item). (2) named-test 'menu-pairs': the visible text of each entry matches exactly one of these full-entry patterns, and each pattern is matched by exactly one entry: /^espresso\\s*£2\\.50$/i, /^flat white\\s*£3\\.20$/i, /^croissant\\s*£2\\.80$/i. A swapped or misplaced price fails. (3) grep-count of /£\\d/ on the visible text of the whole page returns exactly 3, so no extra price exists. (4) grep-count of '£' inside #menu but outside the three entry elements returns 0, so there are no other items or prices.",
+  "dependencies": [
+   "Build the page base and intro from the charter",
+   "Build the opening hours section from the charter"
+  ],
+  "status": "superseded",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-9.a1",
+    "goal": "The page lists espresso £2.50, flat white £3.20 and croissant £2.80, and nothing else.",
+    "constraints": [
+     "Write only index.html and touch no other file",
+     "Other sections stay unchanged",
+     "Exactly three items, no other prices",
+     "Create only #menu and .menu-item entries"
+    ],
+    "context": [
+     "charter item 3",
+     "section W-2"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add section #menu to index.html with an h2 and a list of three li elements of class .menu-item, each holding an item name and its price: espresso £2.50, flat white £3.20, croissant £2.80."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "Three menu entries",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 3
+     },
+     {
+      "text": "Items and prices shown",
+      "kind": "facts",
+      "target": [
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #menu section is on the page",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Exactly 3 .menu-item entries",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 3,
+      "item": 2
+     },
+     {
+      "text": "Items and prices appear exactly",
+      "type": "facts-present",
+      "target": [
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     }
+    ]
+   }
+  ],
+  "section": "W-9",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build the menu section",
+  "certainty": "operate",
+  "certainty_from": "covers as Build the menu section",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-9 Builder",
+  "superseded_by": "W-12"
+ },
+ {
+  "id": "W-10",
+  "proposal_id": "finish-2",
+  "name": "Finish nav, main action and responsive layout",
+  "covers": [
+   4
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "purpose": "Finish site/index.html as a whole: in-page nav links that reach the hours and menu sections, a layout that fits 360px and 1280px, and no JavaScript errors. Add no action or content beyond the charter facts.",
+  "cost": 18,
+  "estimate": 18,
+  "envelope": {
+   "money_limit": 18,
+   "model_call_limit": 5,
+   "time_limit_minutes": 11,
+   "retry_limit": 1,
+   "stop_loss": "Stop if any in-page link is broken, overflow appears at 360px or 1280px, any fact changes, or any file other than index.html is changed, after one retry."
+  },
+  "charged": false,
+  "calls_used": 0,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All checks pass on site/index.html. (1) link-integrity: every a[href^=\"#\"] has a target, meaning an element whose id equals the href without the '#', and there are at least 2 such links, one to #hours and one to #menu. (2) overflow: at viewport widths 360px and 1280px, document.documentElement.scrollWidth <= document.documentElement.clientWidth. (3) js-errors: loading the page records 0 pageerror events and 0 console errors. (4) tap-targets: each nav link's bounding box is at least 44px high at 360px. (5) facts-present: the visible text still contains 'Bean There', '1 Example Road', '7am-6pm daily', 'espresso £2.50', 'flat white £3.20' and 'croissant £2.80'. (6) no-invention: the page has 0 elements matching a[href^=\"tel:\"], a[href^=\"mailto:\"], form, input, button, and the visible text has no 'to be confirmed' and still has exactly 3 '£' prices.",
+  "dependencies": [
+   "Build the page base and intro from the charter",
+   "Build the opening hours section from the charter",
+   "Build the menu section from the charter"
+  ],
+  "status": "superseded",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-10.a1",
+    "goal": "The page has a working in-page nav and one main action, fits 360px and 1280px, and has no JavaScript errors.",
+    "constraints": [
+     "Write only index.html and touch no other file",
+     "All existing facts stay exact",
+     "No invented content",
+     "Create only nav #site-nav, links .nav-link, button #main-action with class j2-btn, and responsive CSS"
+    ],
+    "context": [
+     "charter item 4",
+     "sections W-2, W-3, W-4"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Add nav #site-nav with three .nav-link anchors to #intro, #hours and #menu, each at least 44px tall. Add one main action link #main-action with class j2-btn, labelled See the menu and pointing to #menu, inside #intro. Keep one h1 and h2 headings in order. Use dark text on a light background for WCAG AA contrast. Add responsive CSS so nothing overflows at 360px or 1280px. Use no scripts that can error."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The navigation",
+      "kind": "element",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Three nav links",
+      "kind": "element",
+      "target": ".nav-link",
+      "count": 3
+     },
+     {
+      "text": "One main action button",
+      "kind": "element",
+      "target": "#main-action"
+     },
+     {
+      "text": "Nav links are big enough to tap",
+      "kind": "tap",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     },
+     {
+      "text": "All facts are still present",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     }
+    ],
+    "verification": [
+     {
+      "text": "One #site-nav is on the page",
+      "type": "element-count",
+      "target": "#site-nav",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "Three .nav-link anchors",
+      "type": "element-count",
+      "target": ".nav-link",
+      "expect": 3,
+      "item": 2
+     },
+     {
+      "text": "One #main-action button",
+      "type": "element-count",
+      "target": "#main-action",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "One j2-btn button",
+      "type": "element-count",
+      "target": ".j2-btn",
+      "expect": 1
+     },
+     {
+      "text": "Every in-page link resolves",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 5
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Nav links are at least 44px",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44,
+      "item": 4
+     },
+     {
+      "text": "Main action is at least 44px",
+      "type": "tap-targets",
+      "target": "#main-action",
+      "expect": 44
+     },
+     {
+      "text": "All facts still appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 6
+     }
+    ]
+   }
+  ],
+  "section": "W-10",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Finish navigation, responsive layout and link integrity",
+  "certainty": "operate",
+  "certainty_from": "covers as Finish navigation, responsive layout and link integrity",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-10 Builder",
+  "superseded_by": "W-12"
+ },
+ {
+  "id": "W-11",
+  "proposal_id": "page-base-3",
+  "name": "Build the page base and intro from the charter",
+  "covers": [
+   1
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the business name Bean There and its address 1 Example Road."
+  ],
+  "purpose": "Create site/index.html as a valid plain HTML document with inline CSS and an intro section that shows the business name Bean There and the address 1 Example Road.",
+  "cost": 16,
+  "estimate": 16,
+  "envelope": {
+   "money_limit": 16,
+   "model_call_limit": 5,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if index.html fails to parse, lacks Bean There or 1 Example Road, or any file other than index.html is created or changed, after one retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All checks pass on site/index.html, and no file other than site/index.html is created or changed. (1) The file exists and parses with balanced tags. (2) element-count: exactly one element has id=\"intro\". (3) Inside #intro there is exactly one h1 whose visible text is exactly 'Bean There' and exactly one element with class=\"address\" whose visible text is exactly '1 Example Road'. (4) The CSS and any JS are inline in the same file, with no external stylesheet or script reference. (5) grep-count on the visible text of the whole page for an email pattern (/\\S+@\\S+/) and a phone pattern (/\\+?\\d[\\d\\s()-]{6,}\\d/) returns 0.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 2,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-11.a1",
+    "goal": "A valid single-file page shows the name Bean There and the address 1 Example Road under one main heading.",
+    "constraints": [
+     "Use only the file write tool to create index.html in the build folder",
+     "Run no shell commands and write, edit or delete no other file, never agent_live.json, events.jsonl or snapshot.json",
+     "Plain HTML, CSS and JS inline in one file",
+     "Facts copied exactly from the charter, nothing invented",
+     "Create only #intro, .address and the base styles"
+    ],
+    "context": [
+     "charter item 1"
+    ],
+    "how": {
+     "kind": "AI",
+     "agent": "Builder",
+     "steps": "Write one file index.html with inline CSS (dark text on a light background, readable at 360px and 1280px, no horizontal overflow, classes j2-btn and j2-card defined for later sections) and a section #intro holding one h1 reading Bean There and a paragraph .address reading 1 Example Road. Use no script. Do not run any command and do not create or change any other file."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The intro section",
+      "kind": "section",
+      "target": "#intro"
+     },
+     {
+      "text": "The address paragraph",
+      "kind": "element",
+      "target": ".address",
+      "count": 1
+     },
+     {
+      "text": "Name and address shown",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ]
+     },
+     {
+      "text": "The page parses",
+      "kind": "test",
+      "target": "page-parses"
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true
+     },
+     {
+      "text": "One #intro section is on the page",
+      "type": "element-count",
+      "target": "#intro",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "One .address paragraph is on the page",
+      "type": "element-count",
+      "target": ".address",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "Name and address appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road"
+      ],
+      "expect": true,
+      "item": 3
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true,
+      "item": 4
+     }
+    ]
+   }
+  ],
+  "section": "W-11",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build the page base and name and address section",
+  "certainty": "operate",
+  "certainty_from": "covers as Build the page base and name and address section",
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.7,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-11 Builder"
+ },
+ {
+  "id": "W-12",
+  "proposal_id": "page-single-write",
+  "name": "Write the whole page in one code step",
+  "covers": [
+   1,
+   2,
+   3,
+   4
+  ],
+  "fixes": [],
+  "covers_text": [
+   "The page shows the business name Bean There and its address 1 Example Road.",
+   "The page shows the opening hours 7am-6pm daily.",
+   "The page shows a menu listing espresso £2.50, flat white £3.20 and croissant £2.80.",
+   "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section."
+  ],
+  "purpose": "Write site/index.html in one code step, with no AI builder, containing only the six charter facts and three fixed labels. It has one #intro, #hours and #menu section, working in-page links, no overflow at 360px and 1280px, and no JavaScript errors.",
+  "cost": 38,
+  "estimate": 38,
+  "envelope": {
+   "money_limit": 38,
+   "model_call_limit": 2,
+   "time_limit_minutes": 10,
+   "retry_limit": 1,
+   "stop_loss": "Stop if any file other than index.html is created or changed, or if index.html fails to parse, lacks any of the six charter facts, or has a broken in-page link, after one retry."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All checks pass on site/index.html. (1) Structure: the file parses with balanced tags; element-count of id=\"intro\", id=\"hours\" and id=\"menu\" is exactly 1 each; element-count of .menu-item inside #menu is exactly 3. (2) Name and address: the visible text of #intro contains the exact strings 'Bean There' and '1 Example Road'. (3) Hours: the visible text of #hours contains the exact string '7am-6pm daily'; grep-count of /\\b\\d{1,2}(:\\d{2})?\\s?(am|pm)\\b/i on the visible text of the whole page is exactly 2; grep-count of /\\b(mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*\\b/i on the visible text of #hours is 0. (4) Menu: named-test 'menu-pairs': the visible text of each .menu-item matches exactly one of /^espresso\\s*£2\\.50$/i, /^flat white\\s*£3\\.20$/i, /^croissant\\s*£2\\.80$/i, and each pattern is matched by exactly one entry; grep-count of /£\\d/ on the visible text of the whole page is exactly 3. (5) No invented content, by allow-list: take the visible text of the whole page, delete the six exact charter strings (Bean There, 1 Example Road, 7am-6pm daily, espresso £2.50, flat white £3.20, croissant £2.80) and the three fixed labels 'Find us', 'Hours' and 'Menu', then strip whitespace. The remainder must be the empty string. The <title> text equals 'Bean There'. grep-count of /@|https?:|www\\.|tel:|mailto:/i on the whole file is 0; grep-count of /\\d/ on the visible text after deleting the six strings is 0; the text 'to be confirmed' does not appear. (6) Links: every <a> href starts with '#' and matches an existing element id; there are no <script> elements and no external src or href. (7) Overflow: in a headless browser at 360px and 1280px, document.documentElement.scrollWidth <= clientWidth. (8) Touch targets: at 360px and 1280px, every <a> and <button> on the page (the nav links are the only interactive elements; the page has no contact details or call to action) has a rendered height >= 44px. (9) Scope: the directory listing and the hashes of all other files are identical before and after the step, and only site/index.html was created or changed.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 3,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-12.a1",
+    "goal": "One file index.html shows Bean There, 1 Example Road, 7am-6pm daily and the three menu items with prices, with a working nav, one main action and a layout that fits 360px and 1280px.",
+    "constraints": [
+     "Write only index.html with a single file write and touch no other file",
+     "No shell command and no agent session",
+     "Facts copied exactly from the charter, nothing invented, no phone or email",
+     "Plain HTML and inline CSS in one file, with no script",
+     "Create only #intro, .address, #hours, .hours-text, #menu, .menu-item, #site-nav, .nav-link, #main-action, .j2-btn and .j2-card"
+    ],
+    "context": [
+     "charter items 1, 2, 3, 4"
+    ],
+    "how": {
+     "kind": "code",
+     "agent": "Template writer",
+     "steps": "Render a fixed HTML template and write it to index.html once. Section #intro holds one h1 reading Bean There, a paragraph .address reading 1 Example Road, and one link #main-action with class j2-btn labelled See the menu that points to #menu. Section #hours holds an h2 and a paragraph .hours-text reading 7am-6pm daily. Section #menu holds an h2 and a list of exactly three li elements of class .menu-item: espresso £2.50, flat white £3.20, croissant £2.80. Nav #site-nav holds three .nav-link anchors to #intro, #hours and #menu, each at least 44px tall. Items sit in .j2-card blocks. Use dark text on a light background, a mobile-first CSS layout with max-width and wrapping text so nothing overflows at 360px or 1280px, and no script."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The intro section",
+      "kind": "section",
+      "target": "#intro"
+     },
+     {
+      "text": "The hours section",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "Three menu entries",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 3
+     },
+     {
+      "text": "The navigation",
+      "kind": "element",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Three nav links",
+      "kind": "element",
+      "target": ".nav-link",
+      "count": 3
+     },
+     {
+      "text": "One main action",
+      "kind": "element",
+      "target": "#main-action"
+     },
+     {
+      "text": "All charter facts are shown",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm daily",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     },
+     {
+      "text": "Nav links are big enough to tap",
+      "kind": "tap",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true
+     },
+     {
+      "text": "One #intro section",
+      "type": "element-count",
+      "target": "#intro",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "One #hours section",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #menu section",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "Exactly 3 .menu-item entries",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 3,
+      "item": 4
+     },
+     {
+      "text": "One #site-nav",
+      "type": "element-count",
+      "target": "#site-nav",
+      "expect": 1,
+      "item": 5
+     },
+     {
+      "text": "Three .nav-link anchors",
+      "type": "element-count",
+      "target": ".nav-link",
+      "expect": 3,
+      "item": 6
+     },
+     {
+      "text": "One #main-action",
+      "type": "element-count",
+      "target": "#main-action",
+      "expect": 1,
+      "item": 7
+     },
+     {
+      "text": "One .j2-btn",
+      "type": "element-count",
+      "target": ".j2-btn",
+      "expect": 1
+     },
+     {
+      "text": "All charter facts appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm daily",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 8
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Every in-page link resolves",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 10
+     },
+     {
+      "text": "Nav links are at least 44px",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44,
+      "item": 9
+     },
+     {
+      "text": "Main action is at least 44px",
+      "type": "tap-targets",
+      "target": "#main-action",
+      "expect": 44
+     }
+    ]
+   }
+  ],
+  "section": "W-12",
+  "revises": null,
+  "stage": "build",
+  "stage_from": "covers as Build the page base and name and address section",
+  "certainty": "operate",
+  "certainty_from": "covers as Build the page base and name and address section",
+  "judge": {
+   "score": 0.85,
+   "weakest": "done_test",
+   "missing": [
+    "No check loads the page and looks for JavaScript errors. The only related check is 'no <script> elements', which does not rule out inline on* handlers. Add a console-error check or ban on* attributes."
+   ],
+   "rounds": [
+    0.69,
+    0.85
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-12 Builder"
+ },
+ {
+  "id": "W-13",
+  "proposal_id": "page-fix",
+  "name": "Write the styled page that fixes the design findings",
+  "covers": [],
+  "fixes": [
+   "R-1",
+   "R-2",
+   "R-3",
+   "R-4",
+   "R-5",
+   "R-6",
+   "F-5"
+  ],
+  "covers_text": [],
+  "purpose": "Style the finished page in site/index.html so the intro, hours and menu sections each sit in one card, the nav and main action are easy to tap, and the page keeps no horizontal overflow at 360px and 1280px. It adds no facts and delivers no done-when item. The undefined rubric R-1 to R-6 and finding F-5 are replaced by the checks in the done_test.",
+  "cost": 18,
+  "estimate": 18,
+  "envelope": {
+   "money_limit": 18,
+   "model_call_limit": 2,
+   "time_limit_minutes": 10,
+   "retry_limit": 0,
+   "stop_loss": "Stop at once, with no retry, if any file other than index.html is created or changed, or if index.html fails to parse, lacks any of the six charter facts, or has a broken in-page link."
+  },
+  "charged": true,
+  "calls_used": 1,
+  "retries_used": 0,
+  "outputs": [
+   "index.html"
+  ],
+  "completion_check": "All checks pass on site/index.html at 360px and 1280px. (1) The file parses with balanced tags and its CSS and JS are inline. (2) element-count: exactly one element each has id=\"intro\", id=\"hours\", id=\"menu\", id=\"site-nav\" and id=\"main-action\". (3) #site-nav contains exactly 3 links, with href values #intro, #hours and #menu, and each href matches an existing element id. (4) #main-action is an <a> with href=\"#menu\" and it resolves. (5) element-count: exactly 3 elements have class j2-card, and #intro, #hours and #menu are each that element or inside exactly one of them. (6) Each #site-nav link and #main-action has a rendered width and height of at least 44px. (7) There is no horizontal overflow (scrollWidth <= clientWidth) and zero JavaScript errors on load. (8) The facts are unchanged: facts-present finds Bean There, 1 Example Road, 7am-6pm daily, espresso £2.50, flat white £3.20 and croissant £2.80 in the visible text. A grep-count of /£\\d/ on the visible page text is exactly 3. A grep-count of the time pattern /\\b\\d{1,2}(:\\d{2})?\\s?(am|pm)\\b/i is exactly 2. There is no email address, no phone number and no 'to be confirmed' text.",
+  "dependencies": [],
+  "status": "failed",
+  "cycle": 4,
+  "kind": "build",
+  "atoms": [
+   {
+    "id": "W-13.a1",
+    "goal": "One index.html shows Bean There, 1 Example Road, 7am-6pm daily and the three priced menu items, with consistent styling, readable contrast, one h1, a nav, one main action and 44px tap targets.",
+    "constraints": [
+     "Write only index.html with a single file write and touch no other file",
+     "No shell command and no agent session",
+     "Facts copied exactly from the charter, nothing invented, no phone, email or other contact details",
+     "Plain HTML and inline CSS in one file, with no script",
+     "Create only #intro, .address, #hours, .hours-text, #menu, .menu-item, #site-nav, .nav-link, #main-action, .j2-btn and .j2-card"
+    ],
+    "context": [
+     "charter items 1, 2, 3, 4"
+    ],
+    "how": {
+     "kind": "code",
+     "agent": "Template writer",
+     "steps": "Render a fixed HTML template and write it once to index.html. Use one font family, dark text on a light background for WCAG AA contrast, and a mobile-first layout with max-width and wrapping text so nothing overflows at 360px or 1280px. Nav #site-nav holds three .nav-link anchors to #intro, #hours and #menu, each at least 44px tall. Section #intro holds the one h1 Bean There, a paragraph .address reading 1 Example Road, and one link #main-action with class j2-btn labelled See the menu that points to #menu, at least 44px tall. Section #hours holds an h2 and a paragraph .hours-text reading 7am-6pm daily inside a .j2-card. Section #menu holds an h2 and a list of exactly three li elements of class .menu-item inside .j2-card blocks: espresso £2.50, flat white £3.20, croissant £2.80. Use no inline event handlers."
+    },
+    "date_control": null,
+    "date_case": null,
+    "expected_output": [
+     {
+      "text": "The intro section",
+      "kind": "section",
+      "target": "#intro"
+     },
+     {
+      "text": "The hours section",
+      "kind": "section",
+      "target": "#hours"
+     },
+     {
+      "text": "The menu section",
+      "kind": "section",
+      "target": "#menu"
+     },
+     {
+      "text": "Three menu entries",
+      "kind": "element",
+      "target": ".menu-item",
+      "count": 3
+     },
+     {
+      "text": "The navigation",
+      "kind": "element",
+      "target": "#site-nav"
+     },
+     {
+      "text": "One main action",
+      "kind": "element",
+      "target": "#main-action"
+     },
+     {
+      "text": "All charter facts are shown",
+      "kind": "facts",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ]
+     },
+     {
+      "text": "Nav links and main action are big enough to tap",
+      "kind": "tap",
+      "target": "#site-nav"
+     },
+     {
+      "text": "Links resolve",
+      "kind": "test",
+      "target": "links-resolve"
+     }
+    ],
+    "verification": [
+     {
+      "text": "index.html exists",
+      "type": "file-exists",
+      "target": "index.html",
+      "expect": true
+     },
+     {
+      "text": "One #intro section",
+      "type": "element-count",
+      "target": "#intro",
+      "expect": 1,
+      "item": 1
+     },
+     {
+      "text": "One #hours section",
+      "type": "element-count",
+      "target": "#hours",
+      "expect": 1,
+      "item": 2
+     },
+     {
+      "text": "One #menu section",
+      "type": "element-count",
+      "target": "#menu",
+      "expect": 1,
+      "item": 3
+     },
+     {
+      "text": "Exactly 3 .menu-item entries",
+      "type": "element-count",
+      "target": ".menu-item",
+      "expect": 3,
+      "item": 4
+     },
+     {
+      "text": "One #site-nav",
+      "type": "element-count",
+      "target": "#site-nav",
+      "expect": 1,
+      "item": 5
+     },
+     {
+      "text": "Three .nav-link anchors",
+      "type": "element-count",
+      "target": ".nav-link",
+      "expect": 3
+     },
+     {
+      "text": "One #main-action",
+      "type": "element-count",
+      "target": "#main-action",
+      "expect": 1,
+      "item": 6
+     },
+     {
+      "text": "One .j2-btn",
+      "type": "element-count",
+      "target": ".j2-btn",
+      "expect": 1
+     },
+     {
+      "text": "Three .j2-card blocks",
+      "type": "element-count",
+      "target": ".j2-card",
+      "expect": 3
+     },
+     {
+      "text": "All charter facts appear exactly",
+      "type": "facts-present",
+      "target": [
+       "Bean There",
+       "1 Example Road",
+       "7am-6pm",
+       "espresso £2.50",
+       "flat white £3.20",
+       "croissant £2.80"
+      ],
+      "expect": true,
+      "item": 7
+     },
+     {
+      "text": "The page parses",
+      "type": "named-test",
+      "target": "page-parses",
+      "expect": true
+     },
+     {
+      "text": "Every in-page link resolves",
+      "type": "named-test",
+      "target": "links-resolve",
+      "expect": true,
+      "item": 9
+     },
+     {
+      "text": "Nav links are at least 44px",
+      "type": "tap-targets",
+      "target": "#site-nav",
+      "expect": 44,
+      "item": 8
+     },
+     {
+      "text": "Main action is at least 44px",
+      "type": "tap-targets",
+      "target": "#main-action",
+      "expect": 44
+     }
+    ]
+   }
+  ],
+  "section": "W-13",
+  "revises": null,
+  "judge": {
+   "score": 0.95,
+   "weakest": null,
+   "missing": [],
+   "rounds": [
+    0.0,
+    0.95
+   ],
+   "ready": true,
+   "zone": null,
+   "stage": null,
+   "note": null
+  },
+  "agent": "W-13 Builder"
+ }
+]

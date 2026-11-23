@@ -1,0 +1,526 @@
+{
+ "goal": "A script that sorts the files in ~/sutra-demo/sort-me into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/), with an automated test, and is run on that folder.",
+ "web": true,
+ "provider": "claude",
+ "model": "sonnet",
+ "mock": false,
+ "checklist": [
+  {
+   "id": "K1",
+   "item": 1,
+   "question": "Does a check verify that after sort_files.py runs on a given folder, a.pdf is in the pdf/ subfolder, b.jpg is in jpg/, c.txt is in txt/ and d.csv is in csv/?"
+  },
+  {
+   "id": "K2",
+   "item": 1,
+   "question": "Does a check verify that each subfolder is named exactly for the file's extension (pdf, jpg, txt, csv, without a dot) and that the sorted files are moved out of the top level of the given folder?"
+  },
+  {
+   "id": "K3",
+   "item": 1,
+   "question": "Does a check verify that the script takes the folder to sort as a given argument, so it works on any folder rather than only one hard-coded path?"
+  },
+  {
+   "id": "K4",
+   "item": 2,
+   "question": "Does a check verify that test_sort_files.py runs automatically and passes, with no manual steps?"
+  },
+  {
+   "id": "K5",
+   "item": 2,
+   "question": "Does a check verify that test_sort_files.py asserts a.pdf ends up in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/, rather than only that the test file exists?"
+  },
+  {
+   "id": "K6",
+   "item": 2,
+   "question": "Does a check verify that test_sort_files.py fails when a file is not in its extension folder, for example when the script is broken or does nothing?"
+  },
+  {
+   "id": "K7",
+   "item": 3,
+   "question": "Does a check verify that, after the script was run on ~/sutra-demo/sort-me, a.pdf is in pdf/, b.jpg is in jpg/, c.txt is in txt/ and d.csv is in csv/ there?"
+  },
+  {
+   "id": "K8",
+   "item": 3,
+   "question": "Does a check verify that no sorted file is left loose in the top level of ~/sutra-demo/sort-me and that none were lost or deleted?"
+  }
+ ],
+ "plan": {
+  "certainty_assessment": {
+   "zone": "operate",
+   "signals": {
+    "broken": {
+     "answer": "no",
+     "evidence": "Nothing exists yet; the charter describes a new script, so there is no broken site or failed fix."
+    },
+    "reaction": {
+     "answer": "no",
+     "evidence": "Success is a file-placement result, not a reaction from people: 'a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/'."
+    },
+    "facts_given": {
+     "answer": "yes",
+     "evidence": "The folder path, the four file names, their extensions and the target subfolders are all given: '~/sutra-demo/sort-me', 'a.pdf into pdf/'."
+    },
+    "known_pattern": {
+     "answer": "yes",
+     "evidence": "Sorting files into folders named for their extension is a standard pattern: 'sorts the files in a given folder into subfolders named for each file's extension'."
+    },
+    "open_choices": {
+     "answer": "no",
+     "evidence": "The charter fixes the mapping rule and the test's expected placements; no competing structures or style choices are left open."
+    }
+   },
+   "rationale": "Rule 1: broken is no. Rule 2: reaction is no. Rule 3: facts_given yes, known_pattern yes and open_choices no, so the zone is operate. No signal is unknown, so there is no shift toward less certainty."
+  },
+  "analysis": null,
+  "deferred": [
+   {
+    "item": 3,
+    "until": "The Requester approves the real run and the script is run on ~/sutra-demo/sort-me; the item is checked from that run's receipt, because a builder cannot write to the Requester's own files."
+   }
+  ],
+  "factors": [
+   {
+    "name": "extension-named subfolders mapping",
+    "source": "brief",
+    "quote": "sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/)",
+    "citation": null,
+    "why": "This is the core behaviour: each file goes into a subfolder named for its extension, and the script must work on any folder it is given.",
+    "stages": [
+     "build"
+    ]
+   },
+   {
+    "name": "test checks the four named placements",
+    "source": "brief",
+    "quote": "checks the script puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/",
+    "citation": null,
+    "why": "The automated test must assert exactly these four placements, or it does not verify the charter.",
+    "stages": [
+     "quality"
+    ]
+   },
+   {
+    "name": "nothing written outside the folder",
+    "source": "general",
+    "quote": null,
+    "citation": null,
+    "why": "Necessary condition C3. The script moves files only inside the folder it is given, and the test builds its fixture inside the output folder, not in a system temp location.",
+    "stages": [
+     "build",
+     "quality"
+    ]
+   },
+   {
+    "name": "no unresolved placeholders",
+    "source": "general",
+    "quote": null,
+    "citation": null,
+    "why": "Necessary condition C5. Neither file may contain 'to be confirmed', TODO or similar markers.",
+    "stages": [
+     "build",
+     "quality"
+    ]
+   },
+   {
+    "name": "standard library only",
+    "source": "general",
+    "quote": null,
+    "citation": null,
+    "why": "Necessary condition C2. Code reruns the test independently in a sandbox on a copy of the folder, so neither file may need packages that are not installed.",
+    "stages": [
+     "build",
+     "quality"
+    ]
+   }
+  ],
+  "unplaced": [],
+  "stages": [
+   {
+    "id": "build",
+    "thinking": "Making the thing: the sorting script itself",
+    "tiers": [
+     "implementation"
+    ],
+    "goal": "A working sort_files.py that sorts the files of a given folder into extension-named subfolders.",
+    "done_test": "sort_files.py exists in the output folder and sorts a.pdf, b.jpg, c.txt and d.csv from a given folder into pdf/, jpg/, txt/ and csv/ inside that folder.",
+    "method": "Build to the charter's mapping rule; one function does the sorting and a command-line entry point takes the folder path.",
+    "owns_factors": [
+     "extension-named subfolders mapping",
+     "nothing written outside the folder",
+     "no unresolved placeholders",
+     "standard library only"
+    ],
+    "inputs_from": []
+   },
+   {
+    "id": "quality",
+    "thinking": "A test that is itself a deliverable: cases with expected results",
+    "tiers": [
+     "contract"
+    ],
+    "goal": "An automated test, test_sort_files.py, that checks the four placements and passes.",
+    "done_test": "test_sort_files.py exists in the output folder, asserts the four expected placements, and passes when run against sort_files.py.",
+    "method": "Derive test cases from done-when item 2: build a fixture folder with the four files, run the script, assert each file's location.",
+    "owns_factors": [
+     "test checks the four named placements",
+     "nothing written outside the folder",
+     "no unresolved placeholders",
+     "standard library only"
+    ],
+    "inputs_from": [
+     "build"
+    ]
+   }
+  ],
+  "workflows": [
+   {
+    "name": "build_sort_script",
+    "stage": "build",
+    "certainty": "operate",
+    "certainty_signals": [
+     "facts_given: yes",
+     "known_pattern: yes",
+     "open_choices: no"
+    ],
+    "approach": "Write a standard-library Python script that moves each file in the given folder into a subfolder named for its extension.",
+    "goal": "Produce sort_files.py, which takes a folder path and moves each file into a subfolder named for its extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/), touching nothing outside that folder.",
+    "done_test": "sort_files.py exists in the output folder; it uses only the Python standard library; it has no placeholder text such as 'to be confirmed' or TODO; it takes the folder path as an argument and runs on any given folder; and running it on a folder with a.pdf, b.jpg, c.txt and d.csv leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/ inside that folder, with nothing written outside it.",
+    "delivers": [
+     1
+    ],
+    "informs": [
+     2,
+     3
+    ],
+    "inputs_from": [],
+    "experiment": null,
+    "research": null
+   },
+   {
+    "name": "write_sort_test",
+    "stage": "quality",
+    "certainty": "operate",
+    "certainty_signals": [
+     "facts_given: yes",
+     "known_pattern: yes",
+     "open_choices: no"
+    ],
+    "approach": "Write a standard-library unittest that builds a fixture folder inside the output folder, runs sort_files.py on it and asserts the four placements.",
+    "goal": "Produce test_sort_files.py, an automated test that checks sort_files.py puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/.",
+    "done_test": "test_sort_files.py exists in the output folder; it uses only the standard library; it has no placeholder text; it creates its fixture folder with a.pdf, b.jpg, c.txt and d.csv inside the output folder (not in a system temp location) and removes it afterwards; it runs sort_files.py from build_sort_script on that fixture; it asserts a.pdf is in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/; and it passes when run, including on a copy of the folder.",
+    "delivers": [
+     2
+    ],
+    "informs": [],
+    "inputs_from": [
+     "build_sort_script"
+    ],
+    "experiment": null,
+    "research": null
+   }
+  ],
+  "open_facts": [],
+  "not_ready": []
+ },
+ "scores": {
+  "build_sort_script": {
+   "score": 0.95,
+   "weakest": null,
+   "capped": false,
+   "checks": {
+    "inputs": "yes",
+    "method": "yes",
+    "done_test": "yes",
+    "factors": "yes",
+    "zone_fit": "yes",
+    "size": "yes",
+    "fits": "yes"
+   },
+   "missing": [],
+   "failed": [],
+   "compare": null
+  },
+  "write_sort_test": {
+   "score": 0.85,
+   "weakest": "done_test",
+   "capped": false,
+   "checks": {
+    "inputs": "yes",
+    "method": "yes",
+    "done_test": "partly",
+    "factors": "yes",
+    "zone_fit": "yes",
+    "size": "yes",
+    "fits": "yes"
+   },
+   "missing": [
+    "No check that the test fails when the script is broken or does nothing; the done-test only requires that it passes against the working script."
+   ],
+   "failed": [
+    "K6"
+   ],
+   "compare": null,
+   "second_look": [
+    0.85,
+    0.85
+   ]
+  }
+ },
+ "history": {
+  "build_sort_script": [
+   0.95
+  ],
+  "write_sort_test": [
+   0.85
+  ]
+ },
+ "rounds": [
+  {
+   "round": 0,
+   "plan": {
+    "certainty_assessment": {
+     "zone": "operate",
+     "signals": {
+      "broken": {
+       "answer": "no",
+       "evidence": "Nothing exists yet; the charter describes a new script, so there is no broken site or failed fix."
+      },
+      "reaction": {
+       "answer": "no",
+       "evidence": "Success is a file-placement result, not a reaction from people: 'a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/'."
+      },
+      "facts_given": {
+       "answer": "yes",
+       "evidence": "The folder path, the four file names, their extensions and the target subfolders are all given: '~/sutra-demo/sort-me', 'a.pdf into pdf/'."
+      },
+      "known_pattern": {
+       "answer": "yes",
+       "evidence": "Sorting files into folders named for their extension is a standard pattern: 'sorts the files in a given folder into subfolders named for each file's extension'."
+      },
+      "open_choices": {
+       "answer": "no",
+       "evidence": "The charter fixes the mapping rule and the test's expected placements; no competing structures or style choices are left open."
+      }
+     },
+     "rationale": "Rule 1: broken is no. Rule 2: reaction is no. Rule 3: facts_given yes, known_pattern yes and open_choices no, so the zone is operate. No signal is unknown, so there is no shift toward less certainty."
+    },
+    "analysis": null,
+    "deferred": [
+     {
+      "item": 3,
+      "until": "The Requester approves the real run and the script is run on ~/sutra-demo/sort-me; the item is checked from that run's receipt, because a builder cannot write to the Requester's own files."
+     }
+    ],
+    "factors": [
+     {
+      "name": "extension-named subfolders mapping",
+      "source": "brief",
+      "quote": "sorts the files in a given folder into subfolders named for each file's extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/)",
+      "citation": null,
+      "why": "This is the core behaviour: each file goes into a subfolder named for its extension, and the script must work on any folder it is given.",
+      "stages": [
+       "build"
+      ]
+     },
+     {
+      "name": "test checks the four named placements",
+      "source": "brief",
+      "quote": "checks the script puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/",
+      "citation": null,
+      "why": "The automated test must assert exactly these four placements, or it does not verify the charter.",
+      "stages": [
+       "quality"
+      ]
+     },
+     {
+      "name": "nothing written outside the folder",
+      "source": "general",
+      "quote": null,
+      "citation": null,
+      "why": "Necessary condition C3. The script moves files only inside the folder it is given, and the test builds its fixture inside the output folder, not in a system temp location.",
+      "stages": [
+       "build",
+       "quality"
+      ]
+     },
+     {
+      "name": "no unresolved placeholders",
+      "source": "general",
+      "quote": null,
+      "citation": null,
+      "why": "Necessary condition C5. Neither file may contain 'to be confirmed', TODO or similar markers.",
+      "stages": [
+       "build",
+       "quality"
+      ]
+     },
+     {
+      "name": "standard library only",
+      "source": "general",
+      "quote": null,
+      "citation": null,
+      "why": "Necessary condition C2. Code reruns the test independently in a sandbox on a copy of the folder, so neither file may need packages that are not installed.",
+      "stages": [
+       "build",
+       "quality"
+      ]
+     }
+    ],
+    "unplaced": [],
+    "stages": [
+     {
+      "id": "build",
+      "thinking": "Making the thing: the sorting script itself",
+      "tiers": [
+       "implementation"
+      ],
+      "goal": "A working sort_files.py that sorts the files of a given folder into extension-named subfolders.",
+      "done_test": "sort_files.py exists in the output folder and sorts a.pdf, b.jpg, c.txt and d.csv from a given folder into pdf/, jpg/, txt/ and csv/ inside that folder.",
+      "method": "Build to the charter's mapping rule; one function does the sorting and a command-line entry point takes the folder path.",
+      "owns_factors": [
+       "extension-named subfolders mapping",
+       "nothing written outside the folder",
+       "no unresolved placeholders",
+       "standard library only"
+      ],
+      "inputs_from": []
+     },
+     {
+      "id": "quality",
+      "thinking": "A test that is itself a deliverable: cases with expected results",
+      "tiers": [
+       "contract"
+      ],
+      "goal": "An automated test, test_sort_files.py, that checks the four placements and passes.",
+      "done_test": "test_sort_files.py exists in the output folder, asserts the four expected placements, and passes when run against sort_files.py.",
+      "method": "Derive test cases from done-when item 2: build a fixture folder with the four files, run the script, assert each file's location.",
+      "owns_factors": [
+       "test checks the four named placements",
+       "nothing written outside the folder",
+       "no unresolved placeholders",
+       "standard library only"
+      ],
+      "inputs_from": [
+       "build"
+      ]
+     }
+    ],
+    "workflows": [
+     {
+      "name": "build_sort_script",
+      "stage": "build",
+      "certainty": "operate",
+      "certainty_signals": [
+       "facts_given: yes",
+       "known_pattern: yes",
+       "open_choices: no"
+      ],
+      "approach": "Write a standard-library Python script that moves each file in the given folder into a subfolder named for its extension.",
+      "goal": "Produce sort_files.py, which takes a folder path and moves each file into a subfolder named for its extension (a.pdf into pdf/, b.jpg into jpg/, c.txt into txt/, d.csv into csv/), touching nothing outside that folder.",
+      "done_test": "sort_files.py exists in the output folder; it uses only the Python standard library; it has no placeholder text such as 'to be confirmed' or TODO; it takes the folder path as an argument and runs on any given folder; and running it on a folder with a.pdf, b.jpg, c.txt and d.csv leaves a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/ inside that folder, with nothing written outside it.",
+      "delivers": [
+       1
+      ],
+      "informs": [
+       2,
+       3
+      ],
+      "inputs_from": [],
+      "experiment": null,
+      "research": null
+     },
+     {
+      "name": "write_sort_test",
+      "stage": "quality",
+      "certainty": "operate",
+      "certainty_signals": [
+       "facts_given: yes",
+       "known_pattern: yes",
+       "open_choices: no"
+      ],
+      "approach": "Write a standard-library unittest that builds a fixture folder inside the output folder, runs sort_files.py on it and asserts the four placements.",
+      "goal": "Produce test_sort_files.py, an automated test that checks sort_files.py puts a.pdf in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/.",
+      "done_test": "test_sort_files.py exists in the output folder; it uses only the standard library; it has no placeholder text; it creates its fixture folder with a.pdf, b.jpg, c.txt and d.csv inside the output folder (not in a system temp location) and removes it afterwards; it runs sort_files.py from build_sort_script on that fixture; it asserts a.pdf is in pdf/, b.jpg in jpg/, c.txt in txt/ and d.csv in csv/; and it passes when run, including on a copy of the folder.",
+      "delivers": [
+       2
+      ],
+      "informs": [],
+      "inputs_from": [
+       "build_sort_script"
+      ],
+      "experiment": null,
+      "research": null
+     }
+    ],
+    "open_facts": [],
+    "not_ready": []
+   },
+   "plan_faults": [],
+   "changes": [],
+   "scores": {
+    "build_sort_script": {
+     "score": 0.95,
+     "weakest": null,
+     "capped": false,
+     "checks": {
+      "inputs": "yes",
+      "method": "yes",
+      "done_test": "yes",
+      "factors": "yes",
+      "zone_fit": "yes",
+      "size": "yes",
+      "fits": "yes"
+     },
+     "missing": [],
+     "failed": [],
+     "compare": null
+    },
+    "write_sort_test": {
+     "score": 0.85,
+     "weakest": "done_test",
+     "capped": false,
+     "checks": {
+      "inputs": "yes",
+      "method": "yes",
+      "done_test": "partly",
+      "factors": "yes",
+      "zone_fit": "yes",
+      "size": "yes",
+      "fits": "yes"
+     },
+     "missing": [
+      "No check that the test fails when the script is broken or does nothing; the done-test only requires that it passes against the working script."
+     ],
+     "failed": [
+      "K6"
+     ],
+     "compare": null,
+     "second_look": [
+      0.85,
+      0.85
+     ]
+    }
+   },
+   "judge_faults": []
+  }
+ ],
+ "not_ready": [],
+ "held": {},
+ "waiting_on_identity": [],
+ "stages": {
+  "build": {
+   "confidence": 0.95,
+   "zone": "operate"
+  },
+  "quality": {
+   "confidence": 0.85,
+   "zone": "operate"
+  }
+ },
+ "plan_confidence": 0.85,
+ "plan_faults": [],
+ "calls": 5,
+ "seconds": 83.9
+}

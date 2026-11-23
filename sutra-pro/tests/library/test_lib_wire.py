@@ -783,4 +783,4 @@ def test_a_summary_missing_a_key_j2_always_writes_is_refused():
 
 def test_the_summary_budget_is_the_model_l3_points_at():
     budget_model = W.SummaryBudget.model_validate({"start": 100, "granted": 100, "used": 5, "raises": []})
-    assert budget_model.model_dump() == {"start": 100, "granted": 100, "used": 5, "raises": []}
+    assert budget_model.model_dump() == {"start": 100, "granted": 100, "used": 5, "raises": [], "usd": None}

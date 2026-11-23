@@ -221,8 +221,8 @@ class DeptWorkflow(Workflow):
     goal_gap: Annotated[str, StringConstraints(min_length=1, max_length=400)]
     expected_outcome: Text400 = ""
     outputs: Annotated[list[Line200], Field(min_length=1, max_length=20)]
-    completion_check: Annotated[str, StringConstraints(min_length=1, max_length=400)]
-    dependencies: Annotated[list[Line40], Field(max_length=20)] = []
+    completion_check: Annotated[str, StringConstraints(min_length=1, max_length=4000)]     # J2 wrote 2,076 characters (D430)
+    dependencies: Annotated[list[Line200], Field(max_length=20)] = []                       # workflow names: J2 wrote 55 characters (D430)
     parts: Annotated[list[Line80], Field(max_length=60)] = []                      # rate-card items, repeated for quantity
     covers: Annotated[list[Count], Field(max_length=60)] = []                       # done-when item numbers
     fixes: Annotated[list[Line40], Field(max_length=20)] = []                       # Audit finding ids
@@ -296,7 +296,7 @@ class ProposedWorkflow(DeptWorkflow):
         return self
 
 
-Status = Literal["registered", "held", "running", "done", "failed", "unfunded"]
+Status = Literal["registered", "held", "running", "done", "failed", "unfunded", "superseded"]     # superseded: J2 replaced it (D430)
 
 
 @record
@@ -331,6 +331,7 @@ class RegisteredWorkflow(DeptWorkflow):
     style_guide: bool = False
     version: Annotated[int, Field(ge=0)] | None = None      # the site version the work ended at: 0 for work that makes none (the Plan workflow)
     artifact: Annotated[str, StringConstraints(max_length=300)] | None = None
+    superseded_by: WorkflowId | None = None                 # the workflow that replaced this one (J2 sets it with status superseded)
 
     @model_validator(mode="after")
     def _atoms_are_the_steps(self) -> Self:
@@ -477,7 +478,7 @@ def registered_from_j2(row: Mapping[str, Any]) -> RegisteredWorkflow:
     fields["atoms"] = [str(a.get("id")) for a in row.get("atoms") or [] if isinstance(a, Mapping)]
     for key in ("proposal_id", "covers_text", "purpose", "cost", "estimate", "charged", "calls_used", "retries_used", "status",
                 "cycle", "lld_sections", "section", "agent", "stage", "change", "kept", "last_check", "send_error",
-                "hold_override", "approval_asked", "style_guide", "version", "artifact"):
+                "hold_override", "approval_asked", "style_guide", "version", "artifact", "superseded_by"):
         if row.get(key) is not None:
             fields[key] = row[key]
     env = row.get("envelope")
@@ -524,4 +525,6 @@ def to_j2(w: ProposedWorkflow | RegisteredWorkflow) -> dict[str, Any]:
                     "cycle", "lld_sections", "section", "agent", "stage", "change", "kept", "last_check", "send_error",
                     "hold_override", "approval_asked", "style_guide", "version", "artifact"):
             out[key] = getattr(w, key)
+        if w.superseded_by is not None:          # J2 writes it only on a superseded row
+            out["superseded_by"] = w.superseded_by
     return out

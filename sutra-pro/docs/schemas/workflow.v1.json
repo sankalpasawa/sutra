@@ -322,7 +322,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 8,
+          "maxItems": 40,
           "title": "Args",
           "type": "array"
         },
@@ -399,6 +399,8 @@
             "ids-unique",
             "lld-slice",
             "deed-send",
+            "test-passed",
+            "inside-folder",
             "reply-valid",
             "turn-posted",
             "charter-stamp",
@@ -794,7 +796,7 @@
           "type": "array"
         },
         "completion_check": {
-          "maxLength": 400,
+          "maxLength": 4000,
           "minLength": 1,
           "title": "Completion Check",
           "type": "string"
@@ -822,7 +824,7 @@
         "dependencies": {
           "default": [],
           "items": {
-            "maxLength": 40,
+            "maxLength": 200,
             "minLength": 1,
             "type": "string"
           },
@@ -1227,7 +1229,7 @@
           "type": "boolean"
         },
         "completion_check": {
-          "maxLength": 400,
+          "maxLength": 4000,
           "minLength": 1,
           "title": "Completion Check",
           "type": "string"
@@ -1267,7 +1269,7 @@
         "dependencies": {
           "default": [],
           "items": {
-            "maxLength": 40,
+            "maxLength": 200,
             "minLength": 1,
             "type": "string"
           },
@@ -1535,7 +1537,8 @@
             "running",
             "done",
             "failed",
-            "unfunded"
+            "unfunded",
+            "superseded"
           ],
           "title": "Status",
           "type": "string"
@@ -1567,6 +1570,20 @@
           "default": false,
           "title": "Style Guide",
           "type": "boolean"
+        },
+        "superseded_by": {
+          "anyOf": [
+            {
+              "maxLength": 12,
+              "pattern": "^W-[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Superseded By"
         },
         "trigger": {
           "anyOf": [
@@ -1753,7 +1770,7 @@
           "items": {
             "$ref": "#/$defs/Check"
           },
-          "maxItems": 12,
+          "maxItems": 40,
           "title": "Checks",
           "type": "array"
         }

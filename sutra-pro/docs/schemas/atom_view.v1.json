@@ -145,6 +145,32 @@
           "default": null,
           "title": "Agent"
         },
+        "date_case": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Case"
+        },
+        "date_control": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Control"
+        },
         "kind": {
           "enum": [
             "AI",

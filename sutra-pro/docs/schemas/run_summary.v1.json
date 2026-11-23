@@ -183,6 +183,17 @@
           "title": "Start",
           "type": "integer"
         },
+        "usd": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummaryUsd"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "used": {
           "minimum": 0,
           "title": "Used",
@@ -535,6 +546,18 @@
         "asked": {
           "title": "Asked",
           "type": "integer"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
         },
         "cycle": {
           "anyOf": [
@@ -889,6 +912,44 @@
       "title": "SummarySection",
       "type": "object"
     },
+    "SummaryUsd": {
+      "additionalProperties": false,
+      "description": "The budget in dollars when J2 counts dollars (J2 `_usd_metrics`, P26): used, the limit, each approval, calls estimated.",
+      "properties": {
+        "approved": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 100,
+          "title": "Approved",
+          "type": "array"
+        },
+        "estimated_calls": {
+          "minimum": 0,
+          "title": "Estimated Calls",
+          "type": "integer"
+        },
+        "limit": {
+          "minimum": 0,
+          "title": "Limit",
+          "type": "number"
+        },
+        "used": {
+          "minimum": 0,
+          "title": "Used",
+          "type": "number"
+        }
+      },
+      "required": [
+        "used",
+        "limit",
+        "approved",
+        "estimated_calls"
+      ],
+      "title": "SummaryUsd",
+      "type": "object"
+    },
     "SummaryVerdict": {
       "additionalProperties": false,
       "properties": {
@@ -1216,10 +1277,17 @@
       "type": "string"
     },
     "output_type": {
-      "maxLength": 200,
-      "minLength": 1,
-      "title": "Output Type",
-      "type": "string"
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Output Type"
     },
     "playbooks": {
       "$ref": "#/$defs/SummaryPlaybooks"

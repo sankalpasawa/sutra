@@ -1,0 +1,696 @@
+[
+ {
+  "cycle": 1,
+  "version": 0,
+  "results": [
+   {
+    "id": "F-1",
+    "criterion": "The page header shows the shop's name and a one-line description of the coffee shop.",
+    "verdict": "NEEDS_REVISION",
+    "note": "SITE v0 is empty and page-parses reports no <body>; there is no #site-header or h1.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 1,
+    "pass": false
+   },
+   {
+    "id": "F-2",
+    "criterion": "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Menu items with exact names and prices. (Audit's own note: No page was built, so there is no #menu section and no menu rows.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Menu items with exact names and prices",
+    "item": 2,
+    "pass": false
+   },
+   {
+    "id": "F-3",
+    "criterion": "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Opening hours for each day. (Audit's own note: No page was built, so there is no #hours section and no day rows.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Opening hours for each day",
+    "item": 3,
+    "pass": false
+   },
+   {
+    "id": "F-4",
+    "criterion": "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Street address and town. (Audit's own note: No page was built, so there is no #location section and no map area.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Street address and town",
+    "item": 4,
+    "pass": false
+   },
+   {
+    "id": "F-5",
+    "criterion": "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Phone number and email address. (Audit's own note: No page was built, so there is no #contact section.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Phone number and email address",
+    "item": 5,
+    "pass": false
+   },
+   {
+    "id": "F-6",
+    "criterion": "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no hero and no main action on the page.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 6,
+    "pass": false
+   },
+   {
+    "id": "F-7",
+    "criterion": "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no <nav> on the page. N4 passes only because there are 0 links, so it proves nothing.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 7,
+    "pass": false
+   },
+   {
+    "id": "F-8",
+    "criterion": "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.",
+    "verdict": "BLOCKED_BY_EVIDENCE",
+    "note": "The mechanical check is unavailable (no site built yet), so overflow, contrast and tap size cannot be measured.",
+    "severity": "high",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 8,
+    "pass": false
+   },
+   {
+    "id": "F-9",
+    "criterion": "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+    "verdict": "BLOCKED_BY_EVIDENCE",
+    "note": "N2 and N3 could not run because no site is built. The 0-link pass in N4 is vacuous.",
+    "severity": "high",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 9,
+    "pass": false
+   }
+  ],
+  "extra_issues": [
+   {
+    "id": "F-10",
+    "criterion": "Department rule: a workflow writes only inside its own folder.",
+    "verdict": "NEEDS_REVISION",
+    "note": "W-1 and W-12 both failed because they changed agent_live.json, events.jsonl and snapshot.json. Two different wordings failed the same way, so a third plan workflow with similar wording will likely fail again.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null
+   }
+  ],
+  "rubric": [
+   {
+    "id": "R-1",
+    "item": "R-1",
+    "criterion": "Consistent styling: the whole page follows the style guide (same fonts, colours, button and card styles)",
+    "verdict": "NEEDS_REVISION",
+    "note": "There is no page and no style guide (null), so consistency cannot be shown.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-2",
+    "item": "R-2",
+    "criterion": "Readable contrast: text is easy to read against its background (WCAG AA)",
+    "verdict": "NEEDS_REVISION",
+    "note": "There is no text on a page to check against WCAG AA.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-3",
+    "item": "R-3",
+    "criterion": "Clear hierarchy: one main heading, headings in order, the most important things stand out",
+    "verdict": "NEEDS_REVISION",
+    "note": "There is no h1 and no headings; the page has no body.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-4",
+    "item": "R-4",
+    "criterion": "One obvious main action: a visitor can tell at once what to do next",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no hero and no main action.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-5",
+    "item": "R-5",
+    "criterion": "Easy navigation: a visitor can reach every section quickly, on a phone too",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no <nav>, so no section can be reached.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-6",
+    "item": "R-6",
+    "criterion": "Tap targets are big enough on phones (at least 44x44px; 24x24px for the cells or keys of a dense grid or keypad)",
+    "verdict": "NEEDS_REVISION",
+    "note": "There are no buttons or links to measure, and design measurements are null.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-7",
+    "item": "R-7",
+    "criterion": "Images have alt text",
+    "verdict": "PASS_WITH_WARNING",
+    "note": "There are no images on the page, so no alt text is missing, but nothing was built.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": true
+   }
+  ],
+  "mechanical": {
+   "available": false,
+   "note": "no site built yet"
+  },
+  "screenshot": null,
+  "all_pass": false,
+  "conditions": [
+   {
+    "id": "N1",
+    "text": "The page opens (it parses, tags balanced)",
+    "check": "page-parses",
+    "met": false,
+    "evidence": "no <body>; unbalanced tags: []",
+    "severity": "warn"
+   },
+   {
+    "id": "N2",
+    "text": "No JavaScript errors on load",
+    "check": "no-js-errors",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N3",
+    "text": "No horizontal overflow at 360px and 1280px",
+    "check": "no-overflow",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N4",
+    "text": "Every in-page link resolves; WhatsApp (wa.me) and tel: links are well formed",
+    "check": "links-well-formed",
+    "met": true,
+    "evidence": "all 0 in-page, tel: and wa.me link(s) resolve and are well formed",
+    "severity": "warn"
+   },
+   {
+    "id": "N5",
+    "text": "Nothing is \"to be confirmed\"",
+    "check": "nothing-to-be-confirmed",
+    "met": false,
+    "evidence": "4 fact(s) still to be confirmed",
+    "severity": "warn"
+   },
+   {
+    "id": "N6",
+    "text": "No invented content: every number, email and phone number on the page comes from the charter or the Requester's answers",
+    "check": "no-invented-facts",
+    "met": true,
+    "evidence": "every number, phone and email comes from the charter or the Requester's answers",
+    "severity": "warn"
+   },
+   {
+    "id": "N7",
+    "text": "Every form has a submit control and a destination (action or mailto)",
+    "check": "forms-have-destination",
+    "met": true,
+    "evidence": "no forms on the page",
+    "severity": "warn"
+   },
+   {
+    "id": "N8",
+    "text": "A nav reaches every section, and the hero has one obvious main action",
+    "check": "nav-and-main-action",
+    "met": false,
+    "evidence": "no <nav> on the page; no hero",
+    "severity": "warn"
+   },
+   {
+    "id": "N9",
+    "text": "Every charter fact appears exactly",
+    "check": "facts-present-all",
+    "met": true,
+    "evidence": "the charter marks no facts that must appear exactly",
+    "severity": "warn"
+   }
+  ]
+ },
+ {
+  "cycle": 2,
+  "version": 0,
+  "results": [
+   {
+    "id": "F-1",
+    "criterion": "The page header shows the shop's name and a one-line description of the coffee shop.",
+    "verdict": "NEEDS_REVISION",
+    "note": "SITE v0 is empty; N1 reports no <body>, so there is no #site-header or h1.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 1,
+    "pass": false
+   },
+   {
+    "id": "F-2",
+    "criterion": "The menu section lists drinks and food items, each with a name and a price, and any name or price not yet supplied reads 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Menu items with exact names and prices. (Audit's own note: No page exists, so there is no #menu section and no menu rows.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Menu items with exact names and prices",
+    "item": 2,
+    "pass": false
+   },
+   {
+    "id": "F-3",
+    "criterion": "The opening hours section shows each day of the week with its hours, and any hours not yet supplied read 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Opening hours for each day. (Audit's own note: No page exists, so there is no #hours section and no day rows.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Opening hours for each day",
+    "item": 3,
+    "pass": false
+   },
+   {
+    "id": "F-4",
+    "criterion": "The location section shows the street address and town with a map, and an address not yet supplied reads 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Street address and town. (Audit's own note: No page exists, so there is no #location section and no map area.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Street address and town",
+    "item": 4,
+    "pass": false
+   },
+   {
+    "id": "F-5",
+    "criterion": "The contact section shows a phone number and an email address, and any not yet supplied read 'to be confirmed'.",
+    "verdict": "TO_BE_CONFIRMED",
+    "note": "Waiting on the Requester: Phone number and email address. (Audit's own note: No page exists, so there is no #contact section.)",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": "Phone number and email address",
+    "item": 5,
+    "pass": false
+   },
+   {
+    "id": "F-6",
+    "criterion": "The page has one clearly most prominent main action button near the top, which takes the visitor to the location or contact section.",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no hero and no main action on the page.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 6,
+    "pass": false
+   },
+   {
+    "id": "F-7",
+    "criterion": "The navigation menu links to every section, and each link scrolls to its section without a broken in-page link.",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no <nav> on the page. N4 passes only because there are 0 links, so it proves nothing.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 7,
+    "pass": false
+   },
+   {
+    "id": "F-8",
+    "criterion": "The page has no horizontal overflow at 360px and 1280px widths, text is readable against its background, and buttons and links are at least 44px tall to tap on phones.",
+    "verdict": "BLOCKED_BY_EVIDENCE",
+    "note": "Mechanical check unavailable (no site built); N3 could not run, so overflow, contrast and tap size cannot be measured.",
+    "severity": "high",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 8,
+    "pass": false
+   },
+   {
+    "id": "F-9",
+    "criterion": "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an existing section.",
+    "verdict": "BLOCKED_BY_EVIDENCE",
+    "note": "N2 and N3 could not run because no site is built; the 0-link pass in N4 is vacuous.",
+    "severity": "high",
+    "confidence": "high",
+    "needs_requester_fact": null,
+    "item": 9,
+    "pass": false
+   }
+  ],
+  "extra_issues": [
+   {
+    "id": "F-10",
+    "criterion": "Department rule: workflows write only their own output",
+    "verdict": "NEEDS_REVISION",
+    "note": "W-1, W-12, W-21 and W-22 each failed with 'changed outside its folder: agent_live.json, events.jsonl, snapshot.json'; the same failure four times, so the cause is probably not the workflow wording.",
+    "severity": "critical",
+    "confidence": "high",
+    "needs_requester_fact": null
+   }
+  ],
+  "rubric": [
+   {
+    "id": "R-1",
+    "item": "R-1",
+    "criterion": "Consistent styling: the whole page follows the style guide (same fonts, colours, button and card styles)",
+    "verdict": "NEEDS_REVISION",
+    "note": "No page and no style guide exist, so consistent styling cannot be shown.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-2",
+    "item": "R-2",
+    "criterion": "Readable contrast: text is easy to read against its background (WCAG AA)",
+    "verdict": "NEEDS_REVISION",
+    "note": "No page exists, so no text has a measured contrast against its background.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-3",
+    "item": "R-3",
+    "criterion": "Clear hierarchy: one main heading, headings in order, the most important things stand out",
+    "verdict": "NEEDS_REVISION",
+    "note": "No body, h1 or headings exist, so there is no hierarchy.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-4",
+    "item": "R-4",
+    "criterion": "One obvious main action: a visitor can tell at once what to do next",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no hero and no main action.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-5",
+    "item": "R-5",
+    "criterion": "Easy navigation: a visitor can reach every section quickly, on a phone too",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8: no <nav> on the page.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-6",
+    "item": "R-6",
+    "criterion": "Tap targets are big enough on phones (at least 44x44px; 24x24px for the cells or keys of a dense grid or keypad)",
+    "verdict": "NEEDS_REVISION",
+    "note": "No buttons or links exist, and the tap-size measurement is unavailable.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-7",
+    "item": "R-7",
+    "criterion": "Images have alt text",
+    "verdict": "PASS_WITH_WARNING",
+    "note": "No images exist, so none lacks alt text; the pass is vacuous.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": true
+   }
+  ],
+  "mechanical": {
+   "available": false,
+   "note": "no site built yet"
+  },
+  "screenshot": null,
+  "all_pass": false,
+  "conditions": [
+   {
+    "id": "N1",
+    "text": "The page opens (it parses, tags balanced)",
+    "check": "page-parses",
+    "met": false,
+    "evidence": "no <body>; unbalanced tags: []",
+    "severity": "warn"
+   },
+   {
+    "id": "N2",
+    "text": "No JavaScript errors on load",
+    "check": "no-js-errors",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N3",
+    "text": "No horizontal overflow at 360px and 1280px",
+    "check": "no-overflow",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N4",
+    "text": "Every in-page link resolves; WhatsApp (wa.me) and tel: links are well formed",
+    "check": "links-well-formed",
+    "met": true,
+    "evidence": "all 0 in-page, tel: and wa.me link(s) resolve and are well formed",
+    "severity": "warn"
+   },
+   {
+    "id": "N5",
+    "text": "Nothing is \"to be confirmed\"",
+    "check": "nothing-to-be-confirmed",
+    "met": false,
+    "evidence": "4 fact(s) still to be confirmed",
+    "severity": "warn"
+   },
+   {
+    "id": "N6",
+    "text": "No invented content: every number, email and phone number on the page comes from the charter or the Requester's answers",
+    "check": "no-invented-facts",
+    "met": true,
+    "evidence": "every number, phone and email comes from the charter or the Requester's answers",
+    "severity": "warn"
+   },
+   {
+    "id": "N7",
+    "text": "Every form has a submit control and a destination (action or mailto)",
+    "check": "forms-have-destination",
+    "met": true,
+    "evidence": "no forms on the page",
+    "severity": "warn"
+   },
+   {
+    "id": "N8",
+    "text": "A nav reaches every section, and the hero has one obvious main action",
+    "check": "nav-and-main-action",
+    "met": false,
+    "evidence": "no <nav> on the page; no hero",
+    "severity": "warn"
+   },
+   {
+    "id": "N9",
+    "text": "Every charter fact appears exactly",
+    "check": "facts-present-all",
+    "met": true,
+    "evidence": "the charter marks no facts that must appear exactly",
+    "severity": "warn"
+   }
+  ]
+ },
+ {
+  "cycle": 3,
+  "version": 0,
+  "results": [],
+  "extra_issues": [],
+  "rubric": [
+   {
+    "id": "R-1",
+    "item": "R-1",
+    "criterion": "Consistent styling: the whole page follows the style guide (same fonts, colours, button and card styles)",
+    "verdict": "NEEDS_REVISION",
+    "note": "SITE v0 is empty and there is no style guide, so no fonts, colours or button styles exist to follow.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-2",
+    "item": "R-2",
+    "criterion": "Readable contrast: text is easy to read against its background (WCAG AA)",
+    "verdict": "NEEDS_REVISION",
+    "note": "The page has no body, so there is no text to judge against a background.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-3",
+    "item": "R-3",
+    "criterion": "Clear hierarchy: one main heading, headings in order, the most important things stand out",
+    "verdict": "NEEDS_REVISION",
+    "note": "N1 reports no <body>, so there is no h1 and no heading hierarchy.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-4",
+    "item": "R-4",
+    "criterion": "One obvious main action: a visitor can tell at once what to do next",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8 reports no hero, so there is no main action.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-5",
+    "item": "R-5",
+    "criterion": "Easy navigation: a visitor can reach every section quickly, on a phone too",
+    "verdict": "NEEDS_REVISION",
+    "note": "N8 reports no <nav> on the page.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-6",
+    "item": "R-6",
+    "criterion": "Tap targets are big enough on phones (at least 44x44px; 24x24px for the cells or keys of a dense grid or keypad)",
+    "verdict": "NEEDS_REVISION",
+    "note": "There are no buttons or links, and the mechanical check is unavailable (no site built).",
+    "rubric": true,
+    "severity": "medium",
+    "pass": false
+   },
+   {
+    "id": "R-7",
+    "item": "R-7",
+    "criterion": "Images have alt text",
+    "verdict": "PASS_WITH_WARNING",
+    "note": "The page has no images, so none lack alt text; this is vacuous because the page is empty.",
+    "rubric": true,
+    "severity": "medium",
+    "pass": true
+   }
+  ],
+  "mechanical": {
+   "available": false,
+   "note": "no site built yet"
+  },
+  "screenshot": null,
+  "all_pass": false,
+  "conditions": [
+   {
+    "id": "N1",
+    "text": "The page opens (it parses, tags balanced)",
+    "check": "page-parses",
+    "met": false,
+    "evidence": "no <body>; unbalanced tags: []",
+    "severity": "warn"
+   },
+   {
+    "id": "N2",
+    "text": "No JavaScript errors on load",
+    "check": "no-js-errors",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N3",
+    "text": "No horizontal overflow at 360px and 1280px",
+    "check": "no-overflow",
+    "met": false,
+    "evidence": "could not run: no site built yet",
+    "severity": "warn"
+   },
+   {
+    "id": "N4",
+    "text": "Every in-page link resolves; WhatsApp (wa.me) and tel: links are well formed",
+    "check": "links-well-formed",
+    "met": true,
+    "evidence": "all 0 in-page, tel: and wa.me link(s) resolve and are well formed",
+    "severity": "warn"
+   },
+   {
+    "id": "N5",
+    "text": "Nothing is \"to be confirmed\"",
+    "check": "nothing-to-be-confirmed",
+    "met": true,
+    "evidence": "nothing to be confirmed",
+    "severity": "warn"
+   },
+   {
+    "id": "N6",
+    "text": "No invented content: every number, email and phone number on the page comes from the charter or the Requester's answers",
+    "check": "no-invented-facts",
+    "met": true,
+    "evidence": "every number, phone and email comes from the charter or the Requester's answers",
+    "severity": "warn"
+   },
+   {
+    "id": "N7",
+    "text": "Every form has a submit control and a destination (action or mailto)",
+    "check": "forms-have-destination",
+    "met": true,
+    "evidence": "no forms on the page",
+    "severity": "warn"
+   },
+   {
+    "id": "N8",
+    "text": "A nav reaches every section, and the hero has one obvious main action",
+    "check": "nav-and-main-action",
+    "met": false,
+    "evidence": "no <nav> on the page; no hero",
+    "severity": "warn"
+   },
+   {
+    "id": "N9",
+    "text": "Every charter fact appears exactly",
+    "check": "facts-present-all",
+    "met": true,
+    "evidence": "the charter marks no facts that must appear exactly",
+    "severity": "warn"
+   }
+  ]
+ }
+]

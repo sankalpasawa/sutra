@@ -382,7 +382,7 @@
             "minLength": 1,
             "type": "string"
           },
-          "maxItems": 8,
+          "maxItems": 40,
           "title": "Args",
           "type": "array"
         },
@@ -459,6 +459,8 @@
             "ids-unique",
             "lld-slice",
             "deed-send",
+            "test-passed",
+            "inside-folder",
             "reply-valid",
             "turn-posted",
             "charter-stamp",
@@ -1475,7 +1477,7 @@
           "type": "array"
         },
         "completion_check": {
-          "maxLength": 400,
+          "maxLength": 4000,
           "minLength": 1,
           "title": "Completion Check",
           "type": "string"
@@ -1503,7 +1505,7 @@
         "dependencies": {
           "default": [],
           "items": {
-            "maxLength": 40,
+            "maxLength": 200,
             "minLength": 1,
             "type": "string"
           },
@@ -2024,7 +2026,7 @@
           "items": {
             "$ref": "#/$defs/Check"
           },
-          "maxItems": 12,
+          "maxItems": 40,
           "title": "Checks",
           "type": "array"
         }

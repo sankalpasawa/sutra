@@ -14,8 +14,9 @@ import pytest
 pytest.importorskip("sutra_app.engine")
 
 from sutra_app.connectors import jsonio  # noqa: E402
-from sutra_app.engine import j2_realization, j2_rules, llm  # noqa: E402
+from sutra_app.engine import j2_realization, j2_rules, j2_types, llm  # noqa: E402
 from sutra_app.library import replies  # noqa: E402
+from sutra_app.library.atom import J2_CHECKS, PLUGIN_CHECKS  # noqa: E402
 from sutra_app.library import rules as lib_rules  # noqa: E402
 from sutra_app.library.functions import SIGNALS, certainty_zone  # noqa: E402
 
@@ -75,3 +76,15 @@ def test_the_zone_names_and_signal_names_are_the_engines():
 def test_extract_json_and_close_json_are_one_object_in_the_engine_the_connectors_and_the_library():
     assert llm.extract_json is jsonio.extract_json is replies.extract_json
     assert llm.close_json is jsonio.close_json is replies.close_json
+
+
+# ============================================ check names ===================================================================
+CODE_WRITTEN_CHECKS = ("lld-slice", "deed-send")      # code writes these at registration; j2.py names them only in its branches
+
+
+def test_the_librarys_check_names_are_the_ones_the_engines_forms_run():
+    """D430: a form's check types (artifacts/types.json) are the one definition in the engine; the library keeps its own list
+    (it imports nothing from the engine) and this test fails when the two drift."""
+    forms = [name for name in json.loads(Path(j2_types.TYPES_PATH).read_text(encoding="utf-8"))["forms"] if not name.startswith("_")]
+    engine = {c for form in forms for c in j2_types.form_check_types(form, j2_types.TYPES_PATH)}
+    assert set(PLUGIN_CHECKS) | set(J2_CHECKS) == engine | set(CODE_WRITTEN_CHECKS)

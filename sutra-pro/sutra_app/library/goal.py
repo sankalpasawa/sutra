@@ -179,6 +179,8 @@ class _StoredCharter(Value):
     """The fields and rules the stored charter adds to a draft (J2:3781-3783, 4114-4119, 4448, 4479). It stands beside
     the draft in the bases of SiteGoal and DocGoal, so both are still drafts with more in them."""
 
+    # the Requester may drop every item, so the stored charter can have none left; only then (D430, `_stored_rules`)
+    done_when: Annotated[list[Item], Field(max_length=MAX_DONE_WHEN)]
     to_be_confirmed: Annotated[list[ToBeConfirmed], Field(max_length=MAX_DONE_WHEN)] = []       # texts, not numbers
     charter_items: Annotated[list[Item], Field(max_length=200)] = []          # every item the charter ever had; the number of an item is its place here
     core_items: Annotated[list[Item], Field(max_length=200)] = []
@@ -196,6 +198,8 @@ class _StoredCharter(Value):
     @model_validator(mode="after")
     def _stored_rules(self) -> Self:
         problems: list[Problem] = []
+        if not self.done_when and not self.dropped_by_requester:
+            problems.append((("done_when",), "a charter has at least one done_when item, unless the Requester dropped them all"))
         open_items = set(getattr(self, "done_when", ())) | set(self.dropped_by_requester)
         for index, fact in enumerate(self.to_be_confirmed):
             # an item the owner dropped by override stays listed (J2:3399 leaves to_be_confirmed alone)
@@ -226,6 +230,11 @@ class DocGoal(Record, _StoredCharter, DocGoalDraft):
     FAMILY = "goal"
     kind: Literal["doc"] = "doc"
     chain: JsonObject = Field(default_factory=dict)
+    # a folder form's charter (a module and its test, D430): the files it makes, its test, where it may write, what it never does
+    files: Annotated[list[Line], Field(max_length=MAX_DONE_WHEN)] = []
+    test: Label = ""
+    may_touch: Annotated[list[Line], Field(max_length=MAX_DONE_WHEN)] = []
+    never_do: Annotated[list[Line], Field(max_length=MAX_DONE_WHEN)] = []
 
 
 def goal_kind(charter: Mapping[str, Any]) -> Literal["site", "doc"]:

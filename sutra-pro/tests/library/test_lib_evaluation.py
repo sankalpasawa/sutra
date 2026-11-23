@@ -253,7 +253,7 @@ def test_a_finding_id_is_used_once_across_results_and_extra_issues():
 
 def test_the_entry_is_closed_and_bounded():
     assert ("cycle", "greater_than_equal") in problems(ResultEvaluation, {**entry(), "cycle": 0})
-    assert ("version", "greater_than_equal") in problems(ResultEvaluation, {**entry(), "version": 0})
+    assert ("version", "greater_than_equal") in problems(ResultEvaluation, {**entry(), "version": -1})     # 0: a folder output (D430)
     assert ("verdict", "extra_forbidden") in problems(ResultEvaluation, {**entry(), "verdict": "PASS"})
     assert ("results", "missing") in problems(ResultEvaluation, {k: v for k, v in entry().items() if k != "results"})
     assert ("results", "too_long") in problems(ResultEvaluation, {**entry(), "results": [row(n) for n in range(201)]})
