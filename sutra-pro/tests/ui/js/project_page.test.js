@@ -268,3 +268,13 @@ test("an answer to a step's engine question goes to that team's chat route, only
   }
   assert.equal(w.posts.length, 1);
 });
+
+test("the Live badge shows only while the project runs: not after it is done, stopped or failed (D413)", async () => {
+  const opened = async over => { const w = world(over); await w.page.start(); w.sources[0].listeners.open(); return w; };
+  assert.equal((await opened()).nodes["p-live"].textContent, "Live");
+  for (const status of ["done", "done_with_open_items", "stopped", "failed"]) {
+    const w = await opened({snap: snapshot({project: Object.assign({}, snapshot().project, {status})})});
+    assert.equal(w.nodes["p-live"].textContent, "", status);
+  }
+  assert.equal((await opened({snap: snapshot({project: Object.assign({}, snapshot().project, {status: "reviewing"})})})).nodes["p-live"].textContent, "Live");
+});

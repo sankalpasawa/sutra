@@ -71,7 +71,8 @@
       paint("p-head", S.snapshot ? view.header(S.snapshot) : "");
       paint("p-body", view.page(S, location));
       const live = el("p-live");
-      if (live) live.textContent = S.live === "live" ? "Live" : S.live === "polling" ? "Updating every few seconds" : "Not connected";
+      const over = S.snapshot && S.snapshot.project && ["done", "done_with_open_items", "stopped", "failed"].indexOf(S.snapshot.project.status) >= 0;      // "Live" says it is being watched: nothing runs any more (D413)
+      if (live) live.textContent = over ? "" : S.live === "live" ? "Live" : S.live === "polling" ? "Updating every few seconds" : "Not connected";
       if (S.snapshot && doc && doc.title !== undefined) doc.title = (S.snapshot.project.title || "Project") + " - Sutra";
     }
 
