@@ -57,10 +57,13 @@ const SESSION = {id: "cs_x", node_id: "web", kind: "department", title: "Web", w
 const note = text => ({id: 1, session_id: "cs_x", role: "agent", who: "sutra", kind: "note", text, card: null, pause: null, answered_by: null, task_id: null, state: "ok", at: "2026-11-04T10:00:00Z"});
 
 test("a note that ends with a project's address links to the project, and every other note comes out as it always did", () => {          // R6, PB-19
-  const linked = ChatView.transcript(SESSION, [note("I stopped the project \u201cA\u201d: why. /p/" + PROJECT)]);
+  const ORG_SESSION = Object.assign({}, SESSION, {id: "cs_org", kind: "org", node_id: "", title: "Org"});
+  const linked = ChatView.transcript(ORG_SESSION, [note("I stopped the project \u201cA\u201d: why. /p/" + PROJECT)]);
+  assert.equal(ChatView.transcript(SESSION, [note("a title said /p/" + PROJECT)]).includes('class="plink"'), false, "a team's own chat never links it (D408)");
+  assert.equal(ChatView.transcript(SESSION, [Object.assign(note("x /p/" + PROJECT), {kind: "error"})]).includes('class="plink"'), false);
   assert.ok(linked.includes('<a class="plink" href="/p/' + PROJECT + '">Open the project</a>'));
   for (const same of ["a plain note", "see /p/prj_zz and <b>x</b>", "/p/" + PROJECT + "abc", "http://x.example/p/" + PROJECT.toUpperCase()]) {
-    const html = ChatView.transcript(SESSION, [note(same)]);
+    const html = ChatView.transcript(ORG_SESSION, [note(same)]);
     assert.equal(html.includes("<a class=\"plink\""), false, same);
   }
   assert.equal(ChatView.transcript(SESSION, [note("a plain note")]), ChatView.transcript(SESSION, [note("a plain note")]));

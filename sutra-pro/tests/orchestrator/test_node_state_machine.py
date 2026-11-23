@@ -80,3 +80,31 @@ def test_a_text_body_of_a_message_is_scrubbed_like_a_json_one(db, ids):
         posted = store.post(tx, project_id=project, kind="status", src_ref="s:1", body=f"the token is {secret} and a key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789")
     assert secret not in posted.body and "sk-ant-api03" not in posted.body and "[redacted" in posted.body
     assert secret not in store.messages(project)[0].body
+
+
+# ---- the API cannot try a step again by hand (D398, M-A) ------------------------------------------------------------------------------------------
+
+def test_a_step_is_refused_a_retry_by_hand_with_a_plain_409_and_makes_no_task(db, settings, clock, events):
+    from orchestrator.projects_rig import PRig
+    from sutra_app.orchestrator.errors import Busy
+    rig = PRig(db, settings, clock, events, max_runs=5, max_live=10)
+    reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", [])])
+    rig.start()
+    rig.go(tasks["a1"])
+    rig.finish(tasks["a1"], status="crashed", outcome="it crashed", handoff=False)          # the project's own retry makes attempt 2
+    current = rig.sql("SELECT task_id FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[0]
+    rig.sql("UPDATE tasks SET status = 'crashed', ended_at = ? WHERE id = ?", 1793786500, current)
+    before = rig.sql("SELECT count(*) FROM tasks").fetchone()[0]
+    for task_id in {tasks["a1"], current}:                                                  # the first attempt and the current one
+        with pytest.raises(Busy) as refused:
+            rig.t.run(rig.t.service.retry(task_id))
+        assert refused.value.status == 409 and "tried again by its project" in refused.value.message
+    assert rig.sql("SELECT count(*) FROM tasks").fetchone()[0] == before
+
+
+def test_an_ordinary_task_is_still_retried_by_hand(db, settings, clock, events):
+    from orchestrator.projects_rig import PRig
+    rig = PRig(db, settings, clock, events, max_runs=5, max_live=10)
+    plain = rig.t.new("ops", "an ordinary task")
+    rig.sql("UPDATE tasks SET status = 'crashed', ended_at = ? WHERE id = ?", 1793786500, plain.id)
+    assert rig.t.run(rig.t.service.retry(plain.id)).parent_task_id == plain.id

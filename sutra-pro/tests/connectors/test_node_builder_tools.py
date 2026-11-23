@@ -251,3 +251,19 @@ def test_a_codex_call_of_a_step_with_no_folder_is_read_only_whatever_the_policy_
     fake.sequence("ok_plain").reply(text="ok")
     connector.call_text("ordinary", ctx=RouteContext(tag=CallTag(function="audit")))
     assert value(fake.model_calls("codex")[-1]["argv"], "-s") == "workspace-write"
+
+
+def test_a_node_whose_block_carries_no_tiers_still_gets_a_router_made_for_a_node(fake, tmp_path, folders):
+    """m-8: 'made for a node' follows the node block, not the tiers in it."""
+    from sutra_app.connectors import engine_port
+    from sutra_app.engine.port import PortSpec
+    fake.sequence("ok_plain").reply(text="built")
+    spec = PortSpec(mock=False, connector="claude", run_id="j2-20261120-100000-aaaa", dept_id="web", data_dir=str(tmp_path / "data"), node=True)
+    port = engine_port.port_from_config(spec, ConnectorConfig(**fake.config_kwargs(tmp_path)))
+    try:
+        assert port.router.node_rights is not None
+        port.complete(CompletionRequest(system="s", user="build it", tag=CallTag(function="W-1", role="builder"), run_tools=builder_grant(folders)))
+        argv = command_of(fake)
+    finally:
+        port.close()
+    assert value(argv, "--tools") == "Read,Write,Edit,Glob,Grep" and "Bash" not in value(argv, "--allowedTools")

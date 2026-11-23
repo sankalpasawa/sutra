@@ -20,7 +20,7 @@ A flag-on beta app, the real Claude, a throw-away git folder, a request of **two
 - **Run 2** (C12 to C14): Stop everything and the kill switch while a step runs; then Decide for me on; then `SUTRA_NODES_REVIEWER=1`.
 - **Run 3** (C15): a closed-app restart while a step runs.
 
-Stop the whole thing, press Stop everything (or the command line, written as in C4: `... nodes kill --data-dir ~/.sutra-pro-beta`) and write down what you saw when **any** of these happens: a file of the folder changes (`git status --porcelain` is not empty); the cost goes above $3, or above twice the plan's estimate; one step passes 40 model calls or 20 minutes; a question asks for something you did not expect in run 1 (GitHub, the app's own data, several places of the folder); the page or the chat does not answer for 30 seconds; a `claude` program is still running after Stop.
+Stop the whole thing, press Stop everything (or the command line, written as in C4: `... nodes kill --data-dir ~/.sutra-pro-beta`) and write down what you saw when **any** of these happens: a file of the folder changes (`git status --porcelain` is not empty); the cost goes above $3, or above twice the plan's estimate; one step passes 60 model calls or 20 minutes; a question asks for something you did not expect in run 1 (GitHub, the app's own data, several places of the folder); the page or the chat does not answer for 30 seconds; a `claude` program is still running after Stop.
 
 ## Checks
 

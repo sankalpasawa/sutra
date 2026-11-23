@@ -257,3 +257,14 @@ test("a page for a bad id draws the sentence and reads nothing", async () => {
   assert.match(nodes["p-body"].innerHTML, /That is not a project\./);
   assert.deepEqual(calls, []);
 });
+
+test("an answer to a step's engine question goes to that team's chat route, only for a real session and an option word (D401)", async () => {
+  const w = world();
+  await w.page.start();
+  assert.equal(await w.page.act(button({act: "step-answer", session: "cs_0123456789ab", text: "Option 2"})), true);
+  assert.deepEqual(w.posts, [["/api/chats/cs_0123456789ab/messages", {text: "Option 2"}]]);
+  for (const bad of [{session: "../x", text: "Option 1"}, {session: "cs_0123456789ab", text: "free words"}, {session: "cs_0123456789ab", text: "Option 100"}, {session: "", text: "Option 1"}]) {
+    assert.equal(await w.page.act(button(Object.assign({act: "step-answer"}, bad))), false, JSON.stringify(bad));
+  }
+  assert.equal(w.posts.length, 1);
+});

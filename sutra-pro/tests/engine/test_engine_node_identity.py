@@ -168,11 +168,11 @@ def _spec_of(monkeypatch, node):
 
 def test_the_port_spec_of_a_node_carries_the_tiers_and_commands_of_its_grant(monkeypatch):
     spec = _spec_of(monkeypatch, {**NODE, "tiers": [0, 1, 2, 3], "commands": "git_reads"})
-    assert spec.node_tiers == (0, 1, 2, 3) and spec.node_commands == "git_reads"
+    assert spec.node_tiers == (0, 1, 2, 3) and spec.node_commands == "git_reads" and spec.node is True
 
 
 def test_a_node_block_without_rights_means_none_given_and_an_ordinary_run_has_none(monkeypatch):
     spec = _spec_of(monkeypatch, NODE)                          # an older task file: the router then holds the narrowest rights
-    assert spec.node_tiers == () and spec.node_commands == "none"
+    assert spec.node_tiers == () and spec.node_commands == "none" and spec.node is True, "a node block without tiers is still a node"
     ordinary = _spec_of(monkeypatch, None)
-    assert ordinary.node_tiers == () and ordinary.node_commands == "none" and ordinary.scope == ()
+    assert ordinary.node_tiers == () and ordinary.node_commands == "none" and ordinary.scope == () and ordinary.node is False

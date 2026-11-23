@@ -27,7 +27,7 @@ from typing import Any
 from sutra_app import oslayer
 from sutra_app.library.types import clip
 
-__all__ = ["build", "write", "HANDOFF_FILE", "ACCEPTED_FILE", "SCHEMA_V", "MAX_FILES", "MAX_SUMMARY", "MAX_CLAIMS", "MAX_CLAIM", "MAX_CHANGES", "MAX_BYTES", "NOT_HANDED_ON"]
+__all__ = ["build", "write", "HANDOFF_FILE", "ACCEPTED_FILE", "SCHEMA_V", "MAX_FILES", "MAX_SUMMARY", "MAX_CLAIMS", "MAX_CLAIM", "MAX_CHANGES", "MAX_BYTES", "NOT_HANDED_ON", "ENGINE_FILES"]
 
 HANDOFF_FILE = "handoff.json"
 CHANGES_FILE = "changes.json"                  # the host's whole list of changed paths of the owner's folder (up to 5000), for the server's scope check; never handed on
@@ -45,6 +45,15 @@ NOT_HANDED_ON = frozenset({
     "deliverable.json", HANDOFF_FILE, ACCEPTED_FILE, CHANGES_FILE, "verdict.json", "needs.json", "chat.jsonl", "calls.jsonl", "summary.json", "status.json", "node_context.json", "tools.jsonl",   # G23: the tool log is the host's own
 
 })
+
+
+# The engine's own files in a run folder: what it wrote ABOUT the run, not what the step made. The ONE list (D399): the project page names none of them, and the reviewer reads none of them as the step's work
+# (project_view.js `PLUMBING` is this list, a test keeps them equal). `report.md` and `summary.txt` are the engine's report of the run; the others are its records.
+ENGINE_FILES = frozenset({
+    "artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl", "goal.json",
+    "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "report.md", "settings.json", "snapshot.json", "summary.json", "summary.txt", "task.json",
+    "timing.json", "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log", "node_context.json", "handoff.json", "handoff.accepted.json", "verdict.json", "needs.json",
+    "status.json", "changes.json", "tools.jsonl"})
 
 
 def _digest(path: Path) -> tuple[str, int]:

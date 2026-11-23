@@ -721,7 +721,8 @@ class Conductor:
             action = "node.retry"
         else:
             action = ""
-        if action and retry and project["status"] in ("running",) and self.tasks is not None and node["task_id"]:
+        reviewer_closed = project["status"] == "reviewing" and node["role"] == "reviewer" and action == "node.restarted"          # D406 (m-2): a close of the app while the review runs: it is asked again
+        if action and retry and (project["status"] in ("running",) or reviewer_closed) and self.tasks is not None and node["task_id"]:
             try:
                 with tx.savepoint():
                     self._retry(tx, node, why, action=action)

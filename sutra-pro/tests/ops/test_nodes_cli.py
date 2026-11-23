@@ -133,7 +133,11 @@ def test_resume_tells_a_running_app_to_let_go_of_a_switch_it_holds_in_memory_and
     assert app_side.killed is True                                                              # held in memory
     assert cli.main(["nodes", "resume"]) == 0
     marker = app_side.resume_marker()
-    assert marker.exists() and app_side.killed is False and not marker.exists() and marker.name == RESUME_FILE
+    assert marker.exists() and app_side.killed is False and marker.name == RESUME_FILE
+    assert marker.exists(), "the marker stays until the app has written its row (D406)"
+    app_side.pending_resumes()
+    app_side.finish_resumes()
+    assert not marker.exists()
     broken = tmp_path / "other"
     monkeypatch.setenv("SUTRA_DATA_DIR", str(broken))
     broken.mkdir()

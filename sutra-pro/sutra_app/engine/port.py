@@ -88,6 +88,7 @@ class PortSpec(BaseModel):
     # rights are not given gets the narrowest list; a call with no node in its tag is never touched.
     node_tiers: tuple[int, ...] = ()
     node_commands: str = "none"
+    node: bool = False                            # this process is a node's (its task file has a node block), whatever tiers the block carries: its router narrows every builder call (D407, m-8)
 
 
 class ToolGrant(BaseModel):

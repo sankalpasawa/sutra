@@ -491,9 +491,22 @@ class Projector:
         report = DoneReport(dept_id=row.dept_id, run_id=row.run_id or "", label=left.label) if left is not None and left.has_report and row.run_id else None
         project_id, shown = None, text
         if self.node_sync is not None:                                      # nodes on: a step of a project links to the project and says how it was stopped in the owner's words (D394)
-            step = tx.conn.execute("SELECT p.id AS id, p.status AS status, p.stop_reason AS why FROM agent_nodes n JOIN projects p ON p.id = n.project_id WHERE n.task_id = ?", (row.id,)).fetchone()
+            # the node may already follow a fresh attempt (`node_sync` above moved it): so the step is found through the task's own chain, not through the node's current task (D400)
+            step = tx.conn.execute(
+                "WITH RECURSIVE chain(id, node) AS (SELECT task_id, id FROM agent_nodes WHERE task_id IS NOT NULL UNION SELECT t.parent_task_id, c.node FROM tasks t JOIN chain c ON t.id = c.id "
+                "WHERE t.parent_task_id IS NOT NULL) SELECT p.id AS id, p.status AS status, p.stop_reason AS why, n.task_id AS current FROM chain c JOIN agent_nodes n ON n.id = c.node "
+                "JOIN projects p ON p.id = n.project_id WHERE c.id = ? LIMIT 1", (row.id,)).fetchone()
             if step is not None:
                 project_id = step["id"]
+                if step["current"] != row.id and step["status"] not in ("stopped", "failed", "done", "done_with_open_items"):
+                    # this attempt was replaced by a fresh one while the project goes on (a close of the app, a retry, a send-back): no "stopped" card for it, one plain line that says so
+                    again = "The app was closed, so" if (text.lower().startswith("the app was closed") or text.lower().startswith("stopped: stopped on request")) else "This try ended, so"
+                    note = f"{again} the step \u201c{clip(row.title, 120)}\u201d starts again. /p/{project_id}"
+                    self._post(batch, ORG_SESSION_ID, who="sutra", kind="note", text=note, src_ref=f"{batch.run}#again", at=ended_at)
+                    session = self._session_of(tx, row.dept_id)
+                    if left is not None and session is not None and row.run_id:
+                        self._post_deliverable(batch, session, left, ended_at)
+                    return
                 shown = plain_outcome(text, step["why"] if step["status"] == "stopped" else "")
         card = DoneCard(type="done", task_id=row.id, dept_name=name["name"] if name is not None else row.dept_id, title=clip(row.title, 200),
                         status=status, outcome=shown, receipt=self._receipt(tx.conn, row), report=report, project_id=project_id)
