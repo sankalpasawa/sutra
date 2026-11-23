@@ -238,7 +238,7 @@ test("the audit says what happened in plain words: no 'Something happened', no '
   assert.match(text, /A step ran commands 7 times/);
   assert.match(text, /A step read README\.md, 2 times/);
   assert.match(text, /A step searched, 2 times/);
-  assert.match(text, /A step changed project\.md, once/);
+  assert.match(text, /A step wrote its report, once/);
   assert.match(text, /A step used the web 3 times/);
   assert.match(text, /The kill switch was used/);
   assert.match(text, /A step was stopped[\s\S]*The kill switch was used/);
@@ -251,12 +251,12 @@ test("what the steps said is a plain line about what they produced, never the en
     files: [{path: "artifacts.json", sha256: "x", bytes: 1}, {path: "report.md", sha256: "x", bytes: 1}, {path: "project.md", sha256: "x", bytes: 1}, {path: "workflows.json", sha256: "x", bytes: 1}], claims: [], needs: []};
   const html = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap());
   const text = html.replace(/<[^>]*>/g, " ");
-  assert.match(text, /Step a1\s+handed in its work\. It made project\.md\./);
+  assert.match(text, /Step a1\s+handed in its work\. It wrote its report\./);
   assert.equal(/rubric|done-when|necessary condition|artifacts\.json|workflows\.json/.test(text), false, text);
   const open = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: Object.assign({}, body, {status: "done_with_open_items", files: [], changes: ["a.py", "b.py"]})}], snap());
   assert.match(open.replace(/<[^>]*>/g, " "), /handed in its work, with some things left open\. It changed 2 files in your folder: a\.py, b\.py\./);
   const many = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: Object.assign({}, body, {files: ["a", "b", "c", "d", "e", "f"].map(n => ({path: n + ".md"}))})}], snap());
-  assert.match(many, /It made a\.md, b\.md, c\.md, d\.md and 2 more\./);
+  assert.match(many, /It wrote a\.md, b\.md, c\.md, d\.md and 2 more\./);
   assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {summary: "every rubric item passes"}}], snap()), /\(handed in its work\)/, "an engine sentence on its own is left out");
   assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {summary: "Looks fine to me."}}], snap()), /Looks fine to me\./, "a person's sentence is shown");
 });
@@ -292,7 +292,7 @@ test("the pseudo-tool of the engine, a step before that did not finish and the f
 
 test("the engine's own run report is not named as something a step made", () => {
   const body = {node_id: "nd_a", status: "done", files: [{path: "report.md"}, {path: "project.md"}]};
-  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap()).replace(/<[^>]*>/g, " "), /It made project\.md\./);
+  assert.match(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap()).replace(/<[^>]*>/g, " "), /It wrote its report\./);
   assert.equal(/report\.md/.test(View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body}], snap())), false);
 });
 
@@ -334,4 +334,20 @@ test("the page shows the whole request under a short title, and nothing extra wh
   assert.equal(/prequest/.test(View.header(snap({request: "A page and a quote"}))), false, "the title is the whole request");
   assert.equal(/prequest/.test(View.header(snap())), false);
   assert.equal(/<img/.test(View.header(snap({request: "<img src=x> and more words than the title has"}))), false);
+});
+
+test("the page says a step's work in the owner's words: its report, the folder's history; no plumbing file name (D405)", () => {
+  const rows = [{seq: 1, action: "tool.used", reason: "edit project.md, 2 times"}, {seq: 2, action: "tool.used", reason: "edit notes.txt, 1 time"}, {seq: 3, action: "tool.used", reason: "read HEAD, 1 time"},
+    {seq: 4, action: "tool.used", reason: "read COMMIT_EDITMSG, 1 time"}, {seq: 5, action: "tool.used", reason: "read index, 1 time"}, {seq: 6, action: "tool.used", reason: "read config.py, 2 times"},
+    {seq: 7, action: "tool.used", reason: "read config, 1 time"}];
+  const text = View.auditHtml(rows, null).replace(/<[^>]*>/g, " ").replace(/&#39;/g, "'");
+  assert.match(text, /A step wrote its report, 2 times/);
+  assert.match(text, /A step wrote notes\.txt, once/);
+  assert.equal((text.match(/A step looked at the folder's history, once/g) || []).length, 3);
+  assert.match(text, /A step read config\.py, 2 times/);
+  assert.match(text, /A step read config, once/, "a bare name that could be the owner's own is not guessed at");
+  assert.equal(/COMMIT_EDITMSG|read HEAD|read index|changed project\.md/.test(text), false, text);
+  const said = View.messagesHtml([{seq: 1, from: {node_id: "nd_a"}, body: {node_id: "nd_a", status: "done", files: [{path: "project.md"}, {path: "notes.md"}]}}], snap()).replace(/<[^>]*>/g, " ");
+  assert.match(said, /It wrote its report, notes\.md\./);
+  assert.equal(/It made|project\.md/.test(said), false);
 });

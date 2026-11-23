@@ -212,3 +212,14 @@ def test_the_snapshot_carries_the_whole_request_for_the_page(rig):
 def test_without_a_found_request_the_snapshot_says_nothing_rather_than_guessing(rig):
     reservation, tasks = rig.request([("a1", "web", []), ("a2", "sales", ["a1"])], request_id="req-999")
     assert rig.projects.snapshot(reservation.project_id)["request"] == ""
+
+
+# ---- the repository's own files are not a step's tool rows (D405, run 3 item 6) ----------------------------------------------------------------------
+
+def test_a_read_inside_dot_git_is_no_tool_row_and_an_ordinary_file_still_is():
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.git/HEAD"}}) is None
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.git/COMMIT_EDITMSG"}}) is None
+    assert tool_audit.facts({"name": "Glob", "input": {"path": "C:\\work\\proj\\.git\\refs"}}) is None
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/.github/ci.yml"}}) == ("Read", "read", "ci.yml"), ".github is not .git"
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/HEAD"}}) == ("Read", "read", "HEAD"), "a file of the owner's own called HEAD is a file"
+    assert tool_audit.facts({"name": "Read", "input": {"file_path": "/work/proj/README.md"}}) == ("Read", "read", "README.md")

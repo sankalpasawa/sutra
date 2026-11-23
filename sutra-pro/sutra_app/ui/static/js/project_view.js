@@ -67,13 +67,18 @@
   const sentence = text => (text && !/[.!?]$/.test(text) ? text + "." : text);
   // What a tool row says: its kind, the file when there is one, how many times ("run, 7 times" is "ran commands 7 times").
   const TOOL_VERBS = freeze({read: "read", edit: "changed", run: "ran commands", search: "searched", web: "used the web", sutra: "looked at Sutra's own data", github: "read GitHub", other: "used a tool"});
+  const GIT_NAMES = freeze(["HEAD", "index", "COMMIT_EDITMSG", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "packed-refs"]);     // bare names inside a repository's .git folder (no other bare name is guessed at)
+  const OWN_FILES = freeze({"project.md": "its report", "report.md": "its report"});
   function toolWords(reason) {
     const m = /^(read|edit|run|search|web|sutra|github|other)(?: (.+?))?, (\d+) times?$/.exec(clean(reason));
     if (!m) return "A step used a tool";
     const times = Number(m[3]);
     const verb = TOOL_VERBS[m[1]];
-    const what = m[1] === "read" || m[1] === "edit" ? " " + m[2] : "";
-    return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + (times === 1 ? "once" : times + " times");
+    const n = times === 1 ? "once" : times + " times";
+    if (m[1] === "read" && GIT_NAMES.indexOf(m[2]) >= 0) return "A step looked at the folder's history, " + n;                 // the repository's own files (D405)
+    if (m[1] === "edit") return "A step wrote " + (OWN_FILES[m[2]] || m[2] || "a file") + ", " + n;
+    const what = m[1] === "read" ? " " + m[2] : "";
+    return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + n;
   }
   function reasonWords(row, project) {
     const action = clean(row.action);
@@ -286,7 +291,7 @@
     const files = arr(body.files).map(f => (isObj(f) ? clean(f.path) : "")).filter(f => f && PLUMBING.indexOf(f) < 0);
     const changed = arr(body.changes).map(clean).filter(Boolean);
     const open = body.status === "done_with_open_items";
-    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It made " + names(files, 4) : "") + "." +
+    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It wrote " + names(files.map(f => OWN_FILES[f] || f), 4) : "") + "." +
       (changed.length ? " It changed " + (changed.length === 1 ? "1 file" : changed.length + " files") + " in your folder: " + names(changed, 3) + "." : "");
   }
   function textOf(body) {
