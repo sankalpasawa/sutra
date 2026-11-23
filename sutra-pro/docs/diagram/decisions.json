@@ -2083,5 +2083,10 @@
   "id": "D430",
   "label": "records: models take what J2 writes (second look, superseded, agent checks, usd)",
   "anchor": "Department records"
+ },
+ {
+  "id": "D431",
+  "label": "same build failure twice stops (P28); no ship/done with nothing built (P29)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

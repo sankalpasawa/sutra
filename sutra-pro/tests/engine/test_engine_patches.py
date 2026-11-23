@@ -1420,6 +1420,43 @@ def test_p22_a_different_rejection_in_between_is_not_twice_in_a_row(sort_run):
     assert run.turn == "adaptation", run.handoff
 
 
+def test_p22_a_renamed_proposal_rejected_for_the_same_reason_stops_the_cycle(sort_run):
+    """D431 amends P22: the repeat is the rejection's reason, whatever the workflow is called (run 17e1's replacements were
+    reworded copies)."""
+    make, real = sort_run
+    run = make()
+    run._register(notes_alone(real))
+    run.workflows[0]["status"] = "done"
+    run._agree(sort_proposals(real, fix=True))
+    assert run.turn == "adaptation"
+    run._agree([{**sort_proposals(real, fix=True)[0], "name": "Build the sorter"}])       # renamed, refused for the same reason
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"].startswith("The same failure came back twice in a row: the validator rejected Build the sorter")
+
+
+def test_p22_renaming_the_other_workflow_a_rejection_names_is_still_the_same_rejection(sort_run):
+    """Review R1-2: the repeat compares the rejection's code-set key (its rule and the item numbers), never a name. The run
+    notes are refused for covering item 3, which the real run checks; the refusal names the real-run workflow, and renaming
+    that workflow between two calls changes the words, not the rejection."""
+    make, real = sort_run
+    run = make()
+    script, test, notes = sort_proposals(real)
+    run._register([script, notes])
+    assert [x["workflow"] for x in run.rejections] == ["Write run_on_sort_me.md"] and not run.repeat_rejected
+    run._register([{**script, "name": "Build the sorter"}, notes])
+    assert "'Build the sorter'" in run.rejections[-1]["reason"]
+    assert [x[0] for x in run.repeat_rejected] == ["Write run_on_sort_me.md"], run.rejections
+
+
+def test_p22_a_rejection_of_another_kind_is_not_the_same_rejection(sort_run):
+    make, real = sort_run
+    run = make()
+    script, test, notes = sort_proposals(real)
+    run._register([script, notes])                                      # refused: it covers the real run's item
+    run._register([{**notes, "completion_check": ""}])                   # refused: a required field is missing
+    assert run.rejections[-1]["workflow"] == "Write run_on_sort_me.md" and not run.repeat_rejected
+
+
 # ---- P23 (D247): ended_workable only for a clean "Done:" end ---------------------------------------------------------------------
 
 def ended(run_dir, outcome, fail=False, **audit_keys):
@@ -1643,14 +1680,15 @@ def test_p25_decide_for_me_never_approves_a_raise(j2, make_run, kind):
     assert run._auto_pick() is None                                     # but only the Requester answers it
 
 
-def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_answers_one_that_does_not(j2, make_run):
+def test_p25_decide_for_me_waits_on_a_limit_whose_pick_adds_credits_and_since_p29_on_every_limit(j2, make_run):
     run = make_run()
     run.auto = True
     run.paused = {"kind": "limit", "questions": [dict(LIMIT_Q)], "handoff": {"choices": ["continue", "ship"]}, "msg": 1}
     assert run._auto_pick() is None
     run.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
                   "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
-    assert run._auto_pick() == ("Option 1", "Leave out the stories", 1)
+    assert run._auto_pick() is None                                     # P29 (D431): a limit question is the Requester's own
+    assert run._auto_choice(run.paused)[:2] == ("Option 1", "Leave out the stories")      # still what the Simple view suggests
 
 
 # ---- P26 (D421, D422): dollar mode (J2_USD_BUDGET). Part 1: the run's cost from its AI calls --------------------------------------
@@ -1852,3 +1890,498 @@ def test_p26_spec_fields_bounds_and_old_credit_keys(tmp_path):
         with pytest.raises(ValidationError):
             EngineSettings(**bad)
     assert EngineSettings(budget=250, budget_cap=500, limit_add=40).budget == 250       # stored credit settings stay valid
+
+
+# ---- P28 (D431): the same build failure twice in a row, across workflows, stops the cycle -------------------------------------
+# Beta run j2-20261118-071410-17e1 (Bean There): every builder failed with "changed outside its folder: agent_live.json,
+# events.jsonl, snapshot.json", and Adaptation replaced the failed workflow six times (W-1, W-6, W-7, W-11, W-12, W-13).
+OUTSIDE_17E1 = ["agent_live.json", "events.jsonl", "snapshot.json"]
+
+
+def failed_receipts(*pairs, text="a check"):
+    """A built workflow whose one atom's latest receipts fail with these (type, evidence) pairs; `text` is the check's own wording."""
+    return [{"id": "a1", "results": [{"check": f"{text} {n}", "type": t, "evidence": e, "pass": False}
+                                     for n, (t, e) in enumerate(pairs)] + [{"check": "ok", "type": "file-exists", "evidence": "x", "pass": True}]}]
+
+
+def test_p28_build_failure_outside_write_in_any_order_is_the_same_and_another_file_set_is_not(j2):
+    one = {"id": "W-1", "name": "Write the exact copy sheet", "status": "failed", "failure": ["outside_write", list(OUTSIDE_17E1)]}
+    six = {"id": "W-6", "name": "Write the copy sheet again", "status": "failed", "failure": ["outside_write", OUTSIDE_17E1[::-1]]}
+    other = {"id": "W-7", "name": "Write the exact copy sheet", "status": "failed", "failure": ["outside_write", ["notes.txt"]]}
+    assert j2.build_failure(one) == j2.build_failure(six) == ("outside_write", tuple(OUTSIDE_17E1))
+    assert j2.build_failure(other) != j2.build_failure(one)          # the same name, another cause: not the same failure
+
+
+def test_p28_build_failure_of_failed_checks_reads_type_and_evidence_never_the_name_or_check_text(j2):
+    a = {"id": "W-2", "name": "Build the menu", "status": "done", "atoms": failed_receipts(("file-exists", "index.html not found"))}
+    b = {"id": "W-5", "name": "Rebuild the menu section", "status": "done",
+         "atoms": failed_receipts(("file-exists", "index.html not found"), text="the menu page is there")}
+    c = {**b, "atoms": failed_receipts(("file-exists", "menu.html not found"))}
+    assert j2.build_failure(a) == j2.build_failure(b) == ("checks", (("file-exists", "index.html not found"),))
+    assert j2.build_failure(c) != j2.build_failure(a)
+
+
+def test_p28_build_failure_is_none_for_a_pass_and_failed_for_a_record_from_before(j2):
+    passed = {"id": "W-3", "status": "done", "atoms": [{"id": "a1", "results": [{"type": "file-exists", "evidence": "x", "pass": True}]}]}
+    assert j2.build_failure(passed) is None and j2.build_failure({"id": "W-4", "status": "registered"}) is None
+    assert j2.build_failure({"id": "W-1", "status": "failed"}) == ("failed", "")
+
+
+def test_p28_a_builder_tool_fault_keeps_every_outside_file_sorted(j2, make_run):
+    assert j2.BuilderToolFault("outside", "x", files=["b", "a"]).files == ["a", "b"]
+    assert j2.BuilderToolFault("limits", "x").files == []
+    run = make_run()
+    run.post("user", "go")
+    names = {f"n{i}.txt": "x" for i in range(7)}                     # the message names 5 of them; the fault keeps all 7
+    with pytest.raises(j2.BuilderToolFault) as e:
+        tools_call(j2, run, extra=names)
+    assert e.value.files == sorted(names) and "and 2 more" in str(e.value)
+
+
+DONE_17E1 = ["The page shows the business name Bean There and its address 12 Park Road.",
+             "The page shows the opening hours 7am-6pm daily.",
+             "The page shows a menu listing espresso £2.50, flat white £3.20 and croissant £2.80.",
+             "The page has no JavaScript errors, no horizontal overflow at 360px and 1280px, and every in-page link points to an "
+             "existing section."]
+
+
+@pytest.fixture
+def replay_17e1(j2, make_run, monkeypatch):
+    """Replay A: run 17e1's website run (4 done-when items, 100 credits) with builder tools on. A build whose `fault` entry
+    is a file list fails as the run's builders did (the CLI wrote those files outside its folder); None builds and passes.
+    Returns (run, add, fault, builder_calls)."""
+    run = make_run()
+    run.post("user", "A one-page website for Bean There")
+    run._apply_output("website")
+    run.goal, run.budget = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100
+    cwd = Path(run.dir) / "out"
+    cwd.mkdir(parents=True, exist_ok=True)
+    tools = {"tools": ["Write"], "allow": ["Write"], "cwd": str(cwd), "root": str(run.dir), "usd": 1.0, "log_chars": 200,
+             "max_files": 50, "max_bytes": 1_000_000}
+    monkeypatch.setattr(run, "_builder_tools", lambda: tools)
+    fault, builder_calls, real_call = {"files": list(OUTSIDE_17E1)}, [], run.call
+
+    def call(fn, fmt, task, mock, **kw):
+        if not str(fn).startswith("W-"):
+            return real_call(fn, fmt, task, mock, **kw)
+        builder_calls.append(fn)
+        if fault["files"] is None:
+            (cwd / run._main_file()).write_text("<!doctype html><title>Bean There</title><main>Bean There</main>")
+            return {"say": "built", "human_output": "I built it.", "atom_human_output": "Built."}
+        files = fault["files"]
+        raise j2.BuilderToolFault("outside", "changed outside its folder: " + ", ".join(files), files=files)
+    monkeypatch.setattr(run, "call", call)
+
+    def add(wid, name, cost=6, checks=(), **kw):
+        j2.add_workflow_agent(wid)
+        w = {"id": wid, "name": name, "section": wid, "status": "registered", "cost": cost, "charged": True, "cycle": 1,
+             "envelope": {"money_limit": cost, "model_call_limit": 2, "retry_limit": 1}, "calls_used": 0, "retries_used": 0,
+             "outputs": ["copy.md"], "covers": [], "covers_text": [], "dependencies": [], "kind": "build",
+             "atoms": [{"id": f"{wid}.a1", "goal": name, "verification": list(checks)}], **kw}
+        run.workflows.append(w)
+        run._recalc_spent()
+        return w
+    return run, add, fault, builder_calls
+
+
+def test_p28_replay_17e1_stops_after_the_second_identical_failure(replay_17e1):
+    run, add, fault, calls = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    assert run.turn == "coordination" and run._wf("W-1")["failure"] == ["outside_write", OUTSIDE_17E1]
+    add("W-6", "Write the exact copy sheet", replaces="W-1")       # Adaptation's reworded replacement
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"] == ("The same failure came back twice in a row: W-1 and W-6 both failed (changed files outside "
+                                     "its folder: agent_live.json, events.jsonl, snapshot.json), so another attempt would likely "
+                                     "repeat it.")
+    assert calls == ["W-1", "W-6"] and run.spent == 12 and run.repeat_steps == ["W-1", "W-6"]
+    assert [e for e in run.events if e["type"] == "repeat" and "W-1 and W-6" in json.dumps(e)]
+
+
+def test_p28_a_different_file_set_is_not_the_same_failure(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    fault["files"] = ["notes.txt"]
+    add("W-6", "Write the exact copy sheet", replaces="W-1")
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "coordination" and run.repeat_steps == []
+
+
+def test_p28_a_passing_build_in_between_clears_it(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    add("W-1", "Write the exact copy sheet")
+    run._turn_workflow_agent({"wid": "W-1"})
+    fault["files"] = None
+    add("W-2", "Build the page base")
+    run._turn_workflow_agent({"wid": "W-2"})
+    assert run._wf("W-2")["status"] == "done" and run.last_failure is None
+    fault["files"] = list(OUTSIDE_17E1)
+    add("W-6", "Write the exact copy sheet", replaces="W-1")
+    run._turn_workflow_agent({"wid": "W-6"})
+    assert run.turn == "coordination", run.handoff
+
+
+def test_p28_the_same_failed_checks_across_reworded_workflows_stop_and_keep_going_resumes_atom_failed(replay_17e1):
+    run, add, fault, _ = replay_17e1
+    fault["files"] = None                                            # both build, and the same check fails on the same evidence
+    menu = {"type": "file-exists", "target": "menu.html", "expect": True}
+    add("W-4", "Build the menu section", checks=[{**menu, "text": "The menu page is there"}])
+    run._turn_workflow_agent({"wid": "W-4"})
+    assert run.turn == "adaptation" and run.handoff["kind"] == "atom_failed"
+    add("W-9", "Build the menu section from the charter", checks=[{**menu, "text": "menu.html exists in the folder"}])
+    run._turn_workflow_agent({"wid": "W-9"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit", run.handoff
+    assert run.handoff["reason"].startswith("The same failure came back twice in a row: W-4 and W-9 both failed (the same "
+                                            "checks failed: file-exists: ")
+    assert run.handoff["resume"]["to"] == "adaptation" and run.handoff["resume"]["handoff"]["kind"] == "atom_failed"
+    assert run.handoff["resume"]["handoff"]["wid"] == "W-9"
+
+
+def test_p28_a_keep_going_answer_does_not_clear_the_memory(replay_17e1):
+    """OQ-1: "keep going" changes nothing about the cause, so the next identical failure asks again (run 17e1 went on to
+    W-12 and W-13 after "Option 1")."""
+    run, add, fault, calls = replay_17e1
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    run._identity_limit(run.handoff)
+    p = run.paused
+    assert p and p["kind"] == "limit" and p["handoff"]["choices"][0] == "continue", p
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Option 1"})
+    add("W-11", "Build the page base and intro from the charter", outputs=["index.html"])
+    run._turn_workflow_agent({"wid": "W-11"})
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and "W-6 and W-11" in run.handoff["reason"], run.handoff
+    assert calls == ["W-1", "W-6", "W-11"]
+
+
+def copy_sheet(cause=None, **kw):
+    """A proposal after Replay A: by default the page base again, covering item 1 as the repeated step did, and writing
+    index.html as nearly every page workflow does."""
+    atom = {"id": "a1", "goal": "write the page base", "context": ["charter"], "constraints": ["only the folder"],
+            "how": {"kind": "AI", "agent": "Builder", "steps": "write index.html"},
+            "expected_output": [{"text": "index.html exists", "kind": "file", "target": "index.html"}],
+            "verification": [{"text": "index.html exists", "type": "file-exists", "target": "index.html", "expect": True}]}
+    return {"name": "Build the page base into the output folder", "kind": "build", "goal_gap": "the page base",
+            "outputs": ["index.html"], "completion_check": "index.html exists", "covers": [1], "dependencies": [], "atoms": [atom],
+            "parts": ["page_section"], "cost": 10, **({"cause_change": cause} if cause is not None else {}), **kw}
+
+
+def repeated(replay_17e1):
+    """Replay A on the page base (run 17e1's W-7 and W-11: covers item 1, writes index.html)."""
+    run, add, fault, calls = replay_17e1
+    for wid in ("W-1", "W-6"):
+        add(wid, "Build the page base and intro from the charter", covers=[1], covers_text=[DONE_17E1[0]], outputs=["index.html"])
+        run._turn_workflow_agent({"wid": wid})
+    assert run.repeat_steps == ["W-1", "W-6"]
+    return run
+
+
+def test_p28_a_redo_of_a_repeated_step_without_cause_change_is_rejected(replay_17e1):
+    run = repeated(replay_17e1)
+    why = ("it redoes W-1 and W-6, which failed the same way twice, and its cause_change is empty: say what is different about "
+           "the cause this time")
+    for cause in (None, "", "  "):                                    # it covers their item 1
+        reg, refused, _ = run._register([copy_sheet(cause)])
+        assert not reg and refused == [f"Build the page base into the output folder ({why})"], refused
+    reg, refused, _ = run._register([copy_sheet(replaces=["W-6"], covers=[], outputs=["copy.md"], parts=["styling"], cost=5)])
+    assert not reg and "(it redoes W-6, which failed the same way twice, and its cause_change is empty" in refused[0], refused
+    reg, refused, _ = run._register([copy_sheet("write the page into out/, not the run folder")])
+    assert [w["name"] for w in reg] == ["Build the page base into the output folder"] and not refused, refused
+    assert reg[0]["cause_change"] == "write the page into out/, not the run folder"
+
+
+def test_p28_a_proposal_for_other_items_needs_no_cause_change_even_when_it_writes_the_same_file(replay_17e1):
+    """Owner's follow-up to D431: only replacing the failed workflow or covering its items is a redo; sharing index.html,
+    which nearly every page workflow writes, is not."""
+    run = repeated(replay_17e1)
+    menu = copy_sheet(name="Build the menu section", covers=[3])                  # outputs ["index.html"], like W-1 and W-6
+    reg, refused, _ = run._register([menu])
+    assert [w["name"] for w in reg] == ["Build the menu section"] and not refused, refused
+    assert "cause_change" not in reg[0]
+
+
+def test_p28_the_prompt_lines_appear_only_after_a_repeat(replay_17e1, monkeypatch):
+    run, add, fault, calls = replay_17e1
+    seen = {}
+
+    class Seen(Exception):
+        pass
+
+    def spy(fn, fmt, task, mock, **kw):
+        seen[fn] = task
+        raise Seen
+    table = [{**copy_sheet("write the copy into out/"), "id": "p1"}]      # it covers item 1, as W-1 and W-6 did
+
+    def prompts():
+        seen.clear()
+        with monkeypatch.context() as mp:
+            mp.setattr(run, "call", spy)
+            for turn, h in ((run._turn_adaptation, {"kind": "propose", "why": "x"}), (run._turn_priority, {"kind": "price", "table": table})):
+                with pytest.raises(Seen):
+                    turn(h)
+        return seen["adaptation"], seen["priority"]
+    adapt, prio = prompts()
+    assert "cause_change" not in adapt and "cause_change" not in prio.split("ON THE TABLE")[1].split("]")[-1]
+    assert "FAILED THE SAME WAY TWICE" not in adapt + prio
+    for wid in ("W-1", "W-6"):
+        add(wid, "Build the page base and intro from the charter", covers=[1], covers_text=[DONE_17E1[0]], outputs=["index.html"])
+        run._turn_workflow_agent({"wid": wid})
+    adapt, prio = prompts()
+    assert ("W-1 and W-6 failed the same way twice (changed files outside its folder: agent_live.json, events.jsonl, "
+            "snapshot.json)") in adapt and '"cause_change"' in adapt and "the validator rejects it" in adapt
+    assert ('REDOES A STEP THAT FAILED THE SAME WAY TWICE: {"p1": "write the copy into out/"}. If a cause_change names '
+            "nothing new about the cause, the money buys the same failure: REFUSE it with that reason.") in prio
+
+
+# ---- P29 (D431): with nothing built, no option that leaves nothing to build, and never Done ---------------------------------------
+# Replay B: run 17e1's [81]-[90]. No site, the 4 items, one audit at version 0 failing them, 100 of 100 credits spent; Identity's
+# question offered "Leave out" all four items, "Option 2" was picked, and Identity then declared the run done with no site.
+def audit_v0(crit, failing, output="website", version=0):
+    return {"cycle": 1, "version": version, "output": output, "rubric": [], "conditions": [], "all_pass": not failing,
+            "mechanical": {"available": False, "note": "nothing was built"},
+            "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing,
+                         "verdict": "FAIL" if c in failing else "PASS", "note": ""} for i, c in enumerate(crit, 1)]}
+
+
+@pytest.fixture
+def nothing_built(make_run):
+    def make(failing=DONE_17E1):
+        run = make_run()
+        run.post("user", "A one-page website for Bean There")
+        run._apply_output("website")
+        run.goal, run.budget, run.spent = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100, 100
+        run.audits = [audit_v0(DONE_17E1, failing)]
+        assert not run.sites
+        run._identity_limit({"reason": "The same failure came back twice in a row, so another cycle would likely repeat it."})
+        return run
+    return make
+
+
+def test_p29_replay_17e1_offers_no_leave_out_that_leaves_nothing_with_nothing_built(nothing_built):
+    run = nothing_built()
+    h, opts = run.paused["handoff"], run.paused["questions"][0]["options"]
+    assert "drop" not in h["choices"], (h["choices"], opts)
+    assert not [o for o in opts if o.startswith("Finish as it is")]
+    assert h["choices"] == ["continue", "ship"] and opts[-1] == "Stop here: nothing is built yet, so you get no site", opts
+
+
+def test_p29_a_partial_leave_out_is_still_offered(nothing_built):
+    """OQ-4: narrowing the scope is not shipping as is."""
+    run = nothing_built(failing=[DONE_17E1[2]])
+    h = run.paused["handoff"]
+    assert "drop" in h["choices"] and h["drop_texts"] == [DONE_17E1[2]], h
+
+
+def test_p29_leaving_everything_out_with_nothing_built_stops_never_done(nothing_built, monkeypatch):
+    run = nothing_built(failing=[DONE_17E1[2]])
+    p, real = run.paused, run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"decision": "drop", "drop_items": [1, 2, 3, 4], "to_requester": "Sure.",
+                                                           "to_agents": "", "confirmed": [], "still_to_be_confirmed": []}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Leave all of it out"})
+    assert re.fullmatch(r"Stopped on the Requester's decision \(.*\): nothing was built\.", run.outcome or ""), run.outcome
+    assert run.goal["done_when"] == DONE_17E1 and run.turn is None
+    assert run.last_limit["decision"] == "stop"
+    run._write_summary()
+    assert json.loads((Path(run.dir) / "summary.json").read_text())["status"] == "stopped"
+    from sutra_app.orchestrator.stopwords import plain_outcome
+    assert plain_outcome(run.outcome) == "It stopped: nothing was built."
+
+
+def test_p29_workable_is_false_for_an_audit_at_version_0_and_unchanged_without_a_version(j2):
+    a = audit_v0(DONE_17E1, [], output="prd")
+    assert j2.workable(a) == ["nothing has been built yet"]
+    old = {k: v for k, v in a.items() if k != "version"}
+    assert j2.workable(old) == [] and j2.workable({**a, "version": 1}) == []
+
+
+def test_p29_identity_cannot_declare_a_document_done_with_nothing_built(make_run, monkeypatch):
+    run = make_run()
+    run.post("user", "A PRD for Bean There")
+    run._apply_output("prd")
+    crit = ["The PRD names the users.", "The PRD lists the goals."]
+    run.goal, run.budget, run.spent = {"statement": "PRD", "done_when": crit}, 100, 0
+    run.audits = [audit_v0(crit, [], output="prd")]
+    real = run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"to_requester": "Your PRD is ready.", "to_agents": "", "done": True,
+                                                           "clause": "done_when", "next": "Requester"}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not str(run.outcome or "").startswith("Done"), (run.turn, run.outcome)
+
+
+def test_p29_decide_for_me_never_answers_a_limit_question_nor_the_repeat_question(replay_17e1, nothing_built):
+    """Decide for me answered a second limit question with its last option (run 17e1: drop everything with nothing built).
+    A limit question, the P28 repeat question among them, waits for the Requester, as the dollar question does (P26)."""
+    run, add, fault, _ = replay_17e1
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    run._identity_limit(run.handoff)
+    run.auto = True
+    assert run.paused["kind"] == "limit" and run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
+    second = nothing_built(failing=[DONE_17E1[2]])
+    second.auto, second.auto_log = True, [{"kind": "limit"}]       # a second limit question: it took the last option
+    assert second._auto_pick() is None and second.snapshot()["paused"]["auto_waits"] is True
+    second.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Leave out the stories", "Finish as it is"]}],
+                     "handoff": {"choices": ["drop", "ship"]}, "msg": 1}
+    assert second._auto_pick() is None
+
+
+# ---- P29 (D431, follow-up): the same necessary condition unmet for the same reason in two audits in a row stops the cycle ---------
+# Beta run j2-20261123-103238-3429 (Pulse, 23 Nov): the charter listed no files and no test, so the gate conditions C1 ("the
+# charter lists no files") and C2 ("the test '' is not a file in the folder") failed in every audit while the done-when results
+# moved, and the run kept building. The run's folder is not on this Mac: the audits are rebuilt from that description, with the
+# conditions' evidence made by code (_conditions on the folder) as in the run.
+PULSE_DONE_WHEN = ["pulse.py prints the CPU and memory use every second.", "test_pulse.py checks pulse.py's output format and passes."]
+
+
+@pytest.fixture
+def pulse_run(j2ft, tmp_path):
+    def make():
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261123-103238-3429")
+        run.post("user", "Build pulse.py, a tiny system monitor, with a test")
+        run._apply_output(FT)
+        run.goal, run.budget, run.spent = {"statement": "Pulse", "done_when": list(PULSE_DONE_WHEN)}, 100, 40      # no files, no test
+        os.makedirs(run._out_dir(), exist_ok=True)
+        (Path(run._out_dir()) / "pulse.py").write_text("print('cpu 3% mem 41%')\n")
+        run.sites = ["pulse.py"]
+        return run
+    return make
+
+
+def pulse_audit(run, cycle, failing):
+    conds = run._conditions("pulse.py")
+    return {"cycle": cycle, "version": len(run.sites), "output": run.output, "rubric": [], "conditions": conds, "all_pass": False,
+            "mechanical": {},
+            "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing, "verdict": "FAIL" if c in failing else "PASS",
+                         "note": ""} for i, c in enumerate(PULSE_DONE_WHEN, 1)]}
+
+
+def test_p29_replay_3429_the_same_unmet_condition_twice_in_a_row_asks_the_requester(pulse_run):
+    run = pulse_run()
+    first = pulse_audit(run, 1, [PULSE_DONE_WHEN[1]])
+    assert {c["id"]: c["evidence"] for c in first["conditions"] if not c["met"]} == {
+        "C1": "the charter lists no files",
+        "C2": "code reran the test itself, on a copy of the folder, not the builder's own run: the test '' is not a file in the folder"}
+    run.audits = [first]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused                   # once is not twice
+    run.audits.append(pulse_audit(run, 2, [PULSE_DONE_WHEN[0]]))          # the done-when results moved; C1 and C2 did not
+    run._identity_audit({})
+    assert run.paused and run.paused["kind"] == "limit", (run.turn, run.handoff)
+    assert run.paused["handoff"]["limit"] == ("This condition comes from the charter, and building can't change it. The charter "
+                                              "needs fixing.")
+    run.auto = True
+    assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True      # Addition A: it waits for the Requester
+
+
+def test_p29_the_same_condition_with_another_reason_is_not_the_same_failure(pulse_run):
+    run = pulse_run()
+    first = pulse_audit(run, 1, [PULSE_DONE_WHEN[1]])
+    run.goal.update(files=["pulse.py", "test_pulse.py"], test=["test_pulse.py"])      # the charter now lists them: new reasons
+    second = pulse_audit(run, 2, [PULSE_DONE_WHEN[0]])
+    unmet = {c["id"]: c["evidence"] for c in second["conditions"] if not c["met"]}
+    assert unmet["C1"] == "missing: test_pulse.py" and unmet["C2"].endswith("the test 'test_pulse.py' is not a file in the folder")
+    run.audits = [first, second]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused, run.paused
+
+
+def test_p29_a_buildable_condition_unmet_the_same_way_twice_goes_back_to_adaptation(make_run):
+    """Review R1-1: only a condition the charter decides asks the Requester. A website's in-page link (N4) is the build's
+    to fix: unmet for the same reason in two audits, it goes back to Adaptation as before."""
+    run = make_run()
+    run.post("user", "A one-page website")
+    run._apply_output("website")
+    crit = ["The page shows the name.", "The page shows the hours."]
+    run.goal, run.budget, run.spent = {"statement": "x", "done_when": list(crit)}, 100, 20
+    run.sites = ["<!doctype html><title>x</title>", "<!doctype html><title>y</title>"]
+
+    def audit(failing, version):
+        return {"cycle": 1, "version": version, "output": "website", "rubric": [], "all_pass": False,
+                "mechanical": {"available": True, "js_errors": [], "broken_in_page_links": []},
+                "conditions": [{"id": "N4", "text": "Every in-page link resolves", "check": "links-well-formed", "met": False,
+                                "evidence": "broken in-page link: #menu"}],
+                "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": c not in failing,
+                             "verdict": "FAIL" if c in failing else "PASS", "note": ""} for i, c in enumerate(crit, 1)]}
+    run.audits = [audit([crit[0]], 1), audit([crit[1]], 2)]
+    run._identity_audit({})
+    assert run.turn == "adaptation" and not run.paused, (run.paused or {}).get("handoff")
+
+
+def test_p29_with_nothing_built_a_lone_stop_here_is_asked_never_applied(make_run):
+    """Review R1-3: nothing built and "keep going" can't be offered again (the last "keep going" changed nothing), so
+    "Stop here" is the only option. The Requester is still asked; the run does not end, and Decide for me waits."""
+    run = make_run()
+    run.post("user", "A one-page website for Bean There")
+    run._apply_output("website")
+    run.goal, run.budget, run.spent = {"statement": "Bean There", "done_when": list(DONE_17E1)}, 100, 40
+    run.audits = [audit_v0(DONE_17E1, DONE_17E1)]
+    run.last_limit = {"state": (len(run.sites), len(run.workflows), run.spent), "decision": "continue"}
+    run._identity_limit({"reason": "The same failure came back twice in a row, so another cycle would likely repeat it."})
+    assert run.paused and run.paused["kind"] == "limit", run.outcome
+    assert run.paused["handoff"]["choices"] == ["ship"]
+    assert run.paused["questions"][0]["options"] == ["Stop here: nothing is built yet, so you get no site"]
+    assert not str(run.outcome or "").startswith("Stopped")
+    run.auto = True
+    assert run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"] is True
+
+
+def test_p28_keep_going_after_a_repeat_stop_builds_the_waiting_queue(replay_17e1):
+    """Review R1-5: when the stopped build had handed back to Coordination and other workflows wait, "keep going" resumes
+    there and builds them, as P22's repeat does, instead of a fresh Adaptation cycle."""
+    run, add, fault, calls = replay_17e1
+    add("W-2", "Build the opening hours section", covers=[2], covers_text=[DONE_17E1[1]], outputs=["index.html"])     # waits
+    for wid in ("W-1", "W-6"):
+        add(wid, "Write the exact copy sheet")
+        run._turn_workflow_agent({"wid": wid})
+    assert run.handoff["kind"] == "limit" and run.handoff["resume"] == {"to": "coordination", "handoff": {"kind": "schedule"}}
+    run._identity_limit(run.handoff)
+    p = run.paused
+    run.paused = None
+    run._identity_hears_requester({**p["handoff"], "asked": p["questions"], "answer": "Option 1"})
+    assert run.turn == "coordination" and run.handoff["kind"] == "schedule", (run.turn, run.handoff)
+
+
+def test_p22_every_rejection_path_in_the_validator_sets_its_own_key():
+    """D431 (R1-2 follow-up): every rejection carries a key set by code, distinct per rule, so a rule added later without
+    one fails here instead of sharing another rule's bucket. Derived from the code, not from a hand-kept list:
+    - every `self._reject(...)` call in j2.py passes a third argument, the key: a tuple literal naming its rule, or the
+      rule chain's `key`;
+    - in `_register`, `key_rules` has one entry per test of the reason chain (`reason = (... if ... else ...) or
+      (budget)`), with the same test, in the same order (plus `over_budget` for the `or` tail);
+    - the rule names are distinct across all of them."""
+    import ast
+    src = (Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "_reject"]
+    assert len(calls) >= 7, len(calls)
+    names = []
+    for c in calls:
+        assert len(c.args) == 3, f"line {c.lineno}: _reject without a key"
+        k = c.args[2]
+        if isinstance(k, ast.Name):
+            assert k.id == "key", f"line {c.lineno}: key {k.id}"
+            continue
+        assert isinstance(k, ast.Tuple) and k.elts and isinstance(k.elts[0], ast.Constant) and isinstance(k.elts[0].value, str) \
+            and k.elts[0].value, f"line {c.lineno}: the key must be a tuple naming its rule"
+        names.append(k.elts[0].value)
+    reg = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_register")
+    chain = next(n.value for n in ast.walk(reg) if isinstance(n, ast.Assign) and [getattr(t, "id", None) for t in n.targets] == ["reason"]
+                 and isinstance(n.value, ast.BoolOp))
+    tests, node = [], chain.values[0]
+    while isinstance(node, ast.IfExp):
+        tests.append(ast.dump(node.test))
+        node = node.orelse
+    entries = next(n.value for n in ast.walk(reg) if isinstance(n, ast.Assign)
+                   and [getattr(t, "id", None) for t in n.targets] == ["key_rules"]).elts
+    rules = [(e.elts[0].elts[0].value, ast.dump(e.elts[1])) for e in entries]
+    assert [t for r, t in rules if r != "over_budget"] == tests, "the key list must follow the reason chain test by test"
+    assert "over_budget" in [r for r, _ in rules] and len(tests) >= 17
+    names += [r for r, _ in rules]
+    assert len(names) == len(set(names)), sorted(x for x in names if names.count(x) > 1)

@@ -709,7 +709,12 @@ def below_floor():
     run.goal = {"done_when": both}                          # no marks: nothing is core but the gate, so both may go
     assert not any(j2.must_keep(c, run.goal) for c in both)
     run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
-    assert run.paused["handoff"]["choices"] == ["continue", "drop"], run.paused["handoff"]
+    # P29 (D431): nothing is built, so leaving both out would leave nothing to build: no "Leave out", "Stop here" instead
+    assert run.paused["handoff"]["choices"] == ["continue", "ship"], run.paused["handoff"]
+    run = page_run()
+    run.goal, run.sites = {"done_when": both}, ["<!doctype html><title>x</title>"]      # with a site, both may go
+    run._identity_limit({"reason": "Priority's ruling", "left_out": both, "budget_needed": 20})
+    assert run.paused["handoff"]["choices"] == ["continue", "drop", "ship"], run.paused["handoff"]
 
 
 
@@ -1787,11 +1792,12 @@ def decide_for_me():
         r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
                                                                                    "Finish as it is: you get the site as it is now"]}], "to": "identity",
                      "handoff": {"choices": ["continue", "drop", "ship"]}, "msg": 1}
-        assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
+        assert r4._auto_choice(r4.paused)[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
+        assert r4._auto_pick() is None and r4.snapshot()["paused"]["auto_waits"] is True, "P29 (D431): only suggested; a limit waits for the Requester"
         r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
                                                 "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
                                                 "Finish as it is: you get the site as it is now"]                 # also says "as it is"
-        assert r4._auto_pick()[2] == 3, "finish as it is, not the leave-out option that also says as it is"
+        assert r4._auto_choice(r4.paused)[2] == 3, "finish as it is, not the leave-out option that also says as it is"
         assert r4._auto_choice({"kind": "approval", "questions": [], "handoff": {}})[0] == "Yes, approve it."
         # the server: /api/settings on the live run, kept across Start over
         srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
