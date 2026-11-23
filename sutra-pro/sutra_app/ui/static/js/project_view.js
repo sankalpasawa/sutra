@@ -263,9 +263,10 @@
   }
 
   // The run's own plumbing is not what a step produced: its files are the engine's, so a hand-off names only the rest (D383).
-  const PLUMBING = freeze(["artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl",
-    "goal.json", "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "settings.json", "snapshot.json", "summary.json", "task.json", "timing.json",
-    "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log", "report.md"]);
+  const PLUMBING = freeze(["agent_live.json", "artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "changes.json", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json",
+    "deliverable.json", "events.jsonl", "goal.json", "handoff.accepted.json", "handoff.json", "inbox.jsonl", "live.json", "map.json", "needs.json", "node_context.json", "output.json", "outputs.jsonl",
+    "receipts.jsonl", "report.json", "report.md", "run.stderr.log", "run.stdout.log", "settings.json", "snapshot.json", "status.json", "summary.json", "summary.txt", "task.json", "timing.json",
+    "tools.jsonl", "trace.jsonl", "verdict.json", "workflows.json"]);          // the same list as `ENGINE_FILES` in engine/host/handoff.py, which a test keeps equal (D399)
   const ENGINE_WORDS = /rubric|done-when|necessary condition|workflow|\batoms?\b|\bJ2\b|checks? (?:pass|fail)/i;
   const names = (list, n) => (list.length <= n ? list.join(", ") : list.slice(0, n).join(", ") + " and " + (list.length - n) + " more");
   // What a hand-off says in plain words: that the step handed in its work, and which files it made. What the engine wrote as the step's summary is not shown (it is the engine's words).

@@ -41,8 +41,8 @@ def test_the_reviewer_sees_the_written_result_of_a_step_wrapped_as_data(tmp_path
 
 def test_a_secret_in_what_a_step_wrote_is_replaced_before_the_reviewer_sees_it(tmp_path):
     run = make_run(tmp_path)
-    (up_folder(run) / "report.md").write_text(f"The key is {SECRET} and that is all.")
-    hand_off(run, ["report.md"])
+    (up_folder(run) / "notes.md").write_text(f"The key is {SECRET} and that is all.")
+    hand_off(run, ["notes.md"])
     prompt = request_of(run)
     assert SECRET not in prompt and "The key is" in prompt
 
@@ -77,3 +77,30 @@ def test_a_link_a_path_with_a_slash_a_hidden_name_and_a_non_text_file_are_skippe
 def test_a_step_that_wrote_nothing_readable_is_what_it_was(tmp_path):
     run = make_run(tmp_path)
     assert "WHAT THE STEP WROTE" not in request_of(run)
+
+
+# ---- one list of the engine's own files (D399, M-B) ---------------------------------------------------------------------------------------------
+
+def test_the_engines_report_and_summary_are_never_read_as_what_the_step_wrote_and_do_not_use_the_budget(tmp_path):
+    run = make_run(tmp_path)
+    folder = up_folder(run)
+    (folder / "report.md").write_text("ENGINE REPORT rubric score 9/10 " * 300)
+    (folder / "summary.txt").write_text("ENGINE SUMMARY")
+    (folder / "deliverable.md").write_text("The page lists three prices.")
+    hand_off(run, ["report.md", "summary.txt", "deliverable.md"])
+    prompt = request_of(run)
+    assert "ENGINE REPORT" not in prompt and "ENGINE SUMMARY" not in prompt
+    assert "WHAT THE STEP WROTE, file deliverable.md" in prompt and "The page lists three prices." in prompt
+    docs = reviewer.read_reports(run, [{"run_id": UP_RUN, "title": "Page"}])
+    assert [name for name, _ in docs[0][1]["_written"]] == ["deliverable.md"]
+
+
+def test_the_page_and_the_reviewer_use_the_same_list_of_the_engines_files():
+    import json
+    import re
+    from pathlib import Path
+    from sutra_app.engine.host.handoff import ENGINE_FILES
+    source = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static" / "js" / "project_view.js").read_text(encoding="utf-8")
+    block = re.search(r"const PLUMBING = freeze\((\[.*?\])\);", source, re.S).group(1)
+    assert set(json.loads(block)) == set(ENGINE_FILES), "project_view.js PLUMBING and handoff.ENGINE_FILES must be the same list"
+    assert reviewer.PLUMBING is ENGINE_FILES

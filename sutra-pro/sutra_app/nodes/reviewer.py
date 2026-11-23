@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from sutra_app.engine.host.handoff import ENGINE_FILES as PLUMBING          # the one list of the engine's own files (D399)
+
 __all__ = ["VERDICTS", "VERDICT_FILE", "VERDICT_SCHEMA", "MAX_SUMMARY", "MAX_POINTS", "MAX_POINT", "VerdictInvalid", "check_verdict", "prompt_of", "read_reports", "TEMPLATE", "WRITTEN_FILE_MAX", "WRITTEN_STEP_MAX", "WRITTEN_TOTAL_MAX"]
 
 VERDICT_FILE = "verdict.json"
@@ -12,10 +14,6 @@ VERDICTS = ("approve", "changes", "reject")
 MAX_SUMMARY, MAX_POINTS, MAX_POINT = 500, 5, 200
 WRITTEN_FILE_MAX, WRITTEN_STEP_MAX, WRITTEN_TOTAL_MAX = 4000, 8000, 16000      # what the reviewer reads of what a step WROTE: characters of a file, of a step, of all (D393)
 WRITTEN_SUFFIXES = (".md", ".txt", ".html", ".htm", ".csv", ".rst")
-# the engine's own files in a run folder are not what the step wrote (the project page lists the same ones, project_view.js PLUMBING)
-PLUMBING = frozenset({"artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl", "goal.json",
-                      "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "settings.json", "snapshot.json", "summary.json", "task.json", "timing.json", "trace.jsonl",
-                      "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log"})
 TEMPLATE = Path(__file__).resolve().parent / "templates" / "reviewer.md"
 VERDICT_SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False, "required": ["verdict", "summary", "needs_work", "points"],
