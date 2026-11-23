@@ -235,6 +235,10 @@ def _check(mark: Mark, folder: str) -> Source:
         fd = os.open(real, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
     except (FileNotFoundError, NotADirectoryError):
         return _no(mark, "there is no such file")
+    except PermissionError:
+        if os.path.isdir(real):                              # Windows refuses to open a folder like a file; that is the same answer as on every other system
+            return _no(mark, "that is not a file")
+        raise
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode):
@@ -295,7 +299,7 @@ def _is_a_citation(mark: Mark, folder: str) -> bool:
     at whether the name is a file there (nothing is read)."""
     if looks_like_path(mark.path):
         return True
-    if not isinstance(folder, str) or not folder or spelling_problem(mark.path):
+    if not isinstance(folder, str) or not folder or clean_relative(mark.path)[0] is None:       # the same spelling rules as the check: Windows reads `Makefile.` as `Makefile`
         return False
     try:
         return os.path.isfile(os.path.join(os.path.realpath(folder), mark.path))
@@ -311,6 +315,6 @@ def check_answer(answer: str, folder: str, *, budget_s: float = BUDGET_S, marks:
     deadline = time.monotonic() + max(0.0, budget_s)
     out: list[Source] = []
     for mark in shown:
-        out.append(_no(mark, "there was not enough time to check it") if time.monotonic() > deadline else check_mark(mark, folder))
+        out.append(_no(mark, "there was not enough time to check it") if time.monotonic() >= deadline else check_mark(mark, folder))
     checked = sum(1 for s in out if s.label == CHECKED)
     return Report(sources=tuple(out), checked=checked, missing=len(out) - checked, more=more)

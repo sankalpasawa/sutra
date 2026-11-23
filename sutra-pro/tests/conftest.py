@@ -152,6 +152,9 @@ for _reason, _ids in {
         "tests/contracts/test_contract_make_port.py::test_the_stub_only_router_answers_like_the_engines_scripted_port",
         "tests/contracts/test_contract_usage.py::test_there_is_one_usage_row_class_and_both_sinks_satisfy_the_sink_protocol",
     ],
+    "an absolute path inside the folder is a POSIX spelling: Windows is asked for relative marks (the prompt says so, citations.py `absolute_parts`)": [
+        "tests/orchestrator/test_citations.py::test_an_absolute_path_is_kept_only_when_it_is_inside_the_folder",
+    ],
     "SIGTERM exit code 143 is POSIX": [
         "tests/engine/test_engine_host_process.py::test_sigterm_writes_stopped_and_exits_143",
     ],
