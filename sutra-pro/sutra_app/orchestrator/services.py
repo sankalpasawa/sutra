@@ -54,6 +54,7 @@ class Services:
     department: Callable[[str], DeptRow | None] | None = None
     deliver_to_department: Callable[..., Any] | None = None
     stop_live: Callable[[str], bool] | None = None
+    team_admin: Any = None            # named projects (D426): built from the stores on first use when nothing set it (tests set it)
 
     def __post_init__(self) -> None:
         if self.ids is None:

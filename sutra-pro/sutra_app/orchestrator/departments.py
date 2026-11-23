@@ -9,8 +9,9 @@
     departments.write_mirror("web")   # departments/<id>/department.json, a mirror for humans (best effort, never authoritative)
 
 A department is made by `ChartStore.apply` (the `departments` row and the `Department` record in the same transaction as the
-chart revision that adds it) and by nothing else. It is never archived, moved or merged (DL5), so `DeptRow.archived` is False and
-`merged_into_name` is empty. The charter is the run folder's `goal.json` (D65): no table copies it.
+chart revision that adds it) and by nothing else. It is never moved or merged (DL5); the owner may hide it (D426), which renames
+it and keeps its id, runs and files: a hidden team leaves `listing()` and `get()`, and `row()` gives it with `archived` True (read-only),
+`merged_into_name` empty. The charter is the run folder's `goal.json` (D65): no table copies it.
 """
 import json
 import logging
@@ -50,24 +51,31 @@ class DepartmentStore:
     # ---- reads ------------------------------------------------------------------------------------------------------
 
     def row(self, dept_id: str) -> DeptRow | None:
-        """`Services.department`: the department with its chart name, or None. A department is never archived or merged."""
+        """`Services.department`: the department with its chart name, or None. A hidden one (deleted by the owner, D426) is `archived`:
+        its runs stay readable and every write is refused. A department is never merged."""
         if not isinstance(dept_id, str) or not _DEPT_ID.fullmatch(dept_id):
             return None
         found = self._db.conn().execute(
-            "SELECT d.id, o.name FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone()
-        return DeptRow(id=found["id"], name=found["name"]) if found is not None else None
+            "SELECT d.id, o.name, d.hidden_at FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'",
+            (dept_id,)).fetchone()
+        return DeptRow(id=found["id"], name=found["name"], archived=found["hidden_at"] is not None) if found is not None else None
+
+    def hidden_ids(self, conn: sqlite3.Connection | None = None) -> set[str]:
+        """The teams the owner deleted (hidden, D426)."""
+        return {r[0] for r in (conn or self._db.conn()).execute("SELECT id FROM departments WHERE hidden_at IS NOT NULL")}
 
     def listing(self) -> list[DepartmentOut]:
         """Every department in chart order (by position under the root)."""
         with self._db.read() as conn:
             ids = [r["id"] for r in conn.execute(
                 "SELECT d.id FROM departments d JOIN org_edges e ON e.child_id = d.id AND e.parent_id = 'root'"
-                " JOIN org_nodes o ON o.id = d.id WHERE o.state = 'active' ORDER BY e.position, d.id")]
+                " JOIN org_nodes o ON o.id = d.id WHERE o.state = 'active' AND d.hidden_at IS NULL ORDER BY e.position, d.id")]
             return [self._out(conn, dept_id) for dept_id in ids]
 
     def get(self, dept_id: str) -> DepartmentOut:
         with self._db.read() as conn:
-            if self.row(dept_id) is None:
+            found = self.row(dept_id)
+            if found is None or found.archived:
                 raise NotFound("that team")
             return self._out(conn, dept_id)
 

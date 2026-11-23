@@ -133,7 +133,7 @@ def test_a_missing_home_folder_a_missing_function_node_and_a_missing_row_are_rep
     built.sql("DELETE FROM departments WHERE id = 'sales'")
     built.sql("PRAGMA foreign_keys = ON")
     assert store.problems() == ["sales: no departments row", "web: the home folder departments/web does not exist"]
-    built.sql("INSERT INTO departments SELECT * FROM (SELECT 'sales', 'departments/sales', body, sha256, ts FROM departments WHERE id = 'web')")
+    built.sql("INSERT INTO departments(id, home_dir, body, sha256, ts) SELECT 'sales', 'departments/sales', body, sha256, ts FROM departments WHERE id = 'web'")
     assert store.problems() == ["sales: no function node audit", "web: the home folder departments/web does not exist"]
 
 

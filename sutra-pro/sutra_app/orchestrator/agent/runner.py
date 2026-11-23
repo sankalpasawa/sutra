@@ -97,7 +97,7 @@ class _Pick:
 class _Item:
     message_id: int | None
     pick: _Pick | None = None
-    decide: tuple[str, bool] | None = None
+    decide: tuple[str, bool, dict] | None = None             # (change id, yes, {names, folder, access}): D427's naming travels with the yes
     future: asyncio.Future | None = None
 
 
@@ -118,6 +118,9 @@ class TurnRunner:
         self.hooks = hooks or TurnHooks()
         self.pending_turns = pending_turns
         self.projects = projects                    # the `ProjectService` while SUTRA_NODES_V1 is on (MAN-5), else None: with None this runner is what it was
+        # named projects (D427): `team_folder(dept_id, name, folder, access)` gives a project the org chat started (after the owner's yes) its
+        # folder; None (a bare test runner) makes none
+        self.team_folder: Callable[[str, str, str | None, str], Any] | None = None
         self._waiting: deque[_Item] = deque()
         self._active: _Item | None = None
         self._wake: asyncio.Event | None = None
@@ -164,13 +167,15 @@ class TurnRunner:
         self._enqueue(_Item(found["id"]))
         return Accepted(message_id=found["id"], turn=turn)
 
-    async def decide(self, change_id: str, approve: bool) -> ChangeResult:
+    async def decide(self, change_id: str, approve: bool, *, names: dict[str, str] | None = None, folder: str | None = None,
+                     access: str = "edit") -> ChangeResult:
         """The owner's yes or no on a change waiting for approval, from a route. It waits its turn behind the running request, then
         applies (or refuses) the change and, for a change the chat agent planned, finishes the request: assignments, tasks, lines and
-        cards. `AlreadyDecided` is raised for a change decided before."""
+        cards. `AlreadyDecided` is raised for a change decided before. `names`, `folder` and `access` are the Create project box's (D427): the
+        name the owner gave each team the change adds, and the folder (with what the team may do there) of the one it starts."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future = loop.create_future()
-        self._enqueue(_Item(None, decide=(change_id, approve), future=future))
+        self._enqueue(_Item(None, decide=(change_id, approve, {"names": names or None, "folder": folder, "access": access}), future=future))
         return await future
 
     async def wait_idle(self) -> None:
@@ -336,7 +341,7 @@ class TurnRunner:
         mid = item.message_id
         try:
             if item.decide is not None:
-                result = await self._decide_flow(item.decide[0], item.decide[1], None, raise_already=True)
+                result = await self._decide_flow(item.decide[0], item.decide[1], None, raise_already=True, **item.decide[2])
                 if item.future is not None and not item.future.done():
                     item.future.set_result(result)
                 return
@@ -543,12 +548,29 @@ class TurnRunner:
         question = self._approval_question(plan.change.model if plan.change else None, applied.before)  # type: ignore[union-attr]
         card = {"type": "approval", "change_id": applied.result.id, "question": question,
                 "options": [{"id": YES, "label": "Yes"}, {"id": NO, "label": "No"}]}
+        adds = _team_adds(plan.change.model if plan.change else None)
+        if adds:
+            card["adds"] = adds                                                # the owner names each project before it is made (D427)
         impact = await run_blocking(self._impact_of, plan.change.model if plan.change else None, applied.before)
         if impact:
             card["impact"] = impact                                            # what a yes would do, in words; `question` is unchanged
         await run_blocking(self._write_cards, mid, [], [card])
         self._phase(mid, "done")
         await self._call_hook(self.hooks.on_done, mid)
+
+    def _start_folders(self, change: Any, result: ChangeResult, names: dict[str, str], folder: str | None, access: str) -> None:
+        """Give every project an applied change started its folder (D427): the chosen one for the first, else `Documents/Sutra Pro/<name>`.
+        A folder that cannot be made is logged: the team exists and works in the app-wide folder until the owner picks one."""
+        if self.team_folder is None:
+            return
+        for index, add in enumerate(_team_adds(getattr(change, "model", change))):
+            dept_id = result.ids_by_ref.get(add["ref"])
+            if not dept_id:
+                continue
+            try:
+                self.team_folder(dept_id, names.get(add["ref"]) or add["name"], folder if index == 0 else None, access)
+            except Exception:                                                  # noqa: BLE001 - the team is made; only its folder is missing
+                log.exception("could not give the new project %s its folder", dept_id)
 
     def _impact_of(self, change: Any, before: OrgChart) -> list[str]:
         """The lines of the approval card (reorg_preview.py). A courtesy: a failure here leaves the card as it was, never without it."""
@@ -560,13 +582,14 @@ class TurnRunner:
             log.exception("could not describe what the change would do")
             return []
 
-    async def _decide_flow(self, change_id: str, approve: bool, mid: int | None, *, raise_already: bool) -> ChangeResult:
+    async def _decide_flow(self, change_id: str, approve: bool, mid: int | None, *, raise_already: bool, names: dict[str, str] | None = None,
+                           folder: str | None = None, access: str = "edit") -> ChangeResult:
         """Answer a pending change. For a change the chat agent planned, finish its request (stage C if it is still missing, tasks,
         lines and cards). `mid` is the owner's yes/no line to mark done, or None when the answer came from a route."""
         self.chats.set_turn_phase("building")
         stored = await run_blocking(self.chart.record, change_id)
         try:
-            result = await run_blocking(self.chart.decide, change_id, approve)
+            result = await run_blocking(lambda: self.chart.decide(change_id, approve, names=names))
         except AlreadyDecided as exc:
             if raise_already:
                 raise
@@ -584,6 +607,7 @@ class TurnRunner:
             sentence = line("declined") if not approve else line("rejected", reason=reason)
             await self._reply(mid, [sentence] if note is not None or mid is not None else [])
             return result
+        await run_blocking(self._start_folders, stored.change, result, names or {}, folder, access)
         if note is None or stored.change is None:
             await self._reply(mid, [])
             return result
@@ -876,6 +900,9 @@ class TurnRunner:
             node = before.node(target)
             return node.name if node is not None else refs.get(target, target)
 
+        added = [a["name"] for a in _team_adds(change)]
+        if added:
+            parts.append(line("approve_add", name=names_phrase(added)))
         for op in change.ops if change is not None else []:
             if isinstance(op, MergeOp):
                 parts.append(line("approve_merge", a=names_phrase([name(s) for s in op.sources]), b=name(op.into)))
@@ -940,3 +967,9 @@ def _result_of_out(out: Any) -> ChangeResult:
     status = out.status if out.status in ("applied", "pending_approval", "rejected", "stale") else "rejected"
     return ChangeResult(id=out.id, status=status, decision=out.decision, summary=out.summary, revision=out.revision, added=list(out.added),
                         moved=list(out.moved), archived=list(out.archived))
+
+
+def _team_adds(change: Any) -> list[dict[str, str]]:
+    """The projects (departments) a change would start, as `{ref, name}` in op order (D427)."""
+    return [{"ref": op.node.ref, "name": op.node.name} for op in (change.ops if change is not None else [])
+            if isinstance(op, AddOp) and op.node.kind == "department"]

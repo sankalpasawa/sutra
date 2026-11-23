@@ -86,7 +86,7 @@ def build_router() -> APIRouter:
             raise from_gate_error(exc) from None
         store = _store(request)
         if dry_run:
-            result: ChangeResult = await run_blocking(lambda: store.preview(change))
+            result: ChangeResult = await run_blocking(lambda: store.preview(change, actor="user"))
             return _json(request, _dump(result), 202 if result.status == "pending_approval" else 200)
         ctx = ChangeContext(session_id="cs_org", request_id=change.model.task_id[:40])
         result = await run_blocking(lambda: store.apply(change, actor="user", ctx=ctx))

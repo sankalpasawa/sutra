@@ -47,6 +47,7 @@ LINES: dict[str, str] = {
     "choice": "Which team fits best?",
     "approve_merge": "Merge {a} into {b}? Their chats and history stay available.",
     "approve_split": "Split {a} into {a} and {b}? Their chats and history stay available.",
+    "approve_add": "I'd start a new project for this: {name}. Name it to create it, or say no.",
     "declined": "Okay, I left the chart as it was.",
     "already": "That was already decided.",
     "rejected": "I did not change anything: {reason}",

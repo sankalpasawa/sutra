@@ -158,8 +158,7 @@ class ChatAgent:
         notify = phase or (lambda _name: None)
         budget = _Budget(self.max_calls)
         notify("reading_chart")
-        head = await run_blocking(self.chart.head)
-        chart: OrgChart = head.model
+        chart: OrgChart = await run_blocking(self.chart.planning_chart)          # a deleted project is not the org chat's to see (D426)
         digest = await run_blocking(lambda: self.chart.digest(request.text, max_chars=DIGEST_CHARS))
         notify("consulting_library")
         notify("planning")
@@ -174,8 +173,7 @@ class ChatAgent:
         """The assignments for a request whose chart change the owner approved. The change is applied already, so the plan holds no
         change. Only an `intent` new_task has work; a decision that carries its own assignments (never with a rearrange) keeps them."""
         budget = _Budget(self.max_calls)
-        head = await run_blocking(self.chart.head)
-        chart: OrgChart = head.model
+        chart: OrgChart = await run_blocking(self.chart.planning_chart)          # a deleted project is not the org chat's to see (D426)
         if decision is None or decision.intent != "new_task":
             return Plan("work", decision=decision, revision=chart.revision)
         if decision.assignments:
@@ -192,8 +190,7 @@ class ChatAgent:
     async def choice_plan(self, request: PlanRequest, node_id: str, *, reason: str | None = None) -> Plan:
         """The plan for the team the owner picked on a `choice` card: a reuse change and one assignment holding the request's words.
         No model call. A division is reused through its department with the division as the scope."""
-        head = await run_blocking(self.chart.head)
-        chart: OrgChart = head.model
+        chart: OrgChart = await run_blocking(self.chart.planning_chart)          # a deleted project is not the org chat's to see (D426)
         node = chart.node(node_id)
         if node is None or node.kind not in ("department", "division"):
             raise AppError("validation", f"{node_id!r} is not a team in the chart")

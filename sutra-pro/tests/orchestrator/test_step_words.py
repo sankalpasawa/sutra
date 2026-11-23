@@ -368,14 +368,14 @@ def test_an_answer_goes_through_only_while_the_question_is_open_and_never_become
 
 def test_the_route_refuses_a_stale_answer_with_a_409_and_makes_no_task(tmp_path):
     from fastapi.testclient import TestClient
-    from orchestrator.test_api_start_project import CLIENT, script, wait_idle
+    from orchestrator.test_api_start_project import CLIENT, script, settle
     from orchestrator.test_projects_adopt import BASE as APP_BASE, HEADERS, make_app, rows
     app, connector = make_app(tmp_path, nodes_v1=True)
     script(connector)
     with TestClient(app, base_url=APP_BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)                     # the owner says yes to the new teams (D427)
         project = rows(services, "SELECT id FROM projects")[0]["id"]
         before = len(rows(services, "SELECT id FROM tasks"))
         stale = client.post(f"/api/projects/{project}/questions/12345/answer", json={"option": 1}, headers=HEADERS)
@@ -405,7 +405,7 @@ def test_a_title_is_never_empty_never_dangles_on_a_connector_never_splits_an_abb
 def test_the_project_the_runner_makes_is_titled_by_project_title(tmp_path):
     """If the runner went back to cutting the request at 80 characters, this fails."""
     from fastapi.testclient import TestClient
-    from orchestrator.test_api_start_project import CLIENT, script, wait_idle
+    from orchestrator.test_api_start_project import CLIENT, script, settle
     from orchestrator.test_projects_adopt import BASE as APP_BASE, HEADERS, make_app, rows
     from sutra_app.orchestrator.textutil import project_title
     text = "Do two separate read-only jobs in this folder and change nothing. Step 1: list the files and say what each one is for. Run them as two steps."
@@ -414,6 +414,6 @@ def test_the_project_the_runner_makes_is_titled_by_project_title(tmp_path):
     with TestClient(app, base_url=APP_BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": text}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)                     # the owner says yes to the new teams (D427)
         title = rows(services, "SELECT title FROM projects")[0]["title"]
     assert title == project_title(text) == "Do two separate read-only jobs in this folder and change…"

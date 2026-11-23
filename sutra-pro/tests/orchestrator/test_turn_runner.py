@@ -49,6 +49,12 @@ class RunnerEnv(AgentEnv):
             return result
         return self.run(go())
 
+    def yes_to_the_new_team(self):
+        """The owner says yes to the change waiting for approval (the chat agent's new team waits for it, D427); the request then
+        finishes: stage C, the tasks, the lines and the cards. Returns the result of the decision."""
+        pending = self.chart.pending()[-1]
+        return self.go(lambda: self.runner.decide(pending.id, True))
+
     # ---- reading ---------------------------------------------------------------------------------------------------------------
 
     def messages(self, session=ORG):
@@ -114,6 +120,9 @@ def test_an_add_request_makes_the_team_and_says_so_in_a_template(renv):
                         change_reply(add_dept("$cafe", "Cafe", "Coffee shop menus"), reason=SECRET_SENTENCE),
                         assignments(draft("a1", "cafe", brief=SECRET_SENTENCE)))
     accepted = renv.say("Plan my coffee shop launch")
+    assert [c.step for c in renv.connector.calls] == ["decide", "change"] and renv.sutra()[-1] == ("card", "approval")      # the team waits for the owner (D427)
+    assert renv.one("SELECT count(*) FROM departments WHERE id = 'cafe'") == 0
+    renv.yes_to_the_new_team()
     assert renv.connector.calls and [c.step for c in renv.connector.calls] == ["decide", "change", "assign"]
     assert renv.sutra()[-4:] == [("text", "I set up a Cafe team and gave it your request."), ("card", "chart_change"), ("card", "team_chat"), ("card", "task")]
     card = renv.cards("chart_change")[-1]
@@ -128,6 +137,7 @@ def test_the_add_lines_name_a_vowel_team_with_an_and_a_division_as_a_division(re
                         change_reply(add_dept("$e", "Event Booking", "Bookings for events"), add_div("$w", "Weddings", "$e", "Wedding events"), reason=SECRET_SENTENCE),
                         assignments(draft("a1", "event-booking", brief=SECRET_SENTENCE)))
     renv.say("Set up event booking with a weddings part")
+    renv.yes_to_the_new_team()                                   # the new team waits for the owner's yes (D427)
     said = renv.sutra()                                          # the line, then the chart change card, a pointer card per new team and the task card
     assert said[said.index(("text", "I set up an Event Booking team and gave it your request. I set up a Weddings division."))][0] == "text"
     assert [kind for kind, _ in said].count("card") >= 3
@@ -137,15 +147,17 @@ def test_event_order_of_a_new_team(renv):
     renv.connector.push(decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "cafe")))
     renv.events.batches.clear()
     renv.say("Plan my coffee shop launch")
+    renv.yes_to_the_new_team()                                   # the add waits for the owner's yes, then the request finishes (D427)
     types = renv.types()
-    wanted = ["chat.message", "chat.turn", "chat.turn", "chat.turn", "chat.turn", "chart.changed", "graph.updated", "task.updated", "chat.message", "chat.turn"]
+    wanted = ["chat.message", "chat.turn", "chat.turn", "chat.turn", "chat.turn", "chart.changed", "chart.approval", "chat.message", "chat.turn",
+              "chart.changed", "graph.updated", "task.updated", "chat.message", "chat.turn"]
     positions, at = [], 0
     for kind in wanted:
         at = types.index(kind, at)
         positions.append(at)
         at += 1
     turns = [e.data["phase"] for e in renv.events.events if e.type == "chat.turn"]
-    assert turns == ["reading_chart", "consulting_library", "planning", "applying", "handing_off", "done"]
+    assert turns == ["reading_chart", "consulting_library", "planning", "applying", "done", "handing_off", "done"]
     assert all(e.data["session_id"] == ORG and e.data["turn"] == e.data["message_id"] for e in renv.events.events if e.type == "chat.turn")
 
 
@@ -160,6 +172,8 @@ def test_org_chat_has_no_model_prose(renv):
         decide("clarify", "none", reuse=("web",), why=secret))
     for text in ("A page please", "Plan my coffee shop launch", "Rename Menu to Menus", "How are things?", "Thanks!", "Do the thing"):
         renv.say(text)
+        if text == "Plan my coffee shop launch":
+            renv.yes_to_the_new_team()                                   # the new team waits for the owner's yes (D427)
     said = [m for m in renv.messages() if m.who == "sutra"]
     assert len(said) >= 10
     for m in said:
@@ -642,6 +656,7 @@ def test_every_model_call_of_a_request_is_charged_to_its_overhead_key(renv):
     renv.connector.sink = renv.usage.record                                    # what the router's sink does in the server
     renv.connector.push(decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "cafe")))
     first = renv.say("Plan my coffee shop launch")
+    renv.yes_to_the_new_team()                                   # stage C is asked after the owner's yes (D427)
     rows = renv.sql("SELECT * FROM usage_ledger ORDER BY id").fetchall()
     assert len(rows) == 3 and renv.runner.agent.connector.records_usage
     assert {r["atom_id"] for r in rows} == {overhead_atom_id(f"req-{first.message_id}")}

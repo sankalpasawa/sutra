@@ -19,12 +19,16 @@ ORG = "cs_org"
 ASK = "I need a flyer printed and my lease reviewed"
 
 
-def two_teams(renv, text=ASK):
+def two_teams(renv, text=ASK, *, yes=True):
+    """The owner asks for two new teams in one turn and (`yes`) says yes on the approval card (a new team waits for it, D427)."""
     renv.connector.push(
         decide(change="add", reuse=()),
         change_reply(add_dept("$print", "Print", "Flyers and print jobs"), add_dept("$legal", "Legal", "Contract and lease reviews")),
         assignments(draft("a1", "print", title="Flyer", brief="Print the flyer."), draft("a2", "legal", title="Lease review", brief="Review the lease.")))
-    return renv.say(text)
+    accepted = renv.say(text)
+    if yes:
+        renv.yes_to_the_new_team()
+    return accepted
 
 
 def session_of(renv, node_id):
@@ -56,11 +60,12 @@ def test_a_session_is_made_in_the_transaction_of_its_node_so_a_failure_leaves_ne
 
     monkeypatch.setattr(chart_module, "ensure_node", broken)
     before = {t: renv.one(f"SELECT count(*) FROM {t}") for t in ("graph_nodes", "chat_sessions", "org_nodes", "departments")}
-    accepted = two_teams(renv)
+    two_teams(renv, yes=False)
+    yes = renv.say("yes")                                                                            # the teams are made on the owner's yes (D427)
     after = {t: renv.one(f"SELECT count(*) FROM {t}") for t in before}
     assert after == before                                                                           # not one node, session or department of either team
     assert renv.sql("SELECT count(*) FROM chat_sessions WHERE node_id IN ('print', 'legal') OR node_id LIKE 'print.%'").fetchone()[0] == 0
-    assert renv.user_state(accepted.message_id) == "error"
+    assert renv.user_state(yes.message_id) == "error"
     assert [m for m in renv.messages() if m.kind == "card" and m.card.type == "team_chat"] == []
 
 
@@ -77,7 +82,7 @@ def test_every_message_belongs_to_exactly_one_chat_and_the_org_chat_holds_none_o
     # the org chat: the owner's line, Sutra's template line and cards; no line written by a team (identity, W-n) and none carrying a team's task
     org_lines = renv.messages(org)
     assert {m.who for m in org_lines} == {"sutra", "user"} and all(m.task_id is None for m in org_lines)
-    assert [m.card.type for m in org_lines if m.kind == "card"] == ["chart_change", "team_chat", "team_chat", "task", "task"]
+    assert [m.card.type for m in org_lines if m.kind == "card"] == ["approval", "chart_change", "team_chat", "team_chat", "task", "task"]   # the yes came first (D427)
     # a team chat: its own copy of the owner's line and nothing of Sutra's template lines or of the other team
     for sid, task_title in ((print_chat, "Flyer"), (legal_chat, "Lease review")):
         lines = renv.messages(sid)

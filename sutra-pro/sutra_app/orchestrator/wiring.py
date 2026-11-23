@@ -217,13 +217,16 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
             projector.coalesce = lambda tx, row: tx.conn.execute("SELECT 1 FROM agent_nodes WHERE task_id = ?", (row.id,)).fetchone() is not None
     runner = TurnRunner(db=db, chart=chart, chats=chats, tasks=tasks, agent=agent, connector=port,
                         publish=lambda type_, data: bus.publish_one(type_, data), redact=redactor, projects=projects)
-    return AppServices(
+    built = AppServices(
         settings=settings, version=sutra_app.__version__, db=db, redact=redactor, clock=clock, ids=ids,
         bus=bus, chats=chats, atoms=atoms, usage=usage, graph=graph, chart=chart, departments=departments, tasks=tasks,
         projector=projector, watcher=watcher, runner=runner, connector=port, launcher=launcher,
         resolve_run=tasks.resolve_run, department=departments.row, deliver_to_department=tasks.deliver_to_department,
         stop_live=tasks.stop_live, connector_router=router, chat_port=chat_port, attachments=attachments, recurring=recurring,
         limits=limits, agent_chat=agent_chat, send_setting=_send_setting(tasks, projects), node_control=node_control, projects=projects)
+    from sutra_app.orchestrator.team_admin import team_admin_of
+    runner.team_folder = lambda dept_id, name, folder, access: team_admin_of(built).ensure_folder(dept_id, name, folder, access)     # D427
+    return built
 
 
 # ---- startup steps --------------------------------------------------------------------------------------------------------------

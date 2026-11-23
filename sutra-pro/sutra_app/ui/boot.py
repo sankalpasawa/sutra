@@ -74,7 +74,9 @@ class BootContext(BaseModel):
 
 def archived_note(merged_into_name: str) -> str:
     """The banner of a merged (archived) team's page. No v1 row is archived; the text is the contract of S3-web-02."""
-    target = merged_into_name.strip() or "another team"
+    target = merged_into_name.strip()
+    if not target:                                  # a project the owner deleted (D426): hidden, its runs and files kept
+        return "This project was deleted. Its runs and files stay on disk."
     return f"This team was merged into {target}. Its history stays available."
 
 

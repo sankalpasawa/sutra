@@ -4,7 +4,7 @@
     GET /api/departments/{id}             -> DepartmentOut     (404 not_found)
     GET /api/departments/{id}/runs        -> RunRef[]          (newest first; 404 not_found)
 
-A department is never archived (DL5), so there is no `include=archived`. The router reads `request.app.state.services.departments`.
+A department is never archived (DL5), so there is no `include=archived`; one the owner deleted is hidden (D426) and left out here. The router reads `request.app.state.services.departments`.
 """
 from typing import Any
 

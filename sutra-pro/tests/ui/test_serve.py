@@ -263,8 +263,8 @@ def test_boot_context_is_closed_frozen_and_strict():
 def test_archived_note_names_the_survivor():
     assert boot_mod.archived_note("Web") == "This team was merged into Web. Its history stays available."
     assert boot_mod.archived_note("  Web ") == "This team was merged into Web. Its history stays available."
-    assert boot_mod.archived_note("") == "This team was merged into another team. Its history stays available."
-    assert boot_mod.archived_note("   ") == "This team was merged into another team. Its history stays available."
+    assert boot_mod.archived_note("") == "This project was deleted. Its runs and files stay on disk."         # hidden by the owner (D426)
+    assert boot_mod.archived_note("   ") == "This project was deleted. Its runs and files stay on disk."
 
 
 # ------------------------------------------------------------------------------------------------------------------
@@ -573,7 +573,7 @@ def test_an_archived_team_opens_with_the_banner(client):
     assert boot["note"] == "This team was merged into Web. Its history stays available."
     assert boot["dept_label"] == "Old"
     assert boot_of(client.get("/d/lost/").text)["note"] == (
-        "This team was merged into another team. Its history stays available."
+        "This project was deleted. Its runs and files stay on disk."                 # archived with no survivor: a project the owner deleted (D426)
     )
     assert client.get("/d/old/").status_code == 200
 

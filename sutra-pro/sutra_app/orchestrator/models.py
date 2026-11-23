@@ -23,7 +23,7 @@ from sutra_app.library.chat import ChatBlock
 from sutra_app.library.base import Value, nested_models, unwrap_annotation
 from sutra_app.library.node import GraphNodeId, NodeState
 from sutra_app.library.types import (
-    FUNCTIONS, AtomId, ChangeId, FunctionName, JsonObject, NodeId, Ts, Violation, violations_from_validation_error,
+    FUNCTIONS, AtomId, ChangeId, FunctionName, JsonObject, NodeId, Ref, Ts, Violation, violations_from_validation_error,
 )
 
 __all__ = [
@@ -284,12 +284,26 @@ class TaskCard(Value):
         return data
 
 
+class ProposedAdd(Value):
+    """A project the org chat would start (D427): the change's ref and the name it suggests; the owner names it before it is made."""
+    ref: Ref
+    name: Name
+
+
 class ApprovalCard(Value):
     type: Literal["approval"]
     change_id: ChangeId
     question: Annotated[str, StringConstraints(max_length=500)]
     options: Annotated[list[ChatOption], Field(max_length=10)]
     impact: Annotated[list[Annotated[str, StringConstraints(max_length=160)]], Field(max_length=8)] = []      # what a yes would do (reorg_preview.py)
+    adds: Annotated[list[ProposedAdd], Field(max_length=8)] = []        # the projects a yes would start (D427); left out of the wire shape when none
+
+    @model_serializer(mode="wrap")
+    def _adds_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if not data.get("adds"):
+            data.pop("adds", None)
+        return data
 
 
 class ChoiceCard(Value):
@@ -619,7 +633,8 @@ class DepartmentOut(Value):
 
 class DeptRow(Value):
     """What `Services.department` returns. The engine and the UI read `id, name, archived, merged_into_name` through their own
-    Protocols. A department is never archived, moved or merged (DL5), so `archived` is False and `merged_into_name` is empty."""
+    Protocols. A department is never moved or merged (DL5), so `merged_into_name` is empty; `archived` is True only for a project the owner
+    deleted (hidden, D426): its page and runs stay readable, every write is refused."""
 
     id: NodeId
     name: Name
@@ -688,6 +703,17 @@ class NeedsYouOut(Value):
     asked_at: Iso
     waiting_s: Count | None = None          # how long it has waited, by the server's clock at the read (gap attention)
     stale: bool = False                     # waited past waiting.ASK_STALE_S (24 h)
+    change_id: ChangeId | None = None       # an approval's change, and the projects it would start (D427): both left out when there are none
+    adds: Annotated[list[ProposedAdd], Field(max_length=8)] = []
+
+    @model_serializer(mode="wrap")
+    def _change_only_for_approvals(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        if data.get("change_id") is None:
+            data.pop("change_id", None)
+        if not data.get("adds"):
+            data.pop("adds", None)
+        return data
 
 
 class NodeDetail(Value):

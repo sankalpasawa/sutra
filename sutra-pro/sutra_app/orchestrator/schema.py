@@ -12,7 +12,7 @@ end for the next version; never edit an old one.
 from collections.abc import Callable, Sequence
 from sqlite3 import Connection
 
-__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "DDL_V6_NODES", "DDL_V7_WORK", "DDL_V8_RECIPES", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
+__all__ = ["DDL_V1", "DDL_V3_RECURRING", "DDL_V4_AGENT_SESSIONS", "DDL_V5_TURN_CHECKPOINT", "DDL_V6_NODES", "DDL_V7_WORK", "DDL_V8_RECIPES", "DDL_V9_HIDDEN_TEAMS", "MIGRATIONS", "SCHEMA_VERSION", "TABLES", "Migration"]
 
 DDL_V1: tuple[str, ...] = (
     # schema version = PRAGMA user_version; 'graph_version' and 'bootstrapped_at' live here
@@ -332,8 +332,15 @@ DDL_V8_RECIPES: tuple[str, ...] = (
     "CREATE TRIGGER recipe_versions_no_delete BEFORE DELETE ON recipe_versions BEGIN SELECT RAISE(ABORT, 'recipe versions are append-only'); END",
 )
 
+# Named projects (D426; migration v9): the owner may delete a project, which hides its team. The row, the id, the runs and the folder stay
+# (DL5: a department is never removed); `hidden_at` is when it was hidden, NULL for every visible team.
+DDL_V9_HIDDEN_TEAMS: tuple[str, ...] = (
+    "ALTER TABLE departments ADD COLUMN hidden_at INTEGER",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
-MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES, DDL_V7_WORK, DDL_V8_RECIPES)
+MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES, DDL_V7_WORK, DDL_V8_RECIPES,
+                                     DDL_V9_HIDDEN_TEAMS)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",

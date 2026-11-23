@@ -166,6 +166,7 @@ def test_step6_a_document_chain_follow_up_rehydrates_the_chain(tmp_path):
 def test_a_follow_up_after_a_stopped_run_starts_fresh_with_the_old_files_as_upstream(tmp_path):
     with LiveApp(tmp_path, connector=ScriptedConnector()) as live:
         mid = live.say("I need a landing page for my coffee shop", *new_team_script())
+        live.yes_to_the_card()                                          # the new team waits for the owner's yes (D427)
         first = live.task_of_message(mid)
         live.until("the question", lambda: live.task_status(first) == "waiting_user")
         stopped = live.post(f"/api/tasks/{first}/stop")

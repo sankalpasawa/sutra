@@ -269,6 +269,13 @@ CI_SKIP["tests/release/test_macos_bundle.py::test_the_launcher_starts_the_server
 
 
 @pytest.fixture(autouse=True)
+def _projects_are_made_in_a_temp_documents_folder(tmp_path_factory, monkeypatch):
+    """A project with no chosen folder gets `Documents/Sutra Pro/<name>` (named projects, Q11): no test may write into the owner's real
+    Documents folder, so every test points it at a folder of its own."""
+    monkeypatch.setenv("SUTRA_DOCUMENTS_DIR", str(tmp_path_factory.mktemp("Documents")))
+
+
+@pytest.fixture(autouse=True)
 def _the_test_process_is_not_elevated(request, monkeypatch):
     """A CI runner on Windows is an administrator, and a process that is one makes no project step (MAN-15): every test sees an ordinary process, as on a developer's machine. The tests of the check
     itself ask for the real one with `@pytest.mark.real_elevation`."""

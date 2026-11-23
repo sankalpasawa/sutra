@@ -24,6 +24,7 @@ from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 def asked(live: LiveApp) -> str:
     """The owner's first message; returns the task once its team waits for the owner."""
     mid = live.say("I need a landing page for my coffee shop", *new_team_script())
+    live.yes_to_the_card()                                          # the new team waits for the owner's yes (D427)
     task = live.task_of_message(mid)
     live.until("Identity's question", lambda: live.task_status(task) == "waiting_user")
     return task

@@ -36,7 +36,7 @@ from sutra_app.library.org_chart import (
     resolve_alias, seed_chart, slug_id,
 )
 from sutra_app.library.types import FUNCTIONS, Violation, violation
-from sutra_app.orchestrator.chart_rules import ChartRules, classify as classify_change
+from sutra_app.orchestrator.chart_rules import ChartRules, classify as classify_change, hidden_ids, without_hidden
 from sutra_app.orchestrator.chats import ChatStore
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.departments import DepartmentStore
@@ -121,9 +121,15 @@ class ChartStore:
             raise RuntimeError("the org chart has no revision yet: call ChartStore.bootstrap() first")
         return GATE.check("org_chart", row["body"])
 
+    def planning_chart(self) -> OrgChart:
+        """The head as the org chat plans on it and Agent Org shows it: a project the owner deleted (hidden, D426) and what is under it
+        left out. Changes are still checked against the stored head."""
+        conn = self.db.conn()
+        return without_hidden(self._head_in(conn).model, hidden_ids(conn))
+
     def view(self) -> ChartView:
-        """The live chart for the UI: nodes in chart order with their parent and their position among siblings."""
-        chart: OrgChart = self.head().model
+        """The live chart for the UI: nodes in chart order with their parent and their position among siblings (hidden teams left out)."""
+        chart: OrgChart = self.planning_chart()
         position: dict[str, int] = {}
         out: list[ChartNodeOut] = []
         for node in chart.nodes:
@@ -138,9 +144,9 @@ class ChartStore:
         """The chart as the chat agent reads it (see `ChartRules.digest`)."""
         return self.rules.digest(self.db.conn(), self.head().model, text, max_chars=max_chars)
 
-    def classify(self, change: Checked | ChartChange) -> str:
-        """'approve' iff the change is a rearrange with a merge or a split; everything else is automatic."""
-        return classify_change(change.model if isinstance(change, Checked) else change)
+    def classify(self, change: Checked | ChartChange, *, actor: str = "chat_agent") -> str:
+        """'approve' for a merge or split, or a team the chat agent would add (D427); everything else is automatic (see `chart_rules.classify`)."""
+        return classify_change(change.model if isinstance(change, Checked) else change, actor=actor)
 
     def next_change_id(self) -> str:
         """The id the next change row will get (`chg-0002` ...). `apply` assigns the real one inside its transaction."""
@@ -159,16 +165,16 @@ class ChartStore:
         conn = self.db.conn()
         return self.rules.assignments(conn, drafts, chart if chart is not None else self._head_in(conn).model, added=added)
 
-    def preview(self, change: Checked) -> ChangeResult:
+    def preview(self, change: Checked, *, actor: str = "chat_agent") -> ChangeResult:
         """What `apply` would do, without storing anything: status 'applied' (or 'pending_approval' when the owner must say yes),
         the real revision, node ids and `ids_by_ref`. Raises the 422 `rules` error when the change has violations."""
         self._need(change, "chart_change")
         conn = self.db.conn()
         chart = self._head_in(conn).model
-        found, result = self._violations(conn, change.model, chart)
+        found, result = self._violations(conn, change.model, chart, actor=actor)
         if found or result is None:
             raise rules_error(found)
-        status = "pending_approval" if classify_change(change.model) == "approve" else "applied"
+        status = "pending_approval" if classify_change(change.model, actor=actor) == "approve" else "applied"
         lists = _lists_of(result, change.model)
         return ChangeResult(
             id=change.model.id, status=status, decision=change.model.kind, summary=_summary(change.model, chart),
@@ -260,10 +266,12 @@ class ChartStore:
             raise ChangeFailed(failed, f"{type(exc).__name__}: {exc}") from exc
         return self._finish(outcome)
 
-    def decide(self, change_id: str, approve: bool) -> ChangeResult:
+    def decide(self, change_id: str, approve: bool, *, names: dict[str, str] | None = None) -> ChangeResult:
         """Answer a pending approval. No: the row becomes `rejected`. Yes: the stored change is checked again against the live
         chart; if it now fails (including a chart that moved on) the row becomes `rejected` with the reasons, else it is applied.
-        A change that was decided already raises `AlreadyDecided` carrying the first result, so a double click is harmless."""
+        A change that was decided already raises `AlreadyDecided` carrying the first result, so a double click is harmless.
+        `names` (D427) maps an added team's ref to the name the owner gave it: the stored change is applied under those names, and judged as
+        the owner's (no similar-name rule)."""
         outcome = _Outcome()
         existing: sqlite3.Row | None = None
         try:
@@ -277,15 +285,19 @@ class ChartStore:
                 lists = json.loads(existing["result_json"])
                 if not approve:
                     return self._reject(tx, existing, [violation("", "declined", "You said no, so nothing was changed.")], lists)
+                rules_actor = existing["actor"]
+                if names:
+                    change = _renamed(change, names)
+                    rules_actor = "user"
                 head = self._head_in(tx.conn)
-                found, _ = self._violations(tx.conn, change.model, head.model)
+                found, _ = self._violations(tx.conn, change.model, head.model, actor=rules_actor)
                 if found:
                     if any(v.code == "stale_base" for v in found):
                         found = [violation("", "stale_base", "The chart changed since you were asked, so nothing was changed.")]
                     return self._reject(tx, existing, found, lists)
                 ctx = ChangeContext(session_id=existing["session_id"] or "cs_org", message_id=existing["message_id"],
                                     request_id=existing["task_id"], request_title=existing["task_title"])
-                self._apply_in(tx, change, outcome, actor=existing["actor"], ctx=ctx, plan=None, approved=True, existing=existing)
+                self._apply_in(tx, change, outcome, actor=existing["actor"], ctx=ctx, plan=None, approved=True, existing=existing, rules_actor=rules_actor)
                 self.chats.emit_needs_you(tx)
         except (sqlite3.Error, OSError) as exc:
             self._cleanup(outcome.created_dirs)
@@ -306,7 +318,7 @@ class ChartStore:
     # ---- the transaction -----------------------------------------------------------------------------------------------
 
     def _apply_in(self, tx: Tx, change: Checked, out: _Outcome, *, actor: str, ctx: ChangeContext, plan: dict | None, approved: bool,
-                  existing: sqlite3.Row | None) -> _Outcome:
+                  existing: sqlite3.Row | None, rules_actor: str | None = None) -> _Outcome:
         conn, now = tx.conn, tx.now()
         head = self._head_in(conn)
         before: OrgChart = head.model
@@ -326,12 +338,12 @@ class ChartStore:
             out.result = ChangeResult(id=change_id, status="stale", decision=model.kind, summary=summary, revision=None,
                                       added=lists["added"], moved=lists["moved"], archived=lists["archived"])
             return out
-        found, result = self._violations(conn, model, before)
+        found, result = self._violations(conn, model, before, actor=rules_actor or actor)
         if found or result is None:
             out.violations = found
             return out
         lists = _lists_of(result, model)
-        if classify_change(model) == "approve" and not approved:                       # the owner must say yes first
+        if classify_change(model, actor=actor) == "approve" and not approved:                       # the owner must say yes first
             self._write_row(tx, status="pending_approval", result_revision=None, after_sha="", lists=lists, plan=plan, violations=[], **base)
             self._emit_changed(tx, change_id, model.kind, "pending_approval", before.revision, lists, summary)
             tx.emit("chart.approval", {"change_id": change_id, "summary": summary, "message_id": ctx.message_id})
@@ -590,7 +602,7 @@ class ChartStore:
 
         return make
 
-    def _violations(self, conn: sqlite3.Connection, change: ChartChange, chart: OrgChart) -> tuple[list[Violation], ChartChangeResult | None]:
+    def _violations(self, conn: sqlite3.Connection, change: ChartChange, chart: OrgChart, *, actor: str = "chat_agent") -> tuple[list[Violation], ChartChangeResult | None]:
         """(violations, result): the dry run of the library, then our extras (skipped for a stale base: they would judge the wrong chart)."""
         found: list[Violation] = []
         result: ChartChangeResult | None = None
@@ -600,7 +612,7 @@ class ChartStore:
             found = list(exc.violations)
         if any(v.code == "stale_base" for v in found):
             return found, None
-        found = found + self.rules.extras(conn, chart, change)
+        found = found + self.rules.extras(conn, chart, change, actor=actor)
         return found, result
 
 
@@ -705,3 +717,11 @@ def _stored_of(row: sqlite3.Row) -> StoredChange:
         out=_out_of(row), change=GATE.check("chart_change", row["body"]) if is_change else None,
         plan=json.loads(row["plan_json"]) if row["plan_json"] else None, violations=json.loads(row["violations"]) if row["violations"] else [],
         session_id=row["session_id"], message_id=row["message_id"])
+
+
+def _renamed(change: Checked, names: dict[str, str]) -> Checked:
+    """The change with each named ref's new team called what the owner typed (D427); the name rules are the Create project box's."""
+    from sutra_app.orchestrator.team_admin import clean_name                 # team_admin imports this module
+    ops = [op.model_copy(update={"node": op.node.model_copy(update={"name": clean_name(names[op.node.ref])})})
+           if isinstance(op, AddOp) and op.node.ref in names else op for op in change.model.ops]
+    return GATE.check("chart_change", change.model.model_copy(update={"ops": ops}))

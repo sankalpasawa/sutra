@@ -5,7 +5,7 @@ import time
 
 from fastapi.testclient import TestClient
 from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
-from orchestrator.test_projects_adopt import BASE, HEADERS, make_app, rows
+from orchestrator.test_projects_adopt import BASE, HEADERS, make_app, rows, yes_to_new_teams
 from orchestrator.test_scripted_conversation import ORG
 
 
@@ -18,6 +18,7 @@ def one_project(app, connector):
     deadline = time.time() + 10
     while app.state.services.runner.busy and time.time() < deadline:
         time.sleep(0.02)
+    yes_to_new_teams(client, app.state.services)            # the two teams wait for the owner's yes (D427)
     return client
 
 

@@ -453,7 +453,7 @@ def test_store_context_reads_each_family_through_the_open_transaction(db):
         assert ctx.get("org_chart", "chart") is None and ctx.get("node", "web") is None and ctx.get("atom", plugin_atom.model.id) is None
         tx.conn.execute("INSERT INTO org_charts VALUES (1, ?, ?, 5)", (chart.json, chart.sha256))
         tx.conn.execute("INSERT INTO org_nodes(id, kind, name, created_rev, ts) VALUES ('web','department','Web',1,0)")
-        tx.conn.execute("INSERT INTO departments VALUES ('web', 'departments/web', ?, ?, 1)", (dept.json, dept.sha256))
+        tx.conn.execute("INSERT INTO departments(id, home_dir, body, sha256, ts) VALUES ('web', 'departments/web', ?, ?, 1)", (dept.json, dept.sha256))
         tx.conn.execute("INSERT INTO graph_nodes(id, kind, label, department_id, body, sha256, ts) VALUES ('web','department','Web','web',?,?,0)", (node.json, node.sha256))
         tx.conn.execute("INSERT INTO graph_nodes(id, kind, label, body, sha256, ts) VALUES (?, 'identity', 'x', '{}', 'x', 0)", (plugin_atom.model.node_id,))
         tx.conn.execute("INSERT INTO atoms(id, schema, node_id, state, display, attempt, goal, body, sha256, ts_open) VALUES (?,?,?,?,?,?,?,?,?,?)",

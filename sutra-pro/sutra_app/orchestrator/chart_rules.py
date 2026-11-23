@@ -26,7 +26,7 @@ from sutra_app.orchestrator.textutil import jaccard, name_key, tokens
 
 __all__ = [
     "ChartRules", "JACCARD_REUSE", "OPEN_STATUSES", "DIGEST_DEPARTMENT_LIMIT", "DIGEST_KEEP", "classify", "reuse_violations",
-    "TERMINAL_NOTE",
+    "TERMINAL_NOTE", "hidden_ids", "without_hidden",
 ]
 
 JACCARD_REUSE = 0.5                          # name+purpose token overlap at which a new node is "the same as" a live one
@@ -38,18 +38,43 @@ DIGEST_PURPOSE_DIVISION = 80
 TERMINAL_NOTE = "(+{n} more not shown)"
 
 
-def classify(change: ChartChange) -> Literal["auto", "approve"]:
-    """'approve' iff the change is a rearrange that holds a MergeOp or a SplitOp; reuse, add, move and rename are automatic."""
+def classify(change: ChartChange, *, actor: str = "chat_agent") -> Literal["auto", "approve"]:
+    """'approve' when the change is a rearrange that holds a MergeOp or a SplitOp, or (D427) when the chat agent would add a team: a
+    project is never made without the owner naming it. Reuse, a division, a move and a rename are automatic, and so is every change the
+    owner made by hand (`actor="user"`)."""
     ops = change.ops
-    return "approve" if change.kind == "rearrange" and any(isinstance(op, (MergeOp, SplitOp)) for op in ops) else "auto"
+    if change.kind == "rearrange" and any(isinstance(op, (MergeOp, SplitOp)) for op in ops):
+        return "approve"
+    if actor == "chat_agent" and any(isinstance(op, AddOp) and op.node.kind == "department" for op in ops):
+        return "approve"
+    return "auto"
 
 
 def _node_tokens(node: OrgNode) -> frozenset[str]:
     return tokens(f"{node.name} {node.purpose}")
 
 
-def reuse_violations(chart: OrgChart, ops: Sequence[Any]) -> list[Violation]:
-    """`reuse_candidate` for every AddOp whose new node resembles a live node of the same kind (path `ops.<i>.node.name`)."""
+def hidden_ids(conn: sqlite3.Connection, chart: OrgChart | None = None) -> set[str]:
+    """The teams the owner deleted (hidden, D426) and, given the chart, every node under them."""
+    found = {r[0] for r in conn.execute("SELECT id FROM departments WHERE hidden_at IS NOT NULL")}
+    if chart is None or not found:
+        return found
+    return {node_id for dept in found if chart.node(dept) is not None for node_id in chart.subtree(dept)} | found
+
+
+def without_hidden(chart: OrgChart, hidden: Collection[str]) -> OrgChart:
+    """The chart as the org chat plans on it: the hidden teams and everything under them left out, the revision kept. The same object when
+    nothing is hidden. Not a chart to apply to: changes are always checked against the stored head."""
+    if not hidden:
+        return chart
+    gone = {node_id for dept in hidden if chart.node(dept) is not None for node_id in chart.subtree(dept)} | set(hidden)
+    return chart.model_copy(update={"nodes": [n for n in chart.nodes if n.id not in gone],
+                                    "edges": [e for e in chart.edges if e.parent not in gone and e.child not in gone]})
+
+
+def reuse_violations(chart: OrgChart, ops: Sequence[Any], *, hidden: Collection[str] = ()) -> list[Violation]:
+    """`reuse_candidate` for every AddOp whose new node resembles a live node of the same kind (path `ops.<i>.node.name`). A hidden team
+    (and what is under it) is nobody's to reuse, so it is never a candidate."""
     out: list[Violation] = []
     for i, op in enumerate(ops):
         if not isinstance(op, AddOp):
@@ -58,7 +83,7 @@ def reuse_violations(chart: OrgChart, ops: Sequence[Any]) -> list[Violation]:
         new_tokens = tokens(f"{new.name} {new.purpose}")
         new_key = name_key(new.name)
         for live in chart.nodes:
-            if live.kind != new.kind:
+            if live.kind != new.kind or live.id in hidden:
                 continue
             same_name = bool(new_key) and new_key == name_key(live.name)
             if same_name or jaccard(new_tokens, _node_tokens(live)) >= JACCARD_REUSE:
@@ -91,9 +116,11 @@ class ChartRules:
 
     # ---- change rules ---------------------------------------------------------------------------------------------------
 
-    def extras(self, conn: sqlite3.Connection, chart: OrgChart, change: ChartChange) -> list[Violation]:
-        """The violations this module adds to the library's: `reuse_candidate`, then `busy`, each in op order."""
-        return reuse_violations(chart, change.ops) + self.busy(conn, chart, change)
+    def extras(self, conn: sqlite3.Connection, chart: OrgChart, change: ChartChange, *, actor: str = "chat_agent") -> list[Violation]:
+        """The violations this module adds to the library's: `reuse_candidate`, then `busy`, each in op order. `reuse_candidate` judges
+        the chat agent only: a name the owner typed is the owner's choice (D426); the library's exact-name clash still holds for everyone."""
+        reuse = reuse_violations(chart, change.ops, hidden=hidden_ids(conn, chart)) if actor == "chat_agent" else []
+        return reuse + self.busy(conn, chart, change)
 
     def busy(self, conn: sqlite3.Connection, chart: OrgChart, change: ChartChange) -> list[Violation]:
         """A move, merge (each source) or split of a division whose subtree holds an unfinished task scope. Refs and ids that are
@@ -131,8 +158,12 @@ class ChartRules:
         `chart` (the chart as it will be after stage B) or one of the ids in `added`; a scope must be a division under that
         department; `follows` must be a task of that department. Paths `assignments.<i>.dept`, `.scope`, `.follows`."""
         out: list[Violation] = []
+        hidden = hidden_ids(conn)
         for i, draft in enumerate(drafts):
             dept, scope, follows = _attr(draft, "dept"), _attr(draft, "scope"), _attr(draft, "follows")
+            if dept in hidden:
+                out.append(violation(f"assignments.{i}.dept", "bad_assignment", "That project was deleted"))
+                continue
             node = chart.node(dept) if isinstance(dept, str) else None
             live = node is not None and node.kind == "department"
             if not live and dept not in added:
@@ -159,6 +190,7 @@ class ChartRules:
             raise ValueError("a digest needs at least 80 characters")
         live = _latest_by_dept(conn, LIVE_STATUSES)
         last = _latest_by_dept(conn, None)
+        chart = without_hidden(chart, hidden_ids(conn))              # a deleted project is not the org chat's to see (D426)
         departments = [n for n in chart.nodes if n.kind == "department"]
         blocks: dict[str, list[str]] = {}
         for dept in departments:

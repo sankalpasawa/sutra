@@ -479,6 +479,13 @@ class LiveApp:
             self.until("the chat turn to end", lambda: not self.services.runner.busy)
         return response.json()["message_id"]
 
+    def yes_to_the_card(self) -> None:
+        """The owner says yes on the newest approval card in the org chat: the chat agent's new team waits for it (D427)."""
+        card_id = max(m["id"] for m in self.messages() if m["kind"] == "card" and m["card"]["type"] == "approval")
+        response = self.write(ORG, "Yes", choice={"message_id": card_id, "option": "yes"})
+        assert response.status_code == 202, response.text
+        self.until("the chat turn to end", lambda: not self.services.runner.busy)
+
     def add_department(self, dept: str, name: str, purpose: str = "") -> None:
         """The owner adds a team by hand (`POST /api/chart/changes`), without a model."""
         revision = self.get("/api/chart")["version"]
@@ -569,10 +576,11 @@ class Journey:
 
 def run_new_team(live: LiveApp, message: str = FIRST_MESSAGE, answer: str = ANSWER, script: list[dict] | None = None,
                  timeout: float = 90.0) -> Journey:
-    """The owner's first message makes the Web team and its task; the real engine starts, Identity asks, the owner answers in
+    """The owner's first message proposes the Web team, the owner says yes, the team and its task are made; the real engine starts, Identity asks, the owner answers in
     the department chat, the run ends. Returns once the task is over (the caller asserts how)."""
     digest0 = live.services.chart.digest(message, max_chars=DIGEST_CHARS)
     mid = live.say(message, *(script if script is not None else new_team_script()))
+    live.yes_to_the_card()                                          # the new team waits for the owner's yes (D427)
     task = live.task_of_message(mid)
     live.until("Identity's question", lambda: live.task_status(task) in ("waiting_user", *TERMINAL), timeout)
     needs = live.get("/api/needs-you")

@@ -10,7 +10,8 @@ A department record holds three things and nothing else: its id (= the OrgNode i
 
 `ChartStore.apply` writes the record in the same transaction that adds the department to the chart; the shipped cross
 rule `department.in_chart` (gate.py) refuses a record for a department the chart does not hold. A department is never
-archived, moved or merged (DL5), so the record has no status and no revision.
+archived, moved or merged (DL5), so the record has no status and no revision; the owner may hide one (D426), which the
+orchestrator's `departments.hidden_at` records, never this record.
 """
 from typing import Annotated, Literal
 

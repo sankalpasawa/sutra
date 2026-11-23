@@ -33,10 +33,31 @@ CHANGE_ID_PATTERN = r"^chg-[0-9]{4,9}$"
 
 
 class DecisionIn(BaseModel):
-    """`{approve: true|false}`, closed: any other key is a 422."""
+    """`{approve: true|false}`, closed: any other key is a 422. With a yes to a change that starts projects (D427) the Create project box
+    also sends `names` (ref -> the name the owner typed), and `folder` and `access` for the project it starts."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
     approve: bool
+    names: dict[str, str] | None = None
+    folder: str | None = None
+    access: str = "edit"
+
+
+def _checked_names(request: Request, body: DecisionIn) -> tuple[dict[str, str] | None, str | None]:
+    """The names and folder of a yes, checked before the change waits its turn (D427): a blank or long name is the 422, a name another
+    project has is the 409 `name_taken`, a folder that cannot be used is the 422 `folder`; nothing is decided then."""
+    if not body.approve or not (body.names or body.folder):
+        return None, None
+    from sutra_app.orchestrator.team_admin import clean_name, team_admin_of
+    admin = team_admin_of(services_of(request))
+    names = {ref: clean_name(name) for ref, name in (body.names or {}).items()}
+    for name in names.values():
+        problem = admin.name_problem(name)
+        if problem:
+            raise AppError("name_taken", problem, {"field": "name"})
+    if body.access not in ("edit", "read"):
+        raise AppError("validation", "Choose read and edit, or read only", {"field": "access"})
+    return names or None, admin.check_folder(body.folder) if body.folder else None
 
 
 def _need(request: Request, name: str) -> Any:
@@ -79,7 +100,8 @@ def build_router() -> APIRouter:
     @router.post("/api/chart/changes/{change_id}/decision", summary="Answer a pending approval", dependencies=[Depends(require_token)])
     async def post_decision(request: Request, body: DecisionIn, change_id: str = Path(pattern=CHANGE_ID_PATTERN)) -> RedactedJSONResponse:
         try:
-            result = await _need(request, "runner").decide(change_id, body.approve)
+            names, folder = await run_blocking(_checked_names, request, body)
+            result = await _need(request, "runner").decide(change_id, body.approve, names=names, folder=folder, access=body.access)
         except AlreadyDecided as exc:
             raise AppError("already_decided", "That change was decided already",
                            {"result": exc.result.model_dump(mode="json") if exc.result is not None else None}) from None

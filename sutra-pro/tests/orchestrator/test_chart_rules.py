@@ -26,7 +26,7 @@ def codes(found) -> list[tuple[str, str]]:
 
 # ---- classify -------------------------------------------------------------------------------------------------------------------
 
-def test_only_a_rearrange_with_a_merge_or_a_split_needs_the_owner(built):
+def test_a_merge_a_split_or_the_chat_agents_new_team_needs_the_owner(built):
     kinds = {
         "reuse": built.change(reuses=["web"]),
         "add": built.change(dept_op("$s", "Support")),
@@ -37,8 +37,11 @@ def test_only_a_rearrange_with_a_merge_or_a_split_needs_the_owner(built):
         "add+merge": built.change(div_op("$n", "Extra", "sales"), merge_op("quotes", "leads")),
     }
     assert {k: built.chart.classify(c) for k, c in kinds.items()} == {
+        "reuse": "auto", "add": "approve", "move": "auto", "rename": "auto", "merge": "approve", "split": "approve", "add+merge": "approve"}
+    assert {k: built.chart.classify(c, actor="user") for k, c in kinds.items()} == {           # the owner's own add is automatic (D427)
         "reuse": "auto", "add": "auto", "move": "auto", "rename": "auto", "merge": "approve", "split": "approve", "add+merge": "approve"}
     assert classify(kinds["merge"].model) == "approve"
+    assert classify(kinds["add"].model) == "approve" and classify(kinds["add"].model, actor="user") == "auto"
 
 
 # ---- reuse first ----------------------------------------------------------------------------------------------------------------

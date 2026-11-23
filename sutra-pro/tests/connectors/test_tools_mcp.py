@@ -75,7 +75,7 @@ def make_db(path: Path) -> Path:
         conn.execute("INSERT INTO org_nodes (id, kind, name, purpose, state, created_rev, ts) VALUES (?,?,?,?,?,1,1)",
                      (node_id, kind, name, purpose, state))
     conn.executemany("INSERT INTO org_edges VALUES (?,?,?)", [("root", "eng", 0), ("root", "ops", 1), ("root", "old", 2), ("eng", "web", 0)])
-    conn.execute("INSERT INTO departments VALUES ('eng', 'departments/eng', '{}', 'x', 1)")
+    conn.execute("INSERT INTO departments(id, home_dir, body, sha256, ts) VALUES ('eng', 'departments/eng', '{}', 'x', 1)")
     conn.execute("INSERT INTO tasks (id, dept_id, title, user_text, status, created_at) VALUES ('t1','eng','Site','make a site','running',1)")
     for node_id, kind, state, task in (("g1", "department", "running", None), ("g2", "identity", "idle", None), ("g3", "step", "done_unchecked", "t1")):
         conn.execute("INSERT INTO graph_nodes (id, kind, department_id, state, label, task_id, step_ref, body, sha256, ts) "

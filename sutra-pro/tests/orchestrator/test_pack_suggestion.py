@@ -18,8 +18,11 @@ MONEY = "money-movement"
 
 
 def add_team(renv, name="Servicing", purpose="Handles payments, refunds and EMI collections", dept="servicing"):
+    """The owner asks for a new team and says yes on its approval card (a new team waits for it, D427)."""
     renv.connector.push(decide(change="add", reuse=()), change_reply(add_dept("$t", name, purpose)), assignments(draft("a1", dept)))
-    return renv.say(f"Set up {name} for me")
+    accepted = renv.say(f"Set up {name} for me")
+    renv.yes_to_the_new_team()
+    return accepted
 
 
 def spy(renv):

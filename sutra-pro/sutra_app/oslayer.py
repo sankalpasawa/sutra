@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 __all__ = ["console_python", "IS_WINDOWS", "O_BINARY", "SIGKILL", "try_lock", "unlock", "pid_alive", "process_command", "popen_group_kwargs",
-           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name", "is_elevated", "long_paths_enabled"]
+           "hidden_window_kwargs", "ProcessTree", "kill_tree", "replace", "setup_stdio", "user_token", "signal_name", "is_elevated", "long_paths_enabled", "documents_dir"]
 
 IS_WINDOWS = os.name == "nt"
 O_BINARY: int = getattr(os, "O_BINARY", 0)          # 0 on POSIX: OR-ing it in changes nothing there
@@ -398,3 +398,33 @@ def controlled_folder_access() -> bool | None:
             return int(winreg.QueryValueEx(key, "EnableControlledFolderAccess")[0]) == 1
     except Exception:                                               # noqa: BLE001
         return None
+
+
+def documents_dir() -> Path:
+    """The owner's Documents folder, where a project with no chosen folder gets one (named projects, Q11): on Windows the Documents known
+    folder (it may have been moved, for example into OneDrive), anywhere else `~/Documents`. Any failure gives `~/Documents`.
+    `SUTRA_DOCUMENTS_DIR` overrides it (the tests, and a local check that must not write into the owner's Documents)."""
+    forced = os.environ.get("SUTRA_DOCUMENTS_DIR", "").strip()
+    if forced:
+        return Path(forced)
+    fallback = Path.home() / "Documents"
+    if not IS_WINDOWS:
+        return fallback
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _Guid(ctypes.Structure):
+            _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD), ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+        documents = _Guid(0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))   # FOLDERID_Documents
+        found = ctypes.c_wchar_p()
+        shell32, ole32 = ctypes.windll.shell32, ctypes.windll.ole32
+        if shell32.SHGetKnownFolderPath(ctypes.byref(documents), 0, None, ctypes.byref(found)) != 0:
+            return fallback
+        try:
+            return Path(found.value) if found.value else fallback
+        finally:
+            ole32.CoTaskMemFree(found)
+    except Exception:  # noqa: BLE001 - a missing API or a refused call is "use the usual place"
+        return fallback

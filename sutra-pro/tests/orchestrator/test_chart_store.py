@@ -46,7 +46,11 @@ class Env:
     def ctx(self, title: str = "Coffee shop landing page", message_id: int = 1) -> ChangeContext:
         return ChangeContext(session_id="cs_org", message_id=message_id, request_id=f"req-{message_id}", request_title=title)
 
-    def apply(self, *ops, actor: str = "chat_agent", title: str = "Coffee shop landing page", approved: bool = False, plan=None, **kw):
+    def apply(self, *ops, actor: str = "chat_agent", title: str = "Coffee shop landing page", approved: bool | None = None, plan=None, **kw):
+        """`approved` None: a change that adds a team counts as approved (these tests are about the chart, not the owner's yes, D427);
+        a merge or split still waits. Pass `approved=False` to see a team add wait."""
+        if approved is None:
+            approved = any(getattr(op, "op", "") == "add" and op.node.kind == "department" for op in ops)
         return self.chart.apply(self.change(*ops, **kw), actor=actor, ctx=self.ctx(title), plan=plan, approved=approved)
 
     def head(self):
@@ -542,8 +546,9 @@ def test_the_view_has_parents_and_positions_among_siblings(built):
 
 def test_preview_changes_nothing_and_says_what_would_happen(built):
     rows, head = built.one("SELECT count(*) FROM chart_changes"), built.chart.head().sha256
-    result = built.chart.preview(built.change(dept_op("$s", "Support")))
+    result = built.chart.preview(built.change(dept_op("$s", "Support")), actor="user")
     assert (result.status, result.revision, result.added, result.ids_by_ref) == ("applied", 4, ["support"], {"$s": "support"})
+    assert built.chart.preview(built.change(dept_op("$s", "Support"))).status == "pending_approval"        # the chat agent's add waits (D427)
     assert built.chart.preview(built.change(merge_op("quotes", "leads"))).status == "pending_approval"
     assert built.one("SELECT count(*) FROM chart_changes") == rows and built.chart.head().sha256 == head
     with pytest.raises(AppError) as info:

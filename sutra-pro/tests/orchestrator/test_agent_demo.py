@@ -256,7 +256,8 @@ def test_offline_services_use_the_demo_book_and_nothing_else_does(tmp_path):
 # ---- the real ChatAgent over the stub with the book -----------------------------------------------------------------------------
 
 class Demo:
-    """The chat agent over the offline stub, on a real chart; `say` plans one message and applies its change like the runner does."""
+    """The chat agent over the offline stub, on a real chart; `say` plans one message and applies its change like the runner does (a new
+    team after the owner's yes, then stage C on resume, D427)."""
 
     def __init__(self, db, settings, clock, events, tmp_path, notes=None) -> None:
         self.env = Env(db, settings, clock, events)
@@ -266,9 +267,15 @@ class Demo:
 
     def say(self, text):
         self.n += 1
-        plan = asyncio.run(self.agent.plan(PlanRequest(text=text, message_id=self.n)))
+        request = PlanRequest(text=text, message_id=self.n)
+        plan = asyncio.run(self.agent.plan(request))
         ctx = ChangeContext(session_id="cs_org", message_id=self.n, request_id=f"req-{self.n}", request_title=text)
-        self.env.chart.apply(plan.change, actor="chat_agent", ctx=ctx)
+        if not plan.stage_c_pending:
+            self.env.chart.apply(plan.change, actor="chat_agent", ctx=ctx)
+            return plan
+        self.env.chart.apply(plan.change, actor="chat_agent", ctx=ctx, approved=True)           # the owner said yes to the new team
+        resumed = asyncio.run(self.agent.resume(request, plan.decision))
+        plan.drafts, plan.calls, plan.stage_c_pending = resumed.drafts, plan.calls + resumed.calls, False
         return plan
 
     def departments(self):

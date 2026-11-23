@@ -90,6 +90,14 @@ def with_script(aenv: AgentEnv, *items) -> AgentEnv:
     return aenv
 
 
+def approved(aenv: AgentEnv, plan, request: PlanRequest | None = None):
+    """The owner says yes to a plan whose change adds a team (D427): stage C waited; the change is applied and the request resumes,
+    asking only stage C. Returns the resumed plan."""
+    assert plan.stage_c_pending and plan.drafts == []
+    aenv.chart.apply(plan.change, actor="chat_agent", ctx=aenv.env.ctx(), approved=True)
+    return aenv.run(aenv.agent.resume(request or aenv.request(), plan.decision))
+
+
 # ============================================ reply classes ==================================================================
 
 def test_the_family_is_registered_with_two_kinds_and_transport_safe_schemas():
@@ -382,7 +390,7 @@ def test_prompt_carries_schema_digest_and_history_and_no_secret(aenv, monkeypatc
 def test_every_call_of_a_request_carries_the_overhead_key(aenv):
     with_script(aenv, decide(intent="new_task", change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee shop menus")),
                 assignments(draft("a1", "cafe")))
-    aenv.plan(aenv.request(mid=9))
+    approved(aenv, aenv.plan(aenv.request(mid=9)), aenv.request(mid=9))              # stage C comes after the owner's yes (D427)
     assert aenv.steps() == ["decide", "change", "assign"]
     wanted = overhead_atom_id("req-9")
     assert call_context(9) == {"purpose": "chat_plan", "session_id": "cs_org", "node_id": "root", "atom_id": wanted}
@@ -491,10 +499,12 @@ def test_add_flow_is_three_calls_and_the_agent_sets_the_change_fields(aenv):
     with_script(aenv, decide(intent="new_task", change="add", reuse=()),
                 change_reply(add_dept("$cafe", "Cafe Menus", "Coffee shop menus and boards")), assignments(draft("a1", "cafe-menus")))
     plan = aenv.plan(aenv.request(mid=11))
-    assert aenv.steps() == ["decide", "change", "assign"]
+    assert aenv.steps() == ["decide", "change"] and plan.stage_c_pending                  # a new team waits for the owner (D427)
     model = plan.change.model
     assert (model.kind, model.task_id, model.base_revision, model.id) == ("add", "req-11", aenv.chart.head().model.revision, aenv.chart.next_change_id())
-    assert plan.added == ["cafe-menus"] and plan.drafts[0].dept == "cafe-menus" and not plan.stage_c_pending
+    resumed = approved(aenv, plan, aenv.request(mid=11))
+    assert aenv.steps() == ["decide", "change", "assign"]
+    assert plan.added == ["cafe-menus"] and resumed.drafts[0].dept == "cafe-menus" and not resumed.stage_c_pending
     change_prompt, assign_prompt = aenv.connector.calls[1].prompt, aenv.connector.calls[2].prompt
     assert "ref such as $web" in change_prompt and "YOUR DECISION" in change_prompt and "kind add" in change_prompt
     assert "NewNode:" in change_prompt and "AddOp:" in change_prompt
@@ -512,7 +522,7 @@ def test_stage_c_may_use_a_division_the_change_adds(aenv):
 def test_stage_b_violations_are_all_listed_and_retried(aenv):
     bad = change_reply(add_dept("$w2", "Web Pages", "Websites, landing pages and menus"), {"op": "move", "node": "ghost", "to_parent": "web"})
     with_script(aenv, decide(change="add", reuse=()), bad, change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "cafe")))
-    aenv.plan()
+    approved(aenv, aenv.plan())
     retry = aenv.connector.calls[2].prompt
     assert "kind_mismatch" in retry                                    # the move makes it a rearrange, not an add
     assert aenv.steps() == ["decide", "change", "change", "assign"]
@@ -566,7 +576,7 @@ def test_a_chart_request_asks_for_no_assignments(aenv):
 def test_stage_c_bad_assignments_are_retried(aenv):
     with_script(aenv, decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")), assignments(draft("a1", "web", scope="quotes")),
                 assignments(draft("a1", "cafe")))
-    plan = aenv.plan()
+    plan = approved(aenv, aenv.plan())
     assert "- assignments.0.scope: bad_assignment:" in aenv.connector.calls[3].prompt and plan.drafts[0].dept == "cafe"
 
 
@@ -574,7 +584,7 @@ def test_stage_c_follows_must_be_a_task_of_that_team(aenv):
     other = aenv.new("sales", "Quote request")
     with_script(aenv, decide(change="add", reuse=()), change_reply(add_dept("$cafe", "Cafe", "Coffee")),
                 assignments(draft("a1", "cafe", follows=other.id)), assignments(draft("a1", "cafe")))
-    aenv.plan()
+    approved(aenv, aenv.plan())
     assert "bad_assignment" in aenv.connector.calls[3].prompt and f"{other.id!r} is not a task of" in aenv.connector.calls[3].prompt
 
 

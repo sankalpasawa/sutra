@@ -147,7 +147,8 @@ class ChatGround:
     def _org(self, conn: sqlite3.Connection) -> list[str]:
         lines = ["You are answering the owner of Sutra directly, in the org chat (the whole organisation, not one team).",
                  "The teams and how each one's latest task stands:"]
-        teams = conn.execute("SELECT id, name, purpose FROM org_nodes WHERE kind = 'department' AND state = 'active' ORDER BY created_rev, id").fetchall()
+        teams = conn.execute("SELECT id, name, purpose FROM org_nodes WHERE kind = 'department' AND state = 'active'"
+                             " AND id NOT IN (SELECT id FROM departments WHERE hidden_at IS NOT NULL) ORDER BY created_rev, id").fetchall()
         for team in teams[:TEAMS_SHOWN]:
             last = conn.execute("SELECT title, status FROM tasks WHERE dept_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", (team["id"],)).fetchone()
             purpose = _line(team["purpose"], 120)
@@ -181,7 +182,8 @@ class ChatGround:
         if question is not None:
             lines.append(f"The team is waiting for the owner's answer to: {_line(question['text'], QUESTION_CHARS)}")
         others = [r["name"] for r in conn.execute(
-            "SELECT name FROM org_nodes WHERE kind = 'department' AND state = 'active' AND id != ? ORDER BY created_rev, id", (node["id"],))]
+            "SELECT name FROM org_nodes WHERE kind = 'department' AND state = 'active' AND id != ?"
+            " AND id NOT IN (SELECT id FROM departments WHERE hidden_at IS NOT NULL) ORDER BY created_rev, id", (node["id"],))]
         if others:
             lines.append("Other teams in the org (names only; their work is not shown here): " + ", ".join(_line(n, 80) for n in others[:NAMES_SHOWN]) + ".")
         return lines

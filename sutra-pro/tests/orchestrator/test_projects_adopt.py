@@ -33,13 +33,34 @@ def four_steps():
                        draft("a4", "sales", title="Send", depends_on=("a2", "a3")))
 
 
-def talk(client, services, connector, text, *script):
-    connector.push(*script)
-    response = client.post(f"/api/chats/{ORG}/messages", json={"text": text}, headers=HEADERS)
-    assert response.status_code == 202, response.text
+def wait_idle(services):
     deadline = time.time() + 10
     while services.runner.busy and time.time() < deadline:
         time.sleep(0.02)
+
+
+def yes_to_new_teams(client, services) -> int:
+    """The owner says yes (the decision route, as the card's button does) to every waiting change that adds a team: the chat agent never
+    makes one by itself (D427). A merge or a split is left waiting. Returns how many were approved."""
+    waiting = {c.id for c in services.chart.pending()}
+    cards = [m["card"] for m in client.get(f"/api/chats/{ORG}/messages").json()["messages"] if m["kind"] == "card" and m["card"]["type"] == "approval"]
+    approved = 0
+    for card in cards:
+        if card.get("adds") and card["change_id"] in waiting:
+            response = client.post(f"/api/chart/changes/{card['change_id']}/decision", json={"approve": True}, headers=HEADERS)
+            assert response.status_code == 200, response.text
+            approved += 1
+    wait_idle(services)
+    return approved
+
+
+def talk(client, services, connector, text, *script):
+    """The owner writes `text` in the org chat, the model answers with `script`, and the owner says yes to a new team it proposes."""
+    connector.push(*script)
+    response = client.post(f"/api/chats/{ORG}/messages", json={"text": text}, headers=HEADERS)
+    assert response.status_code == 202, response.text
+    wait_idle(services)
+    yes_to_new_teams(client, services)
     return response.json()["message_id"]
 
 
@@ -83,8 +104,10 @@ def test_the_planner_has_a_node_and_every_planner_call_carried_its_identity(worl
     client, services, connector, mid = world
     planner_nodes = rows(services, "SELECT * FROM agent_nodes WHERE role = 'planner'")
     assert len(planner_nodes) == 1 and planner_nodes[0]["runtime"] == "inline" and planner_nodes[0]["task_id"] is None and planner_nodes[0]["state"] == "done"
-    ids = {call.context.get("agent_node_id") for call in connector.calls}
-    assert ids == {planner_nodes[0]["id"]} and {call.context.get("agent_role") for call in connector.calls} == {"planner"}
+    asked, resumed = connector.calls[:2], connector.calls[2:]                                    # decide and change, then (after the yes to the teams, D427) the rest
+    assert [c.step for c in asked] == ["decide", "change"] and resumed
+    assert {call.context.get("agent_node_id") for call in resumed} == {planner_nodes[0]["id"]}       # the resumed request is the project's planner (as after a merge, D301)
+    assert all(call.context.get("agent_node_id") for call in asked) and {call.context.get("agent_role") for call in connector.calls} == {"planner"}
     assert not services.projects._planners                                                          # the token is released when the request is done
 
 

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from orchestrator.projects_rig import PRig  # noqa: F401
 from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
 from orchestrator.test_projects_adopt import BASE as APP_BASE
-from orchestrator.test_projects_adopt import HEADERS, NO_REQUESTS, make_app, rows
+from orchestrator.test_projects_adopt import HEADERS, NO_REQUESTS, make_app, rows, yes_to_new_teams
 from orchestrator.test_scripted_conversation import ORG
 
 from sutra_app.orchestrator.gatekeeper import DECIDE_FOR_ME, RULE_TABLE, decide_for_me_answer, on_scope_violation
@@ -96,6 +96,7 @@ def test_the_switch_comes_with_the_request_and_reaches_the_workers_as_their_own_
         deadline = time.time() + 10
         while services.runner.busy and time.time() < deadline:
             time.sleep(0.02)
+        yes_to_new_teams(client, services)                  # the two teams wait for the owner's yes (D427)
         project = rows(services, "SELECT * FROM projects")[0]
         assert project["decide_for_me"] == 1 and project["status"] in ("running", "done") and rows(services, "SELECT * FROM approvals")[0]["decided_by"] == DECIDE_FOR_ME
         settings = [json.loads(r["settings_json"] or "{}") for r in rows(services, "SELECT settings_json FROM tasks")]
@@ -112,6 +113,7 @@ def test_without_the_switch_nothing_is_decided_for_the_owner(tmp_path):
         deadline = time.time() + 10
         while services.runner.busy and time.time() < deadline:
             time.sleep(0.02)
+        yes_to_new_teams(client, services)                  # the two teams wait for the owner's yes (D427)
         assert rows(services, "SELECT * FROM projects")[0]["decide_for_me"] == 0 and rows(services, "SELECT status FROM approvals")[0]["status"] == "open"
         assert all("J2_DECIDE_FOR_ME" not in json.loads(r["settings_json"] or "{}") for r in rows(services, "SELECT settings_json FROM tasks")) and NO_REQUESTS
 

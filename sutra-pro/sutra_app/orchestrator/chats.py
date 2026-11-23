@@ -412,7 +412,8 @@ class ChatStore:
             card = json.loads(r["card_json"])
             out.append(NeedsYouOut(
                 message_id=r["id"], session_id=r["session_id"], kind="approval", text=card["question"],
-                options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"]), **age(r["at"])))
+                options=[o["label"] for o in card["options"]], asked_at=iso_z(r["at"]), change_id=card["change_id"],
+                adds=card.get("adds") or [], **age(r["at"])))
         for r in conn.execute("SELECT m.id, m.session_id, m.card_json, m.at FROM chat_messages m WHERE m.kind = 'card' AND json_extract(m.card_json, '$.type') = 'node_approval' "
                               "AND m.answered_by IS NULL ORDER BY m.id"):                     # the open questions of a multi-agent project (D317); no such row exists while SUTRA_NODES_V1 is off
             card = json.loads(r["card_json"])

@@ -5,7 +5,7 @@ import time
 
 from fastapi.testclient import TestClient
 from orchestrator.test_chat_agent import add_dept, assignments, change_reply, decide, draft
-from orchestrator.test_projects_adopt import BASE, HEADERS, make_app, rows
+from orchestrator.test_projects_adopt import BASE, HEADERS, make_app, rows, yes_to_new_teams
 from orchestrator.test_scripted_conversation import ORG
 
 CLIENT = "start-0001"
@@ -20,6 +20,12 @@ def wait_idle(services):
     deadline = time.time() + 10
     while services.runner.busy and time.time() < deadline:
         time.sleep(0.02)
+
+
+def settle(client, services):
+    """The turn ends; the owner says yes to the teams it proposes (a new team waits for that, D427) and the request finishes."""
+    wait_idle(services)
+    yes_to_new_teams(client, services)
 
 
 def test_off_the_routes_do_not_exist_and_on_a_write_needs_the_token_and_a_closed_body(tmp_path):
@@ -45,7 +51,7 @@ def test_the_request_becomes_a_project_that_stops_all_and_the_same_send_again_st
         services = app.state.services
         sent = client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote", "failure_policy": "stop_all", "budget": 40}, headers=HEADERS)
         assert sent.status_code == 202 and sent.json()["duplicate"] is False and sent.json()["message_id"] >= 1
-        wait_idle(services)
+        settle(client, services)
         again = client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote", "failure_policy": "stop_all"}, headers=HEADERS)
         assert again.status_code == 200 and again.json() == {"duplicate": True, "message_id": sent.json()["message_id"], "client_id": CLIENT}
         found = rows(services, "SELECT failure_policy, status FROM projects")
@@ -59,7 +65,7 @@ def test_a_request_made_in_the_chat_is_always_stop_branch(tmp_path):
     script(connector)
     with TestClient(app, base_url=BASE) as client:
         client.post(f"/api/chats/{ORG}/messages", json={"text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(app.state.services)
+        settle(client, app.state.services)
         assert [r["failure_policy"] for r in rows(app.state.services, "SELECT failure_policy FROM projects")] == ["stop_branch"]
 
 
@@ -68,7 +74,7 @@ def test_the_default_policy_is_stop_branch(tmp_path):
     script(connector)
     with TestClient(app, base_url=BASE) as client:
         assert client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS).status_code == 202
-        wait_idle(app.state.services)
+        settle(client, app.state.services)
         assert [r["failure_policy"] for r in rows(app.state.services, "SELECT failure_policy FROM projects")] == ["stop_branch"]
 
 
@@ -97,7 +103,7 @@ def test_the_project_a_post_started_is_found_by_its_client_id(tmp_path):        
         services = app.state.services
         assert client.get(f"/api/projects?client_id={CLIENT}").json() == []                                       # nothing sent yet
         assert client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS).status_code == 202
-        wait_idle(services)
+        settle(client, services)
         found = client.get(f"/api/projects?client_id={CLIENT}").json()
         assert [p["id"] for p in found] == [r["id"] for r in rows(services, "SELECT id FROM projects")] and len(found) == 1
         assert client.get("/api/projects?client_id=other-0002").json() == []                                       # another send's project is not this one
@@ -111,7 +117,7 @@ def test_a_note_about_a_project_ends_with_its_address_and_a_finished_project_say
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         project = rows(services, "SELECT id FROM projects")[0]["id"]
         asyncio_stop = client.post(f"/api/projects/{project}/stop", json={}, headers=HEADERS)
         assert asyncio_stop.status_code == 200
@@ -137,7 +143,7 @@ def test_a_request_sent_with_post_projects_gets_a_reply_that_ends_with_the_proje
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         assert client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS).status_code == 202
-        wait_idle(services)
+        settle(client, services)
         texts, tasks = _reply_and_cards(services)
         address = f"/p/{_project_id(services)}"
         assert texts[-1].endswith(f"You can follow it here: {address}") and sum("/p/" in t for t in texts) == 1
@@ -150,7 +156,7 @@ def test_a_request_typed_in_the_org_chat_gets_the_same_address(tmp_path):
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post(f"/api/chats/{ORG}/messages", json={"text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         texts, tasks = _reply_and_cards(services)
         assert texts[-1].endswith(f"/p/{_project_id(services)}") and all(card["project_id"] == _project_id(services) for card in tasks)
 
@@ -161,7 +167,7 @@ def test_without_the_flag_the_reply_and_the_task_cards_are_what_they_were(tmp_pa
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post(f"/api/chats/{ORG}/messages", json={"text": "A page"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         texts, tasks = _reply_and_cards(services)
         assert all("/p/" not in text for text in texts) and all("project_id" not in card for card in tasks)
         for card in rows(services, "SELECT card_json FROM chat_messages WHERE kind = 'card'"):
@@ -177,7 +183,7 @@ def test_only_the_apps_own_address_can_be_a_link_a_look_alike_in_a_models_word_i
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         texts, _ = _reply_and_cards(services)
         real = _project_id(services)
         assert sum(t.count("/p/prj_") for t in texts) == 1 and texts[-1].endswith(f"/p/{real}")
@@ -194,7 +200,7 @@ def test_a_look_alike_address_in_a_models_word_is_broken_in_the_reply_and_only_t
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         texts, _ = _reply_and_cards(services)
         real = _project_id(services)
         reply = texts[-1]
@@ -210,7 +216,7 @@ def test_no_address_and_no_project_key_when_the_project_is_not_there(tmp_path, m
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         texts, tasks = _reply_and_cards(services)
         assert all("/p/prj_" not in t for t in texts) and all("project_id" not in card for card in tasks) and tasks
 
@@ -221,7 +227,7 @@ def test_the_tasks_of_a_project_carry_the_do_only_your_own_job_rule_and_a_single
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post("/api/projects", json={"client_id": CLIENT, "text": "A page and a quote"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         framings = {r["title"]: r["framing"] for r in rows(services, "SELECT title, framing FROM tasks")}
         assert "STEP 1 OF 2" in framings["Page"] and "Do ONLY this step's own job: Page" in framings["Page"] and "Quote" in framings["Page"]
         assert "STEP 2 OF 2" in framings["Quote"] and "Do ONLY this step's own job: Quote" in framings["Quote"]
@@ -233,5 +239,5 @@ def test_an_ordinary_one_step_request_has_no_such_rule(tmp_path):
     with TestClient(app, base_url=BASE) as client:
         services = app.state.services
         client.post(f"/api/chats/{ORG}/messages", json={"text": "A page"}, headers=HEADERS)
-        wait_idle(services)
+        settle(client, services)
         assert all("THIS IS STEP" not in r["framing"] for r in rows(services, "SELECT framing FROM tasks"))

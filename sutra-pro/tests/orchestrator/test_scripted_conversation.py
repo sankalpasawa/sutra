@@ -152,12 +152,20 @@ def convo(tmp_path):
 
 # ============================================ the steps, each building on the one before =====================================
 
+def yes_to_the_card(c: Scenario) -> None:
+    """The owner says yes on the newest approval card (a new team waits for it, D427)."""
+    card_id = max(m["id"] for m in c.messages() if m["kind"] == "card" and m["card"]["type"] == "approval")
+    c.say("Yes", choice={"message_id": card_id, "option": "yes"})
+
+
 def new_team(c: Scenario) -> str:
-    """Step 2: 'I need a landing page for my coffee shop.' makes the Web team and gives it a task. Returns the task id."""
+    """Step 2: 'I need a landing page for my coffee shop.' proposes the Web team; the owner says yes; Web is made and gets a task.
+    Returns the task id."""
     mid = c.say("I need a landing page for my coffee shop.",
                 decide(change="add", reuse=(), why="no team builds pages"),
                 change_reply(add_dept("$web", "Web", "Websites and landing pages")),
                 assignments(draft("a1", "web", title="Cafe page", brief="Build the cafe landing page.")))
+    yes_to_the_card(c)
     return c.one("SELECT id FROM tasks WHERE request_id = ?", f"req-{mid}")
 
 
@@ -202,6 +210,7 @@ def content_team(c: Scenario) -> None:
     """Step 7: a new Content team, and Menu moves there (one change, two ops)."""
     c.say("Menu belongs in a new Content team; make it and move Menu there.", decide("chart_request", "rearrange", reuse=(), assignments=[]),
           change_reply(add_dept("$content", "Content", "Words and menus"), MOVE))
+    yes_to_the_card(c)
 
 
 def moved(c: Scenario) -> None:
@@ -227,7 +236,8 @@ def test_a_new_team_is_made_from_one_sentence(convo):
     before = convo.head()
     task = new_team(convo)
     first, second = [r for r in convo.sql("SELECT * FROM chart_changes ORDER BY seq")]
-    assert (second["seq"], second["kind"], second["status"], second["actor"], second["task_title"]) == (2, "add", "applied", "chat_agent", "Cafe page")
+    assert (second["seq"], second["kind"], second["status"], second["actor"], second["task_title"]) == (
+        2, "add", "applied", "chat_agent", "I need a landing page for my coffee shop.")         # named before stage C: the owner's yes comes first (D427)
     assert second["before_sha"] == first["after_sha"] and second["after_sha"] != second["before_sha"]              # the chain of I5
     assert [r["id"] for r in convo.sql("SELECT id FROM departments")] == ["web"]
     assert (convo.services.settings.data_dir / "departments" / "web" / "runs").is_dir()
@@ -255,7 +265,8 @@ def test_the_events_of_a_new_team_come_in_the_designed_order(convo):
     for kind in wanted:
         at = types.index(kind, at) + 1
     phases = [d["phase"] for t, d in convo.events_since(before) if t == "chat.turn"]
-    assert phases == ["reading_chart", "consulting_library", "planning", "applying", "handing_off", "done"]
+    assert phases == ["reading_chart", "consulting_library", "planning", "applying", "done",      # the add waits for the owner's yes (D427)
+                      "applying", "handing_off", "done"]
 
 
 def test_the_models_calls_carry_the_request_overhead_key(convo):
@@ -363,7 +374,7 @@ def test_a_merge_waits_for_a_yes_and_a_second_click_is_refused(convo):
     nodes = convo.one("SELECT count(*) FROM org_nodes")
     head = convo.one("SELECT max(revision) FROM org_charts")
     convo.say("Merge Menu into Recipes.", decide("chart_request", "rearrange", reuse=(), assignments=[]), change_reply(MERGE))
-    [card] = convo.cards("approval")
+    card = convo.cards("approval")[-1]                         # the earlier ones asked for the Web and Content teams (D427)
     assert convo.one("SELECT max(revision) FROM org_charts") == head and convo.one("SELECT count(*) FROM org_nodes") == nodes     # nothing changed yet
     assert convo.one("SELECT status FROM chart_changes ORDER BY seq DESC LIMIT 1") == "pending_approval"
     card_id = max(m["id"] for m in convo.messages() if m["kind"] == "card")

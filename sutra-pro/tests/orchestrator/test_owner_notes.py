@@ -8,7 +8,7 @@ import json
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from orchestrator.test_chat_agent import add_dept, aenv, assignments, change_reply, decide, draft, with_script  # noqa: F401  (aenv is a fixture)
+from orchestrator.test_chat_agent import add_dept, aenv, approved, assignments, change_reply, decide, draft, with_script  # noqa: F401  (aenv is a fixture)
 from orchestrator.test_chat_ground import SECRET_A, Svc, ended, world  # noqa: F401  (world is a fixture)
 from orchestrator.test_tasks import tenv  # noqa: F401  (tenv is a fixture)
 
@@ -154,7 +154,8 @@ def test_the_notes_are_in_the_decide_and_the_assign_prompt_and_in_no_other(aenv,
     store.add("preferences", "Never email a client without asking.", None, TODAY)
     store.add("work", "My brand voice is plain, no jargon.", None, TODAY)
     aenv.agent._notes = lambda: store.agent_block(TODAY)
-    aenv.plan(aenv.request("I need a menu for my coffee shop."))
+    request = aenv.request("I need a menu for my coffee shop.")
+    approved(aenv, aenv.plan(request), request)                              # the assign prompt comes after the owner's yes to the team (D427)
     assert aenv.steps() == ["decide", "change", "assign"]
     decide_call, change_call, assign_call = (c.prompt for c in aenv.connector.calls)
     for prompt in (decide_call, assign_call):
