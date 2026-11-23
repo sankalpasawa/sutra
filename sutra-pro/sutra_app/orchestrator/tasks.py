@@ -57,7 +57,7 @@ from sutra_app.orchestrator.models import (
     LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
-from sutra_app.orchestrator.nodes_store import node_block_of
+from sutra_app.orchestrator.nodes_store import is_node_task, node_block_of
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
 from sutra_app.orchestrator.runs import stderr_tail
 from sutra_app.orchestrator.textutil import one_line_title
@@ -1062,8 +1062,8 @@ class TaskService:
             if found is None:
                 return
             stored = json.loads(found["settings_json"] or "{}")
-            if stored.get(STOP_KEY):
-                return
+            if stored.get(STOP_KEY) and not (by == "owner" and stored.get(STOP_KEY) != "owner"):
+                return                                           # the first one to ask wins, except that the owner's own stop always wins over the app's or the system's (D406)
             stored[STOP_KEY] = by
             self.store.update(tx, task_id, settings_json=json.dumps(stored, sort_keys=True, separators=(",", ":")))
 
@@ -1125,6 +1125,8 @@ class TaskService:
             raise NotFound("that task")
         if old.status not in ("stopped", "crashed", "cancelled", "done_with_open_items") and not (force and old.status in ("done",)):
             raise Busy("Only a task that stopped, crashed or was cancelled can be tried again")
+        if not force and self.settings.nodes_v1 and is_node_task(tx.conn, old.id):
+            raise Busy("A step of a project is tried again by its project, not by hand")                      # D398: a task made by hand would run with no grant, no narrowing and no dollar limit
         earlier = attempts.chain(tx.conn, old.id)
         number = attempts.attempt_of(earlier[-1]) + 1
         note = attempts.brief(tx.conn, earlier, number, run_dir=lambda dept, run: self.store.runs_dir_in(tx.conn, dept) / run,

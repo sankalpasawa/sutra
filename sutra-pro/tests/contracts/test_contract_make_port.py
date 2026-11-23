@@ -54,7 +54,7 @@ def test_make_port_is_defined_once_and_the_two_types_come_from_the_engine():
     assert defined == ["connectors/engine_port.py"]
     assert engine_port.PortSpec is engine_port_module.PortSpec and models.Allowance is engine_port_module.Allowance is router.Allowance
     assert engine_port.CallTag is engine_port_module.CallTag is models.CallTag
-    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir", "tools", "scope", "slots", "node_tiers", "node_commands"]       # no `model`, no RunSpec fields; `tools` added on purpose (MAN-8, D298): empty for a run that is not a node; the last two (D380) are the grant's tiers and commands level, empty for a run that is not a node
+    assert list(PortSpec.model_fields) == ["mock", "connector", "run_id", "dept_id", "task_id", "data_dir", "tools", "scope", "slots", "node_tiers", "node_commands", "node"]       # no `model`, no RunSpec fields; `tools` added on purpose (MAN-8, D298): empty for a run that is not a node; the last two (D380) are the grant's tiers and commands level, empty for a run that is not a node
     assert list(Allowance.model_fields) == ["max_calls", "max_usd", "deadline", "envelope_id"]
 
 

@@ -67,13 +67,18 @@
   const sentence = text => (text && !/[.!?]$/.test(text) ? text + "." : text);
   // What a tool row says: its kind, the file when there is one, how many times ("run, 7 times" is "ran commands 7 times").
   const TOOL_VERBS = freeze({read: "read", edit: "changed", run: "ran commands", search: "searched", web: "used the web", sutra: "looked at Sutra's own data", github: "read GitHub", other: "used a tool"});
+  const GIT_NAMES = freeze(["HEAD", "index", "COMMIT_EDITMSG", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "packed-refs"]);     // bare names inside a repository's .git folder (no other bare name is guessed at)
+  const OWN_FILES = freeze({"project.md": "its report", "report.md": "its report"});
   function toolWords(reason) {
     const m = /^(read|edit|run|search|web|sutra|github|other)(?: (.+?))?, (\d+) times?$/.exec(clean(reason));
     if (!m) return "A step used a tool";
     const times = Number(m[3]);
     const verb = TOOL_VERBS[m[1]];
-    const what = m[1] === "read" || m[1] === "edit" ? " " + m[2] : "";
-    return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + (times === 1 ? "once" : times + " times");
+    const n = times === 1 ? "once" : times + " times";
+    if (m[1] === "read" && GIT_NAMES.indexOf(m[2]) >= 0) return "A step looked at the folder's history, " + n;                 // the repository's own files (D405)
+    if (m[1] === "edit") return "A step wrote " + (OWN_FILES[m[2]] || m[2] || "a file") + ", " + n;
+    const what = m[1] === "read" ? " " + m[2] : "";
+    return "A step " + verb + what + (m[1] === "run" || m[1] === "web" ? " " : ", ") + n;
   }
   function reasonWords(row, project) {
     const action = clean(row.action);
@@ -97,16 +102,21 @@
   }
 
   /* ---------------------------------------------------------------- pieces */
+  // The steps that wait for an answer to a question of the engine itself (D401), as a set of step ids.
+  const asking = snap => { const ids = {}; arr(isObj(snap) ? snap.questions : []).filter(isObj).forEach(q => { ids[clean(q.node_id)] = true; }); return ids; };
   function header(snap) {
     const p = isObj(snap) && isObj(snap.project) ? snap.project : {};
-    const status = word(STATUS_WORDS, p.status, "Working");
+    const waiting = Object.keys(asking(snap)).length > 0 && (p.status === "running" || p.status === "reviewing");
+    const status = waiting ? "Waiting for your answer" : word(STATUS_WORDS, p.status, "Working");
     const final = FINAL.indexOf(p.status) >= 0;
     const paused = p.paused === true && !final;
     const held = paused && arr(isObj(snap) ? snap.cards : []).some(c => isObj(c) && c.kind === "scope_violation");          // a question about files nobody owns holds it: Continue would be refused (N-3)
     const buttons = final ? "" :
       (held ? "" : '<button type="button" data-act="project-pause" data-resume="' + (paused ? "1" : "0") + '">' + (paused ? "Continue" : "Pause") + "</button>") +
       '<button type="button" class="pbad" data-act="project-stop">Stop everything</button>';
-    return '<h1 class="ptitle">' + esc(clean(p.title) || "A project") + '</h1><p class="pstatus" data-status="' + esc(clean(p.status)) + '">' + esc(status) + (paused ? " (paused)" : "") + "</p>" +
+    const request = clean(isObj(snap) ? snap.request : "");
+    const full = request && request !== clean(p.title) && request.length > clean(p.title).length - 1 ? '<details class="prequest"><summary>Your request</summary><p>' + esc(request) + "</p></details>" : "";
+    return '<h1 class="ptitle">' + esc(clean(p.title) || "A project") + '</h1>' + full + '<p class="pstatus" data-status="' + esc(clean(p.status)) + '">' + esc(status) + (paused ? " (paused)" : "") + "</p>" +
       (held ? '<p class="cnote" role="status">It is held until you answer the question below about files. It goes on when you do.</p>' : "") +
       (p.failure_policy ? '<p class="cnote">' + esc(word(POLICY_WORDS, p.failure_policy, "")) + (p.decide_for_me ? ". Sutra answers the questions it may for you." : ".") + "</p>" : "") +
       '<div class="pbtns">' + buttons + "</div>";
@@ -151,7 +161,13 @@
         (affects.length ? '<p class="cnote">This holds up: ' + esc(affects.join(", ")) + ". The other steps go on.</p>" : "") +
         '<div class="opts">' + answerButtons(c.options && c.options.length ? c.options : ["check_again", "skip"], project, clean(c.approval_id), clean(c.item)) + "</div></div>";
     });
-    const all = asked.concat(system);
+    const engine = arr(s.questions).filter(isObj).map(q => {
+      const options = arr(q.options).map(clean).filter(Boolean).slice(0, 20);
+      const buttons = options.map((text, i) => '<button type="button" data-act="step-answer" data-session="' + esc(clean(q.session_id)) + '" data-text="Option ' + (i + 1) + '">' + esc(text.length > 160 ? text.slice(0, 159) + "\u2026" : text) + "</button>").join("");
+      return '<div class="ncard c-nodeapproval" data-card="step_question" data-message="' + esc(clean(q.message_id)) + '"><p class="sq">' + esc(clean(q.text).replace(/\s*Option \d+:.*$/, "")) + "</p>" +
+        (buttons ? '<div class="opts">' + buttons + "</div>" : '<p class="cnote">Answer it in that team\'s chat.</p>') + "</div>";
+    });
+    const all = asked.concat(system, engine);
     return all.length ? '<h2>Waiting for you</h2><div class="pcards">' + all.join("") + "</div>" : "";
   }
 
@@ -159,7 +175,7 @@
      bottom for a phone (CSS shows one of them), so the picture never needs a sideways scroll. */
   const BOX = freeze({w: 150, h: 42, gx: 50, gy: 16});
   const short = (text, n) => (text.length > n ? text.slice(0, n - 1).trimEnd() + "\u2026" : text);
-  function drawGraph(nodes, edges, deep, vertical) {
+  function drawGraph(nodes, edges, deep, vertical, ask) {
     const rows = {};
     const place = {};
     nodes.forEach(n => {
@@ -182,7 +198,7 @@
       const at = place[n.id];
       const name = Store().nodeName(n);
       return '<g class="pnode" data-state="' + esc(clean(n.state)) + '" transform="translate(' + at.x + "," + at.y + ')"><title>' + esc(name) + '</title><rect width="' + BOX.w + '" height="' + BOX.h + '" rx="8"/>' +
-        '<text x="10" y="18" class="pn1">' + esc(short(name, 21)) + '</text><text x="10" y="34" class="pn2">' + esc(word(STATE_WORDS, n.state, "")) + "</text></g>";
+        '<text x="10" y="18" class="pn1">' + esc(short(name, 21)) + '</text><text x="10" y="34" class="pn2">' + esc(ask[n.id] ? "Waiting for your answer" : word(STATE_WORDS, n.state, "")) + "</text></g>";
     }).join("");
     return {width, height, body: lines + boxes};
   }
@@ -194,7 +210,7 @@
     const deep = Store().depths(nodes, edges);
     const label = nodes.length + (nodes.length === 1 ? " step" : " steps") + " and the order they run in";
     const svg = (g, klass, hidden) => '<svg class="' + klass + '" ' + (hidden ? 'aria-hidden="true"' : 'role="img" aria-label="' + esc(label) + '"') + ' viewBox="0 0 ' + g.width + " " + g.height + '" width="' + g.width + '" height="' + g.height + '">' + g.body + "</svg>";
-    return '<h2>The steps</h2><div class="pgraph">' + svg(drawGraph(nodes, edges, deep, false), "pflow-h", false) + svg(drawGraph(nodes, edges, deep, true), "pflow-v", true) + "</div>" +
+    return '<h2>The steps</h2><div class="pgraph">' + svg(drawGraph(nodes, edges, deep, false, asking(s)), "pflow-h", false) + svg(drawGraph(nodes, edges, deep, true, asking(s)), "pflow-v", true) + "</div>" +
       (edges.some(e => isObj(e) && e.kind === "conflict") ? '<p class="cnote">A dashed line means two steps use the same files, so one waits for the other.</p>' : "");
   }
 
@@ -203,7 +219,7 @@
     if (!Number.isFinite(n.calls) || n.calls <= 0) return "";
     const parts = [n.calls + (n.calls === 1 ? " call" : " calls")];
     if (Number.isFinite(n.minutes)) parts.push(n.minutes < 1 ? "under a minute" : (n.minutes >= 10 ? Math.round(n.minutes) : n.minutes) + (n.minutes === 1 ? " minute" : " minutes"));
-    if (Number.isFinite(n.usd)) parts.push("about $" + n.usd.toFixed(2));
+    parts.push(Number.isFinite(n.usd) ? "about $" + n.usd.toFixed(2) : "no price yet");          // calls with no dollar figure (Codex) are not "$0.00" (D406)
     return '<span class="cnote pused">Used: ' + esc(parts.join(", ")) + "</span>";
   }
 
@@ -211,13 +227,14 @@
     const s = isObj(snap) ? snap : {};
     const nodes = arr(s.nodes).filter(n => isObj(n) && n.role !== "planner");
     const byId = {};
+    const ask = asking(s);
     nodes.forEach(n => { byId[n.id] = n; });
     const items = nodes.map(n => {
       const after = arr(n.depends_on).map(id => byId[id]).filter(Boolean).map(x => Store().nodeName(x));
       const waits = arr(s.edges).filter(e => isObj(e) && e.kind === "conflict" && e.to === n.id && byId[e.from]).map(e => Store().nodeName(byId[e.from]));
       const files = arr(n.scope).map(clean).filter(Boolean);
       return '<li class="pstep" data-state="' + esc(clean(n.state)) + '" data-node="' + esc(clean(n.id)) + '"><b>' + esc(Store().nodeName(n)) + "</b> " +
-        '<span class="pstate">' + esc(word(STATE_WORDS, n.state, "")) + "</span>" +
+        '<span class="pstate">' + esc(ask[n.id] ? "Waiting for your answer" : word(STATE_WORDS, n.state, "")) + "</span>" +
         (n.attempt > 1 ? ' <span class="cnote">(try ' + esc(n.attempt) + ")</span>" : "") + usedHtml(n) +
         (after.length ? '<span class="cnote">Starts after: ' + esc(after.join(", ")) + "</span>" : "") +
         (waits.length ? '<span class="cnote">Shares files with, so waits for: ' + esc(waits.join(", ")) + "</span>" : "") +
@@ -263,9 +280,10 @@
   }
 
   // The run's own plumbing is not what a step produced: its files are the engine's, so a hand-off names only the rest (D383).
-  const PLUMBING = freeze(["artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json", "deliverable.json", "events.jsonl",
-    "goal.json", "inbox.jsonl", "live.json", "map.json", "output.json", "outputs.jsonl", "receipts.jsonl", "report.json", "settings.json", "snapshot.json", "summary.json", "task.json", "timing.json",
-    "trace.jsonl", "workflows.json", "agent_live.json", "run.stdout.log", "run.stderr.log", "report.md"]);
+  const PLUMBING = freeze(["agent_live.json", "artifacts.json", "atoms.json", "audits.json", "autofix.json", "calls.jsonl", "changes.json", "chat.jsonl", "choices.json", "conditions.json", "conflicts.json",
+    "deliverable.json", "events.jsonl", "goal.json", "handoff.accepted.json", "handoff.json", "inbox.jsonl", "live.json", "map.json", "needs.json", "node_context.json", "output.json", "outputs.jsonl",
+    "receipts.jsonl", "report.json", "report.md", "run.stderr.log", "run.stdout.log", "settings.json", "snapshot.json", "status.json", "summary.json", "summary.txt", "task.json", "timing.json",
+    "tools.jsonl", "trace.jsonl", "verdict.json", "workflows.json"]);          // the same list as `ENGINE_FILES` in engine/host/handoff.py, which a test keeps equal (D399)
   const ENGINE_WORDS = /rubric|done-when|necessary condition|workflow|\batoms?\b|\bJ2\b|checks? (?:pass|fail)/i;
   const names = (list, n) => (list.length <= n ? list.join(", ") : list.slice(0, n).join(", ") + " and " + (list.length - n) + " more");
   // What a hand-off says in plain words: that the step handed in its work, and which files it made. What the engine wrote as the step's summary is not shown (it is the engine's words).
@@ -273,7 +291,7 @@
     const files = arr(body.files).map(f => (isObj(f) ? clean(f.path) : "")).filter(f => f && PLUMBING.indexOf(f) < 0);
     const changed = arr(body.changes).map(clean).filter(Boolean);
     const open = body.status === "done_with_open_items";
-    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It made " + names(files, 4) : "") + "." +
+    return "handed in its work" + (open ? ", with some things left open" : "") + (files.length ? ". It wrote " + names(files.map(f => OWN_FILES[f] || f), 4) : "") + "." +
       (changed.length ? " It changed " + (changed.length === 1 ? "1 file" : changed.length + " files") + " in your folder: " + names(changed, 3) + "." : "");
   }
   function textOf(body) {

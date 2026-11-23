@@ -11,6 +11,7 @@ if the feature is turned on later, which is the safe way round. Exit codes: 0 do
 """
 import argparse
 import sys
+import time
 from typing import Any
 
 from sutra_app.config import Settings
@@ -125,7 +126,7 @@ def _resume(args: argparse.Namespace) -> int:
     removed = switch.clear()
     try:                                                      # tell a running app to let go of a switch it holds in memory (its file could not be written), and what was removed: it writes the audit row (D384)
         with open(switch.resume_marker(), "a", encoding="utf-8") as marker:          # appended: two resumes before the app looks are two rows (D391)
-            marker.write("resume\n" + (f"removed: {', '.join(removed)}\n" if removed else ""))
+            marker.write("resume\n" + (f"removed: {', '.join(removed)} | at {time.time_ns()}\n" if removed else ""))
     except OSError:
         pass
     emit(args, {"removed": removed}, ["Resumed: " + ", ".join(removed) + " removed." if removed else "Nothing to resume: neither file was there."])

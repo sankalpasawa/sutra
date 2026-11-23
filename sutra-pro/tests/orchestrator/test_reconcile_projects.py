@@ -187,3 +187,44 @@ def test_a_kill_minus_nine_is_found_at_the_next_start_and_ends_the_same_way(rig)
         node = app_closed_under(rig, ref)
         assert (node["attempt"], node["state"]) == (2, "queued")
     assert rig.project(reservation.project_id)["status"] == "running"
+
+
+# ---- the owner's stop and the kill switch cancel even when the engine answers with its stock sentence (D406, m-1, m-4) ------------------------------
+
+def test_the_owners_stop_of_the_project_cancels_when_the_engine_answers_the_stock_sentence(rig):
+    """Without the `_stopped_by = app` half of the rule, the stock sentence alone would turn every owner stop into a restart."""
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", ["a1"])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.run(rig.projects.stop(reservation.project_id))
+    assert rig.t.row(tasks["a1"]).outcome.lower().startswith("stopped: stopped on request")
+    assert rig.sql("SELECT state, attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()[:] == ("cancelled", 1)
+    assert rig.audit("node.restarted") == [] and rig.project(reservation.project_id)["status"] == "stopped"
+
+
+def test_the_owners_stop_of_one_step_cancels_it_when_the_engine_answers_the_stock_sentence(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    engine_answers_the_stop(rig, tasks)
+    assert rig.t.run(rig.t.service.stop_node(tasks["a1"], "stopped by you", by="owner")) is True
+    node = rig.sql("SELECT state, attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()
+    assert tuple(node) == ("cancelled", 1) and rig.audit("node.restarted") == []
+
+
+def test_the_kill_switch_cancels_when_the_engine_answers_the_stock_sentence(rig):
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.run(rig.control.kill_all(by="owner", reason="test"))
+    assert {r["plan_ref"]: r["state"] for r in rig.sql("SELECT plan_ref, state FROM agent_nodes WHERE role = 'worker'")} == {"a1": "cancelled", "a2": "cancelled"}
+    assert rig.audit("node.restarted") == []
+
+
+def test_an_owner_stop_during_the_shutdown_window_wins_over_the_apps_mark(rig):
+    """m-4: the shutdown marked the step `app`; the owner then stops that step: the step is cancelled, not restarted."""
+    reservation, tasks = running(rig, [("a1", "web", []), ("a2", "sales", [])])
+    engine_answers_the_stop(rig, tasks)
+    rig.t.service._mark_stop(tasks["a1"], "app")                                          # the shutdown got there first
+    rig.t.run(rig.t.service.stop_node(tasks["a1"], "stopped by you", by="owner"))
+    assert tuple(rig.sql("SELECT state, attempt FROM agent_nodes WHERE plan_ref = 'a1'").fetchone()) == ("cancelled", 1)
+    assert rig.audit("node.restarted") == [] and len(rig.sql("SELECT id FROM tasks WHERE parent_task_id = ?", tasks["a1"]).fetchall()) == 0, "no orphan queued task"
+    rig.t.service._mark_stop(tasks["a2"], "owner")
+    rig.t.service._mark_stop(tasks["a2"], "app")                                          # the app never takes the mark back from the owner
+    assert json.loads(rig.sql("SELECT settings_json FROM tasks WHERE id = ?", tasks["a2"]).fetchone()[0])["_stopped_by"] == "owner"

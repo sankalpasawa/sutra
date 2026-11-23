@@ -496,3 +496,20 @@ On an 8-file folder each step cost about $1.4 to $1.8, 28 to 31 model calls and 
 
 ### N81. What run 2 did not see
 A question card of a writer, a Mac window, slots (still off), lanes, a retried step through a restart in the real app (D397 is proved with the fake engine and not yet with a real SIGTERM), a reviewer verdict on a step's written text (D393 is built after it). Check these in run 3.
+
+## After the code review of D386 to D397 and the third real run (run 3, build `494cd74`; D398 to D409)
+
+### N82. What run 3 saw
+D397 passed with the real Claude: a SIGTERM mid-step left the project running, the step got a fresh attempt on restart, no retry was spent, nothing started twice, no program was left behind. D386, D387, D391, D392, D395 and D396 passed; the owner's folder was untouched. Found and fixed afterwards: D400 (the stale "stopped" card of a closed attempt), D401 (a step that waits for an answer to its engine's own question read as "Working" on the page), D402 (the engine's open-items sentence), D403 (a stopped project's finished step on Home as "just finished"), D404 (the title cut mid-sentence), D405 (plumbing words), and the review's findings D398, D399, D406 to D409.
+
+### N83. What a project costs (state it to owners)
+A minimal read-only job cost **$1.10 to $2.60 per step, 26 to 42 model calls and 4 to 7 minutes** in run 3 (run 1: about $0.7 and 17 calls on a 6-file folder; run 2: $1.4 to $1.8, 28 to 31 calls, 6 to 7 minutes on 8 files). The limits a step has (60 calls, 30 minutes, tried again at most once) are far above that; the checklist's "one step passes 40 calls" abort rule is therefore reached by an ordinary step and should read 60. An owner should set the monthly dollar limit with this in mind: a two-step project is about $2.50 to $5. OPERATIONS says so.
+
+### N84. What run 3 did not see
+The reviewer's reading of the written text (D393) and the "project done" path with a real model: run 4 must see both. Also not seen: a question card of a writer, a Mac window, slots, lanes, Codex as a builder, Windows.
+
+### N85. Known limits recorded, not fixed
+m-5: the page hides a tool row of no kind (`other`); the audit table keeps it, so a step that calls an unexpected tool is not visible on the page. m-11: the absolute-path spellings of the confining rule (`//c/...`, backslash escapes, `\\?\` and UNC paths) are the code's belief and unproven against the real program; `Edit(./**)` is the rule that confines and it works. The reviewer's text goes through the egress scan but not through the app's value redactor (the reviewer's host has no database). Steps read `.git` internals (D405 hides them from the page; they are still read).
+
+### N86. Decisions of this round the next reviewer may challenge
+D398 refuses the retry of ANY node task, also of a step whose project ended, because the project is what tries a step again. D401 lets the page answer an engine question with "Option N" through the chat route (the same route Home uses); the page accepts nothing else. D406 (d) lets the owner's stop win over the app's mark in `_stopped_by` (a stop of a step the shutdown had marked). D409 divides the remainder by the steps that are ready or running, not by those that will run at once: a step waiting for a slot takes a share it may not use (the safe side).

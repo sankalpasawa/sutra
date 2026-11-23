@@ -114,7 +114,7 @@ def port_from_config(spec: PortSpec, cfg: ConnectorConfig, *, usage_sink: UsageS
             from .slots import SlotPool
             router.slots = SlotPool(Path(spec.data_dir) / "connectors" / "slots", {name: load.policy.max_concurrency(name) for name in connectors})
         router.node_scope = tuple(spec.scope)                                     # a step of a project edits only inside its scope (MAN-10)
-        router.node_rights = NodeRights(tuple(spec.node_tiers), spec.node_commands) if spec.node_tiers else None   # a router made for a step's process narrows every builder call it gets, whatever the tag says (D380, D387)
+        router.node_rights = NodeRights(tuple(spec.node_tiers), spec.node_commands) if (spec.node or spec.node_tiers) else None   # a router made for a step's process narrows every builder call it gets, whatever the tag says (D380, D387)
     return RouterPort(router, mock=stub_only, tag=CallTag(run_id=spec.run_id, dept_id=spec.dept_id, task_id=spec.task_id), tools=tuple(spec.tools))
 
 

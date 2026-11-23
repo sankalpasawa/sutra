@@ -33,7 +33,7 @@ from sutra_app.orchestrator.ids import IdFactory, iso_z
 from sutra_app.orchestrator.models import NodeBlock
 
 __all__ = [
-    "NodeStore", "ApprovalRow", "PostedMessage", "MESSAGE_KINDS", "MESSAGE_BODY_MAX", "ApprovalExpired", "NodeBlockError", "node_block_of", "HELD_WHILE_OFF", "held_while_off", "has_waiting_node_tasks", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
+    "NodeStore", "ApprovalRow", "PostedMessage", "MESSAGE_KINDS", "MESSAGE_BODY_MAX", "ApprovalExpired", "NodeBlockError", "node_block_of", "is_node_task", "HELD_WHILE_OFF", "held_while_off", "has_waiting_node_tasks", "GATE_REFUSED_SLEEP", "GATE_REFUSED_CLOSED", "GATE_REFUSED_ACTION", "PROJECT_STOPPED_ACTION", "AUDIT_ACTORS", "AUDIT_DECISIONS", "APPROVAL_DECISIONS", "REASON_MAX", "REQUEST_KEYS_MAX", "DECIDERS", "PROJECT_ALLOWED_TIERS",
 ]
 
 # D296 (a closed laptop is a refusal), designed now and built in MAN-7 and MAN-8: the words a node is cancelled with, and the audit actions, so that every package uses the same ones.
@@ -83,6 +83,13 @@ def node_block_of(conn: sqlite3.Connection, task_id: str) -> NodeBlock | None:
         if isinstance(exc, NodeBlockError):
             raise
         raise NodeBlockError("the node has no usable grant") from None
+
+
+def is_node_task(conn: sqlite3.Connection, task_id: str) -> bool:
+    """True when the task is, or ever was, the task of a node of a project: the node's current task, or an earlier attempt of it (its `parent_task_id` chain). A step is tried again by its project (the
+    Conductor's one retry, the fresh attempt after a close), never by hand: a task made by hand has no node, so no grant, no narrowing, no scope and no dollar limit (D398)."""
+    return conn.execute("WITH RECURSIVE chain(id) AS (SELECT task_id FROM agent_nodes WHERE task_id IS NOT NULL UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id "
+                        "WHERE t.parent_task_id IS NOT NULL) SELECT 1 FROM chain WHERE id = ? LIMIT 1", (task_id,)).fetchone() is not None
 
 
 HELD_WHILE_OFF = "On hold: this step is part of a project, and projects are switched off. Switch them on again, or stop this step"

@@ -207,6 +207,15 @@ class ProjectService:
                 return None
         return float(project["budget_usd"])
 
+    def step_cap(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
+        """The dollar cap a step that starts now is given (D409, m-13): what the project and the month have left, SHARED among the steps of the project that run or are ready to run, so that steps which
+        run at the same time cannot together pass the limit by (steps x remainder) before the tick sees it. The first to start alone gets all of it; with two ready, each half. Never below 0."""
+        left = self.usd_left(conn, project_id, now)
+        if left is None:
+            return None
+        alive = conn.execute("SELECT count(*) FROM agent_nodes WHERE project_id = ? AND role <> 'planner' AND state IN ('leased','running','handing_off','queued','ready')", (project_id,)).fetchone()[0]
+        return left / max(1, int(alive))
+
     def usd_left(self, conn: sqlite3.Connection, project_id: str, now: float) -> float | None:
         """The most dollars a step of this project may still spend if it starts now: the project's own dollars minus what it spent, and the month's allowance that is left, whichever is less. None when
         nothing limits it. Never below 0."""
@@ -884,7 +893,28 @@ class ProjectService:
         last = conn.execute("SELECT COALESCE(MAX(seq), 0) FROM node_messages WHERE project_id = ?", (project_id,)).fetchone()[0]
         return {"project": project.model_dump(mode="json"), "nodes": [n.model_dump(mode="json") for n in nodes], "edges": edges, "caps": project.caps,
                 "spend": {"calls": calls, "usd": round(usd, 6) if calls or usd else None, "unpriced": unpriced}, "approvals": approvals, "cards": [card.model_dump(mode="json") for card in self.approval_cards(project_id) if card.kind != "system"],
-                "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last}
+                "system_cards": [card.model_dump(mode="json") for card in self.system_cards(project_id)], "last_message_seq": last,
+                "questions": self._step_questions(conn, project_id), "request": self._request_text(conn, project)}
+
+    @staticmethod
+    def _request_text(conn: sqlite3.Connection, project: ProjectOut) -> str:
+        """The owner's whole request, from the org chat line the project was made from (`request_id` is `req-<message id>`), at most 2000 characters; "" when it cannot be found (D404)."""
+        rid = project.request_id or ""
+        if not rid.startswith("req-") or not rid[4:].isdigit():
+            return ""
+        row = conn.execute("SELECT text FROM chat_messages WHERE id = ? AND role = 'user'", (int(rid[4:]),)).fetchone()
+        return (row["text"] if row is not None else "")[:2000]
+
+    @staticmethod
+    def _step_questions(conn: sqlite3.Connection, project_id: str) -> list[dict[str, Any]]:
+        """The questions the ENGINE of a step asked the owner (J2's own: "keep working on those notes, or take the report as it is?") and nobody answered yet, for the steps of this project that wait for
+        an answer (D401). They are chat questions of the step's team, answered through the chat route; the project page shows them so the owner need not find them on Home. The rule table never answers
+        one of these: Decide for me answers questions of the project (a tier, a scope, an estimate), not the engine's own about its work."""
+        from sutra_app.orchestrator.chats import parse_options
+        rows = conn.execute("SELECT n.id AS node, m.id AS message_id, m.session_id AS session_id, m.text AS text FROM agent_nodes n JOIN tasks t ON t.id = n.task_id "
+                            "JOIN chat_messages m ON m.task_id = n.task_id AND m.kind = 'question' AND m.answered_by IS NULL "
+                            "WHERE n.project_id = ? AND t.status = 'waiting_user' ORDER BY m.id", (project_id,)).fetchall()
+        return [{"node_id": r["node"], "message_id": r["message_id"], "session_id": r["session_id"], "text": r["text"][:1500], "options": parse_options(r["text"])} for r in rows]
 
     @staticmethod
     def _with_usage(conn: sqlite3.Connection, node: NodeOut, now: int) -> NodeOut:
@@ -893,10 +923,12 @@ class ProjectService:
         if not node.task_id:
             return node
         calls, usd = chain_spend(conn, node.task_id)
+        priced = conn.execute("WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
+                              "SELECT count(*) FROM usage_ledger WHERE task_id IN (SELECT id FROM chain) AND provider != 'stub' AND usd IS NOT NULL", (node.task_id,)).fetchone()[0]
         span = conn.execute("WITH RECURSIVE chain(id) AS (SELECT ?1 UNION SELECT t.parent_task_id FROM tasks t JOIN chain c ON t.id = c.id WHERE t.parent_task_id IS NOT NULL) "
                             "SELECT MIN(started_at), MAX(COALESCE(ended_at, ?2)), SUM(started_at IS NOT NULL AND ended_at IS NULL) FROM tasks WHERE id IN (SELECT id FROM chain)", (node.task_id, now)).fetchone()
         minutes = round(max(0, int(span[1]) - int(span[0])) / 60, 1) if span[0] is not None and span[1] is not None else None
-        return node.model_copy(update={"calls": calls, "usd": round(usd, 6) if calls else None, "minutes": minutes})
+        return node.model_copy(update={"calls": calls, "usd": round(usd, 6) if priced else None, "minutes": minutes})          # no call priced (Codex): no dollars, not "$0.00" (D406, m-6)
 
     @staticmethod
     def _conflict_edges(project: ProjectOut, nodes: Sequence[NodeOut]) -> list[tuple[str, str]]:

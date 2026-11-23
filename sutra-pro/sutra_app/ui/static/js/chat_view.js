@@ -499,7 +499,7 @@
           safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
-      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + projectAddress(safeText(text(m.text))) + retryOf(m) + "</div>";
+      if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + (clean(s.kind) === "org" ? projectAddress(safeText(text(m.text))) : safeText(text(m.text))) + retryOf(m) + "</div>";      // D389, D408: the app's own address, in the org chat only
       if (cardIn) {
         const ctx = {deptName: dept, sessionKind: clean(s.kind), answer: answers[m.id], answered: answers[m.id] !== undefined,
           deptSession: sessions[clean(cardIn.dept_id)], retry: isObj(o.retryTasks) && o.retryTasks[clean(cardIn.task_id)] === true};

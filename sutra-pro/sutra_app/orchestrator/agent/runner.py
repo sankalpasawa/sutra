@@ -47,7 +47,7 @@ from sutra_app.orchestrator.models import Accepted, ChangeContext, ChangeResult,
 from sutra_app.orchestrator.reorg_preview import ReorgPreview, card_lines
 from sutra_app.orchestrator.standing_rules import StandingRules
 from sutra_app.orchestrator.tasks import TaskService
-from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no
+from sutra_app.orchestrator.textutil import one_line_title, parse_yes_no, project_title
 
 __all__ = ["TurnRunner", "TurnHooks", "PHASE_DETAIL", "TITLE_CHARS", "YES", "NO", "NONE_OPTION"]
 
@@ -618,7 +618,7 @@ class TurnRunner:
         from sutra_app.orchestrator.projects import ProjectStep
         asked = asked or {}
         steps = [ProjectStep(ref=d.ref, dept_id=d.dept, depends_on=tuple(r for r in d.depends_on if r != d.ref), scope=asked.get(d.ref, ((), ()))[0], needs=asked.get(d.ref, ((), ()))[1]) for d in drafts]
-        title = one_line_title(request.text, 80)                  # the request's own short title, not the first step's (D394)
+        title = project_title(request.text)                       # the request's own short title, a whole phrase and not 80 characters cut mid-sentence (D394, D404)
         return self.projects.reserve(request.request_id, title, steps, budget=self._budget_of(request.message_id), planner_node_id=self.projects.planner_id_of(request.request_id),
                                       plan_defaults=defaulted, decide_for_me=self._decide_for_me_of(request.message_id),
                                       failure_policy=self._failure_policy_of(request.message_id))
@@ -654,6 +654,9 @@ class TurnRunner:
             made[draft.ref] = task.id
         return list(made.values())
 
+    def _project_exists(self, project_id: str) -> bool:
+        return self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None
+
     def _write_outcome(self, mid: int, plan: Plan, applied: _Applied | None, drafts: Sequence[AssignmentDraft], task_ids: Sequence[str],
                        failure: str | None, waits: str = "", project_id: str = "") -> None:
         """T8: the template line, the chart card and a task card per task; the request is `ok`. `waits`: the sentence of a project that waits for the owner's OK (D308)."""
@@ -661,7 +664,9 @@ class TurnRunner:
         if waits:
             sentences = sentences + [waits]
         sentences = [_NO_PROJECT_ADDRESS.sub("/p/ ", text) for text in sentences]     # a word of the model's (a title) that looks like a project address is not one (D389, m11)
-        if project_id and failure is None and self.db.conn().execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None:     # only a project that exists
+        if project_id and not self._project_exists(project_id):
+            project_id = ""                                                          # only a project that exists is linked, in the reply and on the cards (D389, D408)
+        if project_id and failure is None:
             sentences = sentences + [f"You can follow it here: /p/{project_id}"]           # D382: the page shows the address as a link ("Open the project"); only that exact shape
         if failure is not None:
             sentences = [line("task_failed", reason=failure)]
