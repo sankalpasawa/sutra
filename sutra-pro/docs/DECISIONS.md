@@ -2687,3 +2687,87 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: D314 said an app close gives the step a fresh attempt; it was only true after a crash.
 - Rejected: ending the project on purpose at a graceful close (nothing in the design says a close should cost the owner the project).
 - Diagram: label "graceful close = fresh attempt, project goes on", key only.
+
+## D398 — A step is never tried again by hand
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A step is never tried again by hand (M-A). "Try again" is not offered for any task that is or ever was a node's (the node's current task or an earlier attempt, found through its `parent_task_id` chain), whatever state the project is in; and `TaskService.retry` refuses such a task with a plain 409 ("A step of a project is tried again by its project, not by hand"). The only retries of a step are the Conductor's one retry and the fresh attempt after a close (D397). With the flag off no node table is read. Package: MAN-5, MAN-13.
+- Why: a retry by hand made an ordinary task with no node: no grant, no tool narrowing, no scope, no dollar limit. Reproduced in the rig.
+- Rejected: hiding the button only (the route stays open).
+- Diagram: label "no retry by hand of a step; API 409", key only.
+
+## D399 — One list of the engine's own files
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: One list of the engine's own files (M-B). `handoff.ENGINE_FILES` is the one list (`report.md` and `summary.txt` included); the reviewer reads none of them as what a step wrote, the page names none of them, and a test keeps `project_view.js` `PLUMBING` equal to it. They are skipped before the reviewer's character budget is counted. Package: MAN-11, MAN-13.
+- Why: the reviewer had been given the engine's own report as the step's work. Package: MAN-11, MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "one engine-files list: page, hand-off, reviewer", key only.
+
+## D400 — The card of an attempt the project replaced
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The card of an attempt the project replaced (M-C). The done card finds its project through the task's own chain, not through the node's current task (which `node_sync` has already moved to the fresh attempt). For an attempt that was replaced while the project goes on (a close of the app, a retry, a send-back) no "stopped" card is posted: one plain line says "The app was closed, so the step ... starts again" (or "This try ended, so ...") with the project's link; the fresh attempt's card links. Package: MAN-13.
+- Why: every graceful quit posted "Your Web team stopped: Stopped: stopped on request" with no link while the project carried on (seen in run 3). Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "replaced attempt: plain line + link, no stopped card", key only.
+
+## D401 — A step's engine question is shown on the project page
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A step that waits for an answer to its engine's own question is a waiting step on the page. The snapshot carries `questions` (the unanswered chat questions of the steps whose task waits for the owner); the page says "Waiting for your answer" for the project and the step, shows the question with its options as buttons, and answers through the team's chat route (`POST /api/chats/{session}/messages`, the same route Home uses, with the same token and checks; the page accepts only a session id and an "Option N" word). Decide for me never answers these: the rule table answers questions of the project (a tier, a scope, an estimate), and a test pins that it returns nothing for an engine question. Package: MAN-13.
+- Why: run 3 showed Home "needs one answer" while the project page said "Working".
+- Rejected: letting Decide for me take "finish as it is" (it is the owner's call about quality).
+- Diagram: label "engine question on page; Decide for me never answers", key only.
+
+## D402 — The engine's open-items sentence in plain words
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The engine's "Done with open items: shipped as is on the Requester's decision (...). Still not workable: document rubric PJ-4 (NEEDS_REVISION) ..." is said on a step's done card as "Done, with some things still open. You chose to take it as it is. Still open: ..." with no rubric id, no code word and no "Requester". The record keeps the engine's words. Package: MAN-13.
+- Why: each closes a gap the code showed.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "open items said plainly", key only.
+
+## D403 — A stopped project's finished step is not 'just finished'
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: A step that finished in a project that was stopped or could not finish is not "just finished" on Home. Package: MAN-13.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "no 'just finished' for stopped projects", key only.
+
+## D404 — A real short project title and the whole request
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The project's title is a real short phrase (the first sentence if it fits in 60 characters, else a clean cut at a word with an ellipsis, never ending on "and", "then", "after"), and the snapshot carries the whole request (from the org chat line the project was made from) for the page's "Your request". Package: MAN-13.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "short title + full request on page", key only.
+
+## D405 — Owner's words for what a step did; .git is no tool row
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The page's words for what a step did are the owner's: "wrote its report", "looked at the folder's history", "It wrote its report"; a read inside a repository's own `.git` folder is no tool row at all (a bare name such as `config` or `HEAD` without a `.git` in its path is never guessed at). Known limit (m-5): the page hides a tool row of no kind (`other`); the audit table keeps it. Package: MAN-13, MAN-14.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13, MAN-14.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "owner words; no .git tool rows", key only.
+
+## D406 — The review's minors as built
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The minors of the code review, as built. (a) The marker half of the close rule is pinned: the owner's stop of the project, of one step and the kill switch cancel even when the engine answers its stock sentence (m-1). (b) A close of the app while the reviewer runs gives the review a fresh attempt (m-2). (c) The resume audit row is written before the marker is removed, once however often it is read (its ref is the moment the command wrote), and a resume written meanwhile is kept (m-3). (d) The owner's stop always wins over the app's or the system's mark in `_stopped_by` (m-4). (e) A step whose calls carry no price shows "no price yet", not "about $0.00" (m-6). Package: MAN-7, MAN-4.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-7, MAN-4.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "owner stop wins; audit before unlink; no price yet", key only.
+
+## D407 — The reviewer's fence and a router made by node block
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The reviewer's fence carries a word the step cannot know; the text is scrubbed before it is cut; the reviewer is told what was cut and what was not shown (m-7). A router is made for a node by its node block (`PortSpec.node`), not by the tiers in it (m-8). Package: MAN-11, MAN-2.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-11, MAN-2.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "unguessable fence; node block marks router", key only.
+
+## D408 — The address guards and a path-free resume hint
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: The page links the app's own project address in the org chat only, on every kind of line; both guards of the reply's address (the project exists, a look-alike is made plain) are pinned by a test each (m-9, m-10). The resume hint that Sutra stores holds no path (no home folder name); the terminal prints the exact command, which was tried read-only against the installed app's own Python (`-I -B -m sutra_app nodes status`) and runs (m-12). Known limit (m-11): the absolute-path spellings of the confining rule (`//c/...`, escapes) are the code's belief; `Edit(./**)` is the rule that confines and run 2 and 3 showed it works; the absolute rule is unproven against the real program on Windows. Package: MAN-13, MAN-4.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-13, MAN-4.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "org-only link; path-free hint", key only.
+
+## D409 — Steps that start together share the dollar remainder
+- Sources: `docs/design/multi-agent-nodes` (decisions.md, architecture.md, guardrails-and-permissions.md); the owner's direction of 2026-11-20 (enhance, do not replace; decide autonomously, document every decision).
+- Decided: Steps that start together share the dollar remainder: a step's cap is what the project and the month have left divided by the steps of the project that run or are ready (the first, alone, gets all of it; two ready, half each), so together they cannot pass the limit by steps times the remainder before the tick sees it (m-13). Rejected: holding the extra step (it would idle for money it may not spend). Package: MAN-9.
+- Why: it answers a finding of the review of D386 to D397 or of real-Claude run 3 (read in dev-notes N82 to N86). Package: MAN-9.
+- Rejected: no alternative beyond the whole-design options in `docs/design/multi-agent-nodes/architecture.md` section 12 was weighed for this one.
+- Diagram: label "parallel steps share the remainder", key only.

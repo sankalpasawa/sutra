@@ -1,14 +1,14 @@
 {
  "schema": "traceability/1",
  "counts": {
-  "decisions": 367,
+  "decisions": 379,
   "packages": 78,
   "endpoints": 43,
   "chips": 17,
   "steps": 7,
   "owner_rules": 7
  },
- "max_decision": 397,
+ "max_decision": 409,
  "owner_rules": [
   {
    "rule": "This is a new app, no relation to the old sutra-ui. Its design is the J2 prototype's design.",
@@ -556,7 +556,19 @@
     "D394",
     "D395",
     "D396",
-    "D397"
+    "D397",
+    "D398",
+    "D399",
+    "D400",
+    "D401",
+    "D402",
+    "D403",
+    "D404",
+    "D405",
+    "D406",
+    "D407",
+    "D408",
+    "D409"
    ],
    "modules": [
     "docs/DECISIONS.md",
@@ -5775,6 +5787,116 @@
    "status": "documented only",
    "superseded_by": [],
    "diagram": "label \"graceful close = fresh attempt, project goes on\", key only."
+  },
+  {
+   "id": "D398",
+   "title": "A step is never tried again by hand",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"no retry by hand of a step; API 409\", key only."
+  },
+  {
+   "id": "D399",
+   "title": "One list of the engine's own files",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"one engine-files list: page, hand-off, reviewer\", key only."
+  },
+  {
+   "id": "D400",
+   "title": "The card of an attempt the project replaced",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"replaced attempt: plain line + link, no stopped card\", key only."
+  },
+  {
+   "id": "D401",
+   "title": "A step's engine question is shown on the project page",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"engine question on page; Decide for me never answers\", key only."
+  },
+  {
+   "id": "D402",
+   "title": "The engine's open-items sentence in plain words",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"open items said plainly\", key only."
+  },
+  {
+   "id": "D403",
+   "title": "A stopped project's finished step is not 'just finished'",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"no 'just finished' for stopped projects\", key only."
+  },
+  {
+   "id": "D404",
+   "title": "A real short project title and the whole request",
+   "packages": [
+    "ORCH-1",
+    "ORCH-7"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"short title + full request on page\", key only."
+  },
+  {
+   "id": "D405",
+   "title": "Owner's words for what a step did; .git is no tool row",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"owner words; no .git tool rows\", key only."
+  },
+  {
+   "id": "D406",
+   "title": "The review's minors as built",
+   "packages": [
+    "ORCH-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"owner stop wins; audit before unlink; no price yet\", key only."
+  },
+  {
+   "id": "D407",
+   "title": "The reviewer's fence and a router made by node block",
+   "packages": [
+    "E0"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"unguessable fence; node block marks router\", key only."
+  },
+  {
+   "id": "D408",
+   "title": "The address guards and a path-free resume hint",
+   "packages": [
+    "ORCH-7",
+    "UI-6"
+   ],
+   "status": "implemented",
+   "superseded_by": [],
+   "diagram": "label \"org-only link; path-free hint\", key only."
+  },
+  {
+   "id": "D409",
+   "title": "Steps that start together share the dollar remainder",
+   "packages": [],
+   "status": "documented only",
+   "superseded_by": [],
+   "diagram": "label \"parallel steps share the remainder\", key only."
   }
  ],
  "packages": [

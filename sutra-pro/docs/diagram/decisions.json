@@ -1833,5 +1833,65 @@
   "id": "D397",
   "label": "graceful close = fresh attempt, project goes on",
   "anchor": null
+ },
+ {
+  "id": "D398",
+  "label": "no retry by hand of a step; API 409",
+  "anchor": null
+ },
+ {
+  "id": "D399",
+  "label": "one engine-files list: page, hand-off, reviewer",
+  "anchor": null
+ },
+ {
+  "id": "D400",
+  "label": "replaced attempt: plain line + link, no stopped card",
+  "anchor": null
+ },
+ {
+  "id": "D401",
+  "label": "engine question on page; Decide for me never answers",
+  "anchor": null
+ },
+ {
+  "id": "D402",
+  "label": "open items said plainly",
+  "anchor": null
+ },
+ {
+  "id": "D403",
+  "label": "no 'just finished' for stopped projects",
+  "anchor": null
+ },
+ {
+  "id": "D404",
+  "label": "short title + full request on page",
+  "anchor": null
+ },
+ {
+  "id": "D405",
+  "label": "owner words; no .git tool rows",
+  "anchor": null
+ },
+ {
+  "id": "D406",
+  "label": "owner stop wins; audit before unlink; no price yet",
+  "anchor": null
+ },
+ {
+  "id": "D407",
+  "label": "unguessable fence; node block marks router",
+  "anchor": null
+ },
+ {
+  "id": "D408",
+  "label": "org-only link; path-free hint",
+  "anchor": null
+ },
+ {
+  "id": "D409",
+  "label": "parallel steps share the remainder",
+  "anchor": null
  }
 ]
