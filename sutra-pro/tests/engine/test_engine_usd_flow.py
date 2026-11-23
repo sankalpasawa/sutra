@@ -356,42 +356,75 @@ def test_the_envelope_check_tops_up_before_a_hold(tmp_path):
 
 
 # ---- R2-2: the ruling's dollar question takes a typed amount, as the other dollar questions do ----------------------------------------
-def at_ruling(j2, run):
+def at_ruling(j2, run, credits=2000):
+    """The ruling's dollar question, at $0.01 per credit with $0.50 (50 credits) left: a ruling worth about `credits`."""
     priced_at(j2, run, 0.01)
-    wf = priced_ruling(j2, run)
+    wf = priced_ruling(j2, run, credits)
     c = run._open_conflict("scope", ["adaptation", "priority"], "W-90", "the loyalty card")
     c.update(identity=[{"say": "The loyalty card is in the charter."}], pending_winner="adaptation", ruled_wfs=[wf])
     resume_at(run, "priority", {"kind": "ruling", "table": [wf], "conflict": c["id"]})
     say(run, "Go on")
     assert run.paused and run.paused["kind"] == "ruling_budget", run.outcome
-    return wf
+    return wf, c
 
 
 def test_the_ruling_question_takes_a_typed_amount(tmp_path):
     with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
         run = start(j2, tmp_path)
-        at_ruling(j2, run)
+        wf, _ = at_ruling(j2, run, credits=100)      # about $1 of work, $0.50 left: the shortfall is under BIG_RAISE times the limit
         assert "[adds $" in next(m["text"] for m in run.chat if m["id"] == run.paused["msg"])      # the cards read the amount from it
-        old = run.usd_limit
-        typed = round(old * 2, 2)      # not the amount offered, and under BIG_RAISE times the limit
+        old, typed = run.usd_limit, 2.0
         assert typed != run.paused["handoff"]["usd"]
         say(run, f"Add ${typed:g} and keep going")
         assert run.usd_limit == pytest.approx(old + typed), (old, typed, run.usd_limit)
         assert run.usd_raises[-1]["asked"] == pytest.approx(typed)
+        assert next(x for x in run.workflows if x["name"] == wf["name"]).get("charged"), run.outcome
+
+
+def test_a_typed_amount_in_a_refusal_raises_nothing(tmp_path):
+    """Review of R2-2: "No, don't add $3" names a dollar amount but declines; only the model's choice 1 or the card's own raise text
+    makes a typed amount the raise."""
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
+        run = start(j2, tmp_path)
+        at_ruling(j2, run, credits=100)
+        old, call = run.usd_limit, run.call
+
+        def declined(fn, fmt, task, mock, *a, **k):      # the model reads the refusal as choice 2, as a real one would
+            if fn == "identity" and task.startswith("YOU ASKED THE REQUESTER"):
+                mock = lambda: '{"say": "The Requester kept Priority\'s final answer.", "choice": 2}'
+            return call(fn, fmt, task, mock, *a, **k)
+        run.call = declined
+        say(run, "No, don't add $3, go with Priority's final answer")
+        assert run.usd_limit == old and not run.usd_raises, (old, run.usd_limit, run.usd_raises)
+
+
+def test_a_typed_amount_short_of_the_ruling_is_asked_again(tmp_path):
+    """Review of R2-2: an amount that funds less than the ruling is asked again with the amount offered, never registered "in full"."""
+    with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
+        run = start(j2, tmp_path)
+        _, c = at_ruling(j2, run)
+        old, offer, asked = run.usd_limit, run.paused["handoff"]["usd"], dict(c["user_question"])
+        say(run, "Add $1 and keep going")
+        p = run.paused
+        assert p and p["kind"] == "ruling_budget" and run.usd_limit == old and p["handoff"]["usd"] == offer, run.outcome
+        assert c["user_question"] == asked
+        say(run, "Yes, approve it.")
+        assert run.usd_limit == pytest.approx(old + offer)
 
 
 def test_the_ruling_question_asks_again_for_zero_and_confirms_a_big_amount(tmp_path):
     with fresh_j2(tmp_path / "env", J2_USD_BUDGET=limit_of(cost(tmp_path), 0.5)) as j2:
         run = start(j2, tmp_path)
-        at_ruling(j2, run)
-        old = run.usd_limit
+        _, c = at_ruling(j2, run)
+        old, asked = run.usd_limit, dict(c["user_question"])
         say(run, "Add $0")
         assert run.paused and run.paused["kind"] == "ruling_budget" and run.usd_limit == old, run.outcome
-        big = round(old * 6 + 1, 2)
+        big = round(max(old * 6 + 1, run.paused["handoff"]["usd"] + 1), 2)
         say(run, f"Add ${big:g} and keep going")
         p = run.paused
         assert p and p["kind"] == "ruling_budget" and run.usd_limit == old, run.outcome
         assert p["questions"][0]["options"][0].startswith(f"Add {run_fmt(j2, big)} ") and p["handoff"]["usd"] == big
+        assert c["user_question"] == asked      # the stored question stays the first one
         say(run, "Yes, approve it.")
         assert run.usd_limit == pytest.approx(old + big), (old, big, run.usd_limit)
 

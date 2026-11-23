@@ -100,6 +100,7 @@ USD_PER_CREDIT = 0.0187          # D255: measured on the beta's runs (median dol
 USD_PER_MTOK_FALLBACK = 3.18     # D255: dollars per million tokens for a call with no price before any priced call in the run
 USD_RAISE_SHARE = 0.5            # the suggested raise without a stated need: half the run's limit
 BIG_RAISE = 5                    # a typed raise above this many times the limit is asked back
+USD_RAISE_TEXT = re.compile(r"\s*add \$[\d,]+(?:\.\d{1,2})?(?: and keep going)?\.?\s*", re.I)      # what a card's raise input sends
 USD_RATE_MIN_CALLS = 8           # D256: a run's own dollars per credit counts from its 8th call (the opening, 7 calls, spends none)
 if USD_BUDGET:
     BUDGET = math.ceil(USD_BUDGET / USD_PER_CREDIT)      # P26 (D256): the starting credits follow the dollar limit; J2_BUDGET is ignored
@@ -4648,23 +4649,26 @@ class J2Run:
                        [{**q, "question": question, "options": opts, "budget": budget}], "limit",
                        handoff={**{k: v for k, v in h.items() if k not in ("answer", "asked")}, "confirm_usd": typed})
 
-    def _usd_ruling_reask(self, c, h, typed):
-        """P26 (D256, R2-2): the ruling's dollar question asked again: "Add $0" adds nothing; a typed raise above BIG_RAISE times the
-        limit comes back with that amount as its first option, and Approve (or the same amount sent again) confirms it."""
+    def _usd_ruling_reask(self, c, h, typed, short=False):
+        """P26 (D256, R2-2): the ruling's dollar question asked again. "Add $0" adds nothing and an amount that funds less than the
+        ruling (`short`) is asked again with the amount offered; a typed raise above BIG_RAISE times the limit comes back with that
+        amount as its first option, and Approve (or the same amount sent again) confirms it. The stored question stays the first one."""
         q = c["user_question"]
-        if typed:
+        keep = {k: v for k, v in h.items() if k not in ("answer", "asked", "confirm_usd")}
+        if typed and not short:
             q = {**q, "question": re.sub(r"Add \$[\d,.]+ so", f"Add {fmt_usd(typed)} so", q["question"], count=1),
                  "options": [re.sub(r"^Add \$[\d,.]+", f"Add {fmt_usd(typed)}", q["options"][0]), *q["options"][1:]],
                  "budget": [typed, 0]}
-            c["user_question"] = q
-            self._save_conflicts()
+            keep.update(usd=typed, confirm_usd=typed)
             self._event("identity", "usd_big_raise", f"typed {fmt_usd(typed)}, limit {fmt_usd(self.usd_limit)}")
-        say = (f"You typed {fmt_usd(typed)}, more than {BIG_RAISE} times this run's limit of {fmt_usd(self.usd_limit)}. Approve it to "
-               "confirm, or choose another option." if typed else "Add $0 adds nothing. Approve the amount offered, type another, "
-               "or go with Priority's final answer.")
-        self._ask_user(say, [q], "ruling_budget", conflict=c["id"], auto=True,
-                       handoff={**{k: v for k, v in h.items() if k not in ("answer", "asked")},
-                                **({"usd": typed, "confirm_usd": typed} if typed else {})})
+            say = (f"You typed {fmt_usd(typed)}, more than {BIG_RAISE} times this run's limit of {fmt_usd(self.usd_limit)}. Approve it "
+                   "to confirm, or choose another option.")
+        else:
+            keep["usd"] = (q.get("budget") or [h.get("usd")])[0]      # the amount first offered
+            say = (f"{fmt_usd(typed)} does not fund the ruling in full: it needs {fmt_usd(keep['usd'])}. Approve that amount, type "
+                   "another, or go with Priority's final answer." if short else "Add $0 adds nothing. Approve the amount offered, "
+                   "type another, or go with Priority's final answer.")
+        self._ask_user(say, [q], "ruling_budget", conflict=c["id"], auto=True, handoff=keep)
 
     def _log_call(self, fn, task, system, user, raw, reply, secs, tools=None):
         meta = dict(llm.LAST_META)
@@ -8814,12 +8818,15 @@ class J2Run:
         """J2_FIXES=1: the Requester answered whether to add budget for Identity's ruling."""
         self.step = 4
         c, answer, need = self._conflict(h.get("conflict")), h.get("answer"), as_int(h.get("need"))
-        # P26 (D256, R2-2): a typed dollar amount is the raise; "Add $0" is asked again, over BIG_RAISE times the limit is asked back once
+        # P26 (D256, R2-2): a typed dollar amount: "Add $0" and an amount that funds less than the ruling are asked again, one over
+        # BIG_RAISE times the limit is asked back once; it is the raise only when the Requester chose to add (below)
         typed = parse_usd(answer) if h.get("usd") and not ONLY_PICK.fullmatch(answer or "") else None
-        if typed == 0 or (typed and typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd")):
-            return self._usd_ruling_reask(c, h, typed)
-        if typed:
-            h = {**h, "usd": typed}
+        if typed is not None:
+            buys = self._usd_credits(typed - max(0.0, self.usd_used - self.usd_limit), h.get("usd_rate"))
+            if typed == 0 or buys < need:
+                return self._usd_ruling_reask(c, h, typed, short=bool(typed))
+            if typed > BIG_RAISE * self.usd_limit and typed != h.get("confirm_usd"):
+                return self._usd_ruling_reask(c, h, typed)
         c["user_answer"] = answer
         r = self.call("identity", '{' + REPLY_FMT + ', "choice": 1|2}',
                       f"YOU ASKED THE REQUESTER: {json.dumps(c.get('user_question'))}\nTHE REQUESTER ANSWERED: {answer}\n"
@@ -8830,7 +8837,9 @@ class J2Run:
                                           "choice": 1 if re.search(r"\b1\b|add|yes|fund", answer, re.I) else 2}))
         self._reply(r, None, conflict=c["id"], decision=True)
         c["resolved_by"] = "identity_after_user"
-        if as_int(r.get("choice")) == 1 or typed:      # P26 (D256): a typed amount is a raise, whatever the model read
+        if typed and (as_int(r.get("choice")) == 1 or USD_RAISE_TEXT.fullmatch(answer)):      # P26 (D256): the card's own raise
+            r["choice"], h = 1, {**h, "usd": typed}                                         # text is choice 1; a refusal never raises
+        if as_int(r.get("choice")) == 1:
             if h.get("usd"):
                 self._usd_add(h["usd"], answer, h.get("usd_rate"))      # P26 (D256)
             else:
