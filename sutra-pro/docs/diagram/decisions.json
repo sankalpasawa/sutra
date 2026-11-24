@@ -2113,5 +2113,10 @@
   "id": "D436",
   "label": "Audit reads the real run's output; exit 0 alone never passes (P33)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D437",
+  "label": "build output holds only built files: no .claude (P34)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

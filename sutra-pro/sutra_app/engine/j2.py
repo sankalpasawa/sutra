@@ -4783,6 +4783,7 @@ class J2Run:
         """A tools call's record, from code's comparison of the run folder and the CLI's tool calls (llm.LAST_META):
         the files written or removed in the builder's folder (sha256 of each written), every changed file outside it
         that J2 did not write, the folder's size against the limits, the tool calls, cost and stop reason."""
+        shutil.rmtree(os.path.join(tools["cwd"], ".claude"), ignore_errors=True)      # P34 (D437): the Claude CLI's own folder (its cwd is the output folder), whatever it holds
         after = file_states(self.dir)
         pre = os.path.relpath(tools["cwd"], self.dir) + os.sep
         mine = lambda k: k.startswith(pre)
@@ -10411,7 +10412,8 @@ class J2Run:
         if self.doc:
             names = (self.out["file"], f"site/{self.site_tag}v{n}.md")
         elif m and self.out.get("output") != "folder":
-            shutil.copytree(d, os.path.join(self.dir, "site"), dirs_exist_ok=True)
+            shutil.copytree(d, os.path.join(self.dir, "site"), dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns(".claude"))      # P34 (D437)
             names = (f"site/v{n}{os.path.splitext(m)[1]}",)
         else:
             names = ()

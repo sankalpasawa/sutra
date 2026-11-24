@@ -201,11 +201,13 @@ def test_a_folder_output_is_exported_whole_with_nested_files_and_configs(run, fo
     write(run / "pulse_app" / "config" / "pulse.json", '{"time": "08:00"}\n')
     write(run / "pulse_app" / "package.json", "{}\n")
     write(run / "pulse_app" / ".env", "SECRET=1\n")
+    write(run / "pulse_app" / ".claude" / ".cc-writes" / "x", "staged\n")      # D437: the Claude CLI's folder, a regression guard
     files = export.deliverable_files(run, [{"file": "pulse_app/main.py", "form": "agent"}])
     assert files == ["pulse_app/config.py", "pulse_app/config/pulse.json", "pulse_app/main.py", "pulse_app/package.json", "pulse_app/src/digest.py"]
     result = export.export_run(run, folder, "j2-1", [{"file": "pulse_app/main.py", "form": "agent"}])
     assert (folder / "pulse_app" / "config" / "pulse.json").read_text(encoding="utf-8") == '{"time": "08:00"}\n'
     assert not (folder / "pulse_app" / ".env").exists() and len(result.new) == 5
+    assert not (folder / "pulse_app" / ".claude").exists()
 
 
 def test_a_folder_output_with_only_subfolders_is_found_from_its_type(run, monkeypatch):

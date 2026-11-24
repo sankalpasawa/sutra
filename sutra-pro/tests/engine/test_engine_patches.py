@@ -1200,7 +1200,7 @@ def test_p19_the_edit_is_in_the_vendored_make_report():
 
 # ---- P21 (D245): the host's own run files during a builder tools call ----------------------------------------------------------
 
-def tools_call(j2, run, said=None, extra=None, temps=()):
+def tools_call(j2, run, said=None, extra=None, temps=(), inside=None):
     """One builder call with tools, through J2Run.call in mock mode: the scripted reply plays the CLI (it writes in the builder's
     folder, and `said` is what its tool calls named) and the app's host (it updates agent_live.json and snapshot.json meanwhile)."""
     from sutra_app.engine import llm
@@ -1214,6 +1214,9 @@ def tools_call(j2, run, said=None, extra=None, temps=()):
 
     def mock():
         (cwd / "build.py").write_text("print('built')\n")
+        for name, body in (inside or {}).items():      # more files in the builder's folder (P34: the CLI's .claude)
+            (cwd / name).parent.mkdir(parents=True, exist_ok=True)
+            (cwd / name).write_text(body)
         (Path(run.dir) / "agent_live.json").write_text(json.dumps({"agents": {"W-1": {"text": "writing"}}}))     # the host's live view
         (Path(run.dir) / "snapshot.json").write_text(json.dumps({"turn": "W-1"}))                                  # the host's snapshot
         for name, body in (extra or {}).items():
@@ -2876,3 +2879,41 @@ def test_p33_the_judge_call_counts_in_budget_and_dollar_mode_and_raises_no_route
     logged = json.loads((Path(run.dir) / "calls.jsonl").read_text().splitlines()[-1])
     assert logged["fn"] == "audit" and logged["usd_counted"] > 0 and run.usd_used == pytest.approx(usd + logged["usd_counted"], abs=1e-6)      # the row rounds to 6 places
     assert not [e for e in run.events[events:] if e["type"] in ("redirect", "invalid_move")]
+
+
+# ---- P34 (D437): a build's output holds only what was built; the CLI's .claude folder is removed and never copied ---------------
+
+CLI_FOLDER = {".claude/.cc-writes/.keep": "", ".claude/note.json": "{}"}      # made up: the CLI's staging folder, and a file beside it
+
+
+def test_p34_the_cli_folder_is_removed_after_a_builder_call_and_is_not_a_written_file(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    tools_call(j2, run, inside=CLI_FOLDER)
+    out = Path(run.dir) / "out"
+    assert (out / "build.py").is_file() and not (out / ".claude").exists()
+    assert [f["path"] for f in run.call_log[-1]["tools"]["files_written"]] == ["build.py"]
+    assert not [e for e in run.events if e["type"] == "outside_write"]
+
+
+def test_p34_the_outside_write_check_still_stops_a_call_and_the_cli_folder_is_still_removed(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault) as e:
+        tools_call(j2, run, extra={"notes.txt": "x"}, inside=CLI_FOLDER)
+    assert e.value.files == ["notes.txt"] and not (Path(run.dir) / "out" / ".claude").exists()
+
+
+def test_p34_no_site_copy_carries_a_claude_folder(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    run._apply_output("website")
+    out = Path(run._out_dir())
+    for rel, body in {run._main_file(): "<!doctype html><title>t</title>", "pages/about.html": "<p>a</p>", **CLI_FOLDER,
+                      "pages/.claude/y.json": "{}"}.items():
+        (out / rel).parent.mkdir(parents=True, exist_ok=True)
+        (out / rel).write_text(body)
+    run._publish_out("<!doctype html><title>t</title>")
+    site = Path(run.dir) / "site"
+    assert (site / run._main_file()).is_file() and (site / "pages" / "about.html").is_file()
+    assert not [p for p in site.rglob(".claude")]
