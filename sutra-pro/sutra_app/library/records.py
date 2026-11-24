@@ -349,7 +349,8 @@ def _p_lines(family: str, **extra: Any) -> Callable[[str, Any], Prepared]:
 def _p_receipt(name: str, data: Any) -> Prepared:
     d = _object(data)
     # J2's send record and, with builder tools on (D245), its real run receipt (`_identity_real_run`, `_ask_real_run`): bounded open JSON
-    return _p_run_object(name, d) if d.get("type") in ("deed-send-record", "real_run") else [("receipt", d)]
+    # and, since P30 (D433), the receipt of installing a built script's packages (`_identity_env_install`)
+    return _p_run_object(name, d) if d.get("type") in ("deed-send-record", "real_run", "env_install") else [("receipt", d)]
 
 
 def _p_chat(name: str, data: Any) -> Prepared:

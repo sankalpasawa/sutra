@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P29" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P30" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -1939,6 +1939,564 @@ def build_failure(w):
                 self.decisions[-1]["decision"] = "stop"
         if self.decisions and limit:
 '''),
+    # ---- P30 (D433): the real-run fixes of J2's branch fix-real-run-approval, ported onto P1 to P29 (one edit per changed place,
+    # generated from the J2 commits; the environment code is Sutra's copy of J2's j2_runenv.py, engine/runenv.py): a dry run that
+    # does not exit 0 is never offered and goes back to the builder; a reply that is not RUN <code> or a decline keeps the question
+    # open; a run never ends ready with a planned real run that did not run and pass; receipts keep the exit code and the end of
+    # stdout and stderr; a build with a requirements.txt gets its own environment, installed only after RUN <code>
+    Edit('P30', "j2.py", r'''from . import j2_rules
+''', r'''from . import j2_rules
+from . import runenv as j2_runenv      # P30 (D433): Sutra's copy of J2's j2_runenv.py, the environment a built script runs in
+'''),
+    Edit('P30', "j2.py", r'''# Paths the sandbox runtime (srt) leaves writable by default; a rerun closes them (measured 2026-11-12, srt 0.0.81)
+SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
+
+
+def sandbox_settings(folder):
+    """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
+    folder, writes only in the folder."""
+    return {"network": {"allowedDomains": [], "deniedDomains": []},
+            "filesystem": {"denyRead": ["~"], "allowRead": [folder], "allowWrite": [folder],
+                           "denyWrite": list(SANDBOX_DENY_WRITE)}}
+''', r'''# Paths the sandbox runtime (srt) leaves writable by default; a rerun closes them (measured 2026-11-12, srt 0.0.81)
+SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
+
+
+def sandbox_settings(folder, reads=()):
+    """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
+    folder (and reads: the environment its python comes from), writes only in the folder."""
+    return {"network": {"allowedDomains": [], "deniedDomains": []},
+            "filesystem": {"denyRead": ["~"], "allowRead": [folder] + list(reads), "allowWrite": [folder],
+                           "denyWrite": list(SANDBOX_DENY_WRITE)}}
+
+
+def run_command(command, env):
+    """A command as code runs it: with an environment (j2_runenv.plan, ready), its python in place of the form's
+    python; without one, as written."""
+    return [env["python"]] + list(command[1:]) if env and j2_runenv.is_python(command[0]) else list(command)
+
+
+def run_facts(command, env):
+    """What a receipt records of the python a command ran with: an environment's interpreter path and version, its
+    requirements hash and its installed packages; without one, the interpreter's path and version. None when the
+    command's program is not a python."""
+    if env:
+        return j2_runenv.facts(env)
+    d = j2_runenv.describe(command[0]) if command and j2_runenv.is_python(command[0]) else None
+    return {"python": d["python"], "python_version": d["python_version"]} if d else None
+'''),
+    Edit('P30', "j2.py", r'''
+def real_folders(workflows):
+''', r'''
+DECLINE_REPLIES = ("decline", "declined", "i decline", "no", "do not run", "don't run")
+
+
+def run_reply(answer, code):
+    """What a reply to a RUN <code> question is: "run" (RUN and the code, in any case, spaces trimmed; never a reply
+    without the code), "decline" (DECLINE_REPLIES), or "" (anything else: the question stays open)."""
+    said = " ".join(str(answer or "").split()).lower().rstrip(".!")
+    if code and said == f"run {str(code).lower()}":
+        return "run"
+    return "decline" if said in DECLINE_REPLIES else ""
+
+
+def real_folders(workflows):
+'''),
+    Edit('P30', "j2.py", r'''
+def real_run(out_dir, rr, timeout):
+''', r'''
+def real_run(out_dir, rr, timeout, env=None):
+'''),
+    Edit('P30', "j2.py", r'''    writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
+    and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
+    "evidence"}."""
+''', r'''    writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
+    and the receipt are the same either way. env: the built folder's environment (its requirements.txt, installed):
+    its python runs the command, never the form's. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last
+    2,000 characters of each), "env" (run_facts), "seconds", "sha256" of the built files it names, "evidence"}."""
+'''),
+    Edit('P30', "j2.py", r'''    fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
+    t0 = time.time()
+    try:
+''', r'''    fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
+    t0 = time.time()
+    command, facts = run_command(rr["command"], env), run_facts(rr["command"], env)
+    try:
+'''),
+    Edit('P30', "j2.py", r'''            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
+                                      "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
+''', r'''            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
+                                      "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
+'''),
+    Edit('P30', "j2.py", r'''        last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
+        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
+                "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
+    except subprocess.TimeoutExpired:
+        return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
+''', r'''        last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
+        where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
+        return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),
+                "stderr": j2_runenv.tail(p.stderr), "env": facts, "seconds": round(time.time() - t0, 2), "sha256": shas,
+                "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
+    except subprocess.TimeoutExpired as e:
+        return {"ran": True, "exit": None, "stdout": j2_runenv.tail(e.stdout), "stderr": j2_runenv.tail(e.stderr),
+                "env": facts, "sha256": shas, "seconds": round(time.time() - t0, 2),
+'''),
+    Edit('P30', "j2.py", r'''
+def real_run_dry(out_dir, rr, timeout):
+''', r'''
+def real_run_dry(out_dir, rr, timeout, env=None):
+'''),
+    Edit('P30', "j2.py", r'''    "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
+    copy's counts. "command": the command as run, on the copies' paths."""
+''', r'''    "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
+    copy's counts. "command": the command as run, on the copies' paths. env: as for real_run; its "stdout", "stderr"
+    (the last 2,000 characters of each) and "env" are kept, whatever the exit code."""
+'''),
+    Edit('P30', "j2.py", r'''        cmd = [moved(x) for x in rr["command"]]
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
+''', r'''        cmd = [moved(x) for x in rr["command"]]
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env)
+'''),
+    Edit('P30', "j2.py", r'''        real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
+        counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
+        if real:
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
+''', r'''        real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
+        counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
+        kept = {k: res.get(k) for k in ("stdout", "stderr", "env")}
+        if real:
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": real,
+'''),
+    Edit('P30', "j2.py", r'''                        f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
+''', r'''                        f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": {},
+'''),
+    Edit('P30', "j2.py", r'''
+def sandbox_rerun(folder, runner, target, timeout):
+''', r'''
+def sandbox_rerun(folder, runner, target, timeout, env=None):
+'''),
+    Edit('P30', "j2.py", r'''    With J2_SANDBOX=1 inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt, with sandbox_settings); without it (the
+    default) as a plain process. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
+    "output" (the end of it), "evidence"}."""
+''', r'''    With J2_SANDBOX=1 inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt, with sandbox_settings); without it (the
+    default) as a plain process. env: the folder's environment (its requirements.txt, installed): its python runs the
+    test, never the form's. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
+    "output" (the end of it), "stdout" and "stderr" (the last 2,000 characters of each), "evidence"}."""
+'''),
+    Edit('P30', "j2.py", r'''    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+''', r'''    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+    as_run = run_command(argv, env)
+'''),
+    Edit('P30', "j2.py", r'''        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(sandbox_settings(copy), f)
+        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
+''', r'''        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
+        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
+'''),
+    Edit('P30', "j2.py", r'''        return {"pass": p.returncode == 0, "exit": p.returncode, "sha256": sha, "seconds": round(time.time() - t0, 2),
+                "output": out, "evidence": f"{shlex.join(argv)} exited {p.returncode} {where} ({last[:160]})"}
+''', r'''        return {"pass": p.returncode == 0, "exit": p.returncode, "sha256": sha, "seconds": round(time.time() - t0, 2),
+                "output": out, "stdout": j2_runenv.tail(p.stdout), "stderr": j2_runenv.tail(p.stderr),
+                "evidence": f"{shlex.join(argv)} exited {p.returncode} {where} ({last[:160]})"}
+'''),
+    Edit('P30', "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+''', r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_runs_why = {}      # step 7: workflow id -> why its real run did not run or did not pass, in plain words
+        self.env_asked = {}          # requirements.txt hash -> the one-time code its packages were asked for with
+        self.env_why = {}            # requirements.txt hash -> why its environment was not made (declined, the install failed)
+'''),
+    Edit('P30', "j2.py", r'''        fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
+        fails = self.open_docs + fails + self._real_run_pending()
+        if not fails:
+            return self.out["done"]
+        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
+''', r'''        fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
+        fails = self.open_docs + fails + self._real_run_pending()
+        live = self._live_step_note()      # a planned real run that did not run and pass: never "Done:"
+        if not fails and not live:
+            return self.out["done"]
+        return (f"Done with open items: shipped as is {why}." + (f" {live}" if live else "")
+                + (f" Still not workable: {'; '.join(fails)}." if fails else ""))
+'''),
+    Edit('P30', "j2.py", r'''                "send_confirm": self._identity_send_confirm,
+                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
+''', r'''                "send_confirm": self._identity_send_confirm,
+                "real_run": self._identity_real_run,
+                "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)
+'''),
+    Edit('P30', "j2.py", r'''
+    def _real_run_note(self):
+''', r'''
+    def _real_run_open(self):
+        """[(workflow id, why)]: every planned real run that has not run and passed, with why in plain words: it
+        waits for the Requester, was declined, could not be offered, ran and failed, or its workflow never finished.
+        While this is not empty the run never ends "Done:" or ready (_goal_done, _ship_outcome)."""
+        out = []
+        for w in self.workflows:
+            if not w.get("real_run") or w["status"] == "refused" or self.real_runs_done.get(w["id"]) is True:
+                continue
+            out.append((w["id"], self.real_runs_why.get(w["id"]) or (
+                "did not run: it waits for the Requester's approval" if w["id"] in self.real_runs_asked else
+                f"did not run: its workflow is {w['status']}, not done" if w["status"] != "done" else
+                "did not run: it was not asked for")))
+        return out
+
+    def _live_step_note(self):
+        """What the end of a run says while a planned real run is open ("" when none is): that the live step is not
+        done, and why, per workflow."""
+        rows = self._real_run_open()
+        return ("The live step is not done. " + " ".join(f"{i}'s real run {why}." for i, why in rows)) if rows else ""
+
+    def _real_run_note(self):
+'''),
+    Edit('P30', "j2.py", r'''        w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
+                  and x["id"] not in self.real_runs_asked), None)
+''', r'''        w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
+                  and x["id"] not in self.real_runs_asked and x["id"] not in self.real_runs_done), None)
+'''),
+    Edit('P30', "j2.py", r'''        rr, code = w["real_run"], secrets.token_hex(3)
+        self.real_runs_asked[w["id"]] = code
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
+''', r'''        rr, code = w["real_run"], secrets.token_hex(3)
+        env, why = self._run_env()
+        if why:      # its packages are not installed (declined, the install failed, no interpreter): never offered
+            return self._real_run_not_offered(w, why)
+        script = j2_runenv.script_of(rr["command"], self._out_dir()) if j2_runenv.is_python(rr["command"][0]) else None
+        missing = (j2_runenv.missing_imports(run_command(rr["command"], env)[0], script) if script else None) or []
+        if missing:      # a module the script imports does not resolve in the python that runs it: back to the builder
+            return self._real_run_not_offered(
+                w, f"its script imports {and_list(missing)}, which {'is' if len(missing) == 1 else 'are'} not installed "
+                   "in the Python that runs it",
+                f"- the planned real run can't start: {os.path.basename(script)} imports {and_list(missing)}, which "
+                f"{'does' if len(missing) == 1 else 'do'} not resolve in the Python that runs it. Name the PyPI package of "
+                "each in requirements.txt with its exact version (name==1.2.3, one per line), or take the import out.",
+                env=run_facts(rr["command"], env))
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout(), env)
+'''),
+    Edit('P30', "j2.py", r'''            self.real_runs_done[w["id"]] = False
+''', r'''            self.real_runs_done[w["id"]] = False
+            self.real_runs_why[w["id"]] = "did not run: its dry run changed the Requester's real folders, so the run stopped"
+'''),
+    Edit('P30', "j2.py", r'''            self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
+            self.turn, self.handoff = None, {}
+            return True
+        self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
+                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
+                            + show("created") + show("changed") + show("deleted")
+                            + f"\nTo run it, reply exactly: RUN {code}\n"
+                            "Any other reply: it is not run.", real_run=w["id"])
+        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
+                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _identity_real_run(self, h):
+        """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
+        once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
+        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        ok = bool(w and code) and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}"
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
+            {"ran": False, "exit": None, "evidence": "not run: the reply was not exactly RUN " + str(code)}
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
+                                "approved": ok, "answer_msg": last.get("id"), **res,
+                                "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
+        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
+                  warning=bool(res.get("ran") and res.get("exit") != 0))
+        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
+        items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
+''', r'''            self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
+            self.turn, self.handoff = None, {}
+            return True
+        if not dry.get("ran") or dry.get("exit") != 0:      # only a dry run that exits 0 is offered to the Requester
+            how = f"exited {dry['exit']}" if dry.get("exit") is not None else "did not finish"
+            ended = (dry.get("stderr") or dry.get("stdout") or "").strip() or "it printed nothing"
+            return self._real_run_not_offered(
+                w, f"its dry run on copies {how}",
+                f"- the planned real run failed when code tried it on copies of the Requester's folders (nothing ran on "
+                f"the real ones): {shlex.join(rr['command'])} {how}. The end of its error output:\n{ended}\n"
+                "Fix the files so that this command exits 0.")
+        self.real_runs_asked[w["id"]] = code
+        self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
+                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + f"\nWhy: {rr.get('why') or 'not given'}"
+                            + (f"\nPackages it runs with (installed in an environment of its own, Python "
+                               f"{env.get('python_version')}): {', '.join(env['packages']) or 'none'}. RUN {code} "
+                               "approves running with them." if env else "")
+                            + f"\nWhat it would do, from a {dry['evidence']}"
+                            + show("created") + show("changed") + show("deleted")
+                            + f"\nTo run it, reply exactly: RUN {code}\n"
+                            "To decline, reply: decline. Any other reply: it is not run, and this question stays open.",
+                  real_run=w["id"])
+        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
+                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _run_env(self):
+        """The environment the built folder's commands run in. (None, "") without a requirements.txt: the form's own
+        python runs them. (the environment, "") once it is installed: its python runs the test rerun, the dry run
+        and the real run, never the system one. (None, why) while it is not: nothing of the build is run."""
+        p = j2_runenv.plan(self._out_dir())
+        if not p:
+            return None, ""
+        if p["ready"]:
+            return p, ""
+        return None, "its packages are not installed: " + (self.env_why.get(p["hash"]) or p["problem"]
+                                                            or "the Requester has not approved them")
+
+    def _env_ask(self, w, attempt, cwd):
+        """A build whose requirements.txt has no installed environment yet: code posts the packages and versions, where
+        they go and a one-time code, and the run pauses before the build's checks (Decide for me never answers).
+        Nothing is installed without the reply RUN <code>. True when it paused; False when there is nothing to ask
+        (no requirements.txt, already installed, already declined or failed, or it can't be made)."""
+        p = j2_runenv.plan(cwd)
+        if not p or p["ready"] or p["problem"] or p["hash"] in self.env_why:
+            return False
+        code = self.env_asked[p["hash"]] = secrets.token_hex(3)
+        w["resume"] = {"attempt": attempt, "built": True}
+        self.write_lock = self.atom = None
+        self.save("workflows.json", self.workflows)
+        self.post("system", f"{w['id']} built a script that needs packages. Nothing is installed until you approve.\n"
+                            f"Packages to install, from PyPI only: {', '.join(p['packages'])}\n"
+                            f"Where: an environment of its own at {p['dir']}, made with Python "
+                            f"{p['base']['python_version']} ({p['base']['python']}). Your files and your own Python are "
+                            "not touched.\nIts test, the dry run on copies and any real run then use that environment.\n"
+                            f"To install them, reply exactly: RUN {code}\n"
+                            "To decline, reply: decline. Any other reply: nothing is installed, and this question stays open.",
+                  real_run=w["id"])
+        self._ask_user("One of the workflows built a script that needs packages installed before code can test it. "
+                       "The list is above.", [{"question": "Install them?"}], "real_run",
+                       handoff={"kind": "env_install", "wid": w["id"], "hash": p["hash"]})
+        return True
+
+    def _identity_env_install(self, h):
+        """Code, not an agent, reads the reply to _env_ask (run_reply). RUN <code>: the environment is made and the
+        packages installed, from PyPI only (j2_runenv.install; with J2_SANDBOX=1 the network is open to PyPI for this
+        step alone). A decline: nothing is installed. Any other reply: code says so and the question stays open.
+        Either way a receipt (env_install: the interpreter, the requirements hash, the installed versions, the exit
+        code and the end of the output) goes to receipts.jsonl and the workflow's build goes on from its checks; a
+        failed install goes back to its builder with the error."""
+        w, p, code = self._wf(h.get("wid")), j2_runenv.plan(self._out_dir()), self.env_asked.get(h.get("hash"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        asked = bool(w and code and p and p["hash"] == h.get("hash"))
+        said = run_reply(h.get("answer"), code) if asked and not last.get("auto") else ""
+        if asked and not said:
+            self._event("code", "env_install", f"{w['id']}: the reply was not RUN {code} and not a decline: asked again")
+            self.post("system", f"Not installed. Reply exactly RUN {code}, or decline.", real_run=w["id"])
+            return self._ask_user("That reply did not approve the packages and did not decline them. The exact reply "
+                                  "is above.", [{"question": "Install them?"}], "real_run",
+                                  handoff={k: h.get(k) for k in ("kind", "wid", "hash")})
+        if said == "run" and not p["ready"]:
+            res = j2_runenv.install(p, max(builder_timeout(), 600), agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None)
+        elif said == "run":      # installed since the question was asked (another run with the same requirements.txt)
+            res = {"ok": True, "exit": 0, **j2_runenv.facts(p), "evidence": f"already installed in {p['dir']}"}
+        else:
+            res = {"ok": False, "exit": None, "evidence": "not installed: the Requester declined" if said == "decline"
+                   else "not installed: the question no longer matches the build's requirements.txt"}
+        if p and not res["ok"]:
+            self.env_why[p["hash"]] = ("the Requester declined installing them" if said == "decline" else res["evidence"])
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "env_install", "workflow": h.get("wid"), "requirements_sha256": h.get("hash"),
+                                "packages": (p or {}).get("packages"), "code": code, "approved": said == "run",
+                                "declined": said == "decline", "answer_msg": last.get("id"), **res,
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "env_install", f"{h.get('wid')}: {res['evidence']}")
+        self.post("system", ("Installed: " if res["ok"] else "") + res["evidence"] + ".",
+                  warning=said == "run" and not res["ok"], real_run=h.get("wid"))
+        if not w:
+            return self._handoff("coordination", kind="schedule")
+        n = as_int((w.get("resume") or {}).get("attempt"), 1)
+        if said == "run" and not res["ok"] and n < MAX_CHECK_ATTEMPTS:      # a failed install: the builder fixes its requirements.txt
+            w["resume"] = {"attempt": n, "evidence": "- installing the packages in requirements.txt failed: "
+                           f"{res['evidence']}. The end of pip's error output:\n"
+                           f"{(res.get('stderr') or res.get('stdout') or '').strip() or 'nothing'}\n"
+                           "Fix requirements.txt (every package on PyPI, with an exact version that exists)."}
+        else:
+            w["resume"] = {"attempt": n, "built": True}
+        self._handoff(w["id"], kind="build", wid=w["id"])
+
+    def _real_run_not_offered(self, w, why, back="", **rec):
+        """A planned real run that may not be offered to the Requester (its dry run on copies did not exit 0, a module
+        it imports is missing, or its packages are not installed): a
+        receipt says so, with the dry run's exit code and the end of its output, and no approval is asked for. With
+        `back` (what its builder is told) and attempts left, the workflow goes back to its builder under the normal
+        attempt rules (MAX_CHECK_ATTEMPTS, counted on from the attempts it used), and the real run is asked for again
+        after the rebuild: True. Else the real run is closed as not run, with why, and the run goes on to its end,
+        which says so: False."""
+        n, sent = as_int(w.get("build_attempts")), as_int(w.get("sent_back"))
+        again = bool(back) and self._general() and 0 < n < MAX_CHECK_ATTEMPTS and sent < MAX_CHECK_ATTEMPTS
+        self._real_run_receipt(w["id"], code=None, offered=False, approved=False, ran=False, exit=None,
+                               evidence=f"not offered: {why}", **rec)
+        self._event("code", "real_run", f"{w['id']}: not offered: {why}")
+        self.post("system", f"{w['id']}'s real run is not offered: {why}. Nothing ran on your files. "
+                            + (f"It goes back to its builder with the reason (attempt {n + 1} of {MAX_CHECK_ATTEMPTS})."
+                               if again else "It has no attempts left, so the live step does not run in this run."),
+                  warning=True, real_run=w["id"])
+        if not again:
+            self._real_run_decided(w["id"], False, f"did not run: {why}", f"not offered: {why}")
+            return False
+        w["resume"], w["sent_back"] = {"attempt": n, "evidence": back}, sent + 1
+        self.real_runs_dry.pop(w["id"], None)
+        self.save("workflows.json", self.workflows)
+        self._handoff(w["id"], kind="build", wid=w["id"])
+        return True
+
+    def _real_run_receipt(self, wid, **rec):
+        """One real-run line of receipts.jsonl, written by code: the plan as registered, then what happened. Its
+        dry run (exit code, the end of stdout and of stderr, what it would change) is kept with it."""
+        w = self._wf(wid) or {}
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "real_run", "workflow": wid, **(w.get("real_run") or {}), **rec,
+                                "dry_run": {k: v for k, v in self.real_runs_dry.get(wid, {}).items() if k != "evidence"},
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+
+    def _real_run_decided(self, wid, passed, why, evidence):
+        """A planned real run is closed: it ran (passed or not), was declined, or could not be offered. `why` (plain
+        words, kept for the outcome when it did not pass) and the done-when items it checks, which pass or fail by
+        this, never by a builder or Audit."""
+        self.real_runs_done[wid] = passed
+        self.real_runs_why.pop(wid, None) if passed else self.real_runs_why.__setitem__(wid, why)
+        at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
+        items = {crit[at[n] - 1] for n in ((self._wf(wid) or {}).get("real_run") or {}).get("checks") or []
+                 if n in at and at[n] <= len(crit)}
+'''),
+    Edit('P30', "j2.py", r'''                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
+                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})
+''', r'''                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
+                              "note": f"real run receipt ({wid}): {evidence}"})
+'''),
+    Edit('P30', "j2.py", r'''            self._save_audits()
+        self._goal_done(h.get("r") or {})
+''', r'''            self._save_audits()
+
+    def _identity_real_run(self, h):
+        """Step 7: code, not an agent, reads the Requester's reply (run_reply). RUN <code> (any case, spaces trimmed):
+        the command runs, once (real_run). A decline: it is not run. Either way a receipt goes to receipts.jsonl and
+        the run goes on to its end. Any other reply is never taken as an answer: code says so and the question stays
+        open, so an approval is never lost silently."""
+        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        said = run_reply(h.get("answer"), code) if w and code and not last.get("auto") else ""
+        if w and code and not said:
+            self._event("code", "real_run", f"{w['id']}: the reply was not RUN {code} and not a decline: asked again")
+            self.post("system", f"Not run. Reply exactly RUN {code}, or decline.", real_run=w["id"])
+            return self._ask_user("That reply did not start the run and did not decline it. The exact reply is above.",
+                                  [{"question": "Run it for real?"}], "real_run",
+                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
+        env, gone = self._run_env() if said == "run" else (None, "")
+        ok = said == "run" and not gone
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env) if ok else \
+            {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
+             f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
+        self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
+                               answer_msg=last.get("id"), **res)
+        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
+        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
+                  warning=bool(res.get("ran") and res.get("exit") != 0))
+        passed = bool(ok and res.get("ran") and res.get("exit") == 0)
+        why = ("did not run: the Requester declined it" if said == "decline" else
+               f"did not run: {gone}" if gone else
+               "did not run: no approval code was issued for it" if not ok else
+               f"ran and did not pass: it exited {res.get('exit')}" if res.get("exit") is not None else
+               "ran past its time limit and was stopped")
+        self._real_run_decided(h.get("wid"), passed, why, res["evidence"])
+        self._goal_done(h.get("r") or {})
+'''),
+    Edit('P30', "j2.py", r'''                return
+        self.post("identity", ("We're finished. Kept as they were: " + "; ".join(self.open_docs) + "." if self.open_docs else
+''', r'''                return
+        live = self._live_step_note()      # a planned real run that did not run and pass: said plainly, never "ready"
+        self.post("identity", (f"The build is finished, but it is not ready. {live}" if live else
+                               "We're finished. Kept as they were: " + "; ".join(self.open_docs) + "." if self.open_docs else
+'''),
+    Edit('P30', "j2.py", r'''            self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
+        if self.audits and (fails := workable(self.audits[-1]) + self._real_run_pending()) and \
+                (self.real_runs_done or self._real_run_pending()):    # step 7: workable only after an approved run passed
+            self.outcome = (f"Done with open items: the real run {'did not pass' if self.real_runs_done else 'has not run'}."
+                            f" Still not workable: {'; '.join(fails)}.")
+''', r'''            self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
+        fails = (workable(self.audits[-1]) if self.audits else []) + self._real_run_pending()
+        if live or (fails and self.real_runs_done):    # step 7: workable only after every planned real run ran and passed
+            self.outcome = (f"Done with open items: {live or 'the real run passed, other items did not.'}"
+                            + (f" Still not workable: {'; '.join(fails)}." if fails else ""))
+'''),
+    Edit('P30', "j2.py", r'''        fault = None      # P28 (D431): the outside-write fault, for the failure's signature
+        reused = self._reuse_folder(w, cwd)
+''', r'''        fault = None      # P28 (D431): the outside-write fault, for the failure's signature
+        unmet = ""      # a requirements.txt code will not install as written (j2_runenv.bad_lines): the builder fixes it
+        # code sent it back (a failed dry run or install), or its files waited for their packages: its attempts go on
+        resume = w.pop("resume", None) or {}
+        reused = None if resume else self._reuse_folder(w, cwd)
+'''),
+    Edit('P30', "j2.py", r'''            reused, evidence = None, leak
+''', r'''            reused, evidence = None, leak
+        if reused and self._env_ask(w, 1, cwd):      # the reused files need packages: asked for before their checks
+            return
+'''),
+    Edit('P30', "j2.py", r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+''', r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+        if resume:
+            attempt, evidence = as_int(resume.get("attempt")), str(resume.get("evidence") or "")
+        if resume.get("built"):      # its files waited for their packages: checked now, with no builder call first
+            text = self._out_text()
+            self._publish_out(text)
+            failed = self._run_checks(w, attempt, text, folder=cwd)
+            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+            reused = "its own files"
+'''),
+    Edit('P30', "j2.py", r'''                    continue
+                text = self._out_text()
+''', r'''                    continue
+                unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))
+                if unmet:      # refused before its checks, like a leak
+                    evidence = unmet
+                    continue
+                if self._env_ask(w, attempt, cwd):      # its packages wait for the Requester: the run pauses here
+                    return
+                text = self._out_text()
+'''),
+    Edit('P30', "j2.py", r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
+''', r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
+        if unmet and not stop:
+            stop = "its requirements.txt still can't be installed as written: " + unmet.removeprefix("- ")
+'''),
+    Edit('P30', "j2.py", r'''        human = self._human_output(w, meta, w.get("section"))
+        self._atom_outputs(w, meta, attempt)
+        w["status"], w["version"] = "done", len(self.sites)
+        self.save("workflows.json", self.workflows)
+''', r'''        human = self._human_output(w, meta, w.get("section"))
+        self._atom_outputs(w, meta, attempt)
+        w["status"], w["version"], w["build_attempts"] = "done", len(self.sites), attempt
+        self.save("workflows.json", self.workflows)
+'''),
+    Edit('P30', "j2.py", r'''                    t = c.get("target")
+                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, builder_timeout())
+''', r'''                    t = c.get("target")
+                    env, why = self._run_env()
+                    if why:      # its packages are not installed: the test never runs with another python
+                        return {"actual": None, "pass": None, "evidence": f"the test was not rerun: {why}"}
+                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, builder_timeout(), env)
+'''),
+    Edit('P30', "j2.py", r'''                c["from_charter"] = True
+            rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout())
+''', r'''                c["from_charter"] = True
+            env, why = self._run_env()
+            if why:      # its packages are not installed: the test never runs with another python
+                return False, f"the test was not rerun: {why}"
+            rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout(), env)
+'''),
 )
 
 OTHER_EDITS = (
@@ -2172,6 +2730,7 @@ PATCH_NOTES = {
     "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
     "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `real_path`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
     "P29": "(D431) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left; a lone \"Stop here\" is asked, never applied without the Requester); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition the charter decides (`from_charter`, set by `_folder_condition` when the charter lists no files or no test) is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved: \"This condition comes from the charter, and building can't change it. The charter needs fixing.\" (any other condition goes back to Adaptation) (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
+    "P30": "(D433; no model prompt changes: the cards, the re-ask and the closing message are code's own words) the real-run fixes of J2's branch `fix-real-run-approval`, with Sutra's copy of J2's `j2_runenv.py` as `engine/runenv.py`. (1) `_ask_real_run` offers only a dry run that exits 0: any other writes a `real_run` receipt with `offered: false` and the dry run's exit code, stdout and stderr, and the workflow goes back to its builder with the stderr on its remaining attempts (`_real_run_not_offered`; `resume` and `build_attempts` in `_run_tools`); with none left the real run is closed as not run. (2) `_identity_real_run` reads the reply with `run_reply`: `RUN <code>` in any case with spaces trimmed, never without the code; a decline (`DECLINE_REPLIES`) closes it; any other reply posts \"Not run. Reply exactly RUN <code>, or decline.\" and asks again, with no receipt. (3) `_real_run_open` lists every planned real run that did not run and pass, with why (`real_runs_why`); `_goal_done` and `_ship_outcome` then end \"Done with open items: The live step is not done. ...\" and the closing message says \"not ready\". (4) `real_run`, `real_run_dry` and `sandbox_rerun` keep `stdout` and `stderr` (the last 2,000 characters of each) beside the exit code, in every real-run receipt and its `dry_run`. (5) a build with a `requirements.txt`: `_run_tools` refuses lines that are not `name==version` back to the builder, then pauses before the checks (`_env_ask`: pause kind `real_run`, handoff `env_install`) with the packages listed; only `RUN <code>` installs (`_identity_env_install`, `runenv.install`: a virtual environment kept by the hash of `requirements.txt` under `J2_DATA_DIR`/envs, `pip install --isolated --index-url https://pypi.org/simple`; with the sandbox on, the network is open to pypi.org and files.pythonhosted.org for that step alone), and an `env_install` receipt records the interpreter, the hash and the installed versions; the test rerun (`_run_checks`, `_folder_condition`), the dry run and the real run use that environment's python (`run_command`, `_run_env`) and are not run without it; before the offer `runenv.missing_imports` checks the script's top-level imports and a missing module goes back to the builder (run j2-20261124-062837-01a2: a failed dry run was offered, the reply was not the exact code, and the run ended ready without its live step)",
     "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
@@ -2358,7 +2917,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
         "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable. P30 (D433) is the real-run fixes: a dry run that fails is never offered and goes back to the builder, a reply that is not RUN <code> or a decline keeps the question open, a run never ends ready with a planned real run that did not run, receipts keep the exit code and the end of stdout and stderr, and a build with a requirements.txt gets its own environment (Sutra's `engine/runenv.py`), installed only after RUN <code>. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

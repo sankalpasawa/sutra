@@ -2385,3 +2385,355 @@ def test_p22_every_rejection_path_in_the_validator_sets_its_own_key():
     assert "over_budget" in [r for r, _ in rules] and len(tests) >= 17
     names += [r for r, _ in rules]
     assert len(names) == len(set(names)), sorted(x for x in names if names.count(x) > 1)
+
+
+# ---- P30 (D433): the real-run fixes. A failing dry run is never offered, an approval is never lost, a run never ends ready with a
+# pending live step, receipts keep the evidence, and a built script's packages get their own environment after RUN <code>. No network:
+# a fake python stands in for the interpreter, its venv module and pip, and a fake sandbox runtime records its settings ------------
+# TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
+# "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
+P30_FAKE_PYTHON = '''#!{exe}
+import json, os, shutil, subprocess, sys
+me, a = os.path.abspath(sys.argv[0]), sys.argv[1:]
+site = os.path.join(os.path.dirname(os.path.dirname(me)), "site")
+def note(kind):
+    with open(os.environ["FAKE_LOG"], "a") as f:
+        f.write(json.dumps({{"kind": kind, "argv": a, "python": me}}) + "\\n")
+if a[:2] == ["-m", "venv"]:
+    note("venv")
+    os.makedirs(os.path.join(a[2], "bin"))
+    os.makedirs(os.path.join(a[2], "site"))
+    shutil.copy(me, os.path.join(a[2], "bin", "python"))
+    sys.exit(0)
+if a[:3] == ["-m", "pip", "install"]:
+    note("pip install")
+    if os.environ.get("FAKE_PIP_FAIL"):
+        sys.stderr.write("ERROR: No matching distribution found for " + os.environ["FAKE_PIP_FAIL"] + "\\n")
+        sys.exit(1)
+    for line in open(a[a.index("-r") + 1]):
+        name, _, version = line.strip().partition("==")
+        if name:
+            open(os.path.join(site, name.replace("-", "_") + ".py"), "w").write("VERSION = %r\\n" % version)
+    sys.exit(0)
+if a[:3] == ["-m", "pip", "list"]:
+    print(json.dumps([{{"name": f[:-3], "version": open(os.path.join(site, f)).read().split("'")[1]}}
+                      for f in sorted(os.listdir(site)) if f.endswith(".py")]))
+    sys.exit(0)
+note("run")
+env = dict(os.environ)
+if os.path.isdir(site):
+    env["PYTHONPATH"] = site
+sys.exit(subprocess.run([{exe!r}] + a, env=env).returncode)
+'''
+# TEST ONLY stand-in for the sandbox runtime (srt -s <settings> -c <command>): records the settings, runs the command WITHOUT a sandbox
+P30_FAKE_SANDBOX = '''import json, os, subprocess, sys
+a = sys.argv[1:]
+with open(os.environ["FAKE_LOG"], "a") as f:
+    f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
+sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
+'''
+P30_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
+P30_BAD = "import sys\nsys.stderr.write('boom: the token file is missing\\n')\nsys.exit(3)\n"
+P30_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
+P30_FILES = {"s.py": P30_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
+
+
+@pytest.fixture(scope="module")
+def j2rr(tmp_path_factory):
+    """J2 with the folder type FT, builder tools on (the general path), its data folder and the fake interpreter."""
+    base = tmp_path_factory.mktemp("j2-p30")
+    fake, srt = base / "python3.12", base / "fake_srt.py"
+    fake.write_text(P30_FAKE_PYTHON.format(exe=sys.executable), encoding="utf-8")
+    fake.chmod(0o755)
+    srt.write_text(P30_FAKE_SANDBOX, encoding="utf-8")
+    with fresh_j2(base, J2_TYPES_DIR=base / "types", J2_AGENT_TOOLS="1", J2_DATA_DIR=base / "data", J2_RUN_PYTHON=fake) as mod:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("FAKE_LOG", str(base / "fake.log"))
+            mod.j2_types.create(FT, "Script", None, form="agent")
+            mod._data_type.cache_clear()
+            mod.p30_log = lambda kind: [r for r in map(json.loads, (base / "fake.log").read_text().splitlines())
+                                        if r["kind"] == kind] if (base / "fake.log").exists() else []
+            mod.p30_srt = f"{sys.executable} {srt}"
+            yield mod
+
+
+@pytest.fixture
+def rr_run(j2rr, tmp_path):
+    """made(files, status, attempts, test) -> (run, workflow): one workflow that plans a real run on a folder of the Requester's."""
+    real = tmp_path / "inbox"
+    real.mkdir()
+    (real / "mail.txt").write_text("one")
+    counter = itertools.count(1)
+
+    def made(files, status="done", attempts=1, test=None):
+        run = j2rr.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0628{next(counter):02d}-01a2")
+        run._apply_output(FT)
+        run.goal, run.budget = {"statement": "read the folder", "done_when": ["the script has been run on the folder"]}, 300
+        os.makedirs(run._out_dir(), exist_ok=True)
+        for name, text in files.items():
+            Path(run._out_dir(), name).write_text(text)
+        checks = [{"text": "s.py exists", "type": "file-exists", "target": "s.py", "expect": True}] + (
+            [{"text": "its test passes", "type": "test-passed", "target": test, "expect": True}] if test else [])
+        w = {"id": "W-1", "name": "reader", "purpose": "read", "outputs": [f"{FT}/s.py"], "status": status, "calls_used": attempts,
+             "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [],
+             "real_run": {"command": ["python3", "s.py", str(real)], "folder": str(real), "why": "read it", "checks": [1]},
+             "atoms": [{"id": "W-1.a1", "goal": "read", "expected_output": [], "verification": checks}]}
+        if status == "done":
+            w["build_attempts"] = attempts
+        run.workflows = [w]
+        j2rr.add_workflow_agent("W-1")
+        run.sites = ["v1"]
+        run.post("user", "go")
+        return run, w
+    return made, real
+
+
+def p30_builder(run, *rounds):
+    """The run's builder, scripted: each call writes the next round's files (the last one again after that)."""
+    prompts = []
+
+    def call(fn, fmt, prompt, mock, **kw):
+        prompts.append(prompt)
+        for name, text in rounds[min(len(prompts), len(rounds)) - 1].items():
+            Path(run._out_dir(), name).write_text(text)
+        return {"say": "@Coordination built", "human_output": "I built the reader.", "atom_human_output": "The reader."}
+    run.call = call
+    return prompts
+
+
+def p30_reply(run, text, **meta):
+    h = run.paused["handoff"]
+    run.post("user", text, **meta)
+    run.paused = None
+    run._turn_identity({**h, "answer": text})
+
+
+def p30_receipts(run, kind="real_run"):
+    path = Path(run.dir, "receipts.jsonl")
+    return [r for r in map(json.loads, path.read_text().splitlines()) if r.get("type") == kind] if path.exists() else []
+
+
+def p30_system(run):
+    return [m["text"] for m in run.chat if m["who"] == "system"]
+
+
+def test_p30_a_failing_dry_run_is_not_offered_and_goes_back_to_the_builder(j2rr, rr_run):
+    made, real = rr_run
+    run, w = made({"s.py": P30_BAD})
+    assert run._ask_real_run({}) and not run.paused and "W-1" not in run.real_runs_asked
+    assert not any("reply exactly: RUN" in x for x in p30_system(run)), "no code is posted"
+    r = p30_receipts(run)[-1]
+    assert r["offered"] is False and not r["approved"] and not r["ran"] and r["evidence"] == "not offered: its dry run on copies exited 3"
+    assert r["dry_run"]["exit"] == 3 and "boom: the token file is missing" in r["dry_run"]["stderr"]
+    assert run.turn == "W-1" and run.handoff == {"kind": "build", "wid": "W-1"} and w["resume"]["attempt"] == 1
+    prompts = p30_builder(run, {"s.py": P30_GOOD})
+    run._turn_workflow_agent(run.handoff)
+    assert len(prompts) == 1 and "ATTEMPT 2 OF 3" in prompts[0] and "boom: the token file is missing" in prompts[0] and "exited 3" in prompts[0]
+    assert w["status"] == "done" and w["build_attempts"] == 2 and not (real / "out.txt").exists()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "dry run on a copy: exit 0" in p30_system(run)[-1]
+    run, w = made({"s.py": P30_BAD}, attempts=j2rr.MAX_CHECK_ATTEMPTS)      # never fixed: no attempts left
+    assert run._ask_real_run({}) is False and run.real_runs_done["W-1"] is False and not run.paused
+    run._goal_done({})
+    assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: its dry run on copies exited 3")
+
+
+def test_p30_a_reply_without_the_code_keeps_the_question_open_and_the_code_in_any_case_runs_it(j2rr, rr_run, monkeypatch):
+    made, real = rr_run
+    monkeypatch.setattr(j2rr.secrets, "token_hex", lambda n=3: "a578a3")
+    run, w = made({"s.py": P30_GOOD})
+    assert run._ask_real_run({}) and run.real_runs_asked["W-1"] == "a578a3"
+    for text in ("Run", "yes", "RUN", "RUN a578a4", "run it"):
+        p30_reply(run, text)
+        assert run.paused and run.paused["kind"] == "real_run" and run.paused["handoff"]["wid"] == "W-1", text
+        assert p30_system(run)[-1] == "Not run. Reply exactly RUN a578a3, or decline.", text
+        assert not p30_receipts(run) and not (real / "out.txt").exists() and "W-1" not in run.real_runs_done, text
+    p30_reply(run, "run a578a3")
+    r = p30_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and (real / "out.txt").read_text() == "done"
+    assert len(p30_receipts(run)) == 1 and run.outcome.startswith("Done:") and not run._real_run_open()
+    for text in ("  RUN   A578A3  ", "Run a578a3."):
+        (real / "out.txt").unlink()
+        run, w = made({"s.py": P30_GOOD})
+        run._ask_real_run({})
+        p30_reply(run, text)
+        assert p30_receipts(run)[-1]["approved"] and (real / "out.txt").exists(), text
+    (real / "out.txt").unlink()
+    run, w = made({"s.py": P30_GOOD})
+    run._ask_real_run({})
+    p30_reply(run, "RUN a578a3", auto=True)      # the exact code, but sent by Decide for me: never an approval
+    assert run.paused and not p30_receipts(run) and not (real / "out.txt").exists()
+    p30_reply(run, "Decline")
+    r = p30_receipts(run)[-1]
+    assert r["declined"] and not r["approved"] and not r["ran"] and not run.paused and not (real / "out.txt").exists()
+
+
+def test_p30_a_run_with_a_pending_real_run_does_not_end_ready(j2rr, rr_run):
+    made, real = rr_run
+    closing = lambda run: next(m["text"] for m in reversed(run.chat) if m["who"] == "identity" and m.get("done"))
+    run, w = made({"s.py": P30_GOOD})      # asked, never answered
+    run._ask_real_run({})
+    run.paused = None
+    run._goal_done({})
+    assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: it waits for the Requester's approval")
+    assert "not ready" in closing(run) and "ready." not in closing(run).replace("not ready.", "")
+    run, w = made({"s.py": P30_GOOD})      # declined
+    run._ask_real_run({})
+    p30_reply(run, "decline")
+    assert run.outcome.startswith("Done with open items") and "did not run: the Requester declined it" in run.outcome and "not ready" in closing(run)
+    run, w = made({"s.py": P30_GOOD}, status="failed")      # its workflow never finished
+    run._goal_done({})
+    assert run.outcome.startswith("Done with open items") and "W-1's real run did not run: its workflow is failed, not done" in run.outcome
+    run, w = made({"s.py": P30_GOOD})      # shipped as it is
+    out = run._ship_outcome("on the Requester's decision")
+    assert out.startswith("Done with open items: shipped as is") and "The live step is not done" in out and "it was not asked for" in out
+    run, w = made({"s.py": P30_GOOD})      # approved, exit 0: a clean end
+    run._ask_real_run({})
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run.outcome.startswith("Done:") and run._live_step_note() == ""
+
+
+def test_p30_receipts_keep_the_exit_code_and_the_output_tails(j2rr, rr_run):
+    made, real = rr_run
+    noisy = ("import sys, os\nsys.stdout.write('o' * 2990 + 'OUT-END')\nsys.stderr.write('e' * 2990 + 'ERR-END')\n"
+             "open(os.path.join(sys.argv[1], 'out.txt'), 'w').write('x')\n")
+    run, w = made({"s.py": noisy})
+    run._ask_real_run({})
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p30_receipts(run)[-1]
+    for x in (r, r["dry_run"]):
+        assert x["exit"] == 0 and len(x["stdout"]) == 2000 and x["stdout"].endswith("OUT-END")
+        assert len(x["stderr"]) == 2000 and x["stderr"].endswith("ERR-END") and "OUT-END" not in x["stderr"]
+        assert x["env"]["python"] and x["env"]["python_version"]
+    run, w = made({"s.py": "import sys\nprint('started')\nsys.stderr.write('E' * 2500 + 'LAST-LINE')\nsys.exit(7)\n"}, attempts=j2rr.MAX_CHECK_ATTEMPTS)
+    run._ask_real_run({})
+    d = p30_receipts(run)[-1]["dry_run"]
+    assert d["exit"] == 7 and d["stdout"] == "started\n" and len(d["stderr"]) == 2000 and d["stderr"].endswith("LAST-LINE")
+    from sutra_app.library.records import _p_receipt
+    assert [k for k, _ in _p_receipt("receipts.jsonl", r)] == ["run_file.object"], "a real-run receipt stays open JSON for the catalogue"
+
+
+def test_p30_requirements_get_an_environment_only_after_approval_and_a_cached_one_is_reused(j2rr, rr_run):
+    made, real = rr_run
+    runenv = j2rr.j2_runenv
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    prompts = p30_builder(run, P30_FILES)
+    run._turn_workflow_agent({"wid": "W-1"})
+    plan, card = runenv.plan(run._out_dir()), p30_system(run)[-1]
+    code = run.env_asked[plan["hash"]]
+    assert run.paused["kind"] == "real_run" and run.paused["handoff"]["kind"] == "env_install" and run._auto_pick() is None
+    assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
+    assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
+    # nothing is installed without approval
+    assert not j2rr.p30_log("venv") and not j2rr.p30_log("pip install") and not os.path.exists(plan["dir"]) and not p30_receipts(run, "env_install")
+    assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
+    p30_reply(run, "yes install")
+    assert run.paused and p30_system(run)[-1] == f"Not installed. Reply exactly RUN {code}, or decline." and not j2rr.p30_log("pip install")
+    p30_reply(run, f"run {code}")
+    assert len(j2rr.p30_log("venv")) == 1 and len(j2rr.p30_log("pip install")) == 1 and not run.paused
+    argv = j2rr.p30_log("pip install")[0]["argv"]
+    assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
+    e = p30_receipts(run, "env_install")[-1]
+    assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
+    assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"]
+    from sutra_app.library.records import _p_receipt
+    assert [k for k, _ in _p_receipt("receipts.jsonl", e)] == ["run_file.object"], "the install receipt is open JSON for the catalogue"
+    run._turn_workflow_agent(run.handoff)
+    test = next(x for x in run.receipts if x["check"] == "its test passes")
+    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True
+    assert [r for r in j2rr.p30_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
+        "the test rerun used the environment's python (the system one has no pulsedep)"
+    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
+    ask = p30_system(run)[-1]
+    assert "Packages it runs with" in ask and "pulsedep==1.2.0" in ask and "dry run on a copy: exit 0" in ask
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p30_receipts(run)[-1]
+    want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
+    for x in (r, r["dry_run"]):
+        assert x["exit"] == 0 and {k: x["env"].get(k) for k in want} == want and x["env"]["python_version"]
+    assert (real / "out.txt").read_text() == "1.2.0" and run.outcome.startswith("Done:")
+    # a second run with the same requirements.txt reuses the environment: no question, no install
+    n = len(j2rr.p30_log("pip install"))
+    run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
+    p30_builder(run2, P30_FILES)
+    run2._turn_workflow_agent({"wid": "W-1"})
+    assert not run2.paused and w2["status"] == "done" and not run2.env_asked
+    assert len(j2rr.p30_log("pip install")) == n and len(j2rr.p30_log("venv")) == 1
+    assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
+    # a decline: nothing installed, the test is not rerun with another python, the real run is not offered
+    run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
+    p30_builder(run3, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
+    run3._turn_workflow_agent({"wid": "W-1"})
+    assert run3.paused and "extra-lib==0.3" in p30_system(run3)[-1]
+    p30_reply(run3, "decline")
+    run3._turn_workflow_agent(run3.handoff)
+    t3 = next(x for x in run3.receipts if x["check"] == "its test passes")
+    assert len(j2rr.p30_log("pip install")) == n and t3["pass"] is None and "the Requester declined installing them" in t3["evidence"]
+    assert run3._ask_real_run({}) is False
+    assert "its packages are not installed: the Requester declined installing them" in run3._live_step_note()
+
+
+def test_p30_a_failed_install_goes_back_to_the_builder_with_pips_error(j2rr, rr_run, monkeypatch):
+    made, real = rr_run
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    prompts = p30_builder(run, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P30_FILES)
+    run._turn_workflow_agent({"wid": "W-1"})
+    monkeypatch.setenv("FAKE_PIP_FAIL", "nosuch==9.9")
+    p30_reply(run, f"RUN {next(iter(run.env_asked.values()))}")
+    monkeypatch.delenv("FAKE_PIP_FAIL")
+    e = p30_receipts(run, "env_install")[-1]
+    assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
+    run._turn_workflow_agent(run.handoff)
+    assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
+
+
+def test_p30_a_missing_import_blocks_the_offer_and_bad_requirement_lines_are_refused(j2rr, rr_run, monkeypatch, tmp_path):
+    made, real = rr_run
+    run, w = made({"s.py": "import sys\nimport notinstalledmod\nfrom helper import go\n", "helper.py": "def go():\n    pass\n"})
+    assert run._ask_real_run({}) and not run.paused and "W-1" not in run.real_runs_asked and not run.real_runs_dry
+    r = p30_receipts(run)[-1]
+    assert r["offered"] is False and "imports notinstalledmod, which is not installed" in r["evidence"] and "helper" not in r["evidence"]
+    assert run.turn == "W-1" and "notinstalledmod" in w["resume"]["evidence"] and "requirements.txt" in w["resume"]["evidence"]
+    run, w = made({}, status="running", attempts=0)
+    prompts = p30_builder(run, *[{"s.py": P30_GOOD, "requirements.txt": text} for text in
+                                 ("requests>=2\n", "--extra-index-url https://example.invalid/simple\npulsedep==1.2.0\n", "git+https://example.invalid/x.git\n")])
+    n = len(j2rr.p30_log("pip install"))
+    run._turn_workflow_agent({"wid": "W-1"})
+    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.env_asked and len(j2rr.p30_log("pip install")) == n
+    assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
+    monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: not offered, with a plain reason
+    run, w = made({"s.py": P30_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"}, attempts=j2rr.MAX_CHECK_ATTEMPTS)
+    assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is False
+    assert "which is not a Python that runs" in run._live_step_note() and "J2_RUN_PYTHON" in run._live_step_note()
+
+
+def test_p30_the_sandbox_opens_the_network_for_the_install_step_only(j2rr, rr_run, monkeypatch):
+    made, real = rr_run
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2rr.p30_srt)
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    p30_builder(run, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
+    before = len(j2rr.p30_log("sandbox"))
+    run._turn_workflow_agent({"wid": "W-1"})
+    p30_reply(run, f"RUN {next(iter(run.env_asked.values()))}")
+    run._turn_workflow_agent(run.handoff)
+    run._ask_real_run({})
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    rows = j2rr.p30_log("sandbox")[before:]
+    installs = [r for r in rows if " -m pip install " in r["command"]]
+    others = [r for r in rows if r not in installs]
+    env_dir = j2rr.j2_runenv.plan(run._out_dir())["dir"]
+    assert len(installs) == 1 and installs[0]["settings"]["network"]["allowedDomains"] == ["pypi.org", "files.pythonhosted.org"]
+    assert installs[0]["settings"]["filesystem"]["allowWrite"] == [env_dir]
+    assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
+    assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
+    assert p30_receipts(run)[-1]["exit"] == 0
+
+
+def test_p30_runenv_is_j2s_module_below_its_docstring():
+    """engine/runenv.py is Sutra's copy of J2's j2_runenv.py: the code is the same, only the module docstring differs. Skipped where
+    the J2 prototype is not checked out beside this project."""
+    theirs = Path(__file__).resolve().parents[3] / "prototypes" / "j2" / "j2_runenv.py"
+    if not theirs.is_file():
+        pytest.skip("prototypes/j2 is not here")
+    code = lambda p: p.read_text(encoding="utf-8").split('"""\nimport ast', 1)[1]
+    assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")

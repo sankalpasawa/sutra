@@ -4958,8 +4958,11 @@ def run_for_real():
             run.post("user", text, auto=auto)
             run.paused = None
             run._identity_real_run({"wid": "W-1", "answer": text, "r": {}})
-            r = receipts(run)[-1]
-            assert not r["approved"] and not r["ran"] and not os.path.exists(os.path.join(real, "sorted.txt")), r
+            # P30 (D433): a reply that is not RUN <code> or a decline closes nothing: no receipt, the question stays open
+            assert not os.path.exists(os.path.join(run.dir, "receipts.jsonl")) and not os.path.exists(os.path.join(real, "sorted.txt")), \
+                "nothing ran, nothing was closed"
+            assert run.paused and run.paused["kind"] == "real_run" and any(
+                m["text"] == f"Not run. Reply exactly RUN {code}, or decline." for m in run.chat), "the question stays open"
         run, code = made_run()
         run.post("user", f"  RUN {code} ")
         run.paused = None
@@ -5030,7 +5033,7 @@ def real_run_checks():
         # Sutra P22 (D246): the workflow without a real run is refused, not the real-run one
         assert [x["name"] for x in reg] == ["Builder"] and any("Later (it covers done-when item(s) 2, which the real run of "
                                                                "'Builder' checks" in str(x) for x in refused), (reg, refused)
-        for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
+        for reply, ends in (("RUN {code}", "Done:"), ("decline", "Done with open items")):      # P30 (D433): a decline closes it
             run = made_run()
             reg, refused, _ = run._register([wf([1], [2])])
             assert reg and not refused and run.workflows[0]["real_run"]["checks"] == [2], refused
@@ -5252,7 +5255,8 @@ def real_run_order():
         assert out.startswith("Done with open items") and "real run has not run" in out, out
         run.real_runs_asked["W-1"] = "abc123"           # asked, never answered: the run reaches its end without it
         run._goal_done({})
-        assert run.outcome.startswith("Done with open items: the real run has not run"), run.outcome
+        assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: it "
+                                      "waits for the Requester's approval"), run.outcome      # P30 (D433)
         # (3) Audit's question about the run is answered by code, not asked; an answer can't confirm it
         run = made_run(item1_pass=False, fact="whether the script has been run on the folder")
         seen = []

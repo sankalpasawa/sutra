@@ -3047,3 +3047,35 @@ Why: the project's promise is that its limit is about time spent working; counti
   distribute: it is built where it runs); a beta that updates itself from `main` (a broken `main` would land without the owner asking); `taskkill /F` to replace a
   running beta (it would end a run; the owner closes it or waits).
 - Diagram: label "beta on Windows too, built from a checkout of main", pill on Desktop app · Electron window.
+
+## D433 — A real run is offered only after a dry run that exits 0, its approval is never lost, and a built script's packages get their own environment (patch P30)
+- Sources: owner, 2026-11-24, on the Pulse runs that never read mail: Google access was fine (the same key read 5 of 6 mailboxes when the built code was run
+  by hand); run j2-20261124-062837-01a2, `receipts.jsonl` lines 90 and 91: `approved: false, ran: false, exit: null` (the folder was not on the developer's Mac,
+  so the tests are built from the owner's description). Code at 541e572c: `_ask_real_run` posted the approval card whatever the dry run's exit code;
+  `_identity_real_run` took any reply but the exact `RUN <code>` as a refusal, wrote that receipt and never asked again; `_goal_done` then posted "ready"; a
+  receipt kept 1,500 mixed characters of output; the test rerun, the dry run and the real run used the system `python3`, where a built script's packages are
+  not installed. J2's branch `fix-real-run-approval` (the same fix in `prototypes/j2`, with `j2_runenv.py` and `real_run_fix_test.py`).
+- Decided: P30, five rules. (1) Only a dry run that exits 0 is offered. Any other writes a "not offered" receipt and goes back to the builder with the stderr on
+  the workflow's remaining attempts (`MAX_CHECK_ATTEMPTS`); with none left the real run is closed as not run. (2) A reply is `RUN <code>` (any case, spaces
+  trimmed, never without the code), a decline, or neither; neither keeps the question open with "Not run. Reply exactly RUN <code>, or decline." (3) A run
+  never ends "Done:" or ready while a planned real run is pending, unapproved, declined or failed: the outcome is "Done with open items: The live step is not
+  done. ..." with why, per workflow. (4) Every real-run receipt, and the dry run inside it, keeps the exit code and the last 2,000 characters of stdout and of
+  stderr. (5) A build with a `requirements.txt` gets a virtual environment, made by code (`engine/runenv.py`, Sutra's copy of J2's module): the interpreter is
+  `J2_RUN_PYTHON`, else the first python3.13 to 3.10 on the PATH, else the Python the engine runs on (in the desktop app, the one inside the app); none means
+  the real run is not offered, with the reason. Environments are kept by the hash of `requirements.txt` in `<data folder>/envs` (`J2_DATA_DIR`, set by
+  `DataPaths.j2_env`). Only pinned PyPI packages (`name==version`) are installed, with `pip install --isolated --index-url https://pypi.org/simple`; with the
+  sandbox on, the network is open to pypi.org and files.pythonhosted.org for the install step alone. Nothing is installed without the Requester's `RUN <code>`:
+  the run pauses before the build's checks with the packages and versions listed, and the real-run card lists them again. The test rerun, the dry run and the
+  real run use that environment's python and are not run without it; before the offer code checks that the script's top-level imports resolve there, and a
+  missing module goes back to the builder. Receipts (`real_run`, and the new `env_install`, open JSON in the records catalogue) record the interpreter's path
+  and version, the requirements hash and the installed versions.
+- Why: the run that prompted this offered a live step that had already failed on copies, lost the owner's approval to a reply that was not letter-exact, and
+  ended ready with no mail read. Each rule closes one of those steps, and the receipts now say what happened without a rerun.
+- Rejected: one approval for the packages and the live run together (the packages must be installed before the test rerun and the dry run can run, and only a
+  dry run that exits 0 may be offered, so a new environment is asked for first, once per `requirements.txt`; a cached one needs no question); installing
+  before any approval (nothing is installed without it); taking "yes" or "run" without the code as approval (a guess at consent to change the owner's files);
+  ending the run when a reply is not exact (how the approval was lost); the system `python3` with `pip install --user` (it changes the owner's own Python);
+  unpinned packages (the card could not say what would be installed); an environment per run (minutes of install each run, and Pulse runs daily); a new pause
+  kind for the install question (the run-message schema and the page know `real_run`; the handoff says `env_install`); vendoring `j2_runenv.py` (J2's main is
+  ahead of the pinned commit, so the file is not in the extraction: it is Sutra's own module until a sync moves the pin).
+- Diagram: label "real run: only after a dry run that exits 0; approval never lost; packages in their own environment (P30)", pill on band:DEPARTMENT RUNTIME.
