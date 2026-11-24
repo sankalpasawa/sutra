@@ -10773,7 +10773,7 @@ class J2Run:
             if t not in tbc and (t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check"):
                 continue
             if s["status"] == "blocked":      # beta fix d: the missing fact (an agent's field) and how to give it (code's text)
-                out.append(f"done-when item {self._no(t)}: {t.rstrip('.')} blocked: needs {s['reason']}. "
+                out.append(f"done-when item {self._no(t)}: {t.rstrip('.')} blocked: needs {s['reason'].rstrip('.')}. "
                            "Send it as a follow-up to finish.")
             elif s["status"] != "built":
                 out.append(f"done-when item {self._no(t)}: {t} ({s['status'].replace('_', ' ')}: {s['reason'] or 'no reason given'})")

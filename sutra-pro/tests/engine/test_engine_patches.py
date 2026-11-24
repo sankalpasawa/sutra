@@ -3100,6 +3100,7 @@ def calls_of(run, monkeypatch):
 
 
 @pytest.mark.parametrize("status, tbc", [({"status": "blocked", "reason": WEBHOOK}, False),      # the builder's field (c)
+                                         ({"status": "blocked", "reason": f"{WEBHOOK}."}, False),      # R4-3: no ".."
                                          ({"status": "built", "reason": "the post is written"}, True)])      # the charter's (b), 8b10
 def test_p30_a_blocked_item_with_no_real_run_ends_the_run_at_once(sort_run, monkeypatch, status, tbc):
     run = no_real_run(sort_run, status, tbc)
@@ -3109,7 +3110,7 @@ def test_p30_a_blocked_item_with_no_real_run_ends_the_run_at_once(sort_run, monk
     assert calls == [] and len(run.audits) == 1 and run.turn is None and run.paused is None, (calls, out)      # no Identity,
     assert out.startswith("Done with open items: not every done-when item is built."), out      # no Adaptation, no audit
     assert f"{crit[1].rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out and out.count("done-when item 2") == 1, out
-    assert "done-when item 1" not in out and not out.endswith(".."), out
+    assert "done-when item 1" not in out and ".." not in out, out
 
 
 @pytest.mark.parametrize("status", [{"status": "not_built", "reason": "out of time"},
@@ -3221,8 +3222,8 @@ CAMPUS_DOCS = ("Design docs for Campus Notes. Users: students and teachers. Prob
 
 
 def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
-    """A PRD, HLD, LLD chain: the PRD's first item is blocked by its builder; the later stages are
-    clean. Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
+    """A PRD, HLD, LLD chain: the PRD's first item is blocked by its builder (a reason ending in ".", R4-3); the later
+    stages are clean. Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
     run = make_run()
     run.budget, real_call, target = 400, run.call, {}
 
@@ -3235,7 +3236,7 @@ def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(mak
             target.setdefault("item", r["item_status"][0]["item"])
             for s in r["item_status"]:
                 if s["item"] == target["item"]:
-                    s.update(status="blocked", reason=WEBHOOK)
+                    s.update(status="blocked", reason=f"{WEBHOOK}.")
             return json.dumps(r) + text[end:]
         return real_call(fn, fmt, task, scripted, *a, **k)
     run.call = call
@@ -3246,7 +3247,7 @@ def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(mak
     out = str(run.outcome)
     assert out.startswith("Done with open items"), out
     assert f"PRD done-when item {target['item']}: {item.rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
-    assert out.count(f"needs {WEBHOOK}") == 1, out
+    assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out      # R4-3
 
 
 # ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
