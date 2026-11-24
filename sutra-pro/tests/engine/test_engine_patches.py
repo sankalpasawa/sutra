@@ -2561,11 +2561,11 @@ def test_p30_done_only_when_every_item_is_built_and_passes(make_run):
     run.post("user", "A PRD for a morning file list")
     run._apply_output("prd")
     morning_goal(run)
-    out = finish(run, {MORNING[1]: {"status": "blocked", "reason": "no channel token given"}})
+    out = finish(run, {MORNING[1]: {"status": "blocked", "reason": "a channel token"}})
     assert out.startswith("Done with open items: not every done-when item is built."), out
-    assert f"done-when item 2: {MORNING[1]} (blocked: no channel token given)" in out
+    assert f"done-when item 2: {MORNING[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in out
     run.sites = ["## Users"]
-    assert f"{MORNING[1]} (blocked: no channel token given)" in run._ship_outcome("on request")
+    assert f"{MORNING[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in run._ship_outcome("on request")
     assert finish(run, {}).startswith("Done:") and run._ship_outcome("on request").startswith("Done:")
     # the no-errors gate is code's own check: no workflow owns it, and it is not an open item for that
     run.goal["item_checks"][MORNING[2]] = {"type": "render-check"}
@@ -2994,7 +2994,7 @@ def blocked_run(p31, status):
 
 
 def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_done_with_open_items(p31, monkeypatch):
-    run = blocked_run(p31, {"status": "blocked", "reason": "no channel token given"})
+    run = blocked_run(p31, {"status": "blocked", "reason": "a channel token"})
     crit, calls, real_call = run.goal["done_when"], [], run.call
     monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
     run._identity_audit({})
@@ -3005,7 +3005,8 @@ def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_don
     assert len(run.audits) == 1 and run.paused is None and run.turn is None      # no audit loop, no question: the end
     out = str(run.outcome)
     assert out.startswith("Done with open items: not every done-when item is built."), out
-    assert f"done-when item 2: {crit[1]} (blocked: no channel token given)" in out and "done-when item 3" not in out, out
+    assert f"done-when item 2: {crit[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in out \
+        and "done-when item 3" not in out, out
     assert out.count("done-when item 2") == 1, out      # review R3-2: listed once, with its reason
 
 
@@ -3050,13 +3051,15 @@ def test_p30_a_to_be_confirmed_item_is_blocked_with_its_missing_fact(p31):
     crit = run.goal["done_when"]
     to_be_confirmed(run, 2, "the team channel's address")
     assert run._blocked_items() == [crit[1]]
-    assert run._open_items() == [f"done-when item 2: {crit[1]} (blocked: the team channel's address)"]
+    assert run._open_items() == [f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. "
+                                 "Send it as a follow-up to finish."]
     run._identity_audit({})
     assert run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # it does not hold back the real run
     p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
     out = str(run.outcome)
     assert out.startswith("Done with open items: not every done-when item is built."), out
-    assert f"done-when item 2: {crit[1]} (blocked: the team channel's address)" in out and out.count("done-when item 2") == 1, out
+    assert f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. Send it as a follow-up to finish." \
+        in out and out.count("done-when item 2") == 1, out
     run.sites = ["x"]
     assert run._ship_outcome("on request").count("done-when item 2") == 1      # listed once there too
 
@@ -3065,6 +3068,71 @@ def test_p30_a_to_be_confirmed_real_run_item_is_never_blocked(p31):
     run = blocked_run(p31, {"status": "built", "reason": ""})
     to_be_confirmed(run, 3, "the real folder")      # review R3-1: only its receipt and Audit decide a real-run item
     assert run.goal["done_when"][2] not in run._blocked_items()
+
+
+# ---- beta fix d, P30 amended (D433): a blocked item with no real run ends the run at once -------------------------------
+FOLLOW_UP = "Send it as a follow-up to finish."
+WEBHOOK = "the team channel's webhook address"
+
+
+def no_real_run(sort_run, status, tbc=False):
+    """A folder run (no render check, as 8b10) with no planned real run: item 1 built by W-1 and passed, item 2 owned by W-2
+    with the given builder status and failed by Audit (TO_BE_CONFIRMED when tbc: the charter names it)."""
+    make, _ = sort_run
+    run = make()
+    crit = run.goal["done_when"] = list(SORT_DONE_WHEN[:2])
+    run.goal["item_checks"] = {t: {"type": "file-exists", "target": "sort_files.py", "expect": True} for t in crit}
+    run.workflows = [{"id": "W-1", "status": "done", "covers_text": [crit[0]], "item_status": {crit[0]: {"status": "built", "reason": ""}}},
+                     {"id": "W-2", "status": "done", "covers_text": [crit[1]], "item_status": {crit[1]: status}}]
+    run.sites = ["x"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "cycle": 1, "version": 1, "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1,
+                                "verdict": "PASS" if i == 1 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    if tbc:
+        to_be_confirmed(run, 2, WEBHOOK)
+    return run
+
+
+def calls_of(run, monkeypatch):
+    calls, real_call = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
+    return calls
+
+
+@pytest.mark.parametrize("status, tbc", [({"status": "blocked", "reason": WEBHOOK}, False),      # the builder's field (c)
+                                         ({"status": "built", "reason": "the post is written"}, True)])      # the charter's (b), 8b10
+def test_p30_a_blocked_item_with_no_real_run_ends_the_run_at_once(sort_run, monkeypatch, status, tbc):
+    run = no_real_run(sort_run, status, tbc)
+    crit, calls = run.goal["done_when"], calls_of(run, monkeypatch)
+    run._identity_audit({})
+    out = str(run.outcome)
+    assert calls == [] and len(run.audits) == 1 and run.turn is None and run.paused is None, (calls, out)      # no Identity,
+    assert out.startswith("Done with open items: not every done-when item is built."), out      # no Adaptation, no audit
+    assert f"{crit[1].rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out and out.count("done-when item 2") == 1, out
+    assert "done-when item 1" not in out and not out.endswith(".."), out
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "out of time"},
+                                    {"status": "built", "reason": ""}])      # Audit failed it while its builder says built
+def test_p30_a_not_built_or_failed_item_still_goes_back_to_adaptation(sort_run, monkeypatch, status):
+    run = no_real_run(sort_run, status)
+    calls = calls_of(run, monkeypatch)
+    run._identity_audit({})
+    assert run.outcome is None and calls == ["identity"] and run.turn == "adaptation", (calls, run.outcome)
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "out of time"},
+                                    {"status": "built", "reason": ""}])
+def test_p30_a_blocked_item_beside_an_open_one_does_not_end_the_run(sort_run, monkeypatch, status):
+    """Only when every other item is built and passes: a blocked item 2 beside a not-built or failed item 1 goes back."""
+    run = no_real_run(sort_run, {"status": "blocked", "reason": WEBHOOK})
+    crit = run.goal["done_when"]
+    run.workflows[0]["item_status"] = {crit[0]: status}
+    if status["status"] == "built":
+        run.audits[-1]["results"][0].update(verdict="NEEDS_REVISION", **{"pass": False})
+    calls = calls_of(run, monkeypatch)
+    run._identity_audit({})
+    assert run.outcome is None and calls == ["identity"] and run.turn == "adaptation", (calls, run.outcome)
 
 
 @pytest.mark.parametrize("status", [{"status": "not_built", "reason": "the builder set no status"},

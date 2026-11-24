@@ -4144,7 +4144,7 @@ class J2Run:
         fails = self.open_docs + fails + self._real_run_pending() + self._open_items()      # P30 (D433)
         if not fails:
             return self.out["done"]
-        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
+        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails).rstrip('.')}."      # beta fix d
 
     def _accept_open(self):
         """The Requester finished with design checks, conditions or done-when items still failing: they are accepted, so
@@ -6863,7 +6863,7 @@ class J2Run:
         if rr or opened:
             self.outcome = ("Done with open items: "
                             + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
-                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened)}.")
+                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -7102,6 +7102,14 @@ class J2Run:
         held = workable({**last, "accepted": list(last.get("accepted") or []) + self._blocked_items()}) if last else fails
         if not held and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
             return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
+        if fails and not held and (blocked := self._blocked_items()) and not self._open_items(skip=blocked) \
+                and not self._real_run_pending():
+            # beta fix d (D433): everything else is built and passes, and what is left is blocked on what only the Requester
+            # has: the run ends now, "Done with open items" naming each with its missing fact, with no retry, no Adaptation
+            # and no second audit (it looped to Adaptation and then the same-failure limit question: run 8b10)
+            self.post("system", "Everything else is built and passes. What is left is blocked, so no fix round is started.")
+            return self._goal_done({"to_requester": "Everything else is built and passes. Still open: "
+                                                    + "; ".join(self._open_items())})
         rr = self._real_run_nums()
         facts = [x for x in findings if x.get("needs_requester_fact") and x.get("verdict") not in ("PASS", "PASS_WITH_WARNING")
                  and x.get("criterion") not in tbc and as_int(x.get("item")) not in rr]
@@ -10741,7 +10749,7 @@ class J2Run:
                 out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
         return out
 
-    def _open_items(self):
+    def _open_items(self, skip=()):
         """P30 (D433): every done-when item whose builder did not set it built, with why ([] for a charter without item_checks).
         The no-errors gate is code's own (render-check): no builder owns it, and the audit gate and workable() decide it.
         Neither does a builder own an item a planned real run decides (_register refuses a builder that covers one): its
@@ -10750,13 +10758,16 @@ class J2Run:
             return []
         states, out, by_run, tbc = self._item_states(), [], set(self._real_run_items()), self._tbc_blocked()
         for t in (self.goal or {}).get("done_when") or []:
-            if t in tbc:      # beta fix (b): blocked on the charter's to_be_confirmed fact, whatever its builder set
-                out.append(f"done-when item {self._no(t)}: {t} (blocked: {tbc[t]})")
+            if t in skip:
                 continue
-            if t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check":
+            s = {"status": "blocked", "reason": tbc[t]} if t in tbc else \
+                states.get(t) or {"status": "not_built", "reason": "no workflow built it"}      # beta fix b: the charter's fact
+            if t not in tbc and (t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check"):
                 continue
-            s = states.get(t) or {"status": "not_built", "reason": "no workflow built it"}
-            if s["status"] != "built":
+            if s["status"] == "blocked":      # beta fix d: the missing fact (an agent's field) and how to give it (code's text)
+                out.append(f"done-when item {self._no(t)}: {t.rstrip('.')} blocked: needs {s['reason']}. "
+                           "Send it as a follow-up to finish.")
+            elif s["status"] != "built":
                 out.append(f"done-when item {self._no(t)}: {t} ({s['status'].replace('_', ' ')}: {s['reason'] or 'no reason given'})")
         return out
 
