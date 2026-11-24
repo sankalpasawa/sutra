@@ -34,8 +34,9 @@ _PROJECT_MOUNTED = "sutra_ui_project_mounted"
 
 
 def mount(app: FastAPI, services) -> None:
-    """Add the pages and the `/ui` static files to `app`. Reads exactly three members of `services`:
-    `settings.token`, `version` and `department`. A second call adds nothing."""
+    """Add the pages and the `/ui` static files to `app`. Reads exactly four members of `services`:
+    `settings.token`, `version`, `department` and `avatars` (the team avatar style, asked on each view of Home and of a team page; a
+    services object without it gets the classic avatars). A second call adds nothing."""
     if getattr(app.state, _MOUNTED, False):
         return
     router = build_router(
@@ -43,6 +44,7 @@ def mount(app: FastAPI, services) -> None:
         department=services.department,
         version=services.version,
         pages_dir=PAGES_DIR,
+        avatars=getattr(services, "avatars", None),
     )
     app.include_router(router)
     mount_static(app, STATIC_DIR)
