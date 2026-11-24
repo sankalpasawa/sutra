@@ -644,6 +644,10 @@ def real_run_problems(rr, source, runner, run_dir):
     if not isinstance(reads, list) or not all(isinstance(x, str) for x in reads):
         out.append("real_run reads must be a list of folders")
         reads = []
+    hosts = rr.get("hosts") or []
+    if not isinstance(hosts, list) or not all(isinstance(x, str) and HOST.fullmatch(x.strip().lower()) for x in hosts):
+        out.append("real_run hosts must be a list of the plain host names the command must reach (like api.example.com): "
+                   "no address, port, path, number-only address or *")
     home, repo, rd = (os.path.realpath(x) for x in (os.path.expanduser("~"), _repo_root(), run_dir))
     within = lambda a, b: a == b or llm.inside(a, b)      # a folder counts as within itself
     roots = []
@@ -674,6 +678,21 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
                        "points that argument at a copy, so what you build must take the folder from its arguments")
     return out
+
+
+# a host a real run may name: a plain DNS name with at least one dot whose last label is letters (so no IP address)
+HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+REAL_RUN_HOSTS_RULE = ('REAL RUN AND THE NETWORK: when the command of a real run must reach a service over the network, its '
+                       '"real_run" also names "hosts": [each host name it must reach, exactly, like api.example.com: no '
+                       'address, port, path or *]. Code shows the list to the Requester with the command; where a sandbox '
+                       'is on, only those hosts are reachable, in the dry run on copies and in the real run, and only '
+                       'after the Requester approved them. Without "hosts" the command has no network there. Name only '
+                       'hosts the built files really call.')
+
+
+def real_hosts(rr):
+    """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
+    return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
 
 
 DECLINE_REPLIES = ("decline", "declined", "i decline", "no", "do not run", "don't run")
@@ -714,13 +733,16 @@ def real_paths_in(root, folders):
     return out
 
 
-def real_run(out_dir, rr, timeout, env=None):
+def real_run(out_dir, rr, timeout, env=None, hosts=()):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
     and the receipt are the same either way. env: the built folder's environment (its requirements.txt, installed):
-    its python runs the command, never the form's. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last
-    2,000 characters of each), "env" (run_facts), "seconds", "sha256" of the built files it names, "evidence"}."""
+    its python runs the command, never the form's. hosts: the hosts the Requester approved for it (its plan's
+    "hosts"): in the sandbox they are the only ones it can reach, and with none it has no network; without a sandbox
+    nothing is blocked. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last 2,000 characters of
+    each), "env" (run_facts), "network" ({"hosts": the hosts allowed, "enforced": whether a sandbox held it to
+    them}), "seconds", "sha256" of the built files it names, "evidence"}."""
     cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
@@ -735,9 +757,10 @@ def real_run(out_dir, rr, timeout, env=None):
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
     t0 = time.time()
     command, facts = run_command(rr["command"], env), run_facts(rr["command"], env)
+    net = {"hosts": list(hosts or ()), "enforced": bool(cmd)}
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+            json.dump({"network": {"allowedDomains": net["hosts"], "deniedDomains": []},
                        "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
                                       "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
@@ -746,11 +769,12 @@ def real_run(out_dir, rr, timeout, env=None):
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
         return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),
-                "stderr": j2_runenv.tail(p.stderr), "env": facts, "seconds": round(time.time() - t0, 2), "sha256": shas,
+                "stderr": j2_runenv.tail(p.stderr), "env": facts, "network": net, "seconds": round(time.time() - t0, 2),
+                "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired as e:
         return {"ran": True, "exit": None, "stdout": j2_runenv.tail(e.stdout), "stderr": j2_runenv.tail(e.stderr),
-                "env": facts, "sha256": shas, "seconds": round(time.time() - t0, 2),
+                "env": facts, "network": net, "sha256": shas, "seconds": round(time.time() - t0, 2),
                 "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
                             "and was stopped"}
     finally:
@@ -774,14 +798,14 @@ def _tree_diff(before, after):
             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
 
 
-def real_run_dry(out_dir, rr, timeout, env=None):
+def real_run_dry(out_dir, rr, timeout, env=None, hosts=()):
     """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
     "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
     "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
-    copy's counts. "command": the command as run, on the copies' paths. env: as for real_run; its "stdout", "stderr"
-    (the last 2,000 characters of each) and "env" are kept, whatever the exit code."""
+    copy's counts. "command": the command as run, on the copies' paths. env and hosts: as for real_run; its "stdout",
+    "stderr" (the last 2,000 characters of each), "env" and "network" are kept, whatever the exit code."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
@@ -801,11 +825,11 @@ def real_run_dry(out_dir, rr, timeout, env=None):
             return k + eq + v
         before = _tree(copies[0])
         cmd = [moved(x) for x in rr["command"]]
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env)
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env, hosts)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
-        kept = {k: res.get(k) for k in ("stdout", "stderr", "env")}
+        kept = {k: res.get(k) for k in ("stdout", "stderr", "env", "network")}
         if real:
             return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
@@ -3652,6 +3676,8 @@ class J2Run:
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_runs_why = {}      # step 7: workflow id -> why its real run did not run or did not pass, in plain words
+        self.hosts_asked = {}        # step 7: workflow id -> the one-time code its real run's hosts were asked for with
+        self.hosts_ok = {}           # step 7: workflow id -> the hosts the Requester approved for its dry run and real run
         self.env_asked = {}          # requirements.txt hash -> the one-time code its packages were asked for with
         self.env_why = {}            # requirements.txt hash -> why its environment was not made (declined, the install failed)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
@@ -4063,7 +4089,7 @@ class J2Run:
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
-                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
+                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + "\n" + REAL_RUN_HOSTS_RULE
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -5224,7 +5250,7 @@ class J2Run:
                 "audit": self._identity_audit, "requester_answered": self._identity_hears_requester,
                 "ruling_budget": self._identity_ruling_budget, "limit": self._identity_limit,
                 "send_confirm": self._identity_send_confirm,
-                "real_run": self._identity_real_run,
+                "real_run": self._identity_real_run, "real_run_hosts": self._identity_real_run_hosts,
                 "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)
 
     CHARTER_FMT = ('{"statement": str, "site_name": str, "audience": str, "standards": [str], "rules": [str], '
@@ -5775,7 +5801,10 @@ class J2Run:
                 f"{'does' if len(missing) == 1 else 'do'} not resolve in the Python that runs it. Name the PyPI package of "
                 "each in requirements.txt with its exact version (name==1.2.3, one per line), or take the import out.",
                 env=run_facts(rr["command"], env))
-        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout(), env)
+        hosts = real_hosts(rr)
+        if hosts and sandbox_on() and self.hosts_ok.get(w["id"]) != hosts:
+            return self._hosts_ask(w, hosts, r)      # nothing is let through the sandbox before the Requester approves it
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout(), env, hosts)
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
@@ -5810,6 +5839,12 @@ class J2Run:
                             + (f"\nPackages it runs with (installed in an environment of its own, Python "
                                f"{env.get('python_version')}): {', '.join(env['packages']) or 'none'}. RUN {code} "
                                "approves running with them." if env else "")
+                            + "\nNetwork: " + (
+                                (f"it can reach only {', '.join(hosts)}. RUN {code} approves them." if sandbox_on() else
+                                 f"it says it reaches {', '.join(hosts)}. No sandbox is on, so this is not enforced. "
+                                 f"RUN {code} approves them.") if hosts else
+                                "none: it runs without network." if sandbox_on() else
+                                "it names no hosts. No sandbox is on, so the network is not blocked.")
                             + f"\nWhat it would do, from a {dry['evidence']}"
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
@@ -5818,6 +5853,47 @@ class J2Run:
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
         return True
+
+    def _hosts_ask(self, w, hosts, r):
+        """A planned real run that names hosts, with the sandbox on: its dry run on copies can't pass without them, and
+        nothing is let through the sandbox without the Requester's approval. So code asks first: the hosts, the
+        command and a one-time code; the run pauses (Decide for me never answers). True."""
+        code = self.hosts_asked[w["id"]] = secrets.token_hex(3)
+        self.post("system", f"{w['id']}'s planned real run needs the network. Nothing is allowed until you approve.\n"
+                            f"Hosts it would reach, and no others: {', '.join(hosts)}\n"
+                            f"Command: {shlex.join(w['real_run']['command'])}\n"
+                            "With your approval code first tries it on copies of your folders with only these hosts "
+                            "reachable, then asks you again before it runs on your own files.\n"
+                            f"To allow these hosts, reply exactly: RUN {code}\n"
+                            "To decline, reply: decline. Any other reply: nothing is allowed, and this question stays open.",
+                  real_run=w["id"])
+        self._ask_user("One of the workflows wants to reach the network when it runs what it built. The hosts are above.",
+                       [{"question": "Allow these hosts?"}], "real_run",
+                       handoff={"kind": "real_run_hosts", "r": r, "wid": w["id"]})
+        return True
+
+    def _identity_real_run_hosts(self, h):
+        """Code, not an agent, reads the reply to _hosts_ask (run_reply). RUN <code>: the hosts are approved for this
+        workflow's dry run and real run, and the run goes on to the dry run. A decline: the real run is not offered.
+        Any other reply: code says so and the question stays open."""
+        w, code = self._wf(h.get("wid")), self.hosts_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        said = run_reply(h.get("answer"), code) if w and code and not last.get("auto") else ""
+        if w and code and not said:
+            self._event("code", "real_run", f"{w['id']}: the reply was not RUN {code} and not a decline: asked again")
+            self.post("system", f"Not allowed. Reply exactly RUN {code}, or decline.", real_run=w["id"])
+            return self._ask_user("That reply did not allow the hosts and did not decline them. The exact reply is above.",
+                                  [{"question": "Allow these hosts?"}], "real_run",
+                                  handoff={"kind": "real_run_hosts", "r": h.get("r") or {}, "wid": w["id"]})
+        hosts = real_hosts((w or {}).get("real_run"))
+        if said == "run":
+            self.hosts_ok[w["id"]] = hosts
+            self._event("code", "real_run", f"{w['id']}: the Requester allowed {', '.join(hosts)} (message {last.get('id')})")
+            self.post("system", f"Allowed for {w['id']}'s dry run and real run, and nothing else: {', '.join(hosts)}.",
+                      real_run=w["id"])
+        elif w:
+            self._real_run_not_offered(w, f"the Requester declined letting it reach {and_list(hosts)}")
+        self._goal_done(h.get("r") or {})
 
     def _run_env(self):
         """The environment the built folder's commands run in. (None, "") without a requirements.txt: the form's own
@@ -5971,7 +6047,7 @@ class J2Run:
                                   handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
         env, gone = self._run_env() if said == "run" else (None, "")
         ok = said == "run" and not gone
-        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env) if ok else \
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env, real_hosts(w["real_run"])) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
              f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
         self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
@@ -9548,6 +9624,8 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
+                if real_hosts(w["real_run"]):      # the hosts its command must reach: shown, approved, then allowed
+                    wf["real_run"]["hosts"] = real_hosts(w["real_run"])
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
                 wf["cause_change"] = str(w["cause_change"]).strip()

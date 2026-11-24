@@ -2430,8 +2430,15 @@ P30_FAKE_SANDBOX = '''import json, os, subprocess, sys
 a = sys.argv[1:]
 with open(os.environ["FAKE_LOG"], "a") as f:
     f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
-sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
+allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]      # what the command may reach: told to it as FAKE_NET
+sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True, env={**os.environ, "FAKE_NET": json.dumps(allowed)}).returncode)
 '''
+# TEST ONLY: a built script that "reaches" the hosts given after its folder. Inside the fake sandbox a host that is not allowed is
+# refused, as the real one refuses the connection; outside a sandbox every host is reachable. No network.
+P30_NET = ("import json, os, sys\nallowed = json.loads(os.environ['FAKE_NET']) if 'FAKE_NET' in os.environ else None\n"
+           "for h in sys.argv[2:]:\n    if allowed is not None and h not in allowed:\n"
+           "        sys.stderr.write('blocked by the sandbox: ' + h + '\\n')\n        sys.exit(9)\n"
+           "open(os.path.join(sys.argv[1], 'out.txt'), 'w').write('reached ' + ' '.join(sys.argv[2:]))\n")
 P30_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
 P30_BAD = "import sys\nsys.stderr.write('boom: the token file is missing\\n')\nsys.exit(3)\n"
 P30_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
@@ -2467,7 +2474,7 @@ def rr_run(j2rr, tmp_path):
     (real / "mail.txt").write_text("one")
     counter = itertools.count(1)
 
-    def made(files, status="done", attempts=1, test=None):
+    def made(files, status="done", attempts=1, test=None, hosts=None, reaches=()):
         run = j2rr.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0628{next(counter):02d}-01a2")
         run._apply_output(FT)
         run.goal, run.budget = {"statement": "read the folder", "done_when": ["the script has been run on the folder"]}, 300
@@ -2478,7 +2485,8 @@ def rr_run(j2rr, tmp_path):
             [{"text": "its test passes", "type": "test-passed", "target": test, "expect": True}] if test else [])
         w = {"id": "W-1", "name": "reader", "purpose": "read", "outputs": [f"{FT}/s.py"], "status": status, "calls_used": attempts,
              "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [],
-             "real_run": {"command": ["python3", "s.py", str(real)], "folder": str(real), "why": "read it", "checks": [1]},
+             "real_run": {"command": ["python3", "s.py", str(real), *reaches], "folder": str(real), "why": "read it", "checks": [1],
+                          **({"hosts": hosts} if hosts else {})},
              "atoms": [{"id": "W-1.a1", "goal": "read", "expected_output": [], "verification": checks}]}
         if status == "done":
             w["build_attempts"] = attempts
@@ -2732,6 +2740,82 @@ def test_p30_the_sandbox_opens_the_network_for_the_install_step_only(j2rr, rr_ru
     assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
     assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
     assert p30_receipts(run)[-1]["exit"] == 0
+
+
+def test_p30_a_real_runs_hosts_are_data_checked_by_code_and_named_in_the_planning_rules(j2rr, rr_run):
+    made, real = rr_run
+    rr = {"command": ["python3", "s.py", str(real)], "folder": str(real), "why": "x"}
+    problems = lambda hosts: j2rr.real_run_problems({**rr, "hosts": hosts}, j2rr.squash(f"run it on {real}"), ("python3", "{target}"), "/nowhere/run")
+    assert problems(["api.example.com", "auth.example.com"]) == [] and problems([]) == []
+    for bad in (["*.example.com"], ["https://api.example.com"], ["api.example.com:443"], ["10.0.0.1"], ["localhost"], "api.example.com", [7]):
+        assert any("real_run hosts must be a list of the plain host names" in x for x in problems(bad)), bad
+    assert j2rr.real_hosts({"hosts": [" API.Example.com ", "api.example.com", "b.example.com"]}) == ["api.example.com", "b.example.com"]
+    run, w = made({"s.py": P30_GOOD})
+    assert run.ATOM_RULES.endswith(j2rr.REAL_RUN_HOSTS_RULE) and '"hosts"' in j2rr.REAL_RUN_HOSTS_RULE, "the one prompt change of P30"
+
+
+@p30_posix
+def test_p30_with_the_sandbox_on_only_approved_hosts_are_reachable_and_nothing_is_allowed_without_approval(j2rr, rr_run, monkeypatch):
+    made, real = rr_run
+    A, B, C = "api.example.com", "auth.example.com", "other.example.com"
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2rr.p30_srt)
+    nets = lambda n: [r["settings"]["network"]["allowedDomains"] for r in j2rr.p30_log("sandbox")[n:]]
+    # no hosts named: no network, so a script that calls a service fails its dry run and is not offered
+    n = len(j2rr.p30_log("sandbox"))
+    run, w = made({"s.py": P30_NET}, attempts=j2rr.MAX_CHECK_ATTEMPTS, reaches=[A])
+    assert run._ask_real_run({}) is False and not run.paused and nets(n) == [[]]
+    d = p30_receipts(run)[-1]["dry_run"]
+    assert d["exit"] == 9 and f"blocked by the sandbox: {A}" in d["stderr"] and d["network"] == {"hosts": [], "enforced": True}
+    # hosts named: asked for before the dry run; nothing is allowed and nothing runs before the approval
+    n = len(j2rr.p30_log("sandbox"))
+    run, w = made({"s.py": P30_NET}, hosts=[A, B], reaches=[A, B])
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and run.paused["handoff"]["kind"] == "real_run_hosts" and run._auto_pick() is None
+    card, code = p30_system(run)[-1], run.hosts_asked["W-1"]
+    assert f"Hosts it would reach, and no others: {A}, {B}" in card and f"RUN {code}" in card and "Nothing is allowed until you approve" in card
+    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok and not run.real_runs_dry and "W-1" not in run.real_runs_asked
+    p30_reply(run, "ok go ahead")
+    assert run.paused["handoff"]["kind"] == "real_run_hosts" and p30_system(run)[-1] == f"Not allowed. Reply exactly RUN {code}, or decline."
+    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok
+    p30_reply(run, f"run {code}")
+    assert run.hosts_ok == {"W-1": [A, B]} and nets(n) == [[A, B]] and run.paused["handoff"]["kind"] == "real_run"
+    ask = p30_system(run)[-1]
+    assert f"Network: it can reach only {A}, {B}. RUN {run.real_runs_asked['W-1']} approves them." in ask and "dry run on a copy: exit 0" in ask
+    assert not (real / "out.txt").exists()
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p30_receipts(run)[-1]
+    assert r["approved"] and r["exit"] == 0 and (real / "out.txt").read_text() == f"reached {A} {B}" and nets(n) == [[A, B], [A, B]]
+    assert r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": True} and r["dry_run"]["network"] == r["network"]
+    (real / "out.txt").unlink()
+    # a host that is not named stays blocked, also after the others were approved
+    run, w = made({"s.py": P30_NET}, attempts=j2rr.MAX_CHECK_ATTEMPTS, hosts=[A], reaches=[A, C])
+    run._ask_real_run({})
+    p30_reply(run, f"RUN {run.hosts_asked['W-1']}")
+    d = p30_receipts(run)[-1]
+    assert d["offered"] is False and d["dry_run"]["exit"] == 9 and f"blocked by the sandbox: {C}" in d["dry_run"]["stderr"]
+    assert d["dry_run"]["network"]["hosts"] == [A] and not run.paused and "its dry run on copies exited 9" in run.outcome
+    # a decline: nothing allowed, no dry run, not offered
+    n = len(j2rr.p30_log("sandbox"))
+    run, w = made({"s.py": P30_NET}, hosts=[A], reaches=[A])
+    run._ask_real_run({})
+    p30_reply(run, "decline")
+    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok and not run.paused and p30_receipts(run)[-1]["offered"] is False
+    assert f"the Requester declined letting it reach {A}" in run.outcome
+
+
+def test_p30_without_the_sandbox_the_hosts_are_shown_and_recorded_and_not_enforced(j2rr, rr_run):
+    made, real = rr_run
+    A, B = "api.example.com", "auth.example.com"
+    run, w = made({"s.py": P30_NET}, hosts=[A, B], reaches=[A, B])
+    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run" and not run.hosts_asked, "no hosts question without a sandbox"
+    assert f"Network: it says it reaches {A}, {B}. No sandbox is on, so this is not enforced." in p30_system(run)[-1]
+    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p30_receipts(run)[-1]
+    assert r["exit"] == 0 and r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": False}
+    assert r["dry_run"]["network"] == {"hosts": [A, B], "enforced": False}
+    run, w = made({"s.py": P30_GOOD})
+    run._ask_real_run({})
+    assert "Network: it names no hosts. No sandbox is on, so the network is not blocked." in p30_system(run)[-1]
 
 
 def test_p30_runenv_is_j2s_module_below_its_docstring():

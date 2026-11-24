@@ -3068,7 +3068,12 @@ Why: the project's promise is that its limit is about time spent working; counti
   the run pauses before the build's checks with the packages and versions listed, and the real-run card lists them again. The test rerun, the dry run and the
   real run use that environment's python and are not run without it; before the offer code checks that the script's top-level imports resolve there, and a
   missing module goes back to the builder. Receipts (`real_run`, and the new `env_install`, open JSON in the records catalogue) record the interpreter's path
-  and version, the requirements hash and the installed versions.
+  and version, the requirements hash and the installed versions. (6, added the same day on the owner's word: with the sandbox on, the dry run and the real
+  run had no network, so a real run that must call a service, Gmail for one, could never pass its dry run.) A real-run plan names the `hosts` its command
+  must reach, as data: plain host names only, checked by `real_run_problems`. With the sandbox on they are asked for before the dry run (`RUN <code>`), since
+  nothing is let through without approval; then they are the only hosts that dry run and real run can reach, and a plan that names none has no network. The
+  approval card lists them with or without a sandbox, and every real-run receipt and its dry run record `network: {hosts, enforced}`. The planning rules of a
+  form that can plan a real run gain one paragraph about the field (`REAL_RUN_HOSTS_RULE`): P30's one prompt change (D249).
 - Why: the run that prompted this offered a live step that had already failed on copies, lost the owner's approval to a reply that was not letter-exact, and
   ended ready with no mail read. Each rule closes one of those steps, and the receipts now say what happened without a rerun.
 - Rejected: one approval for the packages and the live run together (the packages must be installed before the test rerun and the dry run can run, and only a
@@ -3077,5 +3082,9 @@ Why: the project's promise is that its limit is about time spent working; counti
   ending the run when a reply is not exact (how the approval was lost); the system `python3` with `pip install --user` (it changes the owner's own Python);
   unpinned packages (the card could not say what would be installed); an environment per run (minutes of install each run, and Pulse runs daily); a new pause
   kind for the install question (the run-message schema and the page know `real_run`; the handoff says `env_install`); vendoring `j2_runenv.py` (J2's main is
-  ahead of the pinned commit, so the file is not in the extraction: it is Sutra's own module until a sync moves the pin).
+  ahead of the pinned commit, so the file is not in the extraction: it is Sutra's own module until a sync moves the pin); opening the whole network to an
+  approved real run (the approval would cover hosts nobody saw); a dry run without network followed by a real run with it (the dry run of a script that
+  reads mail would always fail, and never be offered); allowing the hosts for the dry run before any approval (nothing is allowed without it); wildcards or
+  addresses as hosts (the card could not say what is reached); editing the vendored `real_run.md` (the artifacts tree is a byte copy: the paragraph is in
+  `j2.py`).
 - Diagram: label "real run: only after a dry run that exits 0; approval never lost; packages in their own environment (P30)", pill on band:DEPARTMENT RUNTIME.
