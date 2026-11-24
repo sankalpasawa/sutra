@@ -6093,7 +6093,8 @@ class J2Run:
             facts = (r.get("goal") or {}).get("facts") if isinstance(r.get("goal"), dict) else None
             return json.dumps({**r, "email_updates": j2_send.asks_updates(said),
                                **({"exact_facts": [{"fact": f, "item": None} for f in facts]} if facts else {}),
-                               **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {})})
+                               **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {}),
+                               **({"item_checks": [mock_item_check(self.out)] * len(dw)} if dw and not llm.MOCK else {})})
         kinds_fmt = ('"item_kinds": [str] (one per done-when item, same order: the kind of work each item is, one of '
                      + json.dumps(dict(kinds), ensure_ascii=False) + '), ') if len(kinds) > 1 else ""
         kinds_fmt += ('"exact_facts": [{"fact": str, "item": int}] (facts from facts that must appear exactly as written, '
@@ -6263,6 +6264,15 @@ class J2Run:
             self._say("validator", f"Charter rejected: {why}.", "identity", stamp=False)
             return self._handoff("identity", kind="intake", force=True, attempt=2, change=change, mark=mark,
                                  feedback=f"The validator rejected the charter: {why}. Fix only that.")
+        have = self.goal.get("item_checks")      # P30 (D433): None for a charter without item_checks (FR-9)
+        miss = [c for c in self.goal.get("done_when") or [] if have is not None and c not in have]
+        if miss:
+            self._event("validator", "refused", f"charter, second time: {why}")
+            self.post("system", f"Charter rejected twice: {why}. Code stops: no work starts, Identity asks the Requester.")
+            return self._ask_user("I could not give a runnable check for these done-when items: "
+                                  + "; ".join(f"{self._no(c)}. {c}" for c in miss) + ". Work starts after your answer.",
+                                  [{"question": "How can each of these be checked, or should it be reworded or dropped?",
+                                    "options": []}], "info", handoff={"kind": "intake", "change": change, "mark": mark})
         self.stamped = True
         self.post("system", "Charter accepted after two attempts; the validator's concern is on record.")
         self._start_work(change, start)
