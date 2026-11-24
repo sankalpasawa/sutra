@@ -2123,5 +2123,10 @@
   "id": "D438",
   "label": "real run states expect; a dry run unlike it, or writing a read folder, goes back (P35)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D439",
+  "label": "team avatars: Classic default, Illustrated opt-in, kept per app profile; one ring + badge for activity",
+  "anchor": "band:EXPERIENCE"
  }
 ]
