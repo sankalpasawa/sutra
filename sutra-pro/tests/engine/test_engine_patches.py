@@ -2995,6 +2995,34 @@ def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, stat
     assert "W-1" not in run.real_runs_asked and not [m for m in run.chat if m.get("real_run")] and p31_receipts(run) == []
 
 
+# ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
+@pytest.mark.parametrize("stated", ["~/demo/rename-test", "{home}/demo/rename-test"])
+def test_p31_a_tilde_folder_and_its_expanded_form_both_register(sort_run, tmp_path, monkeypatch, stated):
+    monkeypatch.setenv("HOME", str(tmp_path))      # a made-up home: no real home path in any file
+    (tmp_path / "demo" / "rename-test").mkdir(parents=True)
+    make, _ = sort_run
+    run = make()
+    run.request = "Build sort_files.py with a test, then run it on ~/demo/rename-test"
+    folder = stated.format(home=tmp_path)
+    rr = {**sort_proposals(folder, fix=True)[0]["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+    reg, refused, _ = run._register([{**sort_proposals(folder, fix=True)[0], "real_run": rr}])
+    full = str(tmp_path / "demo" / "rename-test")
+    assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+    assert reg[0]["real_run"]["folder"] == full and reg[0]["real_run"]["command"] == ["python3", "sort_files.py", full]
+
+
+def test_p31_a_folder_the_brief_does_not_name_is_still_refused(sort_run, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "demo" / "other").mkdir(parents=True)
+    make, _ = sort_run
+    run = make()
+    run.request = "Build sort_files.py with a test, then run it on ~/demo/rename-test"
+    for folder in ("~/demo/other", str(tmp_path / "demo" / "other")):
+        rr = {**sort_proposals(folder, fix=True)[0]["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+        reg, refused, _ = run._register([{**sort_proposals(folder, fix=True)[0], "real_run": rr}])
+        assert reg == [] and len(refused) == 1 and "is not named in the brief" in str(refused[0]), refused
+
+
 # ---- P34 (D437): a build's output holds only what was built; the CLI's .claude folder is removed and never copied ---------------
 
 CLI_FOLDER = {".claude/.cc-writes/.keep": "", ".claude/note.json": "{}"}      # made up: the CLI's staging folder, and a file beside it

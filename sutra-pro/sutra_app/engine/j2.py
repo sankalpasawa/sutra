@@ -682,6 +682,7 @@ def real_run_problems(rr, source, runner, run_dir):
         return ["real_run must be an object: command, folder, reads, why"]
     if not runner:
         return ["this output's form names no runner, so nothing it builds can be run for real"]
+    rr = home_expanded(rr)      # P31 (D434, beta fix): ~/x is the folder it names (absolute; named in the brief either way)
     out, cmd, folder, reads = [], rr.get("command"), rr.get("folder"), rr.get("reads") or []
     if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x.strip() for x in cmd)):
         out.append("real_run command must be a list of strings (the program, then its arguments)")
@@ -700,7 +701,8 @@ def real_run_problems(rr, source, runner, run_dir):
             continue
         p = os.path.realpath(f)
         # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
-        if not re.search(re.escape(squash(f).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source):
+        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
+                   for g in {f, home_tilde(f)}):      # P31 (D434, beta fix): the brief may write it ~/x
             out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
         if not os.path.isdir(p):
             out.append(f"real_run folder {f} is not an existing folder")
@@ -721,6 +723,28 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
                        "points that argument at a copy, so what you build must take the folder from its arguments")
     return out
+
+
+def home_expanded(rr):
+    """P31 (D434, beta fix): rr with "~" and "~/..." in its folder, reads and command arguments (the value after "=" too)
+    written out as the home folder (os.path.expanduser): a brief says ~/x, and no shell expands it when code runs the
+    command. Anything else, and anything not a string, is left for real_run_problems to judge."""
+    if not isinstance(rr, dict):
+        return rr
+    ex = lambda v: os.path.expanduser(v) if isinstance(v, str) and (v == "~" or v.startswith("~/")) else v
+
+    def arg(x):
+        k, eq, v = x.partition("=") if isinstance(x, str) and "=" in x else ("", "", x)
+        return k + eq + ex(v)
+    return {**rr, "folder": ex(rr.get("folder")),
+            **({"reads": [ex(x) for x in rr["reads"]]} if isinstance(rr.get("reads"), list) else {}),
+            **({"command": [arg(x) for x in rr["command"]]} if isinstance(rr.get("command"), list) else {})}
+
+
+def home_tilde(f):
+    """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
+    h = os.path.expanduser("~").rstrip("/")
+    return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
 
 
 def real_folders(workflows):
@@ -9486,6 +9510,7 @@ class J2Run:
                 rel = self._out_rel()      # (file_sorter/sort_files.py): a run template finds the type they belong to
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
+                w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
                 bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
