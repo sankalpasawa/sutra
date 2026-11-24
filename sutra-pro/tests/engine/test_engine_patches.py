@@ -3221,9 +3221,9 @@ CAMPUS_DOCS = ("Design docs for Campus Notes. Users: students and teachers. Prob
                "Must-have features: upload notes, search notes. Constraints: free to use. Success: 50 uploads per week.")
 
 
-def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
-    """A PRD, HLD, LLD chain: the PRD's first item is blocked by its builder (a reason ending in ".", R4-3); the later
-    stages are clean. Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
+def blocked_prd(make_run, text=CAMPUS_DOCS):
+    """A mock design-document chain whose PRD builder sets the PRD's first item blocked (a reason ending in ".", R4-3); the
+    later stages are clean. Returns the finished run and the PRD's blocked item text."""
     run = make_run()
     run.budget, real_call, target = 400, run.call, {}
 
@@ -3240,14 +3240,48 @@ def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(mak
             return json.dumps(r) + text[end:]
         return real_call(fn, fmt, task, scripted, *a, **k)
     run.call = call
-    say(run, CAMPUS_DOCS)
-    assert run.stages == ["prd", "hld", "lld"] and target, (run.stages, target)
+    say(run, text)
+    assert target, run.stages
     prd = next(a for a in run.stage_archive if a["stage"] == "prd")
-    item = prd["goal"]["done_when"][target["item"] - 1]
+    return run, f"PRD done-when item {target['item']}: {prd['goal']['done_when'][target['item'] - 1].rstrip('.')}"
+
+
+def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
+    """Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
+    run, item = blocked_prd(make_run)
+    assert run.stages == ["prd", "hld", "lld"], run.stages
     out = str(run.outcome)
     assert out.startswith("Done with open items"), out
-    assert f"PRD done-when item {target['item']}: {item.rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert f"{item} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
     assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out      # R4-3
+
+
+def assert_names_blocked(out, item):
+    assert out.startswith("Done with open items") and not out.startswith("Done:"), out
+    assert f"{item} blocked: needs {WEBHOOK}." in out and out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
+
+
+def test_p30_a_chain_that_ends_in_a_send_names_an_earlier_stages_blocked_item(make_run, monkeypatch):
+    """review R5-1: the chain's last stage is a send deed, so _deeds_finished writes the outcome."""
+    monkeypatch.setenv("J2_TEST_EMAIL", "me@example.invalid")
+    monkeypatch.delenv("J2_SEND_MODE", raising=False)
+    run, item = blocked_prd(make_run, CAMPUS_DOCS + " When the documents are finished, send a test email to me with a "
+                                                    "short summary of the PRD.")
+    assert run.stages == ["prd", "hld", "lld", "send_email"] and run.deed_log, run.stages
+    assert_names_blocked(str(run.outcome), item)
+    assert run.deed_log[0]["note"] in run.outcome, run.outcome      # what the send did is still said
+
+
+@pytest.mark.parametrize("ending", ["_stages_finished", "_run_tpl_stage_end"])
+def test_p30_every_chain_ending_names_an_earlier_stages_blocked_item(make_run, ending):
+    """review R5-1: the stage gate's "leave out" (_stages_finished) and a run template's partial stage end write the outcome
+    themselves; at the end of the same chain each must still name the PRD's blocked item."""
+    run, item = blocked_prd(make_run)
+    run.outcome, run.turn = None, None
+    if ending == "_run_tpl_stage_end":
+        run.run_tpl = {"name": "Campus", "total": 2, "selected": ["x"]}
+    getattr(run, ending)()
+    assert_names_blocked(str(run.outcome), item)
 
 
 # ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------

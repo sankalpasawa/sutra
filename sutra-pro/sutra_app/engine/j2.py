@@ -4040,8 +4040,9 @@ class J2Run:
         self.post("identity", f"The workflows you selected are built ({len(t['selected'])} of {t['total']} in the run "
                               "template). The parts you did not select are not written.", done=True, to_user=True,
                   next="user")
-        self.outcome = (f"Done: the selected workflows of run template {t['name']} are built ({len(t['selected'])} of "
-                        f"{t['total']}); what was not selected is not built.")
+        done = (f"the selected workflows of run template {t['name']} are built ({len(t['selected'])} of {t['total']}); "
+                "what was not selected is not built.")
+        self.outcome = self._chain_done(f"Done: {done}", done)      # review R5-1: a stage's blocked item is named
         self.turn = None
 
     def _run_tpl_first(self, w, kind, section):
@@ -5643,9 +5644,9 @@ class J2Run:
         """The last stage left in the chain is done (the rest were left out): the same closing as a normal Done."""
         self.post("identity", "Your design documents are ready." if len(self.docset) > 1 else
                   "Your document is ready." if self.docset else self._page_ready(), done=True, to_user=True, next="user")
-        self.outcome = ("Done: the design documents are workable. Every done-when item, rubric item and necessary condition "
-                        "passes in each." if len(self.docset) > 1 else self.out["done"])
-        self.turn = None
+        self.outcome = self._chain_done("Done: the design documents are workable. Every done-when item, rubric item and "
+                                        "necessary condition passes in each." if len(self.docset) > 1 else self.out["done"])
+        self.turn = None      # review R5-1: a stage's blocked item is named
 
     def _begin_stage(self, kind, base):
         """Fresh working state for the next stage; the earlier stage's workflows and documents are kept for the record.
@@ -6042,8 +6043,9 @@ class J2Run:
                   done=True, to_user=True, next="user")
         base = ("Done: the design documents are workable. Every done-when item, rubric item and necessary condition "
                 "passes in each." if len(self.docset) > 1 else self.out["done"])
-        self.outcome = f"Done with open items: {words}" if any(x["pass"] is False or x.get("status") != "done" for x in self.deed_log) \
-            else f"{base} {words}"
+        failed = any(x["pass"] is False or x.get("status") != "done" for x in self.deed_log)
+        self.outcome = self._chain_done(f"Done with open items: {words}" if failed else f"{base} {words}",
+                                        words if failed else f"not every done-when item is built. {words}")      # review R5-1
         self.turn = None
 
     def _identity_intake(self, h):
@@ -10805,6 +10807,23 @@ class J2Run:
         (_next_stage), named by stage: _begin_stage resets the goal, audits and workflows, so the outcome reads them here."""
         return [f"{a['stage'].upper()} {line}" for a in self.stage_archive if a.get("stage") != self.stage_kind
                 for line in a.get("blocked") or []]
+
+    def _chain_blocked(self):
+        """P30 (D433, review R5-1): every blocked line a run's ending names when it writes the outcome itself: the earlier
+        stages' (_stage_blocked) and the current stage's, archived when the chain left it; in a run of one output, the
+        current goal's blocked items."""
+        if not self.stages:
+            blocked = set(self._blocked_items())
+            return self._open_items(skip=[t for t in (self.goal or {}).get("done_when") or [] if t not in blocked]) \
+                if blocked else []
+        return self._stage_blocked() + [f"{a['stage'].upper()} {line}" for a in self.stage_archive
+                                        if a.get("stage") == self.stage_kind for line in a.get("blocked") or []]
+
+    def _chain_done(self, done, head="not every done-when item is built."):
+        """P30 (D433, review R5-1): a chain ending's outcome: done as given while no blocked line is left, else "Done with
+        open items: <head> Still not workable: <every blocked line>." (_deeds_finished, _stages_finished, _run_tpl_stage_end)."""
+        lines = self._chain_blocked()
+        return f"Done with open items: {head} Still not workable: {'; '.join(lines).rstrip('.')}." if lines else done
 
     def _run_item_check(self, text, chk, built, mech):
         """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the
