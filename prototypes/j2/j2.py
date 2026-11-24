@@ -3950,9 +3950,11 @@ class J2Run:
             return f"Stopped {why}: nothing was built."
         fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
         fails = self.open_docs + fails + self._real_run_pending()
-        if not fails:
+        live = self._live_step_note()      # a planned real run that did not run and pass: never "Done:"
+        if not fails and not live:
             return self.out["done"]
-        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
+        return (f"Done with open items: shipped as is {why}." + (f" {live}" if live else "")
+                + (f" Still not workable: {'; '.join(fails)}." if fails else ""))
 
     def _accept_open(self):
         """The Requester finished with design checks, conditions or done-when items still failing: they are accepted, so
@@ -5250,6 +5252,26 @@ class J2Run:
         return [f"done-when item {self._no(t)}: {t} (its real run has not run)"
                 for t in dict.fromkeys(self._real_run_items(pending=True))]
 
+    def _real_run_open(self):
+        """[(workflow id, why)]: every planned real run that has not run and passed, with why in plain words: it
+        waits for the Requester, was declined, could not be offered, ran and failed, or its workflow never finished.
+        While this is not empty the run never ends "Done:" or ready (_goal_done, _ship_outcome)."""
+        out = []
+        for w in self.workflows:
+            if not w.get("real_run") or w["status"] == "refused" or self.real_runs_done.get(w["id"]) is True:
+                continue
+            out.append((w["id"], self.real_runs_why.get(w["id"]) or (
+                "did not run: it waits for the Requester's approval" if w["id"] in self.real_runs_asked else
+                f"did not run: its workflow is {w['status']}, not done" if w["status"] != "done" else
+                "did not run: it was not asked for")))
+        return out
+
+    def _live_step_note(self):
+        """What the end of a run says while a planned real run is open ("" when none is): that the live step is not
+        done, and why, per workflow."""
+        rows = self._real_run_open()
+        return ("The live step is not done. " + " ".join(f"{i}'s real run {why}." for i, why in rows)) if rows else ""
+
     def _real_run_note(self):
         """Step 7, shown to Audit and Identity: who runs a planned real run and when, and what its receipts say."""
         nums = sorted(self._real_run_nums())
@@ -5281,6 +5303,7 @@ class J2Run:
                                     for f, x in dry["real_changed"].items())
                       + "\nThe run stops here: nothing else is run. Check these files.", warning=True, real_run=w["id"])
             self.real_runs_done[w["id"]] = False
+            self.real_runs_why[w["id"]] = "did not run: its dry run changed the Requester's real folders, so the run stopped"
             with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps({"type": "real_run", "workflow": w["id"], **rr, "code": code, "approved": False,
                                     "ran": False, "exit": None, "evidence": dry["evidence"],
@@ -6205,7 +6228,9 @@ class J2Run:
             self.post("system", f"The {self.out['noun']} is workable: every check passes.")
             if self._next_stage():
                 return
-        self.post("identity", ("We're finished. Kept as they were: " + "; ".join(self.open_docs) + "." if self.open_docs else
+        live = self._live_step_note()      # a planned real run that did not run and pass: said plainly, never "ready"
+        self.post("identity", (f"The build is finished, but it is not ready. {live}" if live else
+                               "We're finished. Kept as they were: " + "; ".join(self.open_docs) + "." if self.open_docs else
                                "Your design documents are ready." if self.docset and not is_page(self.stage_kind) and
                                len(self.docset) > 1 else
                                r.get("to_requester") or r.get("say") or ("Your document is ready." if self.doc else
@@ -6217,10 +6242,10 @@ class J2Run:
                         else self.out["done"])
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
-        if self.audits and (fails := workable(self.audits[-1]) + self._real_run_pending()) and \
-                (self.real_runs_done or self._real_run_pending()):    # step 7: workable only after an approved run passed
-            self.outcome = (f"Done with open items: the real run {'did not pass' if self.real_runs_done else 'has not run'}."
-                            f" Still not workable: {'; '.join(fails)}.")
+        fails = (workable(self.audits[-1]) if self.audits else []) + self._real_run_pending()
+        if live or (fails and self.real_runs_done):    # step 7: workable only after every planned real run ran and passed
+            self.outcome = (f"Done with open items: {live or 'the real run passed, other items did not.'}"
+                            + (f" Still not workable: {'; '.join(fails)}." if fails else ""))
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
