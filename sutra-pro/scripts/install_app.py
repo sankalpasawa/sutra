@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Sutra Pro on this Mac: a BETA built from this working tree, or a published RELEASE (D242).
+"""Install Sutra Pro on this Mac: a BETA built from this working tree, or a published RELEASE (D242). On a Windows x64 PC: the BETA only (D432).
 
     scripts/py scripts/install_app.py beta              build "Sutra Pro Beta" from this tree, prove it, install it beside the stable app, open it
     scripts/py scripts/install_app.py release [TAG]     download a published release, check its checksum, replace "Sutra Pro", reinstall the command
@@ -29,6 +29,11 @@ release  the DMG of this Mac's architecture and its .sha256 are downloaded from 
 A running app is never quit while it is working: an app whose server has a child process (an engine run, a model call of a chat turn) is busy, the install
 stops with exit status 3 and says what is running; --force quits it anyway. Nothing is ever killed with SIGKILL: an app that does not quit within a
 minute stops the install (exit 1) and the owner quits it.
+
+Windows (D432): `beta` builds the folder "Sutra Pro Beta" (Sutra Pro Beta.exe, resources/python, resources/build-info.json, where its facts come from),
+does not sign it, reads the processes from PowerShell's process list, closes a running idle beta through its window (`taskkill /PID`, never `/F`), copies the
+folder in whole (beside, then swapped in), starts its exe, and writes a Start-menu entry. The default install folder is %LOCALAPPDATA%\\Programs.
+`beta --pull` first fetches and fast-forwards this checkout to its upstream (the beta's own checkout follows origin/main); it refuses a tree with changes.
 
 Exit status: 0 done; 1 a step failed (one `error:` line); 2 bad command line; 3 the app is busy. Python 3.11 (scripts/py) and the standard library; `beta` also uses
 scripts/build_desktop_app.py, and needs node (22 or newer) and uv.

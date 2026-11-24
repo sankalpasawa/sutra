@@ -32,8 +32,10 @@ two places (D242). Everything about the choice is in [docs/RELEASE.md](docs/RELE
 ## After you install the beta, tell the owner
 
 The version and the commit it was built from (`Sutra Pro Beta 0.6.1 beta 1a2b3c4`), that it is open beside Sutra Pro and keeps its data in `~/.sutra-pro-beta`, and
-what to try. The build takes a few minutes the first time (Electron, the Python inside the app) and then less. The beta only exists on a Mac: on any other machine
-(CI, a cloud session, Linux, Windows) say that you could not install one, and why. Do not hunt for a way around it.
+what to try. The build takes a few minutes the first time (Electron, the Python inside the app) and then less. The beta exists on a Mac and on a Windows x64 PC
+(D432: there it is the folder `%LOCALAPPDATA%\Programs\Sutra Pro Beta`, or `--install-dir`, with a Start-menu entry). On any other machine (CI, a cloud
+session, Linux) say that you could not install one, and why. Do not hunt for a way around it. On Windows the owner keeps a checkout of its own that follows
+`origin/main` and updates the beta with `scripts/py scripts/install_app.py beta --pull`.
 
 ## Rules that do not bend
 

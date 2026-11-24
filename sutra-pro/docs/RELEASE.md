@@ -45,7 +45,17 @@ The two share no name a second copy could collide on (`desktop/src/channels.json
 side by side, each with its own server on the first free port from 8780 and its own single-instance lock. A build's channel is written into the `package.json` inside
 the app when it is packaged (`node scripts/package.mjs ... --channel beta`) and is read from nowhere else; there is no setting and no environment variable that
 makes a stable app use the beta's data folder. A beta never checks for updates (Check for Updates says so); its Settings page still shows the automatic-check
-switch, which does nothing there. The beta is a Mac app: Windows and Linux have none.
+switch, which does nothing there. Linux has no beta.
+
+**On Windows (D432)** the beta is the folder `Sutra Pro Beta` (holding `Sutra Pro Beta.exe`) in `%LOCALAPPDATA%\Programs`, or in `--install-dir`, beside
+the installed Sutra Pro, with a Start-menu entry and its own icon (`assets/icon/sutra-pro-beta-windows.ico`). It is not signed and has no installer. It is
+closed the way a person closes it (the window's own close, `taskkill /PID` without `/F`, which stops its server), and only when it is idle. To follow `main`
+without waiting for releases, keep a checkout that does nothing else, on a branch whose upstream is `origin/main`, and update the beta from it:
+
+    scripts/py scripts/install_app.py beta --pull --install-dir "D:\Programs"   # fetch, fast-forward to origin/main, build, prove, install, open
+
+`--pull` refuses a checkout with changes or without an upstream before anything is built. `release` installs on a Mac only; on Windows the stable app comes
+from the release's Setup .exe.
 
 The beta's data folder starts empty (a fresh first run, which is what a change to the first run needs). To try a change against a copy of the real data, which only the
 owner decides: quit both apps, remove `~/.sutra-pro-beta`, run `cp -R ~/.sutra-pro ~/.sutra-pro-beta`, and open the beta. The stable folder is only read; the beta works on

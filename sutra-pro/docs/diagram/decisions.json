@@ -2088,5 +2088,10 @@
   "id": "D431",
   "label": "same build failure twice stops (P28); no ship/done with nothing built (P29)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D432",
+  "label": "beta on Windows too, built from a checkout of main",
+  "anchor": "Desktop app · Electron window"
  }
 ]
