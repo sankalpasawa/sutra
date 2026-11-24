@@ -69,6 +69,8 @@ your own, drop `map_tab,left_bar,map_shapes` from the list.
 | `# J2_TOOL_LOG_CHARS=2000` | 2000 | Longest string kept as text in a call's tool log; a longer one is kept as its length and sha256 |
 | `# J2_SANDBOX=0` | off | `1` turns the sandbox on: the Claude CLI's sandbox for builders' commands, and `J2_SANDBOX_CMD` for the test rerun and a real run. Off, they run as plain processes and can change files outside their folder; the server says so at startup |
 | `# J2_SANDBOX_CMD=srt` | `srt` | The sandbox command, used only with `J2_SANDBOX=1` |
+| `# J2_RUN_PYTHON=` | the first `python3.13`, `3.12`, `3.11` or `3.10` found | The Python that makes the environment of a built script that has a `requirements.txt`. Its packages are installed there, from PyPI only, after you reply `RUN <code>`; the test rerun, the dry run and a run for real then use that environment's Python. With none found, such a script is not run for real, and the run says why |
+| `# J2_DATA_DIR=~/.j2` | `~/.j2` | Where those environments are kept (`envs/`, one per `requirements.txt`, reused by later runs). Outside the repo and `runs/` |
 
 The commented lines show the default; uncomment one only to change it.
 
