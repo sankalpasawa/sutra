@@ -62,6 +62,7 @@ import j2_check
 import j2_map
 import j2_realization
 import j2_rules
+import j2_runenv
 import j2_schema
 import j2_send
 import j2_studio
@@ -514,12 +515,28 @@ def sandbox_on():
 SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
 
 
-def sandbox_settings(folder):
+def sandbox_settings(folder, reads=()):
     """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
-    folder, writes only in the folder."""
+    folder (and reads: the environment its python comes from), writes only in the folder."""
     return {"network": {"allowedDomains": [], "deniedDomains": []},
-            "filesystem": {"denyRead": ["~"], "allowRead": [folder], "allowWrite": [folder],
+            "filesystem": {"denyRead": ["~"], "allowRead": [folder] + list(reads), "allowWrite": [folder],
                            "denyWrite": list(SANDBOX_DENY_WRITE)}}
+
+
+def run_command(command, env):
+    """A command as code runs it: with an environment (j2_runenv.plan, ready), its python in place of the form's
+    python; without one, as written."""
+    return [env["python"]] + list(command[1:]) if env and j2_runenv.is_python(command[0]) else list(command)
+
+
+def run_facts(command, env):
+    """What a receipt records of the python a command ran with: an environment's interpreter path and version, its
+    requirements hash and its installed packages; without one, the interpreter's path and version. None when the
+    command's program is not a python."""
+    if env:
+        return j2_runenv.facts(env)
+    d = j2_runenv.describe(command[0]) if command and j2_runenv.is_python(command[0]) else None
+    return {"python": d["python"], "python_version": d["python_version"]} if d else None
 
 
 def _repo_root():
@@ -605,12 +622,13 @@ def real_paths_in(root, folders):
     return out
 
 
-def real_run(out_dir, rr, timeout):
+def real_run(out_dir, rr, timeout, env=None):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
-    and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
-    "evidence"}."""
+    and the receipt are the same either way. env: the built folder's environment (its requirements.txt, installed):
+    its python runs the command, never the form's. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last
+    2,000 characters of each), "env" (run_facts), "seconds", "sha256" of the built files it names, "evidence"}."""
     cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
@@ -624,20 +642,23 @@ def real_run(out_dir, rr, timeout):
                 shas[x] = hashlib.sha256(f.read()).hexdigest()
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
     t0 = time.time()
+    command, facts = run_command(rr["command"], env), run_facts(rr["command"], env)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
-                                      "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
+                                      "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
-        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
+        return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),
+                "stderr": j2_runenv.tail(p.stderr), "env": facts, "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
-    except subprocess.TimeoutExpired:
-        return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
+    except subprocess.TimeoutExpired as e:
+        return {"ran": True, "exit": None, "stdout": j2_runenv.tail(e.stdout), "stderr": j2_runenv.tail(e.stderr),
+                "env": facts, "sha256": shas, "seconds": round(time.time() - t0, 2),
                 "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
                             "and was stopped"}
     finally:
@@ -661,13 +682,14 @@ def _tree_diff(before, after):
             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
 
 
-def real_run_dry(out_dir, rr, timeout):
+def real_run_dry(out_dir, rr, timeout, env=None):
     """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
     "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
     "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
-    copy's counts. "command": the command as run, on the copies' paths."""
+    copy's counts. "command": the command as run, on the copies' paths. env: as for real_run; its "stdout", "stderr"
+    (the last 2,000 characters of each) and "env" are kept, whatever the exit code."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
@@ -687,26 +709,28 @@ def real_run_dry(out_dir, rr, timeout):
             return k + eq + v
         before = _tree(copies[0])
         cmd = [moved(x) for x in rr["command"]]
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
+        kept = {k: res.get(k) for k in ("stdout", "stderr", "env")}
         if real:
-            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": {},
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def sandbox_rerun(folder, runner, target, timeout):
+def sandbox_rerun(folder, runner, target, timeout, env=None):
     """Run a builder's test again, independently, on a copy of the folder made beside it in the run folder (the test may
     write; the folder itself is never changed), with the form's runner ({target} = the test file) and the time limit.
     With J2_SANDBOX=1 inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt, with sandbox_settings); without it (the
-    default) as a plain process. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
-    "output" (the end of it), "evidence"}."""
+    default) as a plain process. env: the folder's environment (its requirements.txt, installed): its python runs the
+    test, never the form's. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
+    "output" (the end of it), "stdout" and "stderr" (the last 2,000 characters of each), "evidence"}."""
     cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     path = os.path.realpath(os.path.join(folder, str(target or "")))
     if sandbox_on() and not cmd:
@@ -716,6 +740,7 @@ def sandbox_rerun(folder, runner, target, timeout):
     with open(path, "rb") as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+    as_run = run_command(argv, env)
     parent = os.path.dirname(os.path.realpath(folder))
     copy = tempfile.mkdtemp(prefix=".rerun-", dir=parent)
     fd, conf = tempfile.mkstemp(prefix=".rerun-", suffix=".json", dir=parent)
@@ -723,14 +748,15 @@ def sandbox_rerun(folder, runner, target, timeout):
     try:
         shutil.copytree(folder, copy, dirs_exist_ok=True, symlinks=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(sandbox_settings(copy), f)
-        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
+            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
+        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
         p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = "in the sandbox" if cmd else "on a copy, without a sandbox"
         return {"pass": p.returncode == 0, "exit": p.returncode, "sha256": sha, "seconds": round(time.time() - t0, 2),
-                "output": out, "evidence": f"{shlex.join(argv)} exited {p.returncode} {where} ({last[:160]})"}
+                "output": out, "stdout": j2_runenv.tail(p.stdout), "stderr": j2_runenv.tail(p.stderr),
+                "evidence": f"{shlex.join(argv)} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired:
         return {"pass": False, "exit": None, "sha256": sha, "evidence": f"{shlex.join(argv)} ran past {timeout:g}s "
                                                                          + ("in the sandbox" if cmd else "without a sandbox")
