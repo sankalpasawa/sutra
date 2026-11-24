@@ -19,7 +19,7 @@ bundled interpreter, which a foreign system or architecture cannot do. The steps
 
 Layout of `<out>/Sutra Pro.app`:  Contents/Resources/python/ (the interpreter and the app), Contents/Resources/build-info.json
 
-`--channel beta` (a Mac only) builds "Sutra Pro Beta.app" instead (D242): another name, another bundle id, another data folder and no automatic update, so it
+`--channel beta` builds "Sutra Pro Beta.app" (or the Windows folder "Sutra Pro Beta") instead (D242, D432): another name, another bundle id, another data folder and no automatic update, so it
 installs and runs beside the stable app. The identity of each channel is desktop/src/channels.json; `--build-label` is what the beta's About box and
 build-info.json say about the tree it was built from.
 Layout of `<out>/Sutra Pro/`:     `Sutra Pro.exe`, resources/python/, resources/build-info.json (what the installer copies and the zip holds)
@@ -204,15 +204,13 @@ def check_links(root: Path) -> None:
 def build_app(*, wheel: Path, target: str, out: Path, python_archive: Optional[Path] = None, cache_dir: Optional[Path] = None,
               fetch: Fetch = fetch_url, skip_npm: bool = False, package: Optional[Packager] = None, allow_foreign_host: bool = False,
               channel: str = "stable", build_label: str = "") -> Path:
-    """Build `<out>/Sutra Pro.app` (or `<out>/Sutra Pro`) and return its path; the beta channel builds `<out>/Sutra Pro Beta.app`. Replaces one of that
+    """Build `<out>/Sutra Pro.app` (or `<out>/Sutra Pro`) and return its path; the beta channel builds `<out>/Sutra Pro Beta.app` (or `<out>/Sutra Pro Beta`). Replaces one of that
     name already in `out`; touches nothing else. `package` replaces the Electron packager (tests)."""
     if target not in TARGETS:
         raise BuildError(f"unsupported target {target!r} ({', '.join(TARGETS)})")
     if channel not in CHANNELS:
         raise BuildError(f"unsupported channel {channel!r} ({', '.join(CHANNELS)})")
     spec = TARGETS[target]
-    if channel != "stable" and spec.windows:
-        raise BuildError(f"the {channel} app is a Mac app: it is built and installed on one Mac, not for {target}")
     identity = CHANNELS[channel]
     if not allow_foreign_host and not host_can_build(spec):
         raise BuildError(f"this machine cannot build {target}: the wheel is installed by running the bundled interpreter, so build on a "

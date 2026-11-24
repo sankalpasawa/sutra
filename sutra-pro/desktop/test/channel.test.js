@@ -27,7 +27,7 @@ test('there are two channels, and the stable one is what every release has alway
 });
 
 test('the beta shares no name with the stable app, so both can be installed and open together', () => {
-  for (const field of ['appName', 'appId', 'packageName', 'dataDirName', 'iconName', 'icns']) {   // the Windows files (ico, windowsIconName) may be shared: a beta is never built for Windows
+  for (const field of ['appName', 'appId', 'packageName', 'dataDirName', 'iconName', 'icns', 'ico', 'windowsIconName']) {   // a beta is built for Windows too (D432)
     assert.notEqual(CHANNELS.beta[field], CHANNELS.stable[field], field);
   }
   assert.equal(CHANNELS.beta.updates, false, 'a beta never updates itself');
@@ -36,9 +36,7 @@ test('the beta shares no name with the stable app, so both can be installed and 
     'neither data folder is inside the other');
   for (const channel of Object.values(CHANNELS)) {
     assert.ok(fs.existsSync(path.join(icons, channel.iconName)) && fs.existsSync(path.join(icons, channel.icns)), `${channel.id} has its icons`);
-    if (channel.id === 'stable') {                     // the Windows files exist for the app that is built for Windows (a beta is a Mac app)
-      assert.ok(fs.existsSync(path.join(icons, channel.windowsIconName)) && fs.existsSync(path.join(icons, channel.ico)), 'the stable app has its Windows icons');
-    }
+    assert.ok(fs.existsSync(path.join(icons, channel.windowsIconName)) && fs.existsSync(path.join(icons, channel.ico)), `${channel.id} has its Windows icons`);
   }
 });
 
@@ -120,10 +118,13 @@ test('the packager builds the beta as its own app: name, id, icons, and a packag
   assert.equal(packagerOptions({ platform: 'darwin', arch: 'x64', out: 'o', version: '1.2.3', channel: 'stable' }).name, 'Sutra Pro');
 });
 
-test('only a Mac gets a beta, and only a channel that exists', async () => {
+test('a beta is built for Windows too, with its own icons, and only a channel that exists is built', async () => {
   const { packagerOptions } = await load();
   const ok = { platform: 'darwin', arch: 'arm64', out: 'o', version: '1.2.3' };
-  assert.throws(() => packagerOptions({ ...ok, platform: 'win32', arch: 'x64', channel: 'beta' }), /Mac app/);
+  const windows = packagerOptions({ ...ok, platform: 'win32', arch: 'x64', channel: 'beta' });     // D432
+  assert.equal(windows.name, 'Sutra Pro Beta');
+  assert.ok(windows.icon.endsWith('sutra-pro-beta-windows.ico') && fs.existsSync(windows.icon), windows.icon);
+  assert.deepEqual(windows.extraResource.map((file) => path.basename(file)), ['sutra-pro-beta-windows-1024.png']);
   assert.throws(() => packagerOptions({ ...ok, channel: 'nightly' }), /stable or beta/);
   assert.throws(() => packagerOptions({ ...ok, channel: 'toString' }), /stable or beta/);
 });

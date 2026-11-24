@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Derive the icon of "Sutra Pro Beta" from the stable app's icon: the same picture with an orange corner band that says BETA (D242).
 
-    uv run --no-project --with pillow python scripts/make_beta_icon.py            # writes assets/icon/sutra-pro-beta-1024.png and sutra-pro-beta.icns
+    uv run --no-project --with pillow python scripts/make_beta_icon.py            # writes assets/icon/sutra-pro-beta-1024.png, sutra-pro-beta.icns and the
+                                                                                    # Windows pair sutra-pro-beta-windows-1024.png, sutra-pro-beta-windows.ico
     python scripts/make_beta_icon.py --check                                      # stdlib only: exit 1 when a committed file is not a sound beta icon
 
 Both apps can be installed and open on one Mac, so the Dock must tell them apart at a glance. Nothing else of the logo changes: the band is clipped to the
@@ -24,6 +25,11 @@ import make_icons as stable                                                   # 
 OUT = stable.OUT
 BETA_PNG = OUT / "sutra-pro-beta-1024.png"
 BETA_ICNS = OUT / "sutra-pro-beta.icns"
+WINDOWS_PNG = OUT / "sutra-pro-windows-1024.png"                              # the Windows app's own picture (hand-made, see make_icons.py)
+BETA_WINDOWS_PNG = OUT / "sutra-pro-beta-windows-1024.png"
+BETA_WINDOWS_ICO = OUT / "sutra-pro-beta-windows.ico"
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+ICO_MAGIC = bytes((0, 0, 1, 0))                                               # reserved 0, type 1 (an icon)
 # the PNG chunks of an .icns: type -> pixel size (what `iconutil` writes for an iconset, plus the three small ones older systems read)
 CHUNKS = {"icp4": 16, "icp5": 32, "icp6": 64, "ic07": 128, "ic08": 256, "ic09": 512, "ic10": 1024,
           "ic11": 32, "ic12": 64, "ic13": 256, "ic14": 512}
@@ -75,7 +81,11 @@ def derive() -> dict[Path, bytes]:
         return out.getvalue()
 
     png = png_at(1024)
-    return {BETA_PNG: png, BETA_ICNS: icns_of(png_at)}
+    windows = band_image(Image.open(WINDOWS_PNG).convert("RGBA"))             # the Windows beta (D432): the band over the Windows picture
+    windows_png, ico = BytesIO(), BytesIO()
+    windows.save(windows_png, "PNG", optimize=True)
+    windows.save(ico, "ICO", sizes=[(size, size) for size in ICO_SIZES])
+    return {BETA_PNG: png, BETA_ICNS: icns_of(png_at), BETA_WINDOWS_PNG: windows_png.getvalue(), BETA_WINDOWS_ICO: ico.getvalue()}
 
 
 def problems(png_path: Path = BETA_PNG, icns_path: Path = BETA_ICNS) -> list[str]:
@@ -104,6 +114,15 @@ def problems(png_path: Path = BETA_PNG, icns_path: Path = BETA_ICNS) -> list[str
             found.append(f"the {kind} chunk of {icns_path.name} is not a {size} px PNG")
     if png == stable.MASTER_PNG.read_bytes():
         found.append("the beta icon is the stable icon: nothing tells the two apps apart in the Dock")
+    if png_path == BETA_PNG:                                                  # the committed set: the Windows beta icon as well
+        for path in (BETA_WINDOWS_PNG, BETA_WINDOWS_ICO):
+            if not path.is_file():
+                found.append(f"{path.name} is missing: run scripts/make_beta_icon.py")
+        if not found:
+            if BETA_WINDOWS_ICO.read_bytes()[:4] != ICO_MAGIC:
+                found.append(f"{BETA_WINDOWS_ICO.name} is not an .ico file")
+            if BETA_WINDOWS_PNG.read_bytes() == WINDOWS_PNG.read_bytes():
+                found.append("the Windows beta icon is the Windows stable icon: nothing tells the two apps apart in the taskbar")
     return found
 
 

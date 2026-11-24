@@ -19,8 +19,8 @@
     "dataDirName": ".sutra-pro-beta",
     "iconName": "sutra-pro-beta-1024.png",
     "icns": "sutra-pro-beta.icns",
-    "ico": "sutra-pro-windows.ico",
-    "windowsIconName": "sutra-pro-windows-1024.png",
+    "ico": "sutra-pro-beta-windows.ico",
+    "windowsIconName": "sutra-pro-beta-windows-1024.png",
     "updates": false
   }
 }

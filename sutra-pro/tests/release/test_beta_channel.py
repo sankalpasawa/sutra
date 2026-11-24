@@ -46,11 +46,25 @@ def test_a_release_build_is_what_it_always_was_and_a_beta_replaces_only_a_beta(w
     assert beta != stable
 
 
-def test_a_beta_is_a_mac_app_and_a_channel_must_exist(work):
-    with pytest.raises(BuildError, match="Mac app"):
-        build(work, "win-x64", channel="beta")
+def test_a_channel_must_exist(work):
     with pytest.raises(BuildError, match="unsupported channel"):
         build(work, "mac-arm64", channel="nightly")
+
+
+@POSIX_ONLY
+def test_a_beta_builds_for_windows_too_as_a_folder_of_its_own_name(work):
+    def package(target, stage, version):
+        app = stage / "Sutra Pro Beta-win32-x64"
+        (app / "resources").mkdir(parents=True)
+        (app / "Sutra Pro Beta.exe").write_bytes(b"MZ")
+        return app
+
+    app = build(work, "win-x64", channel="beta", build_label="1a2b3c4", package=package)
+    assert app == work / "out" / "Sutra Pro Beta"
+    assert (app / "Sutra Pro Beta.exe").is_file()
+    info = json.loads((app / "resources" / "build-info.json").read_text())
+    assert info["app"] == "Sutra Pro Beta" and info["bundle_id"] == "os.sutra.pro.beta" and info["channel"] == "beta" and info["build"] == "1a2b3c4"
+    assert info["target"] == "win-x64"
 
 
 def test_the_packager_is_told_the_channel_only_for_a_beta(tmp_path, monkeypatch):
@@ -80,14 +94,26 @@ def test_the_proof_starts_the_program_the_packager_named_after_the_app(monkeypat
     assert prover.layout(Path("/x/Sutra Pro.app"))[0] == Path("/x/Sutra Pro.app/Contents/MacOS/Sutra Pro")
 
 
+def test_the_windows_proof_starts_the_exe_its_build_info_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(prover, "WINDOWS", True)
+    installed = tmp_path / "installed"                                           # an installed folder need not carry the app's name
+    (installed / "resources").mkdir(parents=True)
+    assert prover.layout(installed) == (installed / "Sutra Pro.exe", installed / "resources" / "python" / "python.exe"), "no build-info: the stable app"
+    (installed / "resources" / "build-info.json").write_text(json.dumps({"app": "Sutra Pro Beta"}), encoding="utf-8")
+    assert prover.layout(installed)[0] == installed / "Sutra Pro Beta.exe"
+
+
 # ================================================================ the icon
 
 def test_the_committed_beta_icon_is_sound_and_is_not_the_stable_icon():
     assert make_beta_icon.problems() == []
     icons = ROOT / "assets" / "icon"
     assert (icons / "sutra-pro-beta-1024.png").read_bytes() != (icons / "sutra-pro-1024.png").read_bytes()
-    for name in (CHANNELS["beta"]["iconName"], CHANNELS["beta"]["icns"]):
+    for name in (CHANNELS["beta"]["iconName"], CHANNELS["beta"]["icns"], CHANNELS["beta"]["ico"], CHANNELS["beta"]["windowsIconName"]):
         assert (icons / name).is_file(), name
+    for field in ("ico", "windowsIconName"):                                     # the Windows beta has its own icon too (the orange band)
+        assert CHANNELS["beta"][field] != CHANNELS["stable"][field], field
+        assert (icons / CHANNELS["beta"][field]).read_bytes() != (icons / CHANNELS["stable"][field]).read_bytes(), field
 
 
 def test_a_broken_beta_icon_is_found(tmp_path):

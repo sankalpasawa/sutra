@@ -48,7 +48,11 @@ WINDOWS = sys.platform == "win32"
 def layout(app: Path) -> tuple[Path, Path]:
     """(the program a person starts, the interpreter inside the app) of a Mac app or a Windows folder."""
     if WINDOWS:
-        return app / "Sutra Pro.exe", app / "resources" / "python" / "python.exe"
+        try:                                                                       # an installed folder need not carry the app's name: build-info.json does
+            name = json.loads((app / "resources" / "build-info.json").read_text(encoding="utf-8")).get("app") or "Sutra Pro"
+        except (OSError, ValueError):
+            name = "Sutra Pro"
+        return app / f"{name}.exe", app / "resources" / "python" / "python.exe"
     program = app.name[:-4] if app.name.endswith(".app") else app.name              # Electron names the program after the app: "Sutra Pro" or "Sutra Pro Beta"
     return app / "Contents" / "MacOS" / program, app / "Contents" / "Resources" / "python" / "bin" / "python3"
 

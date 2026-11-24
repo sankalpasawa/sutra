@@ -36,7 +36,6 @@ export function packagerOptions({ platform, arch, out, version, channel = 'stabl
   if (!['arm64', 'x64'].includes(arch)) throw new Error(`arch must be arm64 or x64, not ${arch}`);
   if (platform === 'win32' && arch !== 'x64') throw new Error('the Windows app is x64 only');
   if (!VERSION.test(version || '')) throw new Error(`version must be X.Y.Z, not ${version}`);
-  if (identity.id !== 'stable' && platform !== 'darwin') throw new Error(`the ${identity.id} app is a Mac app: it is built and installed on one Mac`);
   const options = {
     dir: root,
     out: path.resolve(out),
