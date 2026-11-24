@@ -243,7 +243,9 @@ ITEM_STATUSES = ("built", "blocked", "not_built")
 BEHAVIOUR_RULE = ("\nEvery behaviour the brief requires (each thing it must do, when it must do it, and where its result goes) is "
                   "its own done-when item, besides any item the form asks for; one the charter can't hold goes in dropped_from_brief.")
 ITEM_STATUS_FMT = (', "item_status": [{"item": int (one of your items), "status": "built"|"blocked"|"not_built", '
-                   '"reason": str (blocked or not_built: what stops it)}] (one per item in your items)')
+                   '"reason": str (blocked: the fact or access it needs that you don\'t have; not_built: what stops it)}] (one per item '
+                   'in your items; an item whose action you prepared but did not perform (e.g. a message written but never sent, '
+                   'for lack of access or credentials) is blocked with that reason, never built)')      # beta fix (c), D249
 ITEM_STATUS_SCHEMA = {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                                  "properties": {"item": {"type": "integer"},
                                                                 "status": {"type": "string", "enum": list(ITEM_STATUSES)},

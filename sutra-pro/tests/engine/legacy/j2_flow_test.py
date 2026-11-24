@@ -9077,7 +9077,12 @@ SAVED_RUNS_GOLDEN = {
 # origin/main 541e572c: outcomes, spend, the call count and order, every other workflow field and value, and the
 # documents (prd/hld/lld.md, documents.json) are identical to
 # {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}. P31 to P35 change none of them.
-DOC_RUN_GOLDEN = {"prd": "21389698fc4e", "design docs": "329d16437aaa", "docs then site": "ed6fa6e18d61"}      # Sutra P30 (D433)
+# Re-recorded 2026-11-24 (Sutra Pro P30 beta fix c, D433, D249) for one prompt text only: every builder's item_status format says
+# a blocked reason is the fact or access it needs, and an item whose action was prepared but not performed (a message
+# written but never sent) is blocked, never built. Compared field by field with the engine before it: outcomes, spend,
+# the call order, every workflow field, the documents and every user prompt are identical; only the builders' system
+# prompts differ, by that text. Before: {"prd": "21389698fc4e", "design docs": "329d16437aaa", "docs then site": "ed6fa6e18d61"}.
+DOC_RUN_GOLDEN = {"prd": "06aa6f78ed32", "design docs": "2e43c43f3eed", "docs then site": "a886b4154aec"}      # Sutra P30 (D433, beta fix c)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",

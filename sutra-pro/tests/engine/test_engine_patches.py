@@ -2475,6 +2475,27 @@ def test_p30_a_builder_sees_its_items_with_check_and_status(j2, make_run, monkey
                for w in run.workflows if w["status"] == "done" and w.get("covers_text"))
 
 
+PREPARED_NOT_PERFORMED = ("an item whose action you prepared but did not perform (e.g. a message written but never sent, "
+                          "for lack of access or credentials) is blocked with that reason, never built")
+
+
+def test_p30_a_prepared_but_not_performed_action_is_blocked_not_built(make_run, site_run, monkeypatch):
+    """Beta fix (c), plumbing only: every builder prompt carries the rule, and a scripted builder reply that follows it ends
+    blocked with its reason. Whether a live model follows the rule is not tested here."""
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn.startswith("W-"))
+    say(run, BREW_LAB)
+    built = [f for _, f, t in seen if "YOUR WORKFLOW: " in t]
+    assert built and all(PREPARED_NOT_PERFORMED in f for f in built)
+    morning_goal(site_run)
+    w = {"id": "W-2", "status": "done", "covers_text": [MORNING[1]]}
+    site_run.workflows = [w]
+    site_run._store_item_status(w, {"item_status": [{"item": 2, "status": "blocked",
+                                                     "reason": "the team channel's webhook address (the post is written, never sent)"}]})
+    assert w["item_status"] == {MORNING[1]: {"status": "blocked", "reason": "the team channel's webhook address (the post is written, never sent)"}}
+    assert site_run._blocked_items() == [MORNING[1]]
+
+
 def morning_goal(run, checks=True):
     run.goal = {"statement": "A morning file list", "done_when": list(MORNING), "charter_items": list(MORNING),
                 **({"item_checks": {t: {"type": "file-exists", "target": "index.html", "expect": True} for t in MORNING}} if checks else {})}
