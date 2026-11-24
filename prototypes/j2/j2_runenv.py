@@ -4,7 +4,8 @@ A built folder that holds a requirements.txt gets a virtual environment of its o
 copies and the real run all use that environment's python, never the system one. Nothing here asks the Requester:
 j2.py asks (RUN <code>) and calls install() only after the approval.
 
-  interpreter()        J2_RUN_PYTHON when it is set, else the first python3.13, 3.12, 3.11 or 3.10 found
+  interpreter()        J2_RUN_PYTHON when it is set, else the first python3.13, 3.12, 3.11 or 3.10 found (on the
+                       PATH, then the interpreter this engine itself runs on when it is one of those versions)
   plan(folder)         None without a requirements.txt; else its hash, its packages, the interpreter, the cached
                        environment (ready or not) and what stops it ("problem", or "bad" lines for the builder)
   install(plan, ...)   makes the environment and installs the packages, from PyPI only
@@ -83,6 +84,9 @@ def interpreter():
     for v in VERSIONS:
         if d := describe("python" + v):
             return d, ""
+    own = describe(sys.executable) if sys.executable else None      # the interpreter this engine runs on, when it is one of them
+    if own and own["python_version"].rsplit(".", 1)[0] in VERSIONS:
+        return own, ""
     return None, ("no Python " + ", ".join(VERSIONS[::-1]) + " was found on this computer to make its environment "
                   "(install one, or set J2_RUN_PYTHON to one)")
 
