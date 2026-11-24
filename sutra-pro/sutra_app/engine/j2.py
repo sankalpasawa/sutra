@@ -10807,9 +10807,12 @@ class J2Run:
 
     def _stage_blocked(self):
         """P30 (D433, review R4-1): the blocked lines of each earlier stage of a design-document chain, kept when it was left
-        (_next_stage), named by stage: _begin_stage resets the goal, audits and workflows, so the outcome reads them here."""
-        return [f"{a['stage'].upper()} {line}" for a in self.stage_archive if a.get("stage") != self.stage_kind
-                for line in a.get("blocked") or []]
+        (_next_stage), named by stage: _begin_stage resets the goal, audits and workflows, so the outcome reads them here.
+        A follow-up continues the last stage only, so an earlier stage's line ends with "Start a new run with it to finish."
+        in place of _open_items' own hint (review R5-3: code's fixed text, swapped as a suffix)."""
+        hint = " Send it as a follow-up to finish."
+        return [f"{a['stage'].upper()} {line[:-len(hint)] + ' Start a new run with it to finish.' if line.endswith(hint) else line}"
+                for a in self.stage_archive if a.get("stage") != self.stage_kind for line in a.get("blocked") or []]
 
     def _chain_blocked(self):
         """P30 (D433, review R5-1): every blocked line a run's ending names when it writes the outcome itself: the earlier

@@ -3301,29 +3301,34 @@ CAMPUS_DOCS = ("Design docs for Campus Notes. Users: students and teachers. Prob
                "Must-have features: upload notes, search notes. Constraints: free to use. Success: 50 uploads per week.")
 
 
-def blocked_prd(make_run, text=CAMPUS_DOCS):
-    """A mock design-document chain whose PRD builder sets the PRD's first item blocked (a reason ending in ".", R4-3); the
-    later stages are clean. Returns the finished run and the PRD's blocked item text."""
+NEW_RUN = "Start a new run with it to finish."      # review R5-3: the hint of an earlier stage's blocked item
+
+
+def blocked_prd(make_run, text=CAMPUS_DOCS, stages=("prd",)):
+    """A mock design-document chain whose builders in the given stages set the stage's first item blocked (a reason ending
+    in ".", R4-3); the other stages are clean. Returns the finished run and the PRD's blocked line up to "blocked" (with
+    more stages, {stage: that line})."""
     run = make_run()
-    run.budget, real_call, target = 400, run.call, {}
+    run.budget, real_call, targets = 400, run.call, {}
 
     def call(fn, fmt, task, mock, *a, **k):
         def scripted():
             text = mock()      # a section builder's reply: its JSON, then the section's markdown
-            r, end = json.JSONDecoder().raw_decode(text) if run.stage_kind == "prd" and fn.startswith("W-") else (None, 0)
+            r, end = json.JSONDecoder().raw_decode(text) if run.stage_kind in stages and fn.startswith("W-") else (None, 0)
             if not isinstance(r, dict) or not r.get("item_status"):
                 return text
-            target.setdefault("item", r["item_status"][0]["item"])
+            target = targets.setdefault(run.stage_kind, r["item_status"][0]["item"])
             for s in r["item_status"]:
-                if s["item"] == target["item"]:
+                if s["item"] == target:
                     s.update(status="blocked", reason=f"{WEBHOOK}.")
             return json.dumps(r) + text[end:]
         return real_call(fn, fmt, task, scripted, *a, **k)
     run.call = call
     say(run, text)
-    assert target, run.stages
-    prd = next(a for a in run.stage_archive if a["stage"] == "prd")
-    return run, f"PRD done-when item {target['item']}: {prd['goal']['done_when'][target['item'] - 1].rstrip('.')}"
+    assert set(targets) == set(stages), (run.stages, targets)
+    goals = {a["stage"]: a["goal"] for a in run.stage_archive}
+    items = {k: f"done-when item {n}: {goals[k]['done_when'][n - 1].rstrip('.')}" for k, n in targets.items()}
+    return run, (f"PRD {items['prd']}" if stages == ("prd",) else items)
 
 
 def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
@@ -3332,13 +3337,24 @@ def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(mak
     assert run.stages == ["prd", "hld", "lld"], run.stages
     out = str(run.outcome)
     assert out.startswith("Done with open items"), out
-    assert f"{item} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert f"{item} blocked: needs {WEBHOOK}. {NEW_RUN}" in out and FOLLOW_UP not in out, out      # R5-3
     assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out      # R4-3
+
+
+def test_p30_only_an_earlier_stages_blocked_item_says_start_a_new_run(make_run):
+    """review R5-3: a follow-up continues the last stage only, so an earlier stage's blocked item says start a new run, and
+    the last stage's keeps "Send it as a follow-up to finish."."""
+    run, items = blocked_prd(make_run, stages=("prd", "lld"))
+    out = str(run.outcome)
+    assert out.startswith("Done with open items"), out
+    assert f"PRD {items['prd']} blocked: needs {WEBHOOK}. {NEW_RUN}" in out, out
+    assert f"{items['lld']} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert out.count(NEW_RUN) == 1 and out.count(FOLLOW_UP) == 1 and ".." not in out, out
 
 
 def assert_names_blocked(out, item):
     assert out.startswith("Done with open items") and not out.startswith("Done:"), out
-    assert f"{item} blocked: needs {WEBHOOK}." in out and out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
+    assert f"{item} blocked: needs {WEBHOOK}. {NEW_RUN}" in out and out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
 
 
 def test_p30_a_chain_that_ends_in_a_send_names_an_earlier_stages_blocked_item(make_run, monkeypatch):
