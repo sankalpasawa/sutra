@@ -35,7 +35,7 @@ sys.modules["port_j2_ui"] = port
 _spec.loader.exec_module(port)
 
 SANDBOX = "allow-scripts allow-forms allow-popups"
-MODULES = ["sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
+MODULES = ["avatars", "sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext"]
 # The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
 # here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
@@ -393,7 +393,7 @@ def sheets_of(page: str) -> list[str]:
 
 def test_the_team_page_takes_the_regenerated_sheet_and_home_and_the_console_keep_the_frozen_one():
     assert sheets_of("j2_ui.html") == ["j2.css", "sutra-graph.css", "sutra-panel.css"]
-    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "project_rail.css"]       # + the front door
+    assert sheets_of("home.html") == ["j2-shell.css", "sutra-graph.css", "sutra-panel.css", "sutra-shell.css", "sutra-front.css", "avatars.css", "project_rail.css"]       # + the front door
     assert sheets_of("console.html") == ["j2-shell.css", "sutra-panel.css", "sutra-console.css"]
     for page in ("j2_ui.html", "home.html", "console.html"):
         assert all((UI / "static" / "css" / name).is_file() for name in sheets_of(page)), page

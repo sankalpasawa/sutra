@@ -59,7 +59,14 @@
       curly: [[22, 17], [28, 13], [35, 13], [41, 17], [20, 23], [44, 23]].map(([x, y]) => '<circle cx="' + x + '" cy="' + y + '" r="5.5" fill="' + h + '"/>').join(""),
       bob: '<path d="M18 30c-1-12 5-19 14-19s15 7 14 19h-5c0-5-1-9-3-11-3 2-8 3-15 3-1 2-1 5-1 8z" fill="' + h + '"/>'}[style] || "";
   }
+  // The style is the owner's (Settings & logs > Appearance > Team avatars, avatars.js): "classic" is the drawing below and the default; without
+  // avatars.js (node, an old page) it is always the drawing below.
+  const AV = () => root.Avatars || null;
   function face(key, size) {
+    const av = AV();
+    return av && av.style() === "illustrated" ? av.svg(key, size, {cls: "fdface", label: false}) : classicFace(key, size);
+  }
+  function classicFace(key, size) {
     const p = PEOPLE[key] || PEOPLE.asha;
     const skin = "var(--av-s" + p.n + ")", h = "var(--av-h" + p.n + ")", shirt = "var(--av-t" + p.n + ")";
     const back = p.hair === "long" || p.hair === "bob";

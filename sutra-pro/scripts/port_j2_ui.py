@@ -54,7 +54,7 @@ J2_VENDOR = ("d3.min.js", "d3-LICENSE", "README.md")
 J2_FILES = (J2_PAGE, J2_RENDER, J2_LAYOUT, *(f"vendor/{name}" for name in J2_VENDOR))
 
 # The modules the department page loads after its own script, in this order (E12); all under /ui/js/.
-MODULES = ("sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
+MODULES = ("avatars", "sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
            "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext")
 
 SANDBOX = "allow-scripts allow-forms allow-popups"      # the second layer behind the engine's sandbox header (S3-web-14)
