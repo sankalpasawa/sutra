@@ -5042,7 +5042,8 @@ def real_run_checks():
             assert run._real_run_items(pending=True) == [crit[1]]
             res = [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1, "verdict": "PASS" if i == 1 else "FAIL",
                     "note": ""} for i, c in enumerate(crit, 1)]
-            audit = {"output": FT, "results": res, "rubric": [], "conditions": [], "after_real_run": run._real_run_items(True)}
+            audit = {"output": FT, "results": res, "rubric": [], "conditions": [], "after_real_run": run._real_run_items(True),
+                     "cycle": 1, "version": 1, "all_pass": False}      # Sutra P33 (D436): as _turn_audit makes it; Audit's call reads them
             assert j2.workable(audit) == [] and j2.workable({**audit, "after_real_run": []}), "the item waits for the run"
             run.audits = [audit]
             run.post("user", "go")
