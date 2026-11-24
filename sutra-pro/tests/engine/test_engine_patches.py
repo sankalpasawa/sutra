@@ -2646,6 +2646,8 @@ def test_p31_a_failed_dry_run_goes_to_adaptation_never_to_the_requester(p31):
     assert w["status"] == "failed" and w["failure"] == ["dry_run", "exit 2: missing argument"], w.get("failure")
     assert "W-1" not in run.real_runs_asked and run.handoff["kind"] == "propose" and "missing argument" in run.handoff["why"]
     assert not any(m.get("to_user") for m in run.chat if m["who"] == "system")
+    assert not any("dry run" in m["text"] for m in run.chat)      # never shown to the user (review R1-7): receipt and event only
+    assert any(e["type"] == "real_run" and "the dry run on copies failed" in str(e) for e in run.events)
     # the plan's open point: P22 takes a replacement real-run workflow for the item whose first real run failed its dry run
     w2 = p31_revise(run, real, "W-1")
     assert w2["real_run"]["checks"] == [3]

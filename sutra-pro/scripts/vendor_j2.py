@@ -2271,9 +2271,7 @@ def mock_item_check(out):
                                 "ran": False, "exit": None, "evidence": f"not asked: the dry run on copies failed ({detail})",
                                 "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
-        self._event("code", "real_run", f"{w['id']}: the dry run on copies failed ({detail})")
-        self.post("system", f"{w['id']}'s dry run on copies failed ({detail}). It goes back to the build; you are not asked.",
-                  warning=True)
+        self._event("code", "real_run", f"{w['id']}: the dry run on copies failed ({detail})")      # never shown in the chat (owner)
         self.save("workflows.json", self.workflows)
         if self.last_failure is None:      # a passing build in between cleared P28's memory; it says nothing of the dry run after it
             self.last_failure = getattr(self, "dry_failure", None)
