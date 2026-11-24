@@ -3213,6 +3213,24 @@ def test_p30_a_follow_up_that_gives_the_missing_fact_finishes_the_item(make_run)
         follow.outcome
 
 
+def test_p30_a_folder_run_ended_by_fix_d_takes_the_fact_from_a_follow_up(sort_run, monkeypatch):
+    """review R5-4, the 8b10 shape: a folder output whose to-be-confirmed item is the only gap ends at once (fix d) with its
+    "blocked: needs" line; the follow-up giving the fact goes first to Identity's intake with the current charter, which clears
+    the entry. The rebuild is not asserted: the mock Adaptation's workflows are refused for a folder type."""
+    run = no_real_run(sort_run, {"status": "built", "reason": "the post is written"}, tbc=True)
+    crit = run.goal["done_when"]
+    run._identity_audit({})
+    assert f"{crit[1].rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in str(run.outcome), run.outcome
+    assert run.goal["to_be_confirmed"], run.goal
+    run.done, run.status = True, "waiting"      # the run ended (fix d); the Requester sends the follow-up
+    calls = calls_of(run, monkeypatch)
+    intakes = scripted_identity(run, tbc=True)
+    say(run, "The webhook address is https://hooks.example.test/T000/B000")
+    assert calls and calls[0] == "identity" and len(intakes) == 1, calls
+    assert "CURRENT CHARTER" in intakes[0] and WEBHOOK in intakes[0] and "leave its entry out of to_be_confirmed" in intakes[0]
+    assert run.goal["to_be_confirmed"] == [], run.goal["to_be_confirmed"]
+
+
 def test_p30_a_follow_up_does_not_ask_again_about_brief_items_already_dropped(make_run):
     """review R5-2: run 1's charter left a brief item out and the Requester answered "Drop them"; the follow-up that gives
     the fact goes through Identity's intake, whose charter still leaves it out, and must not ask the drop question again."""
