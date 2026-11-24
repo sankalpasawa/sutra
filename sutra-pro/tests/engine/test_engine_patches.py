@@ -2435,6 +2435,8 @@ sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
 P30_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
 P30_BAD = "import sys\nsys.stderr.write('boom: the token file is missing\\n')\nsys.exit(3)\n"
 P30_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
+# the fake interpreter is a `#!` script: Windows can't run one, so the tests that install with it run on macOS and Linux only
+p30_posix = pytest.mark.skipif(os.name == "nt", reason="the fake interpreter is a #! script, which Windows can't run")
 P30_FILES = {"s.py": P30_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
 
 
@@ -2612,6 +2614,7 @@ def test_p30_receipts_keep_the_exit_code_and_the_output_tails(j2rr, rr_run):
     assert [k for k, _ in _p_receipt("receipts.jsonl", r)] == ["run_file.object"], "a real-run receipt stays open JSON for the catalogue"
 
 
+@p30_posix
 def test_p30_requirements_get_an_environment_only_after_approval_and_a_cached_one_is_reused(j2rr, rr_run):
     made, real = rr_run
     runenv = j2rr.j2_runenv
@@ -2672,6 +2675,7 @@ def test_p30_requirements_get_an_environment_only_after_approval_and_a_cached_on
     assert "its packages are not installed: the Requester declined installing them" in run3._live_step_note()
 
 
+@p30_posix
 def test_p30_a_failed_install_goes_back_to_the_builder_with_pips_error(j2rr, rr_run, monkeypatch):
     made, real = rr_run
     run, w = made({}, status="running", attempts=0, test="test_s.py")
@@ -2706,6 +2710,7 @@ def test_p30_a_missing_import_blocks_the_offer_and_bad_requirement_lines_are_ref
     assert "which is not a Python that runs" in run._live_step_note() and "J2_RUN_PYTHON" in run._live_step_note()
 
 
+@p30_posix
 def test_p30_the_sandbox_opens_the_network_for_the_install_step_only(j2rr, rr_run, monkeypatch):
     made, real = rr_run
     monkeypatch.setenv("J2_SANDBOX", "1")
