@@ -71,9 +71,9 @@
 @keyframes avpop { from { opacity: 0; transform: scale(.75); } to { opacity: 1; transform: scale(1); } }
 @media (prefers-reduced-motion: no-preference) {
   :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=work]::before {
-    animation: avturn 1150ms linear infinite; animation-delay: var(--avd, 0ms);
+    animation: avturn var(--dur-turn) linear infinite; animation-delay: var(--avd, 0ms);
   }
-  :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid]).avfresh[data-badge]::after { animation: avpop 180ms ease-out both; }
+  :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid]).avfresh[data-badge]::after { animation: avpop var(--dur-base) var(--ease-out) both; }
 }
 
 /* ---- Settings & logs > Appearance > Team avatars */
@@ -93,3 +93,8 @@
 .avprev .fdfaces { justify-content: flex-start; margin: 10px 0 0; }
 .avnote { display: block; min-height: 1.4em; margin: 8px 0 0; color: var(--s-muted); font-size: 13px; }
 @media (max-width: 420px) { .avopts { grid-template-columns: 1fr; } }
+
+/* ---- a team page, Run settings > Appearance: the line that names the style and leads to Settings & logs */
+.avline { margin: 12px 0 0; color: var(--s-muted); font-size: 13.5px; }
+.avline b { color: var(--s-ink); font-weight: 600; }
+.avline a { color: var(--s-accent); }

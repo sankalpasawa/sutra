@@ -460,3 +460,25 @@ test("any other failure of the save is one sentence for the form", async () => {
   const out = await saveEngine(api, FOR_ALL, "", {budget: "250"});
   assert.deepEqual([out.ok, out.errors], [false, {"": "The app is not responding. Try again in a moment."}]);
 });
+
+test("Team avatars sits under the theme: Classic is checked by default, Illustrated when chosen, and each choice shows its own faces", () => {
+  const SV = require(path.resolve(__dirname, "../../../sutra_app/ui/static/js/settings_view.js"));
+  const face = (style, key, size) => "[" + style + ":" + key + ":" + size + "]";
+  assert.equal(SV.appearanceHtml("light", null), SV.appearanceHtml("light"), "without avatars.js the group is the theme alone, as it always was");
+  assert.equal(SV.appearanceHtml("light").includes("avatar-style"), false);
+  const classic = SV.appearanceHtml("light", {style: "classic", note: "", face});
+  assert.ok(classic.indexOf("data-themepick") < classic.indexOf("<legend>Team avatars</legend>"), "below Light, Dark and System");
+  assert.match(classic, /<input type="radio" name="avatar-style" value="classic" checked>/);
+  assert.match(classic, /<input type="radio" name="avatar-style" value="illustrated">/);
+  assert.match(classic, /<b>Classic<\/b><small>Your current Sutra avatars<\/small><span class="avthumbs">\[classic:asha:32\]\[classic:kabir:32\]\[classic:nora:32\]/);
+  assert.match(classic, /<b>Illustrated<\/b><small>The new portrait artwork<\/small><span class="avthumbs">\[illustrated:asha:32\]\[illustrated:kabir:32\]\[illustrated:nora:32\]/);
+  assert.match(classic, /Home preview<\/h4><div class="fdfaces"><span class="fdfacerow">\[classic:asha:40\]\[classic:mira:40\]\[classic:kabir:40\]\[classic:dev:40\]\[classic:nora:40\]/);
+  const chosen = SV.appearanceHtml("dark", {style: "illustrated", note: "Illustrated avatars selected.", face});
+  assert.match(chosen, /value="illustrated" checked>/);
+  assert.equal(chosen.includes('value="classic" checked'), false);
+  assert.match(chosen, /<span class="avnote" role="status">Illustrated avatars selected\.<\/span>/);
+  assert.ok(chosen.includes(SV.avatarRowHtml({style: "illustrated", face})), "the preview row is the part home.js repaints on its own");
+  for (const style of ["photo", "", undefined, 7]) assert.match(SV.appearanceHtml("light", {style, face}), /value="classic" checked>/, "an unknown style is Classic");
+  assert.match(SV.appearanceHtml("light", {style: "classic", note: "<b>x</b>", face}), /role="status">&lt;b&gt;x&lt;\/b&gt;</);
+  assert.doesNotThrow(() => SV.appearanceHtml("light", {style: "classic"}), "no face function: the choices still render");
+});

@@ -11,13 +11,15 @@
 
      Avatars.style()                     "classic" | "illustrated", from <html data-avatars> (anything else is "classic")
      Avatars.apply(style)                set it on this page, tell the other open pages of this port (a storage event), repaint a team page
+     Avatars.onChange(fn)                `fn(style)` when another page of this port changed it (Home repaints itself with this)
      Avatars.svg(key, size, opts)        the illustrated avatar as an <svg> string. opts {cls: "av", label: true|false}
      Avatars.face(key, size, classic, opts)  the avatar in the chosen style: `classic()` is called for the classic drawing
      Avatars.ring(inner, opts)           `inner` wrapped with its activity. opts {who, act, badge, id}; no act and no badge gives `inner` back
      Avatars.sync(root)                  after a paint: a turning arc carries on from where it was (a repaint does not restart it), and a badge
                                          fades in only when it is new for that avatar (`id`)
-     Avatars.adopt()                     on a team page (J2's page, never hand-edited): its `face` draws the chosen style and every render is
-                                         followed by decorate(), which reads the busy / ask classes the page already sets
+     Avatars.adopt()                     on a team page (J2's page, never hand-edited): its `face` draws the chosen style, every render is
+                                         followed by decorate(), which reads the busy / ask classes the page already sets, and Run settings >
+                                         Appearance gets one line that names the style and links to Settings & logs, where it is changed
      Avatars.PEOPLE, STYLES, CUT, TURN_MS
 
    Strings in, strings out for svg/face/ring; nothing from the wire goes into the markup (the keys are a fixed table).
@@ -71,6 +73,8 @@
     if (d && d.documentElement.dataset) d.documentElement.dataset.avatars = v;
     return v;
   }
+  const HEARD = [];
+  function onChange(fn) { if (typeof fn === "function") HEARD.push(fn); }
   function apply(s) {
     const v = setStyle(s);
     try { root.localStorage.setItem(MIRROR, v); } catch (e) {}
@@ -154,13 +158,26 @@
       T.timer = root.setTimeout(() => { T.timer = 0; if (T.last) decorate(T.last); }, Math.max(50, T.until - Date.now() + 20));
     }
   }
+  // Run settings > Appearance on a team page: one line that says the style and leads to the one place it is changed (Home's Settings).
+  function runSettingsLine() {
+    const d = doc(), box = d && d.getElementById("appear");
+    if (!box) return;
+    let line = d.getElementById("avline");
+    if (!line) { line = d.createElement("p"); line.id = "avline"; line.className = "avline"; box.appendChild(line); }
+    line.innerHTML = "Team avatars: <b>" + (style() === "illustrated" ? "Illustrated" : "Classic") + '</b>. <a href="/?pane=settings">Change in Settings &amp; logs</a>';
+  }
   function refresh() {            // a team page draws again in the style of now; Home repaints itself (home.js)
     const d = doc();
     if (!d || !T.adopted) return;
     try {
+      runSettingsLine();
       const land = d.getElementById("slfaces"), head = d.getElementById("sphav");
       if (land && land.childElementCount) land.innerHTML = KEYS.map(k => root.face(k, 40, {prop: false, label: false})).join("");
       if (head && head.childElementCount) head.innerHTML = root.face("asha", 38, {label: false});
+      d.querySelectorAll("#steamrows .mrow").forEach((row, i) => {      // "How the team works": drawn once when the page loads
+        const old = row.querySelector("svg");
+        if (old && KEYS[i]) old.outerHTML = root.face(KEYS[i], 44, {label: false});
+      });
       d.querySelectorAll("j2-plan").forEach(h => { h.__k = null; });
       if (T.last && typeof root.renderSimple === "function") root.renderSimple(T.last);
     } catch (e) {}
@@ -178,6 +195,7 @@
       return out;
     };
     T.adopted = true;
+    try { runSettingsLine(); } catch (e) {}
     if (style() === "illustrated") refresh();
     return true;
   }
@@ -192,12 +210,12 @@
       d.head.appendChild(link);
     }
     if (typeof root.addEventListener === "function") {
-      root.addEventListener("storage", e => { if (e && e.key === MIRROR && e.newValue !== style()) { setStyle(e.newValue); refresh(); } });
+      root.addEventListener("storage", e => { if (e && e.key === MIRROR && e.newValue !== style()) { const v = setStyle(e.newValue); refresh(); HEARD.forEach(fn => { try { fn(v); } catch (err) {} }); } });
     }
     adopt();
   }
 
-  const Avatars = {STYLES, DEFAULT, CUT, TURN_MS, KEYS, PEOPLE, style, setStyle, apply, bootStyle, svg, face, ring, sync, adopt, decorate, refresh, doneOf};
+  const Avatars = {STYLES, DEFAULT, CUT, TURN_MS, KEYS, PEOPLE, style, setStyle, apply, onChange, bootStyle, svg, face, ring, sync, adopt, decorate, refresh, doneOf};
   if (typeof module === "object" && module !== null && module.exports) module.exports = Avatars;
   else { root.Avatars = Avatars; start(); }
 })(globalThis);

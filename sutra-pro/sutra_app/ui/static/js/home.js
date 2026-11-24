@@ -908,6 +908,7 @@
     ctx.paint(el, fd.needsHtml(st));
     const done = fd.finishedHtml(st);
     ctx.paint($("fddone"), done);
+    if (root.Avatars) root.Avatars.sync($("fdattn"));
     $("fddone").hidden = done === "";
   }
 
@@ -941,6 +942,7 @@
       }, LAND_MS);
     }
     ctx.paint($("fdlatest"), fd.latestHtml(st));
+    if (root.Avatars) root.Avatars.sync($("fdlatest"));          // a repaint does not restart the arc around Asha
     if (fd.stopOf) paintStop(fd.stopOf(st));
   }
 
@@ -1401,7 +1403,57 @@
   /* ---------------------------------------------------------------- Settings */
   const SV = () => root.SettingsView;
 
-  function paintAppearance() { ctx.paint($("set-appearance"), SV().appearanceHtml(themePref())); themeApply(); }
+  // Team avatars (avatars.js): Classic or Illustrated, kept by the server for this app profile (PUT /api/appearance) so it survives a restart and a
+  // new port. The page changes at once; a save that fails puts the avatars back and says so.
+  const AV = () => root.Avatars || null;
+  const AVATAR_NAME = {classic: "Classic", illustrated: "Illustrated"};
+  let avatarTurn = 0, avatarNote = "";
+  function avatarFace(style, key, size) {
+    const av = AV(), fd = FD();
+    return style === "illustrated" && av ? av.svg(key, size, {cls: "fdface", label: false}) : fd && fd.classicFace ? fd.classicFace(key, size) : "";
+  }
+  const avatarOpts = () => (AV() ? {style: AV().style(), note: avatarNote, face: avatarFace} : null);
+
+  function paintAppearance() {
+    const el = $("set-appearance"), opts = avatarOpts(), html = SV().appearanceHtml(themePref(), opts), on = doc.activeElement;
+    if (el && opts && on && on.name === "avatar-style" && el.contains(on) && el.__html !== html) {
+      // the owner is on one of the two radios: change what moved and leave the group standing, so the focus and the arrow keys stay where they are
+      const row = el.querySelector(".avprev .fdfaces"), note = el.querySelector(".avnote");
+      el.querySelectorAll('input[name="avatar-style"]').forEach(i => { i.checked = i.value === opts.style; });
+      if (row) row.innerHTML = SV().avatarRowHtml(opts);
+      if (note) note.textContent = opts.note;
+      el.__html = html;
+    } else ctx.paint(el, html);
+    themeApply();
+  }
+  function repaintAvatars() {
+    const fd = FD();
+    if ($("set-appearance") && $("set-appearance").childElementCount) paintAppearance();
+    if (!fd || !$("front")) return;
+    protect("avatars", () => {
+      if ($("fdfaces") && $("fdfaces").childElementCount && fd.facesHtml) ctx.paint($("fdfaces"), fd.facesHtml());
+      renderFrontLatest();
+      renderAttention();
+    });
+  }
+  function chooseAvatars(value) {
+    const av = AV();
+    if (!av || av.STYLES.indexOf(value) < 0 || value === av.style()) return;
+    const before = av.style(), turn = ++avatarTurn;
+    av.apply(value);
+    avatarNote = "";
+    repaintAvatars();
+    api.put("/api/appearance", {avatars: value}).then(() => {
+      if (turn !== avatarTurn) return;
+      avatarNote = AVATAR_NAME[value] + " avatars selected.";
+      paintAppearance();
+    }, () => {
+      if (turn !== avatarTurn) return;
+      av.apply(before);
+      avatarNote = "That did not save, so the avatars are as they were. Try again.";
+      repaintAvatars();
+    });
+  }
   // Windows words the CLI file box its own way (a drive letter, `where`): the page runs in the browser of the machine the app runs on.
   const ON_WINDOWS = typeof navigator !== "undefined" && /Windows/i.test(String(navigator.userAgent || ""));
   function paintConnectors() { ctx.paint($("set-connectors"), SV().connectorsHtml(S.health, Object.assign({windows: ON_WINDOWS}, S.conn))); }
@@ -2043,6 +2095,11 @@
     if ($("gorawchat")) $("gorawchat").addEventListener("click", openRawChat);
     doc.querySelectorAll("[data-orgpane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.orgpane)));
     doc.querySelectorAll("#rail [data-pane]").forEach(b => b.addEventListener("click", () => selectPane(b.dataset.pane, {group: b.dataset.group || ""})));
+    doc.addEventListener("change", e => {
+      const i = e.target && e.target.name === "avatar-style" && e.target.closest && e.target.closest("#set-appearance") ? e.target : null;
+      if (i && i.checked) chooseAvatars(i.value);
+    });
+    if (AV()) AV().onChange(() => { avatarNote = ""; repaintAvatars(); });
     doc.addEventListener("click", e => {
       const b = e.target.closest && e.target.closest("[data-themepick]");
       if (b) { S.theme = b.dataset.themepick; try { root.localStorage.setItem("j2theme", S.theme); } catch (err) { /* storage may be blocked */ } themeApply(); }

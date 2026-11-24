@@ -161,7 +161,9 @@ test("the sheet: tokens in both themes, one badge anchor, and motion only when t
   assert.equal((css.match(/left: 80%/g) || []).length, 1, "every badge shares it");
   const motion = css.slice(css.indexOf("@media (prefers-reduced-motion: no-preference)"));
   const before = css.slice(0, css.indexOf("@keyframes avturn"));
-  assert.ok(motion.includes("avturn 1150ms linear infinite") && motion.includes("var(--avd, 0ms)"));
+  assert.ok(motion.includes("avturn var(--dur-turn) linear infinite") && motion.includes("var(--avd, 0ms)"));
+  const panel = fs.readFileSync(path.join(STATIC, "css/sutra-panel.css"), "utf8");
+  assert.ok(panel.includes("--dur-turn:" + A.TURN_MS + "ms"), "the turn the sheet draws is the turn sync() counts in");
   assert.ok(!/animation: av/.test(before), "no animation outside the no-preference block");
 });
 
@@ -181,4 +183,29 @@ test("the sheet's ring and text colours keep their contrast in both themes", () 
     }
     assert.ok(ratio(av["--av-askink"], av["--av-askbg"]) >= 4.5, `${name}: the question mark`);
   }
+});
+
+test("Home's card under the box shows Asha's activity around her, and the words alone still say it", () => {
+  const sent = [{id: 3, role: "user", text: "A flyer"}];
+  const asking = sent.concat([{id: 6, role: "agent", text: "", card: {type: "choice", question: "Which team fits best?", options: [{id: "web", label: "Web"}, {id: "none", label: "A new team"}]}}]);
+  const done = sent.concat([{id: 5, role: "agent", text: "", card: {type: "task", dept_id: "web", dept_name: "Web", title: "A flyer"}}]);
+  const said = sent.concat([{id: 4, role: "agent", text: "I have what I need."}]);
+  const states = () => ({working: FD.latestHtml({show: true, messages: sent, status: "Setting up your project…"}), asking: FD.latestHtml({show: true, messages: asking}),
+    ready: FD.latestHtml({show: true, messages: done}), update: FD.latestHtml({show: true, messages: said})});
+  const plain = states();
+  for (const html of Object.values(plain)) assert.ok(!html.includes("avact") && !html.includes("fdspin"), "without avatars.js there is no ring, and the old spinner is gone");
+  globalThis.Avatars = A;
+  try {
+    const ringed = states();
+    assert.match(ringed.working, /<span class="avact" data-who="asha" data-act="work" data-avid="fd-latest"><svg class="fdface"/);
+    assert.match(ringed.working, /<b class="fdlh">Asha is on it<\/b><p class="fdline">Setting up your project…<\/p>/);
+    assert.match(ringed.asking, /<header class="fdhead"><span class="avact" data-who="asha" data-act="ask" data-badge="ask"><svg class="fdface"/);
+    assert.match(ringed.asking, /Asha needs one answer/);
+    assert.match(ringed.ready, /<span class="avact" data-who="asha" data-act="done" data-badge="done" data-avid="fd-latest">/);
+    assert.match(ringed.ready, /Your project is set up/);
+    assert.match(ringed.update, /<span class="avact" data-who="asha" data-badge="msg" data-avid="fd-latest">/);
+    assert.match(ringed.update, /<b class="fdlh">Asha says<\/b>/);
+    const strip = html => html.replace(/<span class="avact"[^>]*>(<svg[\s\S]*?<\/svg>)<\/span>/g, "$1");
+    for (const k of Object.keys(plain)) assert.equal(strip(ringed[k]), plain[k], k + ": the ring wraps the face and changes nothing else");
+  } finally { delete globalThis.Avatars; }
 });

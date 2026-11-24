@@ -66,6 +66,12 @@
     const av = AV();
     return av && av.style() === "illustrated" ? av.svg(key, size, {cls: "fdface", label: false}) : classicFace(key, size);
   }
+  // Asha with what she is doing around her (avatars.js draws it for either style): act "work" a turning arc, "ask" a still amber arc, "done" a full
+  // ring; badge "ask" | "msg" | "done" at the lower right. The words beside her always say the same thing, so nothing depends on the ring.
+  function asha(size, act, badge, id) {
+    const av = AV(), drawn = face("asha", size);
+    return av ? av.ring(drawn, {who: "asha", act, badge, id}) : drawn;
+  }
   function classicFace(key, size) {
     const p = PEOPLE[key] || PEOPLE.asha;
     const skin = "var(--av-s" + p.n + ")", h = "var(--av-h" + p.n + ")", shirt = "var(--av-t" + p.n + ")";
@@ -161,7 +167,7 @@
       const yes = (Array.isArray(item.options) && clean(item.options[0])) || "Yes";
       const no = (Array.isArray(item.options) && clean(item.options[1])) || "No";
       return '<article class="fdcard fdappr" data-msg="' + esc(msg) + '" data-kind="approval">' +
-        '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + "Asha needs your OK" +
+        '<header class="fdhead">' + asha(36, "ask", "ask") + '<span class="fdhw"><b class="fdasker">' + "Asha needs your OK" +
           '</b></span>' + waited(item, o.elapsedMs) + "</header>" +
         '<p class="fdq">' + esc(clean(item.text) || "A change to your org waits for your yes.") + "</p>" + err +
         '<div class="fdacts">' + (addOf(item)
@@ -190,7 +196,7 @@
     const raise = add !== null ? BC().raiseHtml(add, 'data-act="fd-raise" data-msg="' + esc(msg) + '"') : "";
     const open = dept ? '<a class="fdopen" href="' + esc(teamHref(dept)) + '">Open ' + esc(who) + "</a>" : "";
     return '<article class="fdcard fdask" data-msg="' + esc(msg) + '" data-kind="question"' + (dept ? ' data-dept="' + esc(dept) + '"' : "") + ">" +
-      '<header class="fdhead">' + face("asha", 36) + '<span class="fdhw"><b class="fdasker">' + (ask.qs.length > 1 ? "Asha needs " + ask.qs.length + " answers" : "Asha needs one answer") +
+      '<header class="fdhead">' + asha(36, "ask", "ask") + '<span class="fdhw"><b class="fdasker">' + (ask.qs.length > 1 ? "Asha needs " + ask.qs.length + " answers" : "Asha needs one answer") +
       '</b><span class="fdwho">' + esc(who) + "</span></span>" + waited(item, o.elapsedMs) + "</header>" + body + err + answer + raise +
       (open ? '<footer class="fdfoot">' + open + "</footer>" : "") + "</article>";
   }
@@ -283,7 +289,7 @@
     const opts = card.options.filter(isObj);
     const q = simple && /team/i.test(clean(card.question)) ? "Is this for one of your projects, or something new?" : clean(card.question);
     const label = op => { const t = clean(op.label); return simple && /^(a new team|none of these)$/i.test(t) ? "Something new" : t; };
-    return '<article class="fdcard fdask fdchoice" data-msg="' + esc(String(m.id)) + '" data-kind="choice"><header class="fdhead">' + face("asha", 36) +
+    return '<article class="fdcard fdask fdchoice" data-msg="' + esc(String(m.id)) + '" data-kind="choice"><header class="fdhead">' + asha(36, "ask", "ask") +
       '<span class="fdhw"><b class="fdasker">Asha needs one answer</b><span class="fdwho">Before we start</span></span></header>' +
       '<p class="fdq">' + esc(q) + '</p><div class="fdopts">' + opts.map(op => '<button type="button" class="fdbtn fdopt" data-act="fd-choose" data-msg="' +
       esc(String(m.id)) + '" data-option="' + esc(clean(op.id) || clean(op.label)) + '" data-text="' + esc(clean(op.label)) + '">' + esc(label(op)) + "</button>").join("") +
@@ -297,7 +303,7 @@
     if (r.task) {
       const href = teamHref(r.task.card.dept_id);
       const what = clean(r.task.card.title) || clean(r.task.card.dept_name) || "Your project";
-      return '<div class="fdlatest fdready" role="status">' + face("asha", 44) + '<div class="fdlw"><b class="fdlh">Your project is set up</b><p class="fdline">' +
+      return '<div class="fdlatest fdready" role="status">' + asha(44, "done", "done", "fd-latest") + '<div class="fdlw"><b class="fdlh">Your project is set up</b><p class="fdline">' +
         esc(what.length > 120 ? what.slice(0, 117) + "…" : what) + "</p>" + (s.going === true ? '<p class="fdgo">Taking you there&hellip;</p>' : "") +
         '</div><a class="fdbtn fdyes fdwatch" href="' + esc(href) + '">Watch it being built</a></div>';
     }
@@ -305,8 +311,8 @@
     if (!status && r.reply.length === 0) return "";
     const said = r.reply.map(m => clean(CV() ? CV().stripTag(m.text) : m.text)).filter(Boolean).pop() || "";
     const line = status || (said.length > 160 ? said.slice(0, 157) + "…" : said) || "Getting your project ready…";
-    return '<div class="fdlatest fdwork" role="status">' + face("asha", 44) + '<div class="fdlw"><b class="fdlh">' + (status ? "Asha is on it" : "Asha says") +
-      '</b><p class="fdline">' + (status ? '<i class="fdspin" aria-hidden="true"></i>' : "") + esc(line) + "</p></div></div>";
+    return '<div class="fdlatest fdwork" role="status">' + asha(44, status ? "work" : "", status ? "" : "msg", "fd-latest") + '<div class="fdlw"><b class="fdlh">' + (status ? "Asha is on it" : "Asha says") +
+      '</b><p class="fdline">' + esc(line) + "</p></div></div>";      // the arc around Asha is the one moving cue; the line says what she is doing
   }
 
   function latestHtml(state) {
@@ -340,7 +346,7 @@
     return null;
   }
 
-  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, summary, count, addToName};
+  const FrontDoor = {ORG, stopOf, buckets, askOf, needCard, problemCard, needsHtml, finishedHtml, latestHtml, landing, facesHtml, face, classicFace, summary, count, addToName};
   if (typeof module === "object" && module !== null && module.exports) module.exports = FrontDoor;
   else root.FrontDoor = FrontDoor;
 })(globalThis);

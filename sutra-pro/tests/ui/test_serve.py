@@ -1345,3 +1345,18 @@ def test_the_raw_ai_chat_path_is_the_team_page_and_an_unknown_team_is_404(client
     assert got.status_code == 200 and boot_of(got.text)["dept"] == "web" and boot_of(got.text)["page"] == "dept"
     assert client.get("/d/nope/raw").status_code == 404
     assert client.get("/d/web/raw/x").status_code == 404
+
+
+def test_the_avatar_portraits_are_served_as_webp_on_a_machine_that_has_no_type_for_the_extension(monkeypatch):
+    import mimetypes
+
+    monkeypatch.setattr(mimetypes, "guess_type", lambda *args, **kwargs: (None, None))        # Windows without a .webp registration
+    app = FastAPI()
+    mount_static(app)                                                                         # the package's own static folder
+    client = TestClient(app)
+    for name in ("asha", "mira", "kabir", "dev", "nora"):
+        response = client.get(f"/ui/img/avatars/{name}.webp")
+        assert response.status_code == 200 and response.headers["content-type"] == "image/webp", name
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.content[:4] == b"RIFF" and response.content[8:12] == b"WEBP" and len(response.content) < 20_000, name
+    assert client.get("/ui/img/avatars/nobody.webp").status_code == 404

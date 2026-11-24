@@ -489,8 +489,8 @@ body.nodeopen #dview .chat,body.nodeopen .chatfab{visibility:hidden}
    transform and opacity move: the browser does them on the compositor, without layout or paint, so they hold their frame rate while the page is
    busy. Colours change over --dur-fast. Nothing animates width, height, top, left, margin, box-shadow or filter, and no rule says `transition: all`
    (tests/ui/js/motion_css.test.js keeps it so). prefers-reduced-motion makes every duration 0: things still change, at once. */
-:root{--ease-out:cubic-bezier(.22,1,.36,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--dur-fast:120ms;--dur-base:200ms;--dur-slow:320ms;--dur-pulse:1200ms;--dur-blink:1050ms}
-@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms;--dur-pulse:0ms;--dur-blink:0ms}}
+:root{--ease-out:cubic-bezier(.22,1,.36,1);--ease-in-out:cubic-bezier(.65,0,.35,1);--dur-fast:120ms;--dur-base:200ms;--dur-slow:320ms;--dur-pulse:1200ms;--dur-blink:1050ms;--dur-turn:1150ms}
+@media (prefers-reduced-motion:reduce){:root{--dur-fast:0ms;--dur-base:0ms;--dur-slow:0ms;--dur-pulse:0ms;--dur-blink:0ms;--dur-turn:0ms}}
 @keyframes fluidin{from{opacity:0;transform:translate3d(0,6px,0)}to{opacity:1;transform:none}}
 @keyframes fluidfade{from{opacity:0}to{opacity:1}}
 @keyframes drawerin{from{opacity:0;transform:translate3d(28px,0,0)}to{opacity:1;transform:none}}

@@ -413,11 +413,14 @@ class _UiStatic(StaticFiles):
         response = await super().get_response(path, scope)
         vendor = path.split(os.sep, 1)[0] == "vendor"
         response.headers["Cache-Control"] = VENDOR_CACHE if vendor else ASSET_CACHE  # 200 and 304 alike
+        if path.lower().endswith(".webp"):
+            # the avatar portraits (img/avatars): Windows has no type for .webp unless a program registered one, and the answer would be application/octet-stream
+            response.headers["Content-Type"] = "image/webp"
         return response
 
 
 def mount_static(app: FastAPI, static_dir: Path = STATIC_DIR) -> None:
-    """Serve `css/`, `js/` and `vendor/` of `static_dir` at `/ui`. `StaticFiles` answers only GET and HEAD, refuses a
+    """Serve `css/`, `js/`, `img/` and `vendor/` of `static_dir` at `/ui`. `StaticFiles` answers only GET and HEAD, refuses a
     path that leaves the directory and follows no symlink out of it. Also installs the HTML error pages (`install_error_pages`)."""
     install_error_pages(app)
     static_dir = Path(static_dir)
