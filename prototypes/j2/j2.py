@@ -596,6 +596,18 @@ def real_run_problems(rr, source, runner, run_dir):
     return out
 
 
+DECLINE_REPLIES = ("decline", "declined", "i decline", "no", "do not run", "don't run")
+
+
+def run_reply(answer, code):
+    """What a reply to a RUN <code> question is: "run" (RUN and the code, in any case, spaces trimmed; never a reply
+    without the code), "decline" (DECLINE_REPLIES), or "" (anything else: the question stays open)."""
+    said = " ".join(str(answer or "").split()).lower().rstrip(".!")
+    if code and said == f"run {str(code).lower()}":
+        return "run"
+    return "decline" if said in DECLINE_REPLIES else ""
+
+
 def real_folders(workflows):
     """Every real folder the run's planned real runs state (their folder and reads), as stated."""
     return list(dict.fromkeys(f.rstrip("/") for w in workflows or [] for rr in [w.get("real_run") or {}]
@@ -3515,6 +3527,7 @@ class J2Run:
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_runs_why = {}      # step 7: workflow id -> why its real run did not run or did not pass, in plain words
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
         self.board = j2_board.new_board()   # board/1 (j2_board.py): questions and answers, behind J2_BOARD=1
@@ -5282,37 +5295,68 @@ class J2Run:
                             + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
-                            "Any other reply: it is not run.", real_run=w["id"])
+                            "To decline, reply: decline. Any other reply: it is not run, and this question stays open.",
+                  real_run=w["id"])
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
         return True
 
-    def _identity_real_run(self, h):
-        """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
-        once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
-        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
-        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
-        ok = bool(w and code) and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}"
-        res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
-            {"ran": False, "exit": None, "evidence": "not run: the reply was not exactly RUN " + str(code)}
+    def _real_run_receipt(self, wid, **rec):
+        """One real-run line of receipts.jsonl, written by code: the plan as registered, then what happened. Its
+        dry run (exit code, the end of stdout and of stderr, what it would change) is kept with it."""
+        w = self._wf(wid) or {}
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
-                                "approved": ok, "answer_msg": last.get("id"), **res,
-                                "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
+            f.write(json.dumps({"type": "real_run", "workflow": wid, **(w.get("real_run") or {}), **rec,
+                                "dry_run": {k: v for k, v in self.real_runs_dry.get(wid, {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
-        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
-        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
-                  warning=bool(res.get("ran") and res.get("exit") != 0))
-        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
-        items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
+
+    def _real_run_decided(self, wid, passed, why, evidence):
+        """A planned real run is closed: it ran (passed or not), was declined, or could not be offered. `why` (plain
+        words, kept for the outcome when it did not pass) and the done-when items it checks, which pass or fail by
+        this, never by a builder or Audit."""
+        self.real_runs_done[wid] = passed
+        self.real_runs_why.pop(wid, None) if passed else self.real_runs_why.__setitem__(wid, why)
+        at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
+        items = {crit[at[n] - 1] for n in ((self._wf(wid) or {}).get("real_run") or {}).get("checks") or []
+                 if n in at and at[n] <= len(crit)}
         if self.audits and items:      # the items this run checks: decided by its receipt, never by a builder or Audit
             last = self.audits[-1]
             for x in last["results"]:
                 if x["criterion"] in items:
                     x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
-                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})
+                              "note": f"real run receipt ({wid}): {evidence}"})
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
+
+    def _identity_real_run(self, h):
+        """Step 7: code, not an agent, reads the Requester's reply (run_reply). RUN <code> (any case, spaces trimmed):
+        the command runs, once (real_run). A decline: it is not run. Either way a receipt goes to receipts.jsonl and
+        the run goes on to its end. Any other reply is never taken as an answer: code says so and the question stays
+        open, so an approval is never lost silently."""
+        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        said = run_reply(h.get("answer"), code) if w and code and not last.get("auto") else ""
+        if w and code and not said:
+            self._event("code", "real_run", f"{w['id']}: the reply was not RUN {code} and not a decline: asked again")
+            self.post("system", f"Not run. Reply exactly RUN {code}, or decline.", real_run=w["id"])
+            return self._ask_user("That reply did not start the run and did not decline it. The exact reply is above.",
+                                  [{"question": "Run it for real?"}], "real_run",
+                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
+        ok = said == "run"
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
+            {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
+             "not run: no approval code was issued for it"}
+        self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
+                               answer_msg=last.get("id"), **res)
+        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
+        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
+                  warning=bool(res.get("ran") and res.get("exit") != 0))
+        passed = bool(ok and res.get("ran") and res.get("exit") == 0)
+        why = ("did not run: the Requester declined it" if said == "decline" else
+               "did not run: no approval code was issued for it" if not ok else
+               f"ran and did not pass: it exited {res.get('exit')}" if res.get("exit") is not None else
+               "ran past its time limit and was stopped")
+        self._real_run_decided(h.get("wid"), passed, why, res["evidence"])
         self._goal_done(h.get("r") or {})
 
     def _send_args(self, atom):
