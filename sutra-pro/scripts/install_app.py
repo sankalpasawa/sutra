@@ -61,7 +61,7 @@ import build_desktop_app as builder                                          # n
 CHANNELS = builder.CHANNELS
 REPO = "sankalpasawa/sutra"
 TAG = re.compile(r"^sutra-pro-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")    # a stable release tag (no leading zeros, as the release guard has it): a beta tag has a suffix and is never installed as the app
-DEFAULT_INSTALL_DIR = Path("/Applications")
+DEFAULT_INSTALL_DIR = Path("/Applications")                                  # a Mac's; on Windows, default_install_dir() (D432)
 QUIT_TIMEOUT_S = 60
 START_TIMEOUT_S = 120
 BUSY = 3
@@ -99,10 +99,32 @@ def run(args: Sequence[str], *, timeout: Optional[float] = None, cwd: Optional[P
         return subprocess.CompletedProcess(list(args), 124, "", f"timed out after {error.timeout} s")
 
 
+def windows() -> bool:
+    return sys.platform == "win32"
+
+
+def default_install_dir() -> Path:
+    """Where the apps go: /Applications on a Mac; on Windows the user's own programs folder, %LOCALAPPDATA%\\Programs (no administrator needed)."""
+    if not windows():
+        return DEFAULT_INSTALL_DIR
+    local = os.environ.get("LOCALAPPDATA")
+    return (Path(local) if local else Path.home() / "AppData" / "Local") / "Programs"
+
+
+def contains(command: str, text: str) -> bool:
+    """`text` in `command`, ignoring case on Windows (its paths are not case-sensitive, and a command line may spell one either way)."""
+    return text.lower() in command.lower() if windows() else text in command
+
+
+PROCESS_LIST = "Get-CimInstance Win32_Process | ForEach-Object { '{0} {1} {2}' -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }"
+
+
 def process_table() -> list[tuple[int, int, str]]:
-    """(pid, parent pid, command line) of every process."""
+    """(pid, parent pid, command line) of every process (`ps` on a Mac, PowerShell's process list on Windows)."""
     rows = []
-    for line in run(["ps", "-axo", "pid=,ppid=,command="]).stdout.splitlines():
+    listing = (run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", PROCESS_LIST], timeout=120) if windows()
+               else run(["ps", "-axo", "pid=,ppid=,command="]))
+    for line in listing.stdout.splitlines():
         found = re.match(r"\s*(\d+)\s+(\d+)\s+(.*)$", line)
         if found:
             rows.append((int(found.group(1)), int(found.group(2)), found.group(3)))
@@ -116,7 +138,9 @@ def sleep(seconds: float) -> None:
 # ---------------------------------------------------------------- what is where
 
 def bundle(channel: str, install_dir: Path) -> Path:
-    return Path(install_dir) / f"{CHANNELS[channel]['appName']}.app"
+    """The app of `channel` in `install_dir`: `<name>.app` on a Mac, the folder `<name>` (holding `<name>.exe`) on Windows."""
+    name = CHANNELS[channel]["appName"]
+    return Path(install_dir) / (name if windows() else f"{name}.app")
 
 
 def data_dir(channel: str) -> Path:
@@ -128,7 +152,11 @@ def project_version() -> str:
 
 
 def host_target() -> tuple[str, str]:
-    """(the builder's target, the architecture in the DMG's name) of this Mac."""
+    """(the builder's target, the architecture in the DMG's name) of this Mac, or ("win-x64", "x64") on a Windows PC (a beta only: D432)."""
+    if windows():
+        if platform.machine().upper() not in ("AMD64", "X86_64"):
+            raise InstallError(f"unsupported architecture {platform.machine()!r}: the Windows app is x64 only")
+        return "win-x64", "x64"
     if sys.platform != "darwin":
         raise InstallError("this installs a Mac app: run it on the Mac")
     machine = platform.machine()
@@ -140,7 +168,16 @@ def host_target() -> tuple[str, str]:
 
 
 def bundle_facts(app: Path) -> dict:
-    """The identifier, the version and the build label of an installed app, from its Info.plist and build-info.json; {} when it is not an app."""
+    """The identifier, the version and the build label of an installed app, from its Info.plist and build-info.json; {} when it is not an app.
+    A Windows folder has no Info.plist: everything comes from resources/build-info.json."""
+    if windows():
+        try:
+            record = json.loads((app / "resources" / "build-info.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(record, dict) or not record.get("bundle_id"):
+            return {}
+        return {"id": record.get("bundle_id"), "version": record.get("version"), "name": record.get("app"), "build": record.get("build", "") or ""}
     try:
         plist = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
     except (OSError, plistlib.InvalidFileException, ValueError):
@@ -162,6 +199,8 @@ def check_bundle(app: Path, channel: str, version: Optional[str] = None) -> dict
         raise InstallError(f"{app} has the bundle id {facts.get('id')!r}, not {want!r}: it is not the {channel} app")
     if version is not None and facts.get("version") != version:
         raise InstallError(f"{app} is version {facts.get('version')!r}, not {version!r}")
+    if windows():                                                             # the Windows beta is not signed: there is no seal to check
+        return facts
     sealed = run(["codesign", "--verify", "--deep", "--strict", str(app)])
     if sealed.returncode != 0:
         raise InstallError(f"the signature of {app} does not hold: {(sealed.stderr or sealed.stdout).strip()[:200]}")
@@ -170,6 +209,9 @@ def check_bundle(app: Path, channel: str, version: Optional[str] = None) -> dict
 
 def running(app: Path) -> list[int]:
     """The processes of `app`: the window, its helpers and the Python server inside it (every command line holds the app's own path)."""
+    if windows():                                                             # "<dir>\\Sutra Pro\\" is not "<dir>\\Sutra Pro Beta\\"
+        marker = str(app).replace("/", "\\") + "\\"
+        return sorted(pid for pid, _parent, command in process_table() if contains(command.replace("/", "\\"), marker) and pid != os.getpid())
     marker = f"{app}/Contents/"
     return sorted(pid for pid, _parent, command in process_table() if marker in command and pid != os.getpid())
 
@@ -201,7 +243,7 @@ def busy_work(data: Path) -> list[str]:
     server = server_of(data)
     found = []
     for pid, parent, command in table:
-        if (server and parent == server[0]) or f"sutra_app.engine --run-dir {data}/" in command:
+        if (server and parent == server[0]) or any(contains(command, f"sutra_app.engine --run-dir {data}{sep}") for sep in ("/", "\\")):
             found.append(f"{pid} {command[:110]}")
     return found
 
@@ -214,7 +256,14 @@ def quit_app(app: Path, channel: str, *, force: bool = False) -> bool:
     if working and not force:
         raise Busy(f"{app.name} is working (an engine run or a reply is in progress), so it was not quit:\n    " + "\n    ".join(working[:5])
                    + "\n  wait for it to finish, or run again with --force")
-    run(["osascript", "-e", f'tell application id "{CHANNELS[channel]["appId"]}" to quit'], timeout=30)
+    if windows():
+        # the window's own close (WM_CLOSE, what its X does): it stops its server and quits. Never /F: nothing is killed
+        pids = set(running(app))
+        table = {pid: parent for pid, parent, _command in process_table()}
+        for window in sorted(pid for pid in pids if table.get(pid) not in pids):
+            run(["taskkill", "/PID", str(window)], timeout=30)
+    else:
+        run(["osascript", "-e", f'tell application id "{CHANNELS[channel]["appId"]}" to quit'], timeout=30)
     for _ in range(QUIT_TIMEOUT_S):
         if not running(app):
             return True
@@ -230,22 +279,43 @@ def replace_bundle(source: Path, destination: Path) -> None:
     for leftover in (fresh, old):
         if leftover.exists():
             shutil.rmtree(leftover)
-    copied = run(["ditto", str(source), str(fresh)])
-    if copied.returncode != 0:
-        shutil.rmtree(fresh, ignore_errors=True)
-        raise InstallError(f"copying the app into {destination.parent} failed: {(copied.stderr or copied.stdout).strip()[:200]}")
-    run(["xattr", "-dr", "com.apple.quarantine", str(fresh)])                  # a copy made here carries none; a copy of a download may
+    if windows():
+        try:
+            shutil.copytree(source, fresh)
+        except OSError as error:
+            shutil.rmtree(fresh, ignore_errors=True)
+            raise InstallError(f"copying the app into {destination.parent} failed: {error}") from error
+    else:
+        copied = run(["ditto", str(source), str(fresh)])
+        if copied.returncode != 0:
+            shutil.rmtree(fresh, ignore_errors=True)
+            raise InstallError(f"copying the app into {destination.parent} failed: {(copied.stderr or copied.stdout).strip()[:200]}")
+        run(["xattr", "-dr", "com.apple.quarantine", str(fresh)])              # a copy made here carries none; a copy of a download may
     if destination.exists():
         destination.rename(old)
     fresh.rename(destination)
     shutil.rmtree(old, ignore_errors=True)
 
 
+def start(program: Path) -> None:
+    """Start a Windows program on its own, not as a child of this script (it outlives it, and has no console)."""
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen([str(program)], cwd=str(program.parent), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     close_fds=True, creationflags=flags)
+
+
 def open_and_check(app: Path, channel: str, version: str, *, timeout: float = START_TIMEOUT_S) -> dict:
-    """Open the app through Launch Services and wait until the server of its data folder answers /api/health with `version`: {pid, port, health}."""
-    opened = run(["open", "-a", str(app)])
-    if opened.returncode != 0:
-        raise InstallError(f"could not open {app}: {(opened.stderr or opened.stdout).strip()[:200]}")
+    """Open the app (Launch Services on a Mac, its exe on Windows) and wait until the server of its data folder answers /api/health with `version`:
+    {pid, port, health}."""
+    if windows():
+        try:
+            start(app / f"{CHANNELS[channel]['appName']}.exe")
+        except OSError as error:
+            raise InstallError(f"could not open {app}: {error}") from error
+    else:
+        opened = run(["open", "-a", str(app)])
+        if opened.returncode != 0:
+            raise InstallError(f"could not open {app}: {(opened.stderr or opened.stdout).strip()[:200]}")
     data = data_dir(channel)
     deadline = time.monotonic() + timeout
     last = "the server did not write its pid file"
@@ -314,9 +384,44 @@ def build_label() -> str:
     return head.stdout.strip() + ("+changes" if changed else "")
 
 
+def pull_main() -> None:
+    """Bring this checkout to its upstream (the beta's checkout follows origin/main): refused when the tree has changes or no upstream, then a fetch and a
+    fast-forward. Nothing is built when this fails."""
+    changed = run(["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"]).stdout.strip()
+    if changed:
+        raise InstallError(f"--pull: this checkout has changes, so it was not pulled (commit or drop them first):\n    {changed.splitlines()[0]}")
+    upstream = run(["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+    if upstream.returncode != 0 or not upstream.stdout.strip():
+        raise InstallError("--pull: this branch has no upstream to pull from (git branch --set-upstream-to origin/main)")
+    fetched = run(["git", "-C", str(ROOT), "fetch", "origin"], timeout=300)
+    if fetched.returncode != 0:
+        raise InstallError(f"--pull: git fetch failed: {(fetched.stderr or fetched.stdout).strip()[-300:]}")
+    merged = run(["git", "-C", str(ROOT), "merge", "--ff-only", "@{u}"], timeout=300)
+    if merged.returncode != 0:
+        raise InstallError(f"--pull: {upstream.stdout.strip()} cannot be fast-forwarded into this branch: "
+                           f"{(merged.stderr or merged.stdout).strip()[-300:]}")
+    say(f"pulled {upstream.stdout.strip()}")
+
+
+def write_shortcut(app: Path, channel: str) -> Path:
+    """A Start-menu entry for a Windows app (its name, its exe, its folder), written with PowerShell's WScript.Shell; replaced when it exists."""
+    name = CHANNELS[channel]["appName"]
+    programs = Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    link = programs / f"{name}.lnk"
+    quote = lambda value: "'" + str(value).replace("'", "''") + "'"           # noqa: E731  (a PowerShell single-quoted string)
+    script = (f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({quote(link)}); $s.TargetPath = {quote(app / (name + '.exe'))}; "
+              f"$s.WorkingDirectory = {quote(app)}; $s.Description = {quote(name)}; $s.Save()")
+    written = run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], timeout=60)
+    if written.returncode != 0:
+        raise InstallError(f"the Start-menu shortcut was not written: {(written.stderr or written.stdout).strip()[:200]}")
+    return link
+
+
 def install_beta(install_dir: Path, *, launch: bool = True, proof: bool = True, skip_npm: Optional[bool] = None, force: bool = False,
-                 dry_run: bool = False) -> int:
+                 dry_run: bool = False, pull: bool = False) -> int:
     target, _arch = host_target()
+    if pull and not dry_run:
+        pull_main()
     version = project_version()
     label = build_label()
     work = ROOT / "build" / "beta"
@@ -325,10 +430,12 @@ def install_beta(install_dir: Path, *, launch: bool = True, proof: bool = True, 
         skip_npm = (ROOT / "desktop" / "node_modules").is_dir()
     if dry_run:
         say(f"dry run: nothing is built or installed. The beta of this tree ({version}, {label}) would be:")
+        if pull:
+            say("  0. git fetch origin, then a fast-forward to this branch's upstream (refused when the tree has changes)")
         say(f"  1. uv build --out-dir {home_relative(work / 'dist')}   (the wheel of this tree, made from its sdist like a release's)")
-        say(f"  2. scripts/build_desktop_app.py --channel beta --target {target}   ->  {home_relative(work / 'app' / 'Sutra Pro Beta.app')}"
+        say(f"  2. scripts/build_desktop_app.py --channel beta --target {target}   ->  {home_relative(work / 'app' / app.name)}"
             + ("   (npm ci skipped)" if skip_npm else "   (npm ci first)"))
-        say("  3. scripts/sign_desktop_app.sh   (ad hoc)")
+        say("  3. (not signed: Windows)" if windows() else "  3. scripts/sign_desktop_app.sh   (ad hoc)")
         say("  4. scripts/prove_desktop_app.py --no-team   (a throw-away data folder, no network)" if proof else "  4. (no proof: --no-proof)")
         say(f"  5. quit a Sutra Pro Beta that is running and idle, install into {app}")
         say(f"  6. open it and wait for /api/health, version {version}" if launch else "  6. (not opened: --no-launch)")
@@ -350,10 +457,11 @@ def install_beta(install_dir: Path, *, launch: bool = True, proof: bool = True, 
         made = builder.build_app(wheel=wheels[0], target=target, out=work / "app", skip_npm=skip_npm, channel="beta", build_label=label)
     except builder.BuildError as error:
         raise InstallError(str(error)) from error
-    say("signing it (ad hoc) ...")
-    signed = run(["bash", str(HERE / "sign_desktop_app.sh"), str(made)], timeout=900, env={**os.environ, "SIGN_TIMESTAMP": "none"})
-    if signed.returncode != 0:
-        raise InstallError(f"signing failed: {(signed.stderr or signed.stdout).strip()[-400:]}")
+    if not windows():                                                         # the Windows beta is not signed (D432)
+        say("signing it (ad hoc) ...")
+        signed = run(["bash", str(HERE / "sign_desktop_app.sh"), str(made)], timeout=900, env={**os.environ, "SIGN_TIMESTAMP": "none"})
+        if signed.returncode != 0:
+            raise InstallError(f"signing failed: {(signed.stderr or signed.stdout).strip()[-400:]}")
     if proof:
         say("proving that it starts (a throw-away data folder, no network) ...")
         proved = run([sys.executable, str(HERE / "prove_desktop_app.py"), "--app", str(made), "--version", version, "--no-team"], timeout=900)
@@ -365,6 +473,8 @@ def install_beta(install_dir: Path, *, launch: bool = True, proof: bool = True, 
     replace_bundle(made, app)
     check_bundle(app, "beta", version)
     say(f"installed {app} ({version}, beta {label})")
+    if windows():
+        say(f"Start menu: {write_shortcut(app, 'beta').name}")
     if launch:
         started = open_and_check(app, "beta", version)
         say(f"Sutra Pro Beta is open: http://127.0.0.1:{started['port']}/ (its own server, process {started['pid']})")
@@ -377,6 +487,8 @@ def install_beta(install_dir: Path, *, launch: bool = True, proof: bool = True, 
 # ---------------------------------------------------------------- release
 
 def install_release(tag: Optional[str], install_dir: Path, *, launch: bool = True, cli: bool = True, force: bool = False, dry_run: bool = False) -> int:
+    if windows():
+        raise InstallError("a release is installed by this script on a Mac only: on Windows, run the Setup .exe of the release (its GitHub page)")
     _target, arch = host_target()
     tag = tag or newest_release_tag()
     found = TAG.match(tag)
@@ -471,9 +583,11 @@ def status(install_dir: Path) -> int:
 # ---------------------------------------------------------------- command line
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Install Sutra Pro on this Mac: a beta built from this working tree, or a published release.")
+    parser = argparse.ArgumentParser(description="Install Sutra Pro: a beta built from this working tree (a Mac or a Windows PC), or a published "
+                                                 "release (a Mac).")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument("--install-dir", type=Path, default=DEFAULT_INSTALL_DIR, help="where the apps are (default /Applications)")
+    common.add_argument("--install-dir", type=Path, default=default_install_dir(),
+                        help="where the apps are (default /Applications; on Windows %%LOCALAPPDATA%%\\Programs)")
     commands = parser.add_subparsers(dest="command", required=True)
     beta = commands.add_parser("beta", parents=[common], help="build Sutra Pro Beta from this working tree and install it beside the stable app")
     beta.add_argument("--no-proof", action="store_true", help="skip the proof that the built app starts")
@@ -481,6 +595,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     beta.add_argument("--skip-npm", action="store_true", default=None, help="reuse desktop/node_modules (the default when it exists)")
     beta.add_argument("--force", action="store_true", help="quit a running beta even when it is working")
     beta.add_argument("--dry-run", action="store_true", help="say what would happen and do nothing")
+    beta.add_argument("--pull", action="store_true", help="first bring this checkout to its upstream (origin/main for the beta's checkout)")
     release = commands.add_parser("release", parents=[common], help="install a published release as the stable app")
     release.add_argument("tag", nargs="?", default=None, help="sutra-pro-vX.Y.Z (default: the newest stable tag of origin)")
     release.add_argument("--no-cli", action="store_true", help="do not reinstall the sutra-pro command")
@@ -492,7 +607,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         if args.command == "beta":
             return install_beta(args.install_dir, launch=not args.no_launch, proof=not args.no_proof, skip_npm=args.skip_npm, force=args.force,
-                                dry_run=args.dry_run)
+                                dry_run=args.dry_run, pull=args.pull)
         if args.command == "release":
             return install_release(args.tag, args.install_dir, launch=not args.no_launch, cli=not args.no_cli, force=args.force, dry_run=args.dry_run)
         return status(args.install_dir)
