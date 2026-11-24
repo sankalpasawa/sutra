@@ -32,6 +32,12 @@
 [data-who=dev] { --avc: var(--av-c4); }
 [data-who=nora] { --avc: var(--av-c5); }
 
+/* ---- a team page's rail. J2's sheet has an older `.av` rule (the Detailed view's letter tile: 30 px wide, the person's colour behind it) that also
+   catches the avatar pictures, so a rail face drew at 30 px in the top-left corner of its 40 px slot and the ring around the slot looked off-centre.
+   The rail face fills its slot, and an illustrated avatar has no tile colour behind its disc. */
+#sview .smate .sface > svg.av { width: 100%; height: 100%; }
+#sview svg.avill { background: none; }
+
 /* ---- the ring. The three selectors are one host; the long ones only outrank the team page's own busy ring and dot (j2.css). */
 :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])::before { content: none; }
 :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act]::before {
