@@ -5288,11 +5288,10 @@ class J2Run:
         """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
         folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
         w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
-                  and x["id"] not in self.real_runs_asked), None)
+                  and x["id"] not in self.real_runs_asked and x["id"] not in self.real_runs_done), None)
         if w is None:
             return False
         rr, code = w["real_run"], secrets.token_hex(3)
-        self.real_runs_asked[w["id"]] = code
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
@@ -5313,6 +5312,15 @@ class J2Run:
             self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
             self.turn, self.handoff = None, {}
             return True
+        if not dry.get("ran") or dry.get("exit") != 0:      # only a dry run that exits 0 is offered to the Requester
+            how = f"exited {dry['exit']}" if dry.get("exit") is not None else "did not finish"
+            ended = (dry.get("stderr") or dry.get("stdout") or "").strip() or "it printed nothing"
+            return self._real_run_not_offered(
+                w, f"its dry run on copies {how}",
+                f"- the planned real run failed when code tried it on copies of the Requester's folders (nothing ran on "
+                f"the real ones): {shlex.join(rr['command'])} {how}. The end of its error output:\n{ended}\n"
+                "Fix the files so that this command exits 0.")
+        self.real_runs_asked[w["id"]] = code
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
@@ -5322,6 +5330,31 @@ class J2Run:
                   real_run=w["id"])
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _real_run_not_offered(self, w, why, back=""):
+        """A planned real run that may not be offered to the Requester (its dry run on copies did not exit 0): a
+        receipt says so, with the dry run's exit code and the end of its output, and no approval is asked for. With
+        `back` (what its builder is told) and attempts left, the workflow goes back to its builder under the normal
+        attempt rules (MAX_CHECK_ATTEMPTS, counted on from the attempts it used), and the real run is asked for again
+        after the rebuild: True. Else the real run is closed as not run, with why, and the run goes on to its end,
+        which says so: False."""
+        n, sent = as_int(w.get("build_attempts")), as_int(w.get("sent_back"))
+        again = bool(back) and self._general() and 0 < n < MAX_CHECK_ATTEMPTS and sent < MAX_CHECK_ATTEMPTS
+        self._real_run_receipt(w["id"], code=None, offered=False, approved=False, ran=False, exit=None,
+                               evidence=f"not offered: {why}")
+        self._event("code", "real_run", f"{w['id']}: not offered: {why}")
+        self.post("system", f"{w['id']}'s real run is not offered: {why}. Nothing ran on your files. "
+                            + (f"It goes back to its builder with the reason (attempt {n + 1} of {MAX_CHECK_ATTEMPTS})."
+                               if again else "It has no attempts left, so the live step does not run in this run."),
+                  warning=True, real_run=w["id"])
+        if not again:
+            self._real_run_decided(w["id"], False, f"did not run: {why}", f"not offered: {why}")
+            return False
+        w["resume"], w["sent_back"] = {"attempt": n, "evidence": back}, sent + 1
+        self.real_runs_dry.pop(w["id"], None)
+        self.save("workflows.json", self.workflows)
+        self._handoff(w["id"], kind="build", wid=w["id"])
         return True
 
     def _real_run_receipt(self, wid, **rec):
@@ -9670,7 +9703,8 @@ class J2Run:
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
         attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
-        reused = self._reuse_folder(w, cwd)
+        resume = w.pop("resume", None) or {}      # code sent it back (a failed dry run): its attempts go on, with the reason
+        reused = None if resume else self._reuse_folder(w, cwd)
         if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
             reused, evidence = None, leak
         if reused:      # step 6: the run template's files are already here: code checks them before any builder call
@@ -9682,6 +9716,8 @@ class J2Run:
                  "human_output": f"I reused the files of {reused} instead of building them again.",
                  "atom_human_output": "This part comes from an earlier run that made the same thing."}
             evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+        if resume:
+            attempt, evidence = as_int(resume.get("attempt")), str(resume.get("evidence") or "")
         self.tools_builder = j2_types.builder_tools().get("builder")
         try:
             while (not reused or failed) and attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
@@ -9728,7 +9764,7 @@ class J2Run:
             return self._handoff("coordination", kind="schedule")
         human = self._human_output(w, meta, w.get("section"))
         self._atom_outputs(w, meta, attempt)
-        w["status"], w["version"] = "done", len(self.sites)
+        w["status"], w["version"], w["build_attempts"] = "done", len(self.sites), attempt
         self.save("workflows.json", self.workflows)
         self._say(fn, f"@Coordination {human}", "coordination", None, workflow=fn, human_output=human,
                   version=len(self.sites), section=w.get("section"), workflow_cost=w["cost"])
