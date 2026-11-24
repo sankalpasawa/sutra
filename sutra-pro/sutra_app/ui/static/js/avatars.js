@@ -140,10 +140,15 @@
     if (!d || !s || typeof s !== "object") return;
     T.last = s;
     const msg = newMessage(s);
-    d.querySelectorAll(MATES).forEach(el => {
+    const mates = Array.from(d.querySelectorAll(MATES));
+    // A run that is going always has someone at work. The page marks a teammate busy only for the steps it knows by name; in between (the
+    // request being read, a step being set up) it marks nobody, and that work is Asha's: she is the lead, and the page's own line says so
+    // ("Asha is reading this"). So while the run is live and nobody is marked, the arc is around Asha.
+    const lead = s.status === "running" && !mates.some(el => el.classList.contains("busy"));
+    mates.forEach(el => {
       const k = keyOf(el.dataset.mate), host = el.classList.contains("sface") ? el : el.querySelector(".sface");
       if (!host) return;
-      const rail = host !== el, busy = el.classList.contains("busy");
+      const rail = host !== el, busy = el.classList.contains("busy") || (lead && k === "asha");
       const ask = rail ? el.classList.contains("ask") : !!host.querySelector(".pip");
       const done = !busy && !ask && doneOf(s, k);
       const act = ask ? "ask" : busy ? "work" : done ? "done" : "";

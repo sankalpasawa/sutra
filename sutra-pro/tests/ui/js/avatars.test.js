@@ -209,3 +209,21 @@ test("Home's card under the box shows Asha's activity around her, and the words 
     for (const k of Object.keys(plain)) assert.equal(strip(ringed[k]), plain[k], k + ": the ring wraps the face and changes nothing else");
   } finally { delete globalThis.Avatars; }
 });
+
+test("while a run is going and the page marks nobody busy, the arc is around Asha; once someone is marked, or she asks, it is not", () => {
+  const p = page("{}", {face: () => "", renderSimple: () => "", isReady: () => false});
+  const acts = () => p.mates.map(m => m.host.dataset.act || "-").join(" ");
+  p.mates.push(mate("asha", ""), mate("mira", ""), mate("nora", ""));
+  p.sandbox.renderSimple({status: "running", allChat: []});
+  assert.equal(acts(), "work - -", "the request is being read: nobody is marked, so it is the lead's work");
+  p.sandbox.renderSimple({status: "waiting", allChat: []});
+  assert.equal(acts(), "- - -", "nothing is running");
+  p.mates.length = 0;
+  p.mates.push(mate("asha", ""), mate("mira", "busy"));
+  p.sandbox.renderSimple({status: "running", allChat: []});
+  assert.equal(acts(), "- work", "Mira is at work: the arc is hers alone");
+  p.mates.length = 0;
+  p.mates.push(mate("asha", "ask"), mate("mira", ""));
+  p.sandbox.renderSimple({status: "running", allChat: []});
+  assert.equal(acts(), "ask -", "a question for the owner outranks the arc");
+});
