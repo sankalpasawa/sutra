@@ -3552,6 +3552,8 @@ class J2Run:
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_runs_why = {}      # step 7: workflow id -> why its real run did not run or did not pass, in plain words
+        self.hosts_asked = {}        # step 7: workflow id -> the one-time code its real run's hosts were asked for with
+        self.hosts_ok = {}           # step 7: workflow id -> the hosts the Requester approved for its dry run and real run
         self.env_asked = {}          # requirements.txt hash -> the one-time code its packages were asked for with
         self.env_why = {}            # requirements.txt hash -> why its environment was not made (declined, the install failed)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
@@ -4806,7 +4808,7 @@ class J2Run:
                 "audit": self._identity_audit, "requester_answered": self._identity_hears_requester,
                 "ruling_budget": self._identity_ruling_budget, "limit": self._identity_limit,
                 "send_confirm": self._identity_send_confirm,
-                "real_run": self._identity_real_run,
+                "real_run": self._identity_real_run, "real_run_hosts": self._identity_real_run_hosts,
                 "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)
 
     CHARTER_FMT = ('{"statement": str, "site_name": str, "audience": str, "standards": [str], "rules": [str], '
@@ -5332,7 +5334,10 @@ class J2Run:
                 f"{'does' if len(missing) == 1 else 'do'} not resolve in the Python that runs it. Name the PyPI package of "
                 "each in requirements.txt with its exact version (name==1.2.3, one per line), or take the import out.",
                 env=run_facts(rr["command"], env))
-        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout(), env)
+        hosts = real_hosts(rr)
+        if hosts and sandbox_on() and self.hosts_ok.get(w["id"]) != hosts:
+            return self._hosts_ask(w, hosts, r)      # nothing is let through the sandbox before the Requester approves it
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout(), env, hosts)
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
@@ -5367,6 +5372,12 @@ class J2Run:
                             + (f"\nPackages it runs with (installed in an environment of its own, Python "
                                f"{env.get('python_version')}): {', '.join(env['packages']) or 'none'}. RUN {code} "
                                "approves running with them." if env else "")
+                            + "\nNetwork: " + (
+                                (f"it can reach only {', '.join(hosts)}. RUN {code} approves them." if sandbox_on() else
+                                 f"it says it reaches {', '.join(hosts)}. No sandbox is on, so this is not enforced. "
+                                 f"RUN {code} approves them.") if hosts else
+                                "none: it runs without network." if sandbox_on() else
+                                "it names no hosts. No sandbox is on, so the network is not blocked.")
                             + f"\nWhat it would do, from a {dry['evidence']}"
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
@@ -5375,6 +5386,47 @@ class J2Run:
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
         return True
+
+    def _hosts_ask(self, w, hosts, r):
+        """A planned real run that names hosts, with the sandbox on: its dry run on copies can't pass without them, and
+        nothing is let through the sandbox without the Requester's approval. So code asks first: the hosts, the
+        command and a one-time code; the run pauses (Decide for me never answers). True."""
+        code = self.hosts_asked[w["id"]] = secrets.token_hex(3)
+        self.post("system", f"{w['id']}'s planned real run needs the network. Nothing is allowed until you approve.\n"
+                            f"Hosts it would reach, and no others: {', '.join(hosts)}\n"
+                            f"Command: {shlex.join(w['real_run']['command'])}\n"
+                            "With your approval code first tries it on copies of your folders with only these hosts "
+                            "reachable, then asks you again before it runs on your own files.\n"
+                            f"To allow these hosts, reply exactly: RUN {code}\n"
+                            "To decline, reply: decline. Any other reply: nothing is allowed, and this question stays open.",
+                  real_run=w["id"])
+        self._ask_user("One of the workflows wants to reach the network when it runs what it built. The hosts are above.",
+                       [{"question": "Allow these hosts?"}], "real_run",
+                       handoff={"kind": "real_run_hosts", "r": r, "wid": w["id"]})
+        return True
+
+    def _identity_real_run_hosts(self, h):
+        """Code, not an agent, reads the reply to _hosts_ask (run_reply). RUN <code>: the hosts are approved for this
+        workflow's dry run and real run, and the run goes on to the dry run. A decline: the real run is not offered.
+        Any other reply: code says so and the question stays open."""
+        w, code = self._wf(h.get("wid")), self.hosts_asked.get(h.get("wid"))
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        said = run_reply(h.get("answer"), code) if w and code and not last.get("auto") else ""
+        if w and code and not said:
+            self._event("code", "real_run", f"{w['id']}: the reply was not RUN {code} and not a decline: asked again")
+            self.post("system", f"Not allowed. Reply exactly RUN {code}, or decline.", real_run=w["id"])
+            return self._ask_user("That reply did not allow the hosts and did not decline them. The exact reply is above.",
+                                  [{"question": "Allow these hosts?"}], "real_run",
+                                  handoff={"kind": "real_run_hosts", "r": h.get("r") or {}, "wid": w["id"]})
+        hosts = real_hosts((w or {}).get("real_run"))
+        if said == "run":
+            self.hosts_ok[w["id"]] = hosts
+            self._event("code", "real_run", f"{w['id']}: the Requester allowed {', '.join(hosts)} (message {last.get('id')})")
+            self.post("system", f"Allowed for {w['id']}'s dry run and real run, and nothing else: {', '.join(hosts)}.",
+                      real_run=w["id"])
+        elif w:
+            self._real_run_not_offered(w, f"the Requester declined letting it reach {and_list(hosts)}")
+        self._goal_done(h.get("r") or {})
 
     def _run_env(self):
         """The environment the built folder's commands run in. (None, "") without a requirements.txt: the form's own
@@ -5528,7 +5580,7 @@ class J2Run:
                                   handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
         env, gone = self._run_env() if said == "run" else (None, "")
         ok = said == "run" and not gone
-        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env) if ok else \
+        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env, real_hosts(w["real_run"])) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
              f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
         self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
