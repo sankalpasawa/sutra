@@ -179,7 +179,10 @@ def prove(app: Path, version: str | None) -> None:
             check(time.monotonic() < end, f"the task never reached waiting_user: {client.json(f'/api/tasks/{task}')}")
             time.sleep(0.25)
         engines = processes_mentioning(str(data))
-        check(len(engines) >= 2, f"expected the server and an engine process of this data folder, saw {engines}")
+        # The Web team's run is the engine process to see. The server's command line never names the data folder; up to 0.7.0 a second
+        # engine run (a team the org chat added for "hello there") made the count 2. Since D427 the org chat asks before it adds a team.
+        web = str(data / "departments" / "web")
+        check(any("sutra_app.engine" in line and web in line for line in engines), f"expected an engine process of the Web team's run in this data folder, saw {engines}")
         print(f"step 3: a team ran its first turn ({len(engines)} processes of this data folder)", flush=True)
 
         # 4. a stop request ends it, and leaves nothing behind

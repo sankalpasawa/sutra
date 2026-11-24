@@ -179,7 +179,10 @@ def prove_team(python: Path, version: str | None, work: Path) -> None:
             check(time.monotonic() < end, f"the task never reached waiting_user: {client.json(f'/api/tasks/{task}')}")
             time.sleep(0.25)
         engines = processes_mentioning(str(data))
-        check(len(engines) >= 2, f"expected the server and an engine process of this data folder, saw {engines}")
+        # The Web team's run is the engine process to see. The server's command line never names the data folder; up to 0.7.0 a second
+        # engine run (a team the org chat added for "hello there") made the count 2. Since D427 the org chat asks before it adds a team.
+        web = str(data / "departments" / "web")
+        check(any("sutra_app.engine" in line and web in line for line in engines), f"expected an engine process of the Web team's run in this data folder, saw {engines}")
         done = subprocess.run([str(python), "-I", "-B", *(["-X", "utf8"] if WINDOWS else []), "-m", "sutra_app", "stop", "--wait", str(STOP_TIMEOUT_S - 10)],
                               cwd=str(python.parent), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=STOP_TIMEOUT_S + 30)
         print(done.stdout + done.stderr, flush=True)
