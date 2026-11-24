@@ -180,6 +180,18 @@
           "title": "Files",
           "type": "array"
         },
+        "item_checks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ItemCheck"
+          },
+          "maxProperties": 200,
+          "propertyNames": {
+            "maxLength": 600,
+            "minLength": 1
+          },
+          "title": "Item Checks",
+          "type": "object"
+        },
         "item_kinds": {
           "additionalProperties": {
             "maxLength": 60,
@@ -398,6 +410,31 @@
       "title": "ExactFact",
       "type": "object"
     },
+    "ItemCheck": {
+      "additionalProperties": false,
+      "description": "D433: the runnable check of one done-when item (`goal.item_checks`, keyed by item text): a check type of the form, or\n`real-run`, or code's own `render-check`; code runs it at every audit.",
+      "properties": {
+        "expect": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "target": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "type": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ItemCheck",
+      "type": "object"
+    },
     "JsonValue": {},
     "SiteGoal": {
       "additionalProperties": false,
@@ -538,6 +575,18 @@
           "maxItems": 60,
           "title": "Facts",
           "type": "array"
+        },
+        "item_checks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ItemCheck"
+          },
+          "maxProperties": 200,
+          "propertyNames": {
+            "maxLength": 600,
+            "minLength": 1
+          },
+          "title": "Item Checks",
+          "type": "object"
         },
         "item_kinds": {
           "additionalProperties": {
