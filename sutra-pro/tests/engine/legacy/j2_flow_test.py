@@ -9071,7 +9071,13 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-19 (Sutra Pro P24, D249/D250) for Priority's prompts only: its reply format is each workflow's id
 # and envelope. Outcomes, spend, the agents called, workflows and the documents are identical to J2's
 # {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}.
-DOC_RUN_GOLDEN = {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}      # P24: Priority's move is id + envelope
+# Re-recorded 2026-11-24 (Sutra Pro P30, D433, D249) for prompts and the new P30 fields only: Identity's intake format
+# and rule and every builder's reply format and brief (prompts); each workflow carries item_status (the mock builders
+# set every item built); each stage goal (stage-*.json) carries item_checks. Compared field by field with the engine of
+# origin/main 541e572c: outcomes, spend, the call count and order, every other workflow field and value, and the
+# documents (prd/hld/lld.md, documents.json) are identical to
+# {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}. P31 to P35 change none of them.
+DOC_RUN_GOLDEN = {"prd": "21389698fc4e", "design docs": "329d16437aaa", "docs then site": "ed6fa6e18d61"}      # Sutra P30 (D433)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
