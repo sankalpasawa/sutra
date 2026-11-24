@@ -3380,6 +3380,24 @@ def test_p30_every_chain_ending_names_an_earlier_stages_blocked_item(make_run, e
     assert_names_blocked(str(run.outcome), item)
 
 
+def test_p30_finishing_as_it_is_at_the_stage_gate_names_an_earlier_stages_blocked_item(make_run):
+    """review R6-1: the stage gate's "finish as it is" (_stage_decision, ship) writes its own outcome; after a PRD with a
+    blocked item it must name it, keeping its own "finished as it is ... Not made: ..." words."""
+    run, item = blocked_prd(make_run)
+    run.outcome, run.turn = None, None      # back to the gate after the PRD: the HLD stage not started
+    run.stage_archive = [a for a in run.stage_archive if a["stage"] == "prd"]
+    run.stage_i = 0
+    run.decisions.append({"kind": "stage"})
+    run._read_decision = lambda *a, **k: {"decision": "ship"}
+    run._stage_decision({"answer": "Finish as it is", "choices": ["continue", "drop", "ship"], "stage_i": 1,
+                         "asked": [{"question": "q"}]})
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: finished as it is on the Requester's decision. Not made: "), out
+    # the gate runs before the HLD begins, so the PRD is still the current stage (stage_kind) and keeps the follow-up hint (R5-3)
+    assert f"Still not workable: {item} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
+
+
 # ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
 @pytest.mark.parametrize("stated", ["~/demo/rename-test", "{home}/demo/rename-test"])
 def test_p31_a_tilde_folder_and_its_expanded_form_both_register(sort_run, tmp_path, monkeypatch, stated):

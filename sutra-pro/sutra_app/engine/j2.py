@@ -5614,7 +5614,9 @@ class J2Run:
             left = and_list(self._sw(k) for k in self.stages[i:])
             self.post("identity", f"Got it. We'll finish with what is already written. Not made: {left}.", to_user=True,
                       next="user", done=True)
-            self.outcome = f"Done with open items: finished as it is on the Requester's decision. Not made: {left}."
+            lines = self._chain_blocked()      # review R6-1
+            self.outcome = (f"Done with open items: finished as it is on the Requester's decision. Not made: {left}."
+                            + (f" Still not workable: {'; '.join(lines).rstrip('.')}." if lines else ""))
             self.turn = None
             return
         if decision == "drop":
