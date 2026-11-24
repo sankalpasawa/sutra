@@ -2103,5 +2103,10 @@
   "id": "D434",
   "label": "failed dry run goes back to the build; only Run or Don't run answers (P31, E28)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D435",
+  "label": "dry run always network-fenced, or not run (P32)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

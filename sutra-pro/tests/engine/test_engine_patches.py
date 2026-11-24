@@ -2719,3 +2719,69 @@ def test_p31_a_replacements_approved_run_decides_the_item_the_failed_one_checked
     assert run._real_run_pending() and run._ask_real_run({}) and run.paused["kind"] == "real_run"
     p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
     assert run.real_runs_done == {w2["id"]: True} and run._real_run_pending() == []
+
+
+# ---- P32 (D435): the dry run always runs inside the sandbox runtime (no network), or it is not run --------------------
+# Made-up stand-in for srt: it keeps the settings it was given beside itself, then runs the command (no sandbox: test only).
+P32_SRT = ("import shutil, subprocess, sys\na = sys.argv[1:]\nshutil.copy(a[a.index('-s') + 1], sys.argv[0] + '.json')\n"
+           "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
+NO_DRY_RUN = "No dry run: this computer has no sandbox, so it wasn't tested first"
+
+
+@pytest.fixture
+def p32(p31, tmp_path, monkeypatch):
+    """p31's run with the sandbox switch off and the recording stand-in as J2_SANDBOX_CMD; (go, real, settings file)."""
+    go, real = p31
+    fake = tmp_path / "rec_srt.py"
+    fake.write_text(P32_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    return go, real, tmp_path / "rec_srt.py.json"
+
+
+def p32_card(run):
+    return next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+
+
+def test_p32_the_dry_run_is_fenced_with_the_sandbox_switch_off(p32):
+    go, _, seen = p32
+    run = go(P31_OK)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    assert json.loads(seen.read_text())["network"]["allowedDomains"] == []
+    assert run.real_runs_dry["W-1"]["ran"] is True and run.real_runs_dry["W-1"]["fenced"] is True
+    card = p32_card(run)
+    assert "dry run on a copy: exit 0" in card and "\nThe dry run had no network access: results may differ." in card, card
+    assert NO_DRY_RUN not in card
+
+
+@pytest.mark.parametrize("env", [{"J2_SANDBOX_CMD": "no-such-sandbox-xyz"},      # the program is not on PATH (Windows, no srt)
+                                 {"J2_SANDBOX": None}])      # an offline run without J2_SANDBOX: no sandbox, even with a runtime
+def test_p32_without_a_sandbox_runtime_the_dry_run_is_not_run_and_the_card_says_so(p32, monkeypatch, env):
+    go, real, seen = p32
+    for k, v in env.items():
+        monkeypatch.delenv(k) if v is None else monkeypatch.setenv(k, v)
+    run = go(P31_OK)
+
+    def boom(*a, **k):
+        raise AssertionError("the dry run must never run without the sandbox runtime")
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
+    dry = run.real_runs_dry["W-1"]
+    assert dry["ran"] is False and dry["fenced"] is False and not seen.exists()
+    assert dry["evidence"] == "no sandbox runtime here: the dry run was not run, because it never runs with network"
+    card = p32_card(run)
+    assert f"\n{NO_DRY_RUN}\n" in card and "no network access" not in card and "What it would do" not in card, card
+    assert not os.path.exists(os.path.join(real, "done.txt"))
+
+
+def test_p32_the_approved_run_still_follows_the_switch(p32):
+    go, real, seen = p32
+    run = go(P31_OK)
+    run._ask_real_run({})
+    assert seen.exists()
+    seen.unlink()
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and "without a sandbox" in r["evidence"], r["evidence"]
+    assert not seen.exists() and os.path.exists(os.path.join(real, "done.txt"))

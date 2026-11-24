@@ -5139,6 +5139,9 @@ def dry_run_real_folders():
         run2._run_tools(w2, {"id": "W-1", "name": "copier", "outputs": w2["outputs"]}, 3)
         assert w2["status"] == "failed" and any("still hold the Requester's real folder paths" in m["text"] for m in run2.chat), w2["status"]
         assert open(os.path.join(b, "one.txt")).read() == "kept" and os.listdir(b) == ["one.txt"]
+        # Sutra P32 (D435): the dry run runs only inside the sandbox runtime; the stand-in (FAKE_SRT) is it, the switch still off
+        open(os.path.join(base, "fake_srt.py"), "w").write(FAKE_SRT)
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {os.path.join(base, 'fake_srt.py')}", J2_SANDBOX="0")
         # (c) the fixed script with its folders as arguments: the dry run passes the copies, the real folders untouched
         open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(fixed)
         dry = j2.real_run_dry(run._out_dir(), good, 60)

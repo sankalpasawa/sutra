@@ -714,7 +714,11 @@ def real_run(out_dir, rr, timeout):
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
     and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
+    fence = rr.get("fence") is True      # P32 (D435): the dry run (real_run_dry) always goes through the sandbox runtime
+    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() or fence else None
+    if fence and (shutil.which(shlex.split(cmd)[0]) is None or (llm.MOCK and not os.getenv("J2_SANDBOX"))):      # none here
+        return {"ran": False, "exit": None, "evidence": "no sandbox runtime here: the dry run was not run, because it never "
+                                                        "runs with network"}      # (or offline without J2_SANDBOX): never unfenced
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
     out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
@@ -790,16 +794,17 @@ def real_run_dry(out_dir, rr, timeout):
             return k + eq + v
         before = _tree(copies[0])
         cmd = [moved(x) for x in rr["command"]]
+        rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
         out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
         if real:
-            return {"ran": res.get("ran"), "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real,
+            return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {},
+        return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {},
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -5753,7 +5758,10 @@ class J2Run:
                                         + f": {last[:160]}")
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
+                            + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
+                                                                            "dry run had no network access: results may differ."
+                                                                            if dry.get("fenced") else      # P32 (D435)
+                                                                            "No dry run: this computer has no sandbox, so it wasn't tested first")
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
                             "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
