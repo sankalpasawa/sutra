@@ -4141,7 +4141,7 @@ class J2Run:
             return f"Stopped {why}: nothing was built."
         fails = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             if self.audits else ["nothing has been checked"]      # beta fix (b): a blocked item is listed once, by _open_items
-        fails = self.open_docs + fails + self._real_run_pending() + self._open_items()      # P30 (D433)
+        fails = self.open_docs + fails + self._real_run_pending() + self._stage_blocked() + self._open_items()      # P30 (D433)
         if not fails:
             return self.out["done"]
         return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails).rstrip('.')}."      # beta fix d
@@ -5432,7 +5432,10 @@ class J2Run:
         if self.doc:
             self._stage_artifacts()
         base = self.goal or {}
-        self.stage_archive.append({"stage": self.stage_kind, "goal": base, "audits": self.audits, "sections": self.sections})
+        blocked = set(self._blocked_items())
+        left = self._open_items(skip=[t for t in base.get("done_when") or [] if t not in blocked]) if blocked else []
+        self.stage_archive.append({"stage": self.stage_kind, "goal": base, "audits": self.audits, "sections": self.sections,
+                                   **({"blocked": left} if left else {})})      # review R4-1 (D433)
         self.save(f"stage-{self.stage_kind}.json", self.stage_archive[-1])
         return self._advance(self.stage_i + 1)
 
@@ -6864,7 +6867,7 @@ class J2Run:
         rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
         rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
-        opened = self._open_items() if self.audits else []      # P30 (D433): an item its builder did not set built
+        opened = self._stage_blocked() + (self._open_items() if self.audits else [])      # P30 (D433), R4-1: earlier stages too
         if rr or opened:
             self.outcome = ("Done with open items: "
                             + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
@@ -10796,6 +10799,12 @@ class J2Run:
         facts, by_run = {t["criterion"]: t["fact"] for t in self.goal.get("to_be_confirmed") or []}, set(self._real_run_items())
         return {r["criterion"]: facts[r["criterion"]] for r in self.audits[-1].get("results") or []
                 if r.get("verdict") == "TO_BE_CONFIRMED" and r["criterion"] in facts and r["criterion"] not in by_run}
+
+    def _stage_blocked(self):
+        """P30 (D433, review R4-1): the blocked lines of each earlier stage of a design-document chain, kept when it was left
+        (_next_stage), named by stage: _begin_stage resets the goal, audits and workflows, so the outcome reads them here."""
+        return [f"{a['stage'].upper()} {line}" for a in self.stage_archive if a.get("stage") != self.stage_kind
+                for line in a.get("blocked") or []]
 
     def _run_item_check(self, text, chk, built, mech):
         """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the

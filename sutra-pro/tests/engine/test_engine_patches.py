@@ -3215,6 +3215,40 @@ def test_p30_a_follow_up_without_a_to_be_confirmed_item_skips_identitys_intake(m
     assert intakes == [] and follow.outcome.startswith("Done:"), follow.outcome
 
 
+# ---- review R4-1, P30 amended (D433): a stage left with a blocked item is named in the run's outcome -------------------------
+CAMPUS_DOCS = ("Design docs for Campus Notes. Users: students and teachers. Problem: students lose track of their notes. "
+               "Must-have features: upload notes, search notes. Constraints: free to use. Success: 50 uploads per week.")
+
+
+def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
+    """A PRD, HLD, LLD chain: the PRD's first item is blocked by its builder; the later stages are
+    clean. Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
+    run = make_run()
+    run.budget, real_call, target = 400, run.call, {}
+
+    def call(fn, fmt, task, mock, *a, **k):
+        def scripted():
+            text = mock()      # a section builder's reply: its JSON, then the section's markdown
+            r, end = json.JSONDecoder().raw_decode(text) if run.stage_kind == "prd" and fn.startswith("W-") else (None, 0)
+            if not isinstance(r, dict) or not r.get("item_status"):
+                return text
+            target.setdefault("item", r["item_status"][0]["item"])
+            for s in r["item_status"]:
+                if s["item"] == target["item"]:
+                    s.update(status="blocked", reason=WEBHOOK)
+            return json.dumps(r) + text[end:]
+        return real_call(fn, fmt, task, scripted, *a, **k)
+    run.call = call
+    say(run, CAMPUS_DOCS)
+    assert run.stages == ["prd", "hld", "lld"] and target, (run.stages, target)
+    prd = next(a for a in run.stage_archive if a["stage"] == "prd")
+    item = prd["goal"]["done_when"][target["item"] - 1]
+    out = str(run.outcome)
+    assert out.startswith("Done with open items"), out
+    assert f"PRD done-when item {target['item']}: {item.rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert out.count(f"needs {WEBHOOK}") == 1, out
+
+
 # ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
 @pytest.mark.parametrize("stated", ["~/demo/rename-test", "{home}/demo/rename-test"])
 def test_p31_a_tilde_folder_and_its_expanded_form_both_register(sort_run, tmp_path, monkeypatch, stated):
