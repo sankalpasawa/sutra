@@ -632,6 +632,43 @@ def _repo_root():
     return p if os.path.exists(os.path.join(p, ".git")) else HERE
 
 
+EXPECT_KEYS = ("created", "changed", "deleted")      # P35 (D438): a real run's expected result, by kind
+REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": {"created": [paths or globs], "changed": [...], '
+                        '"deleted": [...]}, each relative to folder: exactly what running it on the folder creates, changes and '
+                        'deletes (an empty list: nothing of that kind). Code runs it on copies first and compares; anything else, '
+                        'or any change in a folder it only reads, sends it back.')
+
+
+def real_run_expect_problems(rr):
+    """P35 (D438): why a planned real run's "expect" is not usable ([] when it is): exactly the three lists of EXPECT_KEYS,
+    each of non-empty relative paths or globs (no absolute path, no ..), not all empty. Structure only, no word read."""
+    ex = rr.get("expect")
+    if ex is None:
+        return ['real_run expect is missing: say what running it does to folder, {"created": [...], "changed": [...], '
+                '"deleted": [...]}, each a list of paths or globs relative to folder']
+    if not isinstance(ex, dict) or set(ex) != set(EXPECT_KEYS):
+        return ['real_run expect must be exactly {"created": [...], "changed": [...], "deleted": [...]}']
+    out = [f"real_run expect {k} must be a list of non-empty paths or globs relative to folder (no absolute path, no ..)"
+           for k in EXPECT_KEYS if not (isinstance(ex[k], list) and all(
+               isinstance(g, str) and g.strip() and not os.path.isabs(g) and ".." not in re.split(r"[/\\]", g) for g in ex[k]))]
+    if not out and not any(ex.values()):
+        out.append("real_run expect lists nothing: a real run that creates, changes and deletes nothing has nothing to run")
+    return out
+
+
+def expect_mismatch(expect, dry):
+    """P35 (D438): "" when the dry run's created/changed/deleted paths match expect, else what differs, sorted: per kind, a
+    glob no path matched ("expected <glob>, got none") and a path no glob matched ("unexpected <path>"). An empty list
+    means nothing of that kind. fnmatchcase: "*" also matches across "/"."""
+    from fnmatch import fnmatchcase
+    out = []
+    for k in EXPECT_KEYS:
+        globs, got = sorted(expect.get(k) or []), sorted(dry.get(k) or [])
+        out += [f"{k}: expected {g}, got none" for g in globs if not any(fnmatchcase(p, g) for p in got)]
+        out += [f"{k}: unexpected {p}" for p in got if not any(fnmatchcase(p, g) for g in globs)]
+    return "; ".join(out)
+
+
 def real_run_problems(rr, source, runner, run_dir):
     """Why a planned real run may not be asked for ([] when it may): its command starts with the form's runner, every
     folder is absolute, exists, is named in the brief or the Requester's answers (source, squashed) and is not /, the
@@ -792,19 +829,21 @@ def real_run_dry(out_dir, rr, timeout):
                     v = c + v[len(p):]
                     break
             return k + eq + v
-        before = _tree(copies[0])
+        before, reads_before = _tree(copies[0]), [_tree(c) for c in copies[1:]]      # P35 (D438): the read-only copies too
         cmd = [moved(x) for x in rr["command"]]
         rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
         out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))
+        reads_changed = {str(i): x for i, (c, b) in enumerate(zip(copies[1:], reads_before), 1)      # P35 (D438): {n: diff}
+                         if any((x := _tree_diff(b, _tree(c))).values())}      # of the n-th read-only copy, when it changed
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
         if real:
-            return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real,
+            return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real, "reads_changed": reads_changed,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {},
+        return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {}, "reads_changed": reads_changed,
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -4053,7 +4092,7 @@ class J2Run:
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
-                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
+                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -5737,6 +5776,14 @@ class J2Run:
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
+        if dry.get("ran") and dry.get("exit") == 0 and not dry.get("real_changed"):      # P35 (D438): after the stop and P31's
+            if dry.get("reads_changed"):      # exit check (both below): a write into a read-only copy, then a result unlike expect
+                return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
+                    f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
+                    for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
+            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # a real run registered before P35 has none
+                dry["expect_mismatch"] = mm
+                return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
             self.post("system", f"{w['id']}'s dry run changed your real folders, not only the copies, before any "
                                 f"approval.\nCommand: {shlex.join(rr['command'])}" + "".join(
@@ -9425,6 +9472,9 @@ class J2Run:
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
                     continue
+                if bad := real_run_expect_problems(w["real_run"]):      # P35 (D438): what it will create, change and delete
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_expect",)))
+                    continue
                 checks = w["real_run"].get("checks") or []
                 at = self._item_at()
                 # structure only: item numbers in covers and checks, and an empty checks list
@@ -9440,7 +9490,7 @@ class J2Run:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_checks", tuple(
                         as_int(i) for i in checks) if isinstance(checks, list) else ())))
                     continue
-                wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
+                wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time

@@ -4909,7 +4909,8 @@ def run_for_real():
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
-        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them"}
+        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them",
+              "expect": {"created": ["sorted.txt"], "changed": ["keep.txt"], "deleted": ["gone.txt"]}}      # Sutra P35 (D438)
         P = lambda x, **kw: j2.real_run_problems({**rr, **x}, source, runner, "/nowhere/run")
         assert P({}) == [], P({})
         assert any("must start with python3" in x for x in P({"command": ["bash", "sort.sh"]}))
@@ -5019,7 +5020,8 @@ def real_run_checks():
                 "how": {"kind": "AI", "agent": "Builder", "steps": "write go.py"},
                 "expected_output": [{"text": "go.py exists", "kind": "file", "target": "go.py"}],
                 "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
-        rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x"}
+        rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x",
+              "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}      # Sutra P35 (D438): what go.py creates
         wf = lambda covers, checks: {"name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
                                      "covers": covers, "parts": ["agent_file"] * len(covers), "atoms": [atom], "real_run": {**rr, "checks": checks}}
         for covers, checks, why in (([1, 2], [2], "so no workflow covers it: take it out of covers and keep it in real_run checks"),
@@ -5306,7 +5308,8 @@ def grant_and_question_kind():
                 "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
         prop = {"id": "build-go", "name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
                 "covers": [1], "parts": ["agent_file"], "atoms": [atom], "estimated_resources": {"money": 20},
-                "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2]}}
+                "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2],
+                             "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}}      # Sutra P35 (D438)
         run.proposed_fields = {"build-go": copy.deepcopy(prop), "Builder": copy.deepcopy(prop)}
         env = {"money_limit": 25, "model_call_limit": 3, "time_limit_minutes": 5, "retry_limit": 1, "stop_loss": "s"}
         echo = {**{k: v for k, v in prop.items() if k != "real_run"}, "covers": [1, 2], "goal_gap": "changed",

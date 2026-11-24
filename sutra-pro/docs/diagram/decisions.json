@@ -2118,5 +2118,10 @@
   "id": "D437",
   "label": "build output holds only built files: no .claude (P34)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D438",
+  "label": "real run states expect; a dry run unlike it, or writing a read folder, goes back (P35)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

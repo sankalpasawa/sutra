@@ -9,7 +9,7 @@
   "graph_map",
   "warm_ui"
  ],
- "legacy_flow_test_sha256": "0b6241114a434b6428ea0f28430e29fef79e7d9e9b9c4885b621545ea9d9bd3a",
+ "legacy_flow_test_sha256": "2f4898bad5c912009d2195ade79d85adb6da2b8ecc0ff5ccaf2b1b7e59a448a4",
  "realization_checks": 98,
  "skip_lines_with_extraction": [
   "replay test skipped: runs/j2-20261015-114723 not found",

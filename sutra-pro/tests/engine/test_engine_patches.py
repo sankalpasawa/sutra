@@ -1311,7 +1311,8 @@ def sort_proposals(real, *, fix=False):
         return {"name": name, "kind": "build", "goal_gap": "x", "outputs": [out], "completion_check": "z", "covers": covers,
                 "dependencies": deps, "parts": ["agent_file"] * max(1, len(covers)), "atoms": [atom], "real_run": real_run}
     rr = {"command": ["python3", "sort_files.py", real], "folder": real, "reads": [],
-          "why": "The brief asks to run the script on the Requester's own folder.", "checks": [3]}
+          "why": "The brief asks to run the script on the Requester's own folder.", "checks": [3],
+          "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}      # P35 (D438): what P31_OK and P33_OK create
     script = wf("Build sort_files.py", "sort_files.py", [1], [], rr)
     if fix:
         return [script]
@@ -2792,7 +2793,8 @@ def test_p32_the_approved_run_still_follows_the_switch(p32):
 
 # ---- P33 (D436): Audit reads an approved real run's output against the brief; exit 0 alone never passes an item -------------
 # Made-up script: it exits 0 and prints what it did (in the dry run, to the temp copy).
-P33_OK = "import sys\nprint('moved a.pdf to pdf/')\nprint('moved b.jpg to jpg/')\nprint('sorted 2 files in ' + sys.argv[1])\n"
+P33_OK = ("import os, sys\nprint('moved a.pdf to pdf/')\nprint('moved b.jpg to jpg/')\nprint('sorted 2 files in ' + sys.argv[1])\n"
+          "open(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n")      # P35 (D438): what its real run's expect says
 P33_SAYS = "the output lists only a.pdf and b.jpg moved; c.txt and d.csv are not named"
 
 
@@ -2917,3 +2919,149 @@ def test_p34_no_site_copy_carries_a_claude_folder(j2, make_run):
     site = Path(run.dir) / "site"
     assert (site / run._main_file()).is_file() and (site / "pages" / "about.html").is_file()
     assert not [p for p in site.rglob(".claude")]
+
+
+# ---- P35 (D438): a real run states what it creates, changes and deletes; the dry run must match and leave read-only copies alone
+# SUT-12 (impact.md §9), made up: in/ holds two notes, out/ is empty, and copy.py <input> <output> upper-cases each input file
+# into the output and writes report.txt. Passed the folders swapped, it reads the empty out/ and writes report.txt into in/.
+P35_COPY = ("import os, sys\nsrc, dst = sys.argv[1], sys.argv[2]\nnames = sorted(os.listdir(src))\n"
+            "for n in names:\n    open(os.path.join(dst, n), 'w').write(open(os.path.join(src, n)).read().upper())\n"
+            "open(os.path.join(dst, 'report.txt'), 'w').write(str(len(names)) + ' files\\n')\nprint('processed', len(names))\n")
+P35_ALL = {"created": ["a.txt", "b.txt", "report.txt"], "changed": [], "deleted": []}
+P35_DONE_WHEN = ["copy.py upper-cases each file of a given input folder into a given output folder.",
+                 "copy.py writes report.txt with the number of files it copied.",
+                 "Run on the notes folder, out/ holds A.txt-style upper-case copies and report.txt."]
+
+
+@pytest.fixture
+def p35(j2ft, tmp_path, monkeypatch):
+    """(go, in, out): go(args, expect) makes a run whose W-1 (copy.py, its real run writing out/ and reading in/, checking
+    item 3) is registered and done. The dry run goes through P31's fake srt, which enforces nothing, so a swap is caught
+    only by code's own checks."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P31_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    src, dst = tmp_path / "in", tmp_path / "out"
+    src.mkdir()
+    dst.mkdir()
+    (src / "a.txt").write_text("alpha\n")
+    (src / "b.txt").write_text("beta\n")
+    counter = itertools.count(1)
+
+    def go(args=("in", "out"), expect=P35_ALL):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0900{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        run.request = f"Build copy.py, then run it on my notes in {src} and write the results to {dst}"
+        run.goal, run.budget = {"statement": "x", "done_when": list(P35_DONE_WHEN)}, 100
+        os.makedirs(run._out_dir(), exist_ok=True)
+        where = {"in": str(src), "out": str(dst)}
+        rr = {"command": ["python3", "copy.py", *(where[a] for a in args)], "folder": str(dst), "reads": [str(src)],
+              "why": "The brief asks to run it on the Requester's notes.", "checks": [3], "expect": expect}
+        reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr}])
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        (Path(run._out_dir()) / "copy.py").write_text(P35_COPY)
+        run.post("user", "Build it and run it on my notes")
+        return run
+    return go, src, dst
+
+
+def p35_again(run):
+    """Adaptation's fix: a workflow that revises W-1 with the same real run; its build passed (P28 sees a pass)."""
+    rr = {k: v for k, v in run.workflows[0]["real_run"].items()}
+    reg, refused, _ = run._register([{**sort_proposals(rr["folder"], fix=True)[0], "real_run": rr, "revises": "W-1"}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    assert run._repeat_build_stop(reg[0]["id"]) is False
+    return reg[0]
+
+
+def test_p35_swapped_folders_reproduce_and_now_go_back_to_the_build(p35):
+    """The reported bug: before P35 the swapped command's dry run said "0 created" and the Requester was asked to run it."""
+    go, src, dst = p35
+    run = go(("out", "in"), {"created": ["*.txt"], "changed": [], "deleted": []})
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")], "the swapped command reached the Requester"
+    assert w["status"] == "failed" and w["failure"] == [
+        "dry_run", "wrote into a folder it may only read: read folder 1: 1 created, 0 deleted, 0 changed"], w["failure"]
+    assert "W-1" not in run.real_runs_asked and run.paused is None and run.turn == "adaptation"
+    assert run.handoff["kind"] == "propose" and "wrote into a folder it may only read" in run.handoff["why"]
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["dry_run"]["reads_changed"] == {
+        "1": {"created": ["report.txt"], "deleted": [], "changed": []}}, r["dry_run"]
+    assert sorted(os.listdir(src)) == ["a.txt", "b.txt"] and os.listdir(dst) == [], "the real folders are untouched"
+
+
+def test_p35_expect_mismatch_missing_and_unexpected(j2ft):
+    em = j2ft.expect_mismatch
+    dry = {"created": ["z.txt", "a.txt", "report.txt"], "changed": [], "deleted": [], "output": "/tmp/.dryrun-x/f0"}
+    assert em(P35_ALL | {"created": ["*.txt"]}, dry) == ""
+    assert em(P35_ALL | {"created": ["a.txt", "report.txt", "z.txt"]}, dry) == ""
+    assert em(P35_ALL | {"created": ["*.csv", "a.txt"]}, dry) == \
+        "created: expected *.csv, got none; created: unexpected report.txt; created: unexpected z.txt"
+    assert em({"created": ["*.txt"], "changed": [], "deleted": []}, {**dry, "deleted": ["old.txt"]}) == "deleted: unexpected old.txt"
+    assert em({"created": ["*.txt"], "changed": ["keep.txt"], "deleted": []}, dry) == "changed: expected keep.txt, got none"
+    assert em(P35_ALL, {"created": [], "changed": [], "deleted": []}) == \
+        "created: expected a.txt, got none; created: expected b.txt, got none; created: expected report.txt, got none"
+    assert ".dryrun-" not in em(P35_ALL, dry)
+
+
+def test_p35_a_matching_dry_run_is_asked(p35):
+    go, src, dst = p35
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
+    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "Created (3): a.txt, b.txt, report.txt" in card and run.workflows[0]["status"] == "done"
+    assert run.real_runs_dry["W-1"]["reads_changed"] == {} and os.listdir(dst) == []
+
+
+def test_p35_a_file_the_expect_left_out_goes_back(p35):
+    go, _, dst = p35
+    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")] and run.turn == "adaptation" and "W-1" not in run.real_runs_asked
+    assert w["failure"] == ["dry_run", "not what it said it would do: created: unexpected report.txt"], w["failure"]
+    assert p31_receipts(run)[-1]["dry_run"]["expect_mismatch"] == "created: unexpected report.txt"
+    assert os.listdir(dst) == []
+
+
+def test_p35_two_identical_mismatches_stop_the_cycle(p35, j2ft):
+    go, _, _ = p35
+    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
+    run._ask_real_run({})
+    w2 = p35_again(run)
+    assert run._ask_real_run({}) is True
+    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
+    assert sig[0] == sig[1] == ("dry_run", "not what it said it would do: created: unexpected report.txt")
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
+
+
+@pytest.mark.parametrize("expect", [None, {"created": [], "changed": [], "deleted": []}, "report.txt",
+                                    {"created": ["report.txt"]}, {"created": ["report.txt", ""], "changed": [], "deleted": []},
+                                    {"created": ["/abs/report.txt"], "changed": [], "deleted": []},
+                                    {"created": ["../report.txt"], "changed": [], "deleted": []}])
+def test_p35_a_real_run_without_expect_is_refused_with_its_own_key(p35, j2ft, expect):
+    go, src, dst = p35
+    run = go()
+    rr = {**run.workflows[0]["real_run"], "expect": expect}
+    if expect is None:
+        rr.pop("expect")
+    run.workflows[0]["status"] = "failed"      # as after a failed dry run: the fix proposes the same real run again
+    reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr, "revises": "W-1"}])
+    assert not reg and len(refused) == 1 and "real_run expect" in refused[0], refused
+    assert run.rejections[-1]["key"] == ["real_run_expect"]
+    assert j2ft.real_run_expect_problems(rr) and j2ft.real_run_expect_problems({**rr, "expect": P35_ALL}) == []
+
+
+def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES
