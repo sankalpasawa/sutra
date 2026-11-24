@@ -3231,6 +3231,32 @@ def test_p30_a_folder_run_ended_by_fix_d_takes_the_fact_from_a_follow_up(sort_ru
     assert run.goal["to_be_confirmed"] == [], run.goal["to_be_confirmed"]
 
 
+@pytest.mark.parametrize("reply", [None, []])      # None: Identity's charter has no to_be_confirmed key at all
+def test_p30_a_follow_up_keeps_a_to_be_confirmed_entry_unless_identity_lists_the_key(sort_run, monkeypatch, reply):
+    """review R5-5: a follow-up that does not give the fact goes through Identity's intake; a charter reply without the
+    to_be_confirmed key keeps the old entry (its item is still in the charter); an explicit empty list clears it."""
+    run = no_real_run(sort_run, {"status": "built", "reason": "the post is written"}, tbc=True)
+    run._identity_audit({})
+    run.done, run.status, old, real_call, seen = True, "waiting", list(run.goal["to_be_confirmed"]), run.call, []
+
+    def call(fn, fmt, task, mock, *a, **k):
+        if fn != "identity" or "CURRENT CHARTER" not in task:
+            return real_call(fn, fmt, task, mock, *a, **k)
+
+        def scripted():
+            r = json.loads(mock())
+            r["goal"]["done_when"] = list(run.goal["done_when"])      # everything already in it is kept, as the prompt asks
+            r["goal"].pop("to_be_confirmed", None) if reply is None else r["goal"].update(to_be_confirmed=reply)
+            return json.dumps(r)
+        out = real_call(fn, fmt, task, scripted, *a, **k)
+        seen.append(True)
+        return out
+    run.call = call
+    say(run, "Add a line about visiting hours to the notes")
+    assert seen, "Identity's intake ran"
+    assert run.goal["to_be_confirmed"] == (old if reply is None else []), run.goal["to_be_confirmed"]
+
+
 def test_p30_a_follow_up_does_not_ask_again_about_brief_items_already_dropped(make_run):
     """review R5-2: run 1's charter left a brief item out and the Requester answered "Drop them"; the follow-up that gives
     the fact goes through Identity's intake, whose charter still leaves it out, and must not ask the drop question again."""

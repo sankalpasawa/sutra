@@ -6217,7 +6217,9 @@ class J2Run:
             goal["facts"] = [f for f in goal.get("facts") or [] if f not in bad]
             self.post("system", f"The charter still lists facts not in the brief or the answers; code drops them: "
                                 f"{bad}.", warning=True)
-        goal["to_be_confirmed"] = self._tbc(goal.get("to_be_confirmed"), goal.get("done_when") or [])
+        goal["to_be_confirmed"] = self._tbc(goal.get("to_be_confirmed"), goal.get("done_when") or [], keep=[
+            t for t in (self.goal or {}).get("to_be_confirmed") or [] if t["criterion"] in goal["done_when"]]
+            if change and "to_be_confirmed" not in goal else ())      # review R5-5: an absent key is no answer
         goal.pop("open_inputs", None)
         if self.doc:      # code reads site_name (titles, core facts) and business_type (playbooks) for every output
             goal.setdefault("site_name", goal.get("product_name") or "Document")
