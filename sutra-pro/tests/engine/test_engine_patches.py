@@ -2385,3 +2385,177 @@ def test_p22_every_rejection_path_in_the_validator_sets_its_own_key():
     assert "over_budget" in [r for r, _ in rules] and len(tests) >= 17
     names += [r for r, _ in rules]
     assert len(names) == len(set(names)), sorted(x for x in names if names.count(x) > 1)
+
+
+# ---- P30 (D433): every done-when item has a runnable check and a builder-set status; Done only when all are built and pass
+MORNING = ["The tool lists new files every morning.", "The summary is posted to the team channel.", "The list names each file's size."]
+
+
+def recording(run, monkeypatch, who):
+    """run.call recorded for the functions `who` accepts (fmt, task), passed through to J2's mock."""
+    seen, real = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: (seen.append((fn, a[0], a[1])) if who(fn) else None) or real(fn, *a, **kw))
+    return seen
+
+
+def intake(run, monkeypatch, done_when, checks, **h):
+    """Identity's intake with a charter and item_checks of the test's own (no facts, so the fact check passes)."""
+    real = run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"to_requester": "Thanks, starting now.", "to_agents": "@Adaptation Charter.",
+                                                           "enough": True, "next": "Adaptation", "item_checks": checks,
+                                                           "goal": {"statement": "A morning file list", "site_name": "Morning",
+                                                                    "done_when": list(done_when)}}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run._identity_intake({"kind": "intake", **h})
+
+
+@pytest.fixture
+def site_run(make_run):
+    run = make_run()
+    run.post("user", "A one-page website that lists new files every morning")
+    run.request = "A one-page website that lists new files every morning"
+    run._apply_output("website")
+    return run
+
+
+def test_p30_intake_stores_a_check_per_item_by_text(j2, make_run, site_run, monkeypatch):
+    run = make_run()
+    say(run, BREW_LAB)
+    g = run.goal
+    assert set(g["item_checks"]) == set(g["done_when"])
+    assert all(set(c) <= {"type", "target", "expect"} for c in g["item_checks"].values())
+    # a change request keeps the checks of the items that stay (Identity's new list has the wrong length: none of it is taken)
+    fe = {"type": "file-exists", "target": "index.html", "expect": True, "extra": "dropped"}
+    intake(site_run, monkeypatch, MORNING, [fe] * 3)
+    assert site_run.goal["item_checks"] == {t: {k: v for k, v in fe.items() if k != "extra"} for t in MORNING}
+    intake(site_run, monkeypatch, MORNING[:2] + ["The list is sorted by time."], [fe], change="sort the list by time")
+    assert site_run.goal["item_checks"] == {t: {"type": "file-exists", "target": "index.html", "expect": True} for t in MORNING[:2]}
+    # the no-errors gate is code's own render check, whatever Identity sent for it
+    intake(site_run, monkeypatch, MORNING[:2] + ["The page has no JavaScript errors."], [fe] * 3)
+    assert site_run.goal["item_checks"][j2.GATE_TEXT] == {"type": "render-check"}
+
+
+def test_p30_intake_prompt_asks_one_item_per_required_behaviour(j2, make_run, monkeypatch):
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn == "identity")
+    say(run, BREW_LAB)
+    fmt, task = next((f, t) for _, f, t in seen if '"item_checks"' in f)
+    assert j2.BEHAVIOUR_RULE in task and '"real-run"' in fmt
+
+
+def test_p30_code_made_items_carry_code_checks(j2):
+    g = j2.stage_goal("hld", {"product_name": "Morning"}, {})
+    secs = j2.output_def("hld")["sections"]
+    assert len(g["done_when"]) == len(secs)
+    assert [g["item_checks"][t] for t in g["done_when"]] == [{"type": "section-not-empty", "target": s, "expect": 1} for s in secs]
+
+
+def test_p30_a_charter_with_an_item_without_an_allowed_check_is_refused(site_run, monkeypatch):
+    intake(site_run, monkeypatch, MORNING, [{"type": "file-exists", "target": "index.html"}, {"type": "made-up-check"}, None])
+    assert set(site_run.goal["item_checks"]) == {MORNING[0]}
+    ok, why = site_run._stamp_check()
+    assert not ok and why.startswith("done-when item(s) [2, 3] have no runnable check"), why
+    assert any("Charter rejected: done-when item(s) [2, 3]" in m["text"] for m in site_run.chat)
+
+
+def test_p30_a_builder_sees_its_items_with_check_and_status(j2, make_run, monkeypatch):
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn.startswith("W-"))
+    say(run, BREW_LAB)
+    built = [(f, t) for _, f, t in seen if "YOUR WORKFLOW: " in t]
+    assert built and all('"item_status"' in f for f, _ in built)
+    brief = json.loads(built[0][1].split("YOUR WORKFLOW: ", 1)[1].split("\n", 1)[0])
+    assert brief["items"] and all(set(x) == {"item", "text", "check", "status"} for x in brief["items"])
+    assert all(x["check"] == run.goal["item_checks"][x["text"]] and x["status"] == "not_built" for x in brief["items"])
+    assert all(w["item_status"] and {s["status"] for s in w["item_status"].values()} == {"built"}
+               for w in run.workflows if w["status"] == "done" and w.get("covers_text"))
+
+
+def morning_goal(run, checks=True):
+    run.goal = {"statement": "A morning file list", "done_when": list(MORNING), "charter_items": list(MORNING),
+                **({"item_checks": {t: {"type": "file-exists", "target": "index.html", "expect": True} for t in MORNING}} if checks else {})}
+
+
+def test_p30_builder_status_is_a_field_missing_or_unknown_is_not_built(site_run):
+    run = site_run
+    morning_goal(run)
+    w = {"id": "W-1", "covers_text": list(MORNING)}
+    run._store_item_status(w, {"human_output": "The channel part is not yet built.", "item_status": [
+        {"item": 1, "status": "built", "reason": ""}, {"item": 2, "status": "done"}, {"item": 9, "status": "built"}]})
+    assert w["item_status"] == {MORNING[0]: {"status": "built", "reason": ""},       # words in human_output are never read
+                                MORNING[1]: {"status": "not_built", "reason": "the builder set no status"},
+                                MORNING[2]: {"status": "not_built", "reason": "the builder set no status"}}
+    run._store_item_status(w, {"item_status": [{"item": 1, "status": "blocked", "reason": " "},
+                                               {"item": 2, "status": "blocked", "reason": "no channel token given"},
+                                               {"item": 3, "status": "not_built", "reason": "out of time"}]})
+    assert w["item_status"] == {MORNING[0]: {"status": "not_built", "reason": "blocked without a reason"},
+                                MORNING[1]: {"status": "blocked", "reason": "no channel token given"},
+                                MORNING[2]: {"status": "not_built", "reason": "out of time"}}
+    morning_goal(run, checks=False)
+    w2 = {"id": "W-2", "covers_text": list(MORNING)}
+    run._store_item_status(w2, {})
+    assert "item_status" not in w2
+
+
+def passing_rows(crit):
+    return [{"id": f"F-{i}", "item": i, "criterion": c, "verdict": "PASS", "pass": True, "note": "Audit saw it"} for i, c in enumerate(crit, 1)]
+
+
+def test_p30_audit_pass_without_a_passing_check_is_blocked_by_evidence(site_run):
+    run = site_run
+    morning_goal(run)
+    del run.goal["item_checks"][MORNING[1]]
+    run.goal["item_checks"][MORNING[0]] = {"type": "file-exists", "target": "menu.html", "expect": True}
+    os.makedirs(Path(run.dir) / "site", exist_ok=True)
+    (Path(run.dir) / "site" / "index.html").write_text("<html><body></body></html>")
+    rows = passing_rows(MORNING)
+    run._item_check_gate(rows, "<html><body></body></html>", {})
+    assert [r["verdict"] for r in rows] == ["BLOCKED_BY_EVIDENCE", "BLOCKED_BY_EVIDENCE", "PASS"]
+    assert [r["pass"] for r in rows] == [False, False, True]
+    assert rows[0]["note"] == "Code ran this item's check (file-exists): menu.html not found in the build. (Audit's own note: Audit saw it)"
+    assert rows[1]["note"].startswith("Code ran this item's check (none): this item has no runnable check.")
+    assert [e["type"] for e in run.events if e["agent"] == "validator"].count("item_check") == 2
+
+
+def finish(run, statuses):
+    """Two done workflows own the items; the last audit passes everything; then Identity's done."""
+    run.workflows = [{"id": "W-1", "name": "List", "status": "done", "covers_text": MORNING[:1] + MORNING[2:], "cycle": 1},
+                     {"id": "W-2", "name": "Post", "status": "done", "covers_text": MORNING[1:2], "cycle": 1}]
+    for w in run.workflows:
+        if statuses is not None:
+            run._store_item_status(w, {"item_status": [{"item": run._no(t), **statuses.get(t, {"status": "built", "reason": ""})}
+                                                       for t in w["covers_text"]]})
+    run.audits = [audit_v0(MORNING, [], output="prd", version=1)]
+    run.outcome = None
+    run._goal_done({})
+    return run.outcome
+
+
+def test_p30_done_only_when_every_item_is_built_and_passes(make_run):
+    run = make_run()
+    run.post("user", "A PRD for a morning file list")
+    run._apply_output("prd")
+    morning_goal(run)
+    out = finish(run, {MORNING[1]: {"status": "blocked", "reason": "no channel token given"}})
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {MORNING[1]} (blocked: no channel token given)" in out
+    run.sites = ["## Users"]
+    assert f"{MORNING[1]} (blocked: no channel token given)" in run._ship_outcome("on request")
+    assert finish(run, {}).startswith("Done:") and run._ship_outcome("on request").startswith("Done:")
+    # the no-errors gate is code's own check: no workflow owns it, and it is not an open item for that
+    run.goal["item_checks"][MORNING[2]] = {"type": "render-check"}
+    run.workflows[0]["covers_text"] = MORNING[:1]
+    run._store_item_status(run.workflows[0], {"item_status": [{"item": 1, "status": "built", "reason": ""}]})
+    assert run._open_items() == []
+
+
+def test_p30_a_charter_without_item_checks_behaves_as_before(make_run):
+    run = make_run()
+    run.post("user", "A PRD for a morning file list")
+    run._apply_output("prd")
+    morning_goal(run, checks=False)
+    assert run._stamp_check() == (True, "passes code checks")
+    rows = passing_rows(MORNING)
+    run._item_check_gate(rows, "", {})
+    assert [r["verdict"] for r in rows] == ["PASS"] * 3
+    assert run._open_items() == [] and finish(run, None).startswith("Done:")

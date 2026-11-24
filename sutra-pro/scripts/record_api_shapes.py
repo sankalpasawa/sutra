@@ -59,14 +59,17 @@ SCENARIO_ENV = {"STUDIO_MOCK": "1", "J2_MEMORY": "0", "J2_REALIZATION": "0", "J2
 # `types` (the snapshot's `output_info.types`: type name -> label, tag, form, ...) is a map keyed by type names, which are data too: a
 # type J2 adds, or a user's local type, must not move the golden (sync 5, D161).
 MAPS = frozenset({"atoms_v1", "agents", "conditions", "rubric", "constellations", "names", "groups", "groups.*", "enums",
-                  "types"})
+                  "types", "item_checks", "item_status"})      # D433: keyed by done-when item text
 # Free-form agent output: the key is kept, what is inside it is not (it is the model's reply, not part of the API).
 OPAQUE = frozenset({"reply", "proposal", "adaptation_final", "priority_final", "metrics"})
 # Keys that exist on the engine's side only, on purpose (engine design 4.6): the live state's host, run_id and dept_id, and the
 # provider and usd that calls.jsonl records gain (`call_log[]` in the state, the record of /api/call). Everything else is equal.
 _CALL_LOG = {"call_log[].provider", "call_log[].usd"}
 _LIVE_STATE = {"host", "host.pid", "host.alive", "run_id", "dept_id"}
-ADDITIVE = {"state": _CALL_LOG | _LIVE_STATE, "state_since": _CALL_LOG | _LIVE_STATE, "call": {"provider", "usd"}}
+# D433: engine-only, on purpose: each done-when item's runnable check and its builder-set status (the J2 the golden is recorded from has neither)
+_DONE_BUILT = {"goal.item_checks", "goal.item_checks.*", "goal.item_checks.*.type", "goal.item_checks.*.target", "goal.item_checks.*.expect",
+               "workflows[].item_status", "workflows[].item_status.*", "workflows[].item_status.*.status", "workflows[].item_status.*.reason"}
+ADDITIVE = {"state": _CALL_LOG | _LIVE_STATE | _DONE_BUILT, "state_since": _CALL_LOG | _LIVE_STATE | _DONE_BUILT, "call": {"provider", "usd"}}
 
 
 def key_paths(value, maps=MAPS, opaque=OPAQUE):

@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P29" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P30" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -1939,6 +1939,263 @@ def build_failure(w):
                 self.decisions[-1]["decision"] = "stop"
         if self.decisions and limit:
 '''),
+    # ---- P30 (D433): every done-when item has a runnable check (goal["item_checks"]) and a status its builder sets
+    # (w["item_status"]), both by item text; code runs the checks at every audit, and "Done:" needs every item built and passing
+    Edit("P30", "j2.py", r'''AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
+               "and list them as assumptions I can check later.")
+''', r'''AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
+               "and list them as assumptions I can check later.")
+
+# P30 (D433): every done-when item has a runnable check (goal["item_checks"], by item text) and a status its builder sets in
+# a field (w["item_status"]); "Done:" only when every item is built and its check passes. Code never reads a word for either.
+ITEM_STATUSES = ("built", "blocked", "not_built")
+BEHAVIOUR_RULE = ("\nEvery behaviour the brief requires (each thing it must do, when it must do it, and where its result goes) is "
+                  "its own done-when item, besides any item the form asks for; one the charter can't hold goes in dropped_from_brief.")
+ITEM_STATUS_FMT = (', "item_status": [{"item": int (one of your items), "status": "built"|"blocked"|"not_built", '
+                   '"reason": str (blocked or not_built: what stops it)}] (one per item in your items)')
+ITEM_STATUS_SCHEMA = {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                 "properties": {"item": {"type": "integer"},
+                                                                "status": {"type": "string", "enum": list(ITEM_STATUSES)},
+                                                                "reason": {"type": "string"}},
+                                                 "required": ["item", "status", "reason"]}}
+
+
+def mock_item_check(out):
+    """P30 (D433), mock only: a check the mock build passes, from the form's fields (never a type name)."""
+    if out.get("output") == "folder":
+        return {"type": "inside-folder", "target": "."}
+    if out.get("sections"):
+        return {"type": "heading-present", "target": out["sections"][0]}
+    return {"type": "file-exists", "target": PAGE_FILE, "expect": True}
+'''),
+    Edit("P30", "j2.py", r'''            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
+''', r'''            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
+            "item_checks": {t: {"type": "section-not-empty", "target": s, "expect": 1}      # P30 (D433): one item per section
+                            for t, s in zip(items, output_def(kind)["sections"])},
+'''),
+    Edit("P30", "j2.py", r'''                      'depends on a date, such as a deadline or an early-bird price), ')
+''', r'''                      'depends on a date, such as a deadline or an early-bird price), ')
+        kinds_fmt += ('"item_checks": [{"type": one of ' + json.dumps(sorted(set(self.out["check_types"]) | {"real-run"}))
+                      + ', "target": str|[str]|null, "expect": any|null}] (one per done-when item, same order: the check code '
+                      'runs to show the item is built; "real-run" for an item only running it on the Requester\'s own files '
+                      'can show), ')      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''"Don't plan costs or resources.") + (SITE_LATER.format(''',
+         r'''"Don't plan costs or resources.") + BEHAVIOUR_RULE + (SITE_LATER.format('''),
+    Edit("P30", "j2.py", r'''        tags = r.get("item_kinds") if isinstance(r.get("item_kinds"), list) else []
+''', r'''        tags = r.get("item_kinds") if isinstance(r.get("item_kinds"), list) else []
+        checks = r.get("item_checks") if isinstance(r.get("item_checks"), list) else []      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''                tags = []          # code's items replace Identity's: their kinds are the sections' parts
+''', r'''                tags = []          # code's items replace Identity's: their kinds are the sections' parts
+                checks = [goal["item_checks"][c] for c in goal["done_when"]]      # P30 (D433): and their checks are code's
+'''),
+    Edit("P30", "j2.py", r'''        if given or kept or goal.get("item_kinds"):
+            goal["item_kinds"] = {**kept, **(goal.get("item_kinds") or {}), **given}
+''', r'''        if given or kept or goal.get("item_kinds"):
+            goal["item_kinds"] = {**kept, **(goal.get("item_kinds") or {}), **given}
+        # P30 (D433): each item's runnable check, stored by text like its kind; a change request keeps the checks of items that
+        # stay; the no-errors gate is code's own render check. An item left without one is refused at the stamp.
+        kept = {c: k for c, k in ((self.goal or {}).get("item_checks") or {}).items() if c in crit}
+        mocked = [mock_item_check(self.out)] * len(crit) if llm.MOCK and not checks else []      # mock only: any mock reply
+        goal["item_checks"] = {**kept, **self._item_checks_from(checks or mocked, crit),
+                               **({GATE_TEXT: {"type": "render-check"}} if GATE_TEXT in crit else {})}
+'''),
+    Edit("P30", "j2.py", r'''                           f"needs at least {need})")
+        return True, "passes code checks"
+''', r'''                           f"needs at least {need})")
+        if "item_checks" in g:      # P30 (D433): structural only, by set membership at normalise
+            miss = [n for n, c in enumerate(g.get("done_when") or [], 1) if c not in g["item_checks"]]
+            if miss:
+                allowed = sorted(set(self.out["check_types"]) | {"real-run"})
+                return False, f"done-when item(s) {miss} have no runnable check (item_checks: one of {allowed})"
+        return True, "passes code checks"
+'''),
+    Edit("P30", "j2.py", r'''        brief["covers_items"] = [((self.goal or {}).get("done_when") or [])[i - 1] for i in self._wf_items(w)]
+''', r'''        brief["covers_items"] = [((self.goal or {}).get("done_when") or [])[i - 1] for i in self._wf_items(w)]
+        if "item_checks" in (self.goal or {}):      # P30 (D433): the items it owns, each with its check and its status so far
+            states, checks = self._item_states(), self.goal["item_checks"]
+            brief["items"] = [{"item": self._no(t), "text": t, "check": checks.get(t),
+                               "status": (states.get(t) or {}).get("status", "not_built")} for t in self._owned_items(w)]
+'''),
+    Edit("P30", "j2.py", r'''                "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
+''', r'''                "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
+                "item_status": self._built_status(w),      # P30 (D433): served unchanged, no builder to set it
+'''),
+    Edit("P30", "j2.py", r'''                board_extra = self._mock_board_extra(w, attempt) if j2_board.enabled() else {}
+''', r'''                board_extra = {**(self._mock_board_extra(w, attempt) if j2_board.enabled() else {}),
+                               "item_status": self._built_status(w)}      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''                schema = j2_artifact_models.reply_schema(art_model, extra)
+''', r'''                extra["item_status"] = ITEM_STATUS_SCHEMA      # P30 (D433): the closed reply schema takes the builder's status
+                schema = j2_artifact_models.reply_schema(art_model, extra)
+'''),
+    Edit("P30", "j2.py", r'''[] otherwise), "next": "Coordination", ' + (self.SPEC_FMT''',
+         r'''[] otherwise)' + ITEM_STATUS_FMT + ', "next": "Coordination", ' + (self.SPEC_FMT'''),
+    Edit("P30", "j2.py", r'''[] otherwise), "next": "Coordination", '
+                + (self.BOARD_FMT''', r'''[] otherwise)' + ITEM_STATUS_FMT + ', "next": "Coordination", '
+                + (self.BOARD_FMT'''),
+    Edit("P30", "j2.py", r'''                  'everyday words)',
+                  '"next": "Coordination"',
+''', r'''                  'everyday words)',
+                  ITEM_STATUS_FMT[2:],      # P30 (D433)
+                  '"next": "Coordination"',
+'''),
+    Edit("P30", "j2.py", r'''               'selectors), "next": "Coordination"}. Then the whole file between a line <<<FILE and a line FILE>>>.')
+''', r'''               'selectors)' + ITEM_STATUS_FMT + ', "next": "Coordination"}. Then the whole file between a line <<<FILE and a '
+               'line FILE>>>.')      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''                                "page follow.", "next": "Coordination"})
+''', r'''                                "page follow.", "item_status": self._built_status(w), "next": "Coordination"})      # P30
+'''),
+    Edit("P30", "j2.py", r'''                 '"atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no selectors), '
+                 '"next": "Coordination"}')
+''', r'''                 '"atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no selectors)'
+                 + ITEM_STATUS_FMT + ', "next": "Coordination"}')      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''                           "atom_human_output": "This adds a working part of the result.", "next": "Coordination"})
+''', r'''                           "atom_human_output": "This adds a working part of the result.",
+                           "item_status": self._built_status(w), "next": "Coordination"})      # P30 (D433)
+'''),
+    Edit("P30", "j2.py", r'''    def _atom_outputs(self, w, meta, attempt):
+        """Every atom's human_output (the builder's words, checked by atom_human_problem, asked once more if bad, else
+        written by code from the atom's expected output), then, for an atom whose checks passed, its agent_output."""
+''', r'''    def _item_checks_from(self, raw, crit):
+        """P30 (D433): Identity's item_checks (one per item, same order) as {item text: {type, target, expect}}: only a type
+        of the form or "real-run" is kept, and a list of the wrong length gives none (the stamp then refuses)."""
+        allowed = set(self.out["check_types"]) | {"real-run"}
+        if len(raw) != len(crit):
+            return {}
+        return {c: {k: x[k] for k in ("type", "target", "expect") if k in x} for c, x in zip(crit, raw)
+                if isinstance(x, dict) and x.get("type") in allowed}
+
+    def _owned_items(self, w):
+        """P30 (D433): the texts of the done-when items a workflow owns: those it covers, and the items of the findings
+        (F-n is item n) it fixes."""
+        crit, at = (self.goal or {}).get("done_when") or [], self._item_at()
+        fixed = [crit[at[int(f[2:])] - 1] for f in map(str, w.get("fixes") or []) if FINDING_ID.fullmatch(f) and int(f[2:]) in at]
+        return list(dict.fromkeys([crit[i - 1] for i in self._wf_items(w)] + fixed))
+
+    def _built_status(self, w):
+        """P30 (D433): every item the workflow owns, set built: the mock builders' reply, and a section the content door served
+        unchanged from a finished run (no builder runs; code re-runs its checks)."""
+        return [{"item": self._no(t), "status": "built", "reason": ""} for t in self._owned_items(w)]
+
+    def _store_item_status(self, w, meta):
+        """P30 (D433): the builder's item_status field, kept on its workflow by item text. A missing entry or an unknown
+        status is not_built, and blocked without a reason is not_built: a field, never the reply's words."""
+        if "item_checks" not in (self.goal or {}):
+            return
+        mine = {self._no(t): t for t in self._owned_items(w)}
+        raw = meta.get("item_status") if isinstance(meta, dict) else None
+        got = {}
+        for x in raw if isinstance(raw, list) else []:
+            if isinstance(x, dict) and as_int(x.get("item")) in mine:
+                got.setdefault(mine[as_int(x.get("item"))], x)
+        w["item_status"] = {}
+        for t in mine.values():
+            s, why = got.get(t, {}).get("status"), str(got.get(t, {}).get("reason") or "").strip()
+            if s not in ITEM_STATUSES:
+                s, why = "not_built", "the builder set no status"
+            elif s == "blocked" and not why:
+                s, why = "not_built", "blocked without a reason"
+            w["item_status"][t] = {"status": s, "reason": why}
+
+    def _item_states(self):
+        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins."""
+        out = {}
+        for w in self.workflows:
+            if w.get("status") == "done":
+                out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
+        return out
+
+    def _open_items(self):
+        """P30 (D433): every done-when item whose builder did not set it built, with why ([] for a charter without item_checks).
+        The no-errors gate is code's own (render-check): no builder owns it, and the audit gate and workable() decide it."""
+        if "item_checks" not in (self.goal or {}):
+            return []
+        states, out = self._item_states(), []
+        for t in (self.goal or {}).get("done_when") or []:
+            if (self.goal["item_checks"].get(t) or {}).get("type") == "render-check":
+                continue
+            s = states.get(t) or {"status": "not_built", "reason": "no workflow built it"}
+            if s["status"] != "built":
+                out.append(f"done-when item {self._no(t)}: {t} ({s['status'].replace('_', ' ')}: {s['reason'] or 'no reason given'})")
+        return out
+
+    def _run_item_check(self, text, chk, built, mech):
+        """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the
+        runners the work atoms' checks use."""
+        t, folder = chk.get("type"), self._out_dir() if self.folder else None
+        try:
+            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0), never by an agent
+                n = self._no(text)
+                ok = any(self.real_runs_done.get(w["id"]) is True for w in self.workflows
+                         if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []})
+                return {"pass": ok, "evidence": "its real run was approved and exited 0" if ok else
+                        "no approved real run of this item exited 0"}
+            if t == "render-check":
+                if not mech.get("available"):
+                    return {"pass": None, "evidence": f"the render check didn't run: {mech.get('note')}"}
+                probs = j2_check.problems(mech)
+                return {"pass": not probs, "evidence": "; ".join(probs) or "the render check found no problem"}
+            if t == "inside-folder":      # a change outside the folder stops the build before any check
+                return {"pass": True, "evidence": "nothing changed outside the folder"}
+            if folder and t == "test-passed":
+                if not self.out.get("test_runner"):
+                    return {"pass": None, "evidence": "this output's form names no test runner"}
+                tg = chk.get("target")
+                rr = sandbox_rerun(folder, self.out["test_runner"], tg[0] if isinstance(tg, list) else tg, builder_timeout())
+                return {"pass": rr["pass"], "evidence": rr["evidence"]}
+            return run_check(chk, folder or os.path.join(self.dir, "site"), built, self.doc)
+        except (OSError, ValueError) as e:
+            return {"pass": None, "evidence": f"the check could not run: {e}"}
+
+    def _item_check_gate(self, results, built, mech):
+        """P30 (D433): an item Audit passed stays passed only when code ran its check and it passed; otherwise the row is
+        BLOCKED_BY_EVIDENCE with code's evidence. Nothing for a charter without item_checks."""
+        checks = (self.goal or {}).get("item_checks")
+        if checks is None:
+            return
+        for i, row in enumerate(results):
+            chk = checks.get(row["criterion"])
+            if not row["pass"]:
+                continue
+            res = self._run_item_check(row["criterion"], chk, built, mech) if chk else \
+                {"pass": False, "evidence": "this item has no runnable check"}
+            if res.get("pass") is True:
+                continue
+            results[i] = {**row, "verdict": "BLOCKED_BY_EVIDENCE", "pass": False,
+                          "note": f"Code ran this item's check ({(chk or {}).get('type', 'none')}): {res['evidence']}. "
+                                  f"(Audit's own note: {row.get('note') or 'none'})"}
+            self._event("validator", "item_check", f"{row['id']} item {row['item']}: {res['evidence']}")
+
+    def _atom_outputs(self, w, meta, attempt):
+        """Every atom's human_output (the builder's words, checked by atom_human_problem, asked once more if bad, else
+        written by code from the atom's expected output), then, for an atom whose checks passed, its agent_output."""
+        self._store_item_status(w, meta)      # P30 (D433): the builder's status of each item it owns, a field
+'''),
+    Edit("P30", "j2.py", r'''        results, extras = self._audit_findings(r.get("findings") or r.get("results") or [], crit)
+        forced = self._force_fail(results)
+''', r'''        results, extras = self._audit_findings(r.get("findings") or r.get("results") or [], crit)
+        self._item_check_gate(results, site, mech)      # P30 (D433): a PASS needs its item's check to pass, run by code
+        forced = self._force_fail(results)
+'''),
+    Edit("P30", "j2.py", r'''        if self.audits and (fails := workable(self.audits[-1]) + self._real_run_pending()) and \
+                (self.real_runs_done or self._real_run_pending()):    # step 7: workable only after an approved run passed
+            self.outcome = (f"Done with open items: the real run {'did not pass' if self.real_runs_done else 'has not run'}."
+                            f" Still not workable: {'; '.join(fails)}.")
+''', r'''        fails = workable(self.audits[-1]) + self._real_run_pending() if self.audits else []
+        rr = bool(fails and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
+        opened = self._open_items() if self.audits else []      # P30 (D433): an item its builder did not set built
+        if rr or opened:
+            self.outcome = ("Done with open items: "
+                            + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
+                               "not every done-when item is built.") + f" Still not workable: {'; '.join(fails + opened)}.")
+'''),
+    Edit("P30", "j2.py", r'''        fails = self.open_docs + fails + self._real_run_pending()
+''', r'''        fails = self.open_docs + fails + self._real_run_pending() + self._open_items()      # P30 (D433)
+'''),
 )
 
 OTHER_EDITS = (
@@ -2172,6 +2429,7 @@ PATCH_NOTES = {
     "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
     "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `real_path`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
     "P29": "(D431) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left; a lone \"Stop here\" is asked, never applied without the Requester); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition the charter decides (`from_charter`, set by `_folder_condition` when the charter lists no files or no test) is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved: \"This condition comes from the charter, and building can't change it. The charter needs fixing.\" (any other condition goes back to Adaptation) (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
+    "P30": "(D433, prompt-changing per D249: Identity's intake format and rule, every builder's reply format and brief) every done-when item has a runnable check and a status its builder sets, both by item text: Identity returns `item_checks` (one per item, the type one of the form's `check_types` or `real-run`; `_item_checks_from` keeps `type`, `target`, `expect`), code stores them in `goal[\"item_checks\"]` (a change request keeps those of kept items; `GATE_TEXT` gets code's `render-check`; `stage_goal`'s items `section-not-empty` on their section) and `_stamp_check` refuses an item without one; the intake prompt adds `BEHAVIOUR_RULE` (every required behaviour is its own item); a builder's brief lists its items (`_owned_items`: covered, and the items of the findings it fixes) with check and status, every builder reply format asks for `item_status` (`ITEM_STATUS_FMT`; the closed artifact reply schema takes `ITEM_STATUS_SCHEMA`), and `_store_item_status` keeps it on the workflow (missing or unknown: `not_built`; `blocked` without a reason: `not_built`; no word of the reply is read; the mock builders, and a section the content door serves unchanged, set every owned item built, `_built_status`; in mock mode a reply without `item_checks` gets `mock_item_check` per item); at every audit `_item_check_gate` runs each passed item's check (`_run_item_check`: the real run's receipt, the render check, the folder test rerun, or `run_check`) and makes a PASS whose check did not pass, did not run or does not exist BLOCKED_BY_EVIDENCE with code's evidence; `_goal_done` and `_ship_outcome` end \"Done with open items\" while an item's latest done owner did not set it built (`_open_items`; the no-errors gate, code's own `render-check`, needs no builder). A charter without `item_checks` behaves as before (SUT-18, run 01a2: scheduling had no item, and an item described as not yet built passed Audit)",
     "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
     "P19": "`_make_report` asks `self._hook(\"review_enabled\")` (sync 6, D179): only an explicit `False` switches the reviewer off (no thread, `ai_calls` without the reviewer's call) and the run report then says \"The reviewer is switched off in this team's settings.\"; under `NullHooks` `_hook` returns `None`, so a bare J2 and a host without the hook behave as before",
     "P11": "`J2Run.rehydrate(src_dir)` delegates to `rehydrate.py`",
@@ -2356,9 +2614,9 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "Copied into `sutra_app/engine/` with the same module names; every change to a J2 file is one of the numbered patches "
         "below and nothing else (decision D13). Prompts stay byte-identical, except where a patch says it changes a prompt (D249: J2 is "
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
-        "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, and P25 the raise "
-        "question's text. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable. "
+        "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, P25 the raise "
+        "question's text, and P30 Identity's intake and every builder's reply format and brief. There is no P6 (the design's table skips it) and no "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

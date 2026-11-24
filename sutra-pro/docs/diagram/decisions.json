@@ -2093,5 +2093,10 @@
   "id": "D432",
   "label": "beta on Windows too, built from a checkout of main",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D433",
+  "label": "every item: a runnable check + builder status; Done only when all built (P30)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
