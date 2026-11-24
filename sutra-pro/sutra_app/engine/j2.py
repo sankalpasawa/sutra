@@ -5809,25 +5809,59 @@ class J2Run:
         res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
              "not run: the reply was not exactly RUN " + str(code)}
+        nums = {as_int(c) for c in ((w or {}).get("real_run") or {}).get("checks") or []}      # P33 (D436): the items it decides
+        mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
+        judged = self._judge_real_run(w, res, mine) if mine and ok and res.get("ran") and res.get("exit") == 0 else {}
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
                                 "approved": ok, "answer_msg": last.get("id"), **res,
+                                **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
+                                              for t, v in judged.items()}} if judged else {}),      # P33 (D436)
                                 "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
                   warning=bool(res.get("ran") and res.get("exit") != 0))
-        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
+        ran_ok = bool(ok and res.get("ran") and res.get("exit") == 0)      # P33 (D436): and Audit passed every item it decides
+        passed = self.real_runs_done[h.get("wid")] = ran_ok and all(v[0] for v in judged.values())
         items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
         if self.audits and items:      # the items this run checks: decided by its receipt, never by a builder or Audit
             last = self.audits[-1]
             for x in last["results"]:
                 if x["criterion"] in items:
-                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
-                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})
+                    j = judged.get(x["criterion"])      # P33 (D436): Audit's verdict on the output decides each item it judged
+                    p = j[0] if j else passed
+                    x.update({"pass": p, "verdict": "PASS" if p else "NEEDS_REVISION" if j else "FAIL",
+                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"
+                                      + (f"; Audit read its output: {j[1]}" if j else "")})
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
         self._goal_done(h.get("r") or {})
+
+    def _judge_real_run(self, w, res, items):
+        """P33 (D436): one Audit call reads an approved real run's output (exit 0) against the Requester's brief, for the items
+        the run decides. {item text: (passed, evidence)}: PASS with evidence passes; anything else, or no finding, does not.
+        Code reads only the verdict field, never the words. A plain call: budget and dollar accounting count it like any."""
+        rr, dry = w["real_run"], self.real_runs_dry.get(w["id"]) or {}
+        r = self.call("audit", '{"say": str, "findings": [{"item": int, "verdict": "PASS"|"NEEDS_REVISION", "evidence": str '
+                               '(one line: what in the output shows it)}] (exactly one per item)}',
+                      f"REQUESTER'S BRIEF: {self.request}\n"
+                      f"ITEMS THIS REAL RUN DECIDES: {json.dumps([{'item': self._no(t), 'criterion': t} for t in items], ensure_ascii=False)}\n"
+                      f"COMMAND: {shlex.join(rr['command'])}\n"
+                      f"WHAT THE DRY RUN DID TO THE COPY: {json.dumps({k: dry.get(k) or [] for k in ('created', 'changed', 'deleted')}, ensure_ascii=False)}\n"
+                      f"ITS OUTPUT (the end, by code): {res.get('output') or '(no output)'}\n"
+                      "Judge each item only from this output against the brief: PASS only when the output shows the item "
+                      "done; say what shows it.",
+                      lambda: json.dumps({"say": "Read the real run's output.", "findings": [
+                          {"item": self._no(t), "verdict": "PASS", "evidence": "mock: the output was read"} for t in items]}))
+        got = {as_int(f.get("item")): f for f in (r.get("findings") if isinstance(r, dict) else None) or [] if isinstance(f, dict)}
+        out = {}
+        for t in items:
+            f = got.get(self._no(t))
+            ev = str((f or {}).get("evidence") or "").strip()
+            out[t] = (f is not None and f.get("verdict") == "PASS" and bool(ev),
+                      ev or ("Audit filed no finding" if f is None else "Audit gave no evidence"))
+        return out
 
     def _send_args(self, atom):
         """What j2_send.send needs to send at most once: the run folder (its receipts), the email's key and the answer."""

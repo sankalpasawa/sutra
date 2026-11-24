@@ -2785,3 +2785,94 @@ def test_p32_the_approved_run_still_follows_the_switch(p32):
     r = p31_receipts(run)[-1]
     assert r["approved"] and r["ran"] and r["exit"] == 0 and "without a sandbox" in r["evidence"], r["evidence"]
     assert not seen.exists() and os.path.exists(os.path.join(real, "done.txt"))
+
+
+# ---- P33 (D436): Audit reads an approved real run's output against the brief; exit 0 alone never passes an item -------------
+# Made-up script: it exits 0 and prints what it did (in the dry run, to the temp copy).
+P33_OK = "import sys\nprint('moved a.pdf to pdf/')\nprint('moved b.jpg to jpg/')\nprint('sorted 2 files in ' + sys.argv[1])\n"
+P33_SAYS = "the output lists only a.pdf and b.jpg moved; c.txt and d.csv are not named"
+
+
+@pytest.fixture
+def p33(p31, monkeypatch):
+    """p31's run with P33_OK written, item 3 pending its real run in the last audit, and every AI call recorded:
+    (run, real, calls [(fn, task)])."""
+    go, real = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,      # as an audit row holds them: the Audit call's context reads these
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3, "verdict": "PASS" if i != 3 else "FAIL",
+                                "note": ""} for i, c in enumerate(crit, 1)]}]
+    calls, real_call = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, fmt, task, *a, **k: calls.append((fn, task)) or real_call(fn, fmt, task, *a, **k))
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    calls.clear()
+    return run, real, calls
+
+
+def p33_row(run):
+    return next(x for x in run.audits[-1]["results"] if x["item"] == 3)
+
+
+def test_p33_an_approved_run_is_judged_by_audit_on_its_output(p33):
+    run, _, calls = p33
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"], calls
+    task = calls[0][1]
+    assert f"REQUESTER'S BRIEF: {run.request}" in task and "moved b.jpg to jpg/" in task and "sorted 2 files in " in task
+    assert '"item": 3' in task and "COMMAND: python3 sort_files.py" in task and "WHAT THE DRY RUN DID TO THE COPY" in task
+    row, r = p33_row(run), p31_receipts(run)[-1]
+    assert row["pass"] is True and row["verdict"] == "PASS" and row["note"].endswith("Audit read its output: mock: the output was read")
+    assert r["approved"] and r["exit"] == 0 and r["audit"] == {"3": {"verdict": "PASS", "evidence": "mock: the output was read"}}
+    assert run.real_runs_done == {"W-1": True}
+    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {})["pass"] is True
+
+
+@pytest.mark.parametrize("finding, says", [({"item": 3, "verdict": "NEEDS_REVISION", "evidence": P33_SAYS}, P33_SAYS),
+                                           ({"item": 3, "verdict": "PASS", "evidence": "  "}, "Audit gave no evidence"),
+                                           (None, "Audit filed no finding")])
+def test_p33_exit_0_with_audit_needs_revision_leaves_the_item_open(p33, monkeypatch, finding, says):
+    run, real, calls = p33
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [finding] if finding else []})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"]
+    row, r = p33_row(run), p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0      # it ran and exited 0 ...
+    assert row["pass"] is False and row["verdict"] == "NEEDS_REVISION"      # ... and that alone does not pass the item
+    assert f"real run receipt (W-1): {r['evidence']}" in row["note"] and row["note"].endswith(f"Audit read its output: {says}")
+    assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": says}} and run.real_runs_done == {"W-1": False}
+    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {})["pass"] is False
+    assert str(run.outcome).startswith("Done with open items"), run.outcome
+
+
+@pytest.mark.parametrize("answer, ran", [("RUN", {"ran": True, "exit": 3, "output": "boom", "evidence": "sort_files.py exited 3"}),
+                                         ("Don't run", None)])
+def test_p33_no_judge_call_when_the_run_did_not_pass(p33, j2ft, monkeypatch, answer, ran):
+    run, _, calls = p33
+    if ran:
+        monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: dict(ran))
+        answer = f"RUN {run.real_runs_asked['W-1']}"
+    p31_answer(run, answer)
+    r = p31_receipts(run)[-1]
+    assert calls == [] and "audit" not in r and p33_row(run)["verdict"] == "FAIL" and run.real_runs_done == {"W-1": False}
+    assert "Audit read" not in p33_row(run)["note"] and str(run.outcome).startswith("Done with open items")
+
+
+def test_p33_without_the_real_run_the_item_stays_open(p33):
+    run, real, calls = p33
+    crit = run.goal["done_when"]
+    assert run._real_run_pending() == [f"done-when item 3: {crit[2]} (its real run has not run)"]
+    assert run._run_item_check(crit[2], {"type": "real-run"}, "", {})["pass"] is False
+    assert calls == [] and p31_receipts(run) == [] and p33_row(run)["pass"] is False and run.paused["kind"] == "real_run"
+
+
+def test_p33_the_judge_call_counts_in_budget_and_dollar_mode_and_raises_no_route_event(p33, j2ft, monkeypatch):
+    run, _, calls = p33
+    monkeypatch.setattr(j2ft, "USD_BUDGET", 20.0)      # dollar mode (P26) for this run's accounting
+    n, usd, rows, events = run.calls, run.usd_used, len(run.call_log), len(run.events)
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"] and run.calls == n + 1 and len(run.call_log) == rows + 1
+    logged = json.loads((Path(run.dir) / "calls.jsonl").read_text().splitlines()[-1])
+    assert logged["fn"] == "audit" and logged["usd_counted"] > 0 and run.usd_used == pytest.approx(usd + logged["usd_counted"], abs=1e-6)      # the row rounds to 6 places
+    assert not [e for e in run.events[events:] if e["type"] in ("redirect", "invalid_move")]

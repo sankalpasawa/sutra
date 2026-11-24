@@ -2108,5 +2108,10 @@
   "id": "D435",
   "label": "dry run always network-fenced, or not run (P32)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D436",
+  "label": "Audit reads the real run's output; exit 0 alone never passes (P33)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
