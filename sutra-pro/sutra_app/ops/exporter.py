@@ -159,7 +159,8 @@ def _copy_tree(src: Path, dest: Path, skip: tuple[str, ...] = ()) -> list[str]:
     copied: list[str] = []
     for root, dirs, names in os.walk(src, followlinks=False):
         rootp = Path(root)
-        dirs[:] = [d for d in dirs if not (rootp / d).is_symlink() and (rootp / d).relative_to(src).as_posix() not in skip]
+        dirs[:] = [d for d in dirs if d != ".claude" and not (rootp / d).is_symlink()      # D437: the Claude CLI's folder never travels
+                   and (rootp / d).relative_to(src).as_posix() not in skip]
         for name in names:
             path = rootp / name
             if path.is_symlink() or not path.is_file():

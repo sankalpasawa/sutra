@@ -233,8 +233,33 @@ def _ask(tag, *args, **kw):
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
 AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
+REAL_RUN_DECLINE = "Don't run"      # P31 (D434): the real-run card's decline, compared whole (stripped, any case)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
+
+# P30 (D433): every done-when item has a runnable check (goal["item_checks"], by item text) and a status its builder sets in
+# a field (w["item_status"]); "Done:" only when every item is built and its check passes. Code never reads a word for either.
+ITEM_STATUSES = ("built", "blocked", "not_built")
+BEHAVIOUR_RULE = ("\nEvery behaviour the brief requires (each thing it must do, when it must do it, and where its result goes) is "
+                  "its own done-when item, besides any item the form asks for; one the charter can't hold goes in dropped_from_brief.")
+ITEM_STATUS_FMT = (', "item_status": [{"item": int (one of your items), "status": "built"|"blocked"|"not_built", '
+                   '"reason": str (blocked: the fact or access it needs that you don\'t have; not_built: what stops it)}] (one per item '
+                   'in your items; an item whose action you prepared but did not perform (e.g. a message written but never sent, '
+                   'for lack of access or credentials) is blocked with that reason, never built)')      # beta fix (c), D249
+ITEM_STATUS_SCHEMA = {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                                                 "properties": {"item": {"type": "integer"},
+                                                                "status": {"type": "string", "enum": list(ITEM_STATUSES)},
+                                                                "reason": {"type": "string"}},
+                                                 "required": ["item", "status", "reason"]}}
+
+
+def mock_item_check(out):
+    """P30 (D433), mock only: a check the mock build passes, from the form's fields (never a type name)."""
+    if out.get("output") == "folder":      # main.py: the file the mock folder builder always writes (mock_form_folder_files)
+        return {"type": "file-exists", "target": "main.py", "expect": True}
+    if out.get("sections"):
+        return {"type": "heading-present", "target": out["sections"][0]}
+    return {"type": "file-exists", "target": PAGE_FILE, "expect": True}
 
 
 STAGE_SKILLS = {s["id"]: s["skill"] for s in j2_realization.load_stages() if s.get("skill")}      # stage -> persona file
@@ -609,6 +634,47 @@ def _repo_root():
     return p if os.path.exists(os.path.join(p, ".git")) else HERE
 
 
+EXPECT_KEYS = ("created", "changed", "deleted")      # P35 (D438): a real run's expected result, by kind
+REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": {"created": [file paths or globs], "changed": [...], '
+                        '"deleted": [...]}, each relative to folder, naming files, never a folder (pdf/a.pdf or pdf/*, not pdf/ '
+                        'or ./a.pdf): exactly what running it on the folder creates, changes and deletes (an empty list: nothing '
+                        'of that kind). Code runs it on copies first and compares; anything else, or any change in a folder it '
+                        'only reads, sends it back.')
+
+
+def real_run_expect_problems(rr):
+    """P35 (D438): why a planned real run's "expect" is not usable ([] when it is): exactly the three lists of EXPECT_KEYS,
+    each of non-empty relative file paths or globs (no absolute path, no .., no leading ./, no trailing / that names a
+    folder: the dry run lists file paths, so such a glob never matches; review R1-8), not all empty. Structure only."""
+    ex = rr.get("expect")
+    if ex is None:
+        return ['real_run expect is missing: say what running it does to folder, {"created": [...], "changed": [...], '
+                '"deleted": [...]}, each a list of file paths or globs relative to folder']
+    if not isinstance(ex, dict) or set(ex) != set(EXPECT_KEYS):
+        return ['real_run expect must be exactly {"created": [...], "changed": [...], "deleted": [...]}']
+    out = [f"real_run expect {k} must be a list of non-empty file paths or globs relative to folder (no absolute path, "
+           "no .., no leading ./, no trailing / naming a folder)"
+           for k in EXPECT_KEYS if not (isinstance(ex[k], list) and all(
+               isinstance(g, str) and g.strip() and not os.path.isabs(g) and ".." not in re.split(r"[/\\]", g)
+               and not g.startswith(("./", ".\\")) and not g.endswith(("/", "\\")) for g in ex[k]))]
+    if not out and not any(ex.values()):
+        out.append("real_run expect lists nothing: a real run that creates, changes and deletes nothing has nothing to run")
+    return out
+
+
+def expect_mismatch(expect, dry):
+    """P35 (D438): "" when the dry run's created/changed/deleted paths match expect, else what differs, sorted: per kind, a
+    glob no path matched ("expected <glob>, got none") and a path no glob matched ("unexpected <path>"). An empty list
+    means nothing of that kind. fnmatchcase: "*" also matches across "/"."""
+    from fnmatch import fnmatchcase
+    out = []
+    for k in EXPECT_KEYS:
+        globs, got = sorted(expect.get(k) or []), sorted(dry.get(k) or [])
+        out += [f"{k}: expected {g}, got none" for g in globs if not any(fnmatchcase(p, g) for p in got)]
+        out += [f"{k}: unexpected {p}" for p in got if not any(fnmatchcase(p, g) for g in globs)]
+    return "; ".join(out)
+
+
 def real_run_problems(rr, source, runner, run_dir):
     """Why a planned real run may not be asked for ([] when it may): its command starts with the form's runner, every
     folder is absolute, exists, is named in the brief or the Requester's answers (source, squashed) and is not /, the
@@ -618,6 +684,7 @@ def real_run_problems(rr, source, runner, run_dir):
         return ["real_run must be an object: command, folder, reads, why"]
     if not runner:
         return ["this output's form names no runner, so nothing it builds can be run for real"]
+    rr = home_expanded(rr)      # P31 (D434, beta fix): ~/x is the folder it names (absolute; named in the brief either way)
     out, cmd, folder, reads = [], rr.get("command"), rr.get("folder"), rr.get("reads") or []
     if not (isinstance(cmd, list) and cmd and all(isinstance(x, str) and x.strip() for x in cmd)):
         out.append("real_run command must be a list of strings (the program, then its arguments)")
@@ -636,7 +703,8 @@ def real_run_problems(rr, source, runner, run_dir):
             continue
         p = os.path.realpath(f)
         # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
-        if not re.search(re.escape(squash(f).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source):
+        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
+                   for g in {f, home_tilde(f)}):      # P31 (D434, beta fix): the brief may write it ~/x
             out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
         if not os.path.isdir(p):
             out.append(f"real_run folder {f} is not an existing folder")
@@ -657,6 +725,28 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
                        "points that argument at a copy, so what you build must take the folder from its arguments")
     return out
+
+
+def home_expanded(rr):
+    """P31 (D434, beta fix): rr with "~" and "~/..." in its folder, reads and command arguments (the value after "=" too)
+    written out as the home folder (os.path.expanduser): a brief says ~/x, and no shell expands it when code runs the
+    command. Anything else, and anything not a string, is left for real_run_problems to judge."""
+    if not isinstance(rr, dict):
+        return rr
+    ex = lambda v: os.path.expanduser(v) if isinstance(v, str) and (v == "~" or v.startswith("~/")) else v
+
+    def arg(x):
+        k, eq, v = x.partition("=") if isinstance(x, str) and "=" in x else ("", "", x)
+        return k + eq + ex(v)
+    return {**rr, "folder": ex(rr.get("folder")),
+            **({"reads": [ex(x) for x in rr["reads"]]} if isinstance(rr.get("reads"), list) else {}),
+            **({"command": [arg(x) for x in rr["command"]]} if isinstance(rr.get("command"), list) else {})}
+
+
+def home_tilde(f):
+    """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
+    h = os.path.expanduser("~").rstrip("/")
+    return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
 
 
 def real_folders(workflows):
@@ -691,7 +781,11 @@ def real_run(out_dir, rr, timeout):
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
     and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
+    fence = rr.get("fence") is True      # P32 (D435): the dry run (real_run_dry) always goes through the sandbox runtime
+    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() or fence else None
+    if fence and (shutil.which(shlex.split(cmd)[0]) is None or (llm.MOCK and not os.getenv("J2_SANDBOX"))):      # none here
+        return {"ran": False, "exit": None, "evidence": "no sandbox runtime here: the dry run was not run, because it never "
+                                                        "runs with network"}      # (or offline without J2_SANDBOX): never unfenced
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
     out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
@@ -765,17 +859,21 @@ def real_run_dry(out_dir, rr, timeout):
                     v = c + v[len(p):]
                     break
             return k + eq + v
-        before = _tree(copies[0])
+        before, reads_before = _tree(copies[0]), [_tree(c) for c in copies[1:]]      # P35 (D438): the read-only copies too
         cmd = [moved(x) for x in rr["command"]]
+        rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
+        out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))
+        reads_changed = {str(i): x for i, (c, b) in enumerate(zip(copies[1:], reads_before), 1)      # P35 (D438): {n: diff}
+                         if any((x := _tree_diff(b, _tree(c))).values())}      # of the n-th read-only copy, when it changed
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
         if real:
-            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
+            return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real, "reads_changed": reads_changed,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
+        return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {}, "reads_changed": reads_changed,
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -2861,6 +2959,8 @@ def stage_goal(kind, base, chain):
     return {**keep, "statement": f"An {kind.upper()} for {name}", "site_name": name, "product_name": name,
             "business_type": kind, "facts": [name], "standards": ["Every item traceable to the PRD"],
             "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
+            "item_checks": {t: {"type": "section-not-empty", "target": s, "expect": 1}      # P30 (D433): one item per section
+                            for t, s in zip(items, output_def(kind)["sections"])},
             "to_be_confirmed": [],
             "dropped_from_brief": [], "visitor_needs": [], "chain": {**chain, "prd_ids": reqs, "hld_ids": comps}}
 
@@ -3613,6 +3713,7 @@ class J2Run:
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
         self.board = j2_board.new_board()   # board/1 (j2_board.py): questions and answers, behind J2_BOARD=1
@@ -3939,8 +4040,9 @@ class J2Run:
         self.post("identity", f"The workflows you selected are built ({len(t['selected'])} of {t['total']} in the run "
                               "template). The parts you did not select are not written.", done=True, to_user=True,
                   next="user")
-        self.outcome = (f"Done: the selected workflows of run template {t['name']} are built ({len(t['selected'])} of "
-                        f"{t['total']}); what was not selected is not built.")
+        done = (f"the selected workflows of run template {t['name']} are built ({len(t['selected'])} of {t['total']}); "
+                "what was not selected is not built.")
+        self.outcome = self._chain_done(f"Done: {done}", done)      # review R5-1: a stage's blocked item is named
         self.turn = None
 
     def _run_tpl_first(self, w, kind, section):
@@ -4022,7 +4124,7 @@ class J2Run:
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
-                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
+                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -4038,11 +4140,12 @@ class J2Run:
         """Outcome of "finish as it is". "Done with open items" only with items to name: a workable site is done."""
         if not self.sites:
             return f"Stopped {why}: nothing was built."
-        fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
-        fails = self.open_docs + fails + self._real_run_pending()
+        fails = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
+            if self.audits else ["nothing has been checked"]      # beta fix (b): a blocked item is listed once, by _open_items
+        fails = self.open_docs + fails + self._real_run_pending() + self._stage_blocked() + self._open_items()      # P30 (D433)
         if not fails:
             return self.out["done"]
-        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
+        return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails).rstrip('.')}."      # beta fix d
 
     def _accept_open(self):
         """The Requester finished with design checks, conditions or done-when items still failing: they are accepted, so
@@ -4082,7 +4185,9 @@ class J2Run:
                               "choices": self.paused["handoff"].get("choices"),
                               "suggested": self._auto_choice(self.paused)[2],      # the option Decide for me would take
                               "auto_waits": self.paused["kind"] in AUTO_ASK or bool(self.paused["handoff"].get("usd")),       # a question it never answers for you
-                              "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
+                              "workflow": self.paused["handoff"].get("wid"),
+                              "code": self.real_runs_asked.get(self.paused["handoff"].get("wid"))      # P31 (D434): the Run button's
+                              if self.paused["kind"] == "real_run" else None}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
@@ -4750,6 +4855,7 @@ class J2Run:
         """A tools call's record, from code's comparison of the run folder and the CLI's tool calls (llm.LAST_META):
         the files written or removed in the builder's folder (sha256 of each written), every changed file outside it
         that J2 did not write, the folder's size against the limits, the tool calls, cost and stop reason."""
+        shutil.rmtree(os.path.join(tools["cwd"], ".claude"), ignore_errors=True)      # P34 (D437): the Claude CLI's own folder (its cwd is the output folder), whatever it holds
         after = file_states(self.dir)
         pre = os.path.relpath(tools["cwd"], self.dir) + os.sep
         mine = lambda k: k.startswith(pre)
@@ -5073,7 +5179,8 @@ class J2Run:
                 self.request = last_user
                 if self._plan_stages() is not False:
                     self._handoff("identity", kind="intake")
-            elif self.fixes or self._change_applies():   # fix (b): a change request is checked at J2.a first
+            elif self.fixes or self._change_applies() or self.goal.get("to_be_confirmed"):   # fix (b): a change request is
+                # checked at J2.a first; beta fix (D433): always, while the charter waits on a fact only the Requester has
                 self._handoff("identity", kind="intake", change=self.feedback, mark=len(self.intake))
             else:
                 self._handoff("adaptation", kind="propose", new_cycle=True,
@@ -5326,7 +5433,10 @@ class J2Run:
         if self.doc:
             self._stage_artifacts()
         base = self.goal or {}
-        self.stage_archive.append({"stage": self.stage_kind, "goal": base, "audits": self.audits, "sections": self.sections})
+        blocked = set(self._blocked_items())
+        left = self._open_items(skip=[t for t in base.get("done_when") or [] if t not in blocked]) if blocked else []
+        self.stage_archive.append({"stage": self.stage_kind, "goal": base, "audits": self.audits, "sections": self.sections,
+                                   **({"blocked": left} if left else {})})      # review R4-1 (D433)
         self.save(f"stage-{self.stage_kind}.json", self.stage_archive[-1])
         return self._advance(self.stage_i + 1)
 
@@ -5504,7 +5614,9 @@ class J2Run:
             left = and_list(self._sw(k) for k in self.stages[i:])
             self.post("identity", f"Got it. We'll finish with what is already written. Not made: {left}.", to_user=True,
                       next="user", done=True)
-            self.outcome = f"Done with open items: finished as it is on the Requester's decision. Not made: {left}."
+            lines = self._chain_blocked()      # review R6-1
+            self.outcome = (f"Done with open items: finished as it is on the Requester's decision. Not made: {left}."
+                            + (f" Still not workable: {'; '.join(lines).rstrip('.')}." if lines else ""))
             self.turn = None
             return
         if decision == "drop":
@@ -5534,9 +5646,9 @@ class J2Run:
         """The last stage left in the chain is done (the rest were left out): the same closing as a normal Done."""
         self.post("identity", "Your design documents are ready." if len(self.docset) > 1 else
                   "Your document is ready." if self.docset else self._page_ready(), done=True, to_user=True, next="user")
-        self.outcome = ("Done: the design documents are workable. Every done-when item, rubric item and necessary condition "
-                        "passes in each." if len(self.docset) > 1 else self.out["done"])
-        self.turn = None
+        self.outcome = self._chain_done("Done: the design documents are workable. Every done-when item, rubric item and "
+                                        "necessary condition passes in each." if len(self.docset) > 1 else self.out["done"])
+        self.turn = None      # review R5-1: a stage's blocked item is named
 
     def _begin_stage(self, kind, base):
         """Fresh working state for the next stage; the earlier stage's workflows and documents are kept for the record.
@@ -5651,9 +5763,10 @@ class J2Run:
         """Step 7: the done-when items (texts) planned real runs check ("checks"); pending: only those whose run has no
         receipt yet. A builder never meets them; the real run's receipt does, after the Requester's approval."""
         at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
+        ran = {n for w in self.workflows if w.get("real_run") and w["id"] in self.real_runs_done
+               for n in w["real_run"].get("checks") or []} if pending else set()      # P31 (D434): any receipt decides it (a replacement)
         return [crit[at[n] - 1] for w in self.workflows if w.get("real_run")
-                and not (pending and w["id"] in self.real_runs_done)
-                for n in w["real_run"].get("checks") or [] if n in at and at[n] <= len(crit)]
+                for n in w["real_run"].get("checks") or [] if n not in ran and n in at and at[n] <= len(crit)]
 
     def _real_run_nums(self):
         """Step 7: the run-long done-when item numbers a planned real run decides (its "checks")."""
@@ -5702,6 +5815,14 @@ class J2Run:
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
+        if dry.get("ran") and dry.get("exit") == 0 and not dry.get("real_changed"):      # P35 (D438): after the stop and P31's
+            if dry.get("reads_changed"):      # exit check (both below): a write into a read-only copy, then a result unlike expect
+                return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
+                    f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
+                    for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
+            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # a real run registered before P35 has none
+                dry["expect_mismatch"] = mm
+                return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
             self.post("system", f"{w['id']}'s dry run changed your real folders, not only the copies, before any "
                                 f"approval.\nCommand: {shlex.join(rr['command'])}" + "".join(
@@ -5718,14 +5839,45 @@ class J2Run:
             self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
             self.turn, self.handoff = None, {}
             return True
+        if dry.get("ran") and dry.get("exit") != 0:      # P31 (D434): a failed dry run goes back to the build, never to the Requester
+            last = next((x.strip() for x in reversed((dry.get("output") or "").splitlines()) if x.strip()), "no output")
+            return self._dry_run_failed(w, dry, (f"exit {dry['exit']}" if dry["exit"] is not None else "stopped at the time limit")
+                                        + f": {last[:160]}")
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
+                            + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
+                                                                            "dry run had no network access: results may differ."
+                                                                            if dry.get("fenced") else      # P32 (D435)
+                                                                            "No dry run: this computer has no sandbox, so it wasn't tested first")
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
-                            "Any other reply: it is not run.", real_run=w["id"])
+                            "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _dry_run_failed(self, w, dry, detail):
+        """P31 (D434): a real run whose dry run on copies failed is a build failure, never a question: w fails with code's
+        detail (P28's signature), keeps its output's end for the revising builder, a not-run receipt is written, its code is
+        forgotten, and Adaptation proposes the fix, unless the same failure twice in a row stops the cycle. True (handled)."""
+        w["status"], w["failure"], w["dry_run_output"] = "failed", ["dry_run", detail], dry.get("output") or ""
+        code = self.real_runs_asked.pop(w["id"], None)
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "real_run", "workflow": w["id"], **w["real_run"], "code": code, "approved": False,
+                                "ran": False, "exit": None, "evidence": f"not asked: the dry run on copies failed ({detail})",
+                                "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "real_run", f"{w['id']}: the dry run on copies failed ({detail})")
+        self.post("system", "Dry run failed, sent back to the builder")      # owner (review R1-7): a plain info line, never a question or card
+        self.save("workflows.json", self.workflows)
+        if self.last_failure is None:      # a passing build in between cleared P28's memory; it says nothing of the dry run after it
+            self.last_failure = getattr(self, "dry_failure", None)
+        stop = self._repeat_build_stop(w["id"])
+        self.dry_failure = self.last_failure
+        if not stop:
+            self._handoff("adaptation", kind="propose", new_cycle=True,
+                          why=f"{w['id']}'s real run failed its dry run on copies ({detail}). Propose a workflow that revises "
+                              f"{w['id']} and keeps its real_run. Its output (end): {w['dry_run_output']}")
         return True
 
     def _identity_real_run(self, h):
@@ -5733,28 +5885,70 @@ class J2Run:
         once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
         last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
-        ok = bool(w and code) and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}"
+        ans = str(h.get("answer") or "").strip()
+        ok = bool(w and code) and not last.get("auto") and ans == f"RUN {code}"
+        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()      # P31 (D434): the whole reply
+        if w and code and not ok and not declined:      # P31 (D434): any other reply asks again, the same code; the run stays open
+            self._event("identity", "real_run_unclear", f"{h.get('wid')}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
+            return self._ask_user(f"Not run. Press Run or type RUN {code}.", [{"question": "Run it for real?"}], "real_run",
+                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": h.get("wid")})
         res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
-            {"ran": False, "exit": None, "evidence": "not run: the reply was not exactly RUN " + str(code)}
+            {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
+             "not run: the reply was not exactly RUN " + str(code)}
+        nums = {as_int(c) for c in ((w or {}).get("real_run") or {}).get("checks") or []}      # P33 (D436): the items it decides
+        mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
+        judged = self._judge_real_run(w, res, mine) if mine and ok and res.get("ran") and res.get("exit") == 0 else {}
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
                                 "approved": ok, "answer_msg": last.get("id"), **res,
+                                **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
+                                              for t, v in judged.items()}} if judged else {}),      # P33 (D436)
                                 "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
                   warning=bool(res.get("ran") and res.get("exit") != 0))
-        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
+        ran_ok = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)      # the receipt
+        self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): Audit's verdict per item (P30 reads it)
+        passed = ran_ok and all(v[0] for v in judged.values())      # P33 (D436): an item it did not judge needs every one passed
         items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
         if self.audits and items:      # the items this run checks: decided by its receipt, never by a builder or Audit
             last = self.audits[-1]
             for x in last["results"]:
                 if x["criterion"] in items:
-                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
-                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})
+                    j = judged.get(x["criterion"])      # P33 (D436): Audit's verdict on the output decides each item it judged
+                    p = j[0] if j else passed
+                    x.update({"pass": p, "verdict": "PASS" if p else "NEEDS_REVISION" if j else "FAIL",
+                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"
+                                      + (f"; Audit read its output: {j[1]}" if j else "")})
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
         self._goal_done(h.get("r") or {})
+
+    def _judge_real_run(self, w, res, items):
+        """P33 (D436): one Audit call reads an approved real run's output (exit 0) against the Requester's brief, for the items
+        the run decides. {item text: (passed, evidence)}: PASS with evidence passes; anything else, or no finding, does not.
+        Code reads only the verdict field, never the words. A plain call: budget and dollar accounting count it like any."""
+        rr, dry = w["real_run"], self.real_runs_dry.get(w["id"]) or {}
+        r = self.call("audit", '{"say": str, "findings": [{"item": int, "verdict": "PASS"|"NEEDS_REVISION", "evidence": str '
+                               '(one line: what in the output shows it)}] (exactly one per item)}',
+                      f"REQUESTER'S BRIEF: {self.request}\n"
+                      f"ITEMS THIS REAL RUN DECIDES: {json.dumps([{'item': self._no(t), 'criterion': t} for t in items], ensure_ascii=False)}\n"
+                      f"COMMAND: {shlex.join(rr['command'])}\n"
+                      f"WHAT THE DRY RUN DID TO THE COPY: {json.dumps({k: dry.get(k) or [] for k in ('created', 'changed', 'deleted')}, ensure_ascii=False)}\n"
+                      f"ITS OUTPUT (the end, by code): {res.get('output') or '(no output)'}\n"
+                      "Judge each item only from this output against the brief: PASS only when the output shows the item "
+                      "done; say what shows it.",
+                      lambda: json.dumps({"say": "Read the real run's output.", "findings": [
+                          {"item": self._no(t), "verdict": "PASS", "evidence": "mock: the output was read"} for t in items]}))
+        got = {as_int(f.get("item")): f for f in (r.get("findings") if isinstance(r, dict) else None) or [] if isinstance(f, dict)}
+        out = {}
+        for t in items:
+            f = got.get(self._no(t))
+            ev = str((f or {}).get("evidence") or "").strip()
+            out[t] = (f is not None and f.get("verdict") == "PASS" and bool(ev),
+                      ev or ("Audit filed no finding" if f is None else "Audit gave no evidence"))
+        return out
 
     def _send_args(self, atom):
         """What j2_send.send needs to send at most once: the run folder (its receipts), the email's key and the answer."""
@@ -5851,8 +6045,9 @@ class J2Run:
                   done=True, to_user=True, next="user")
         base = ("Done: the design documents are workable. Every done-when item, rubric item and necessary condition "
                 "passes in each." if len(self.docset) > 1 else self.out["done"])
-        self.outcome = f"Done with open items: {words}" if any(x["pass"] is False or x.get("status") != "done" for x in self.deed_log) \
-            else f"{base} {words}"
+        failed = any(x["pass"] is False or x.get("status") != "done" for x in self.deed_log)
+        self.outcome = self._chain_done(f"Done with open items: {words}" if failed else f"{base} {words}",
+                                        words if failed else f"not every done-when item is built. {words}")      # review R5-1
         self.turn = None
 
     def _identity_intake(self, h):
@@ -5880,6 +6075,10 @@ class J2Run:
                          "outcome; a reworded item counts as new. Each new item stands on its own: name the feature it "
                          "is about, and copy the Requester's exact words for labels and examples. "
                          f"CURRENT CHARTER: {json.dumps(self.goal, ensure_ascii=False)}")
+            if self.goal.get("to_be_confirmed"):      # beta fix (D433): the follow-up may give a fact the charter waits on
+                feedback += ("\nThe charter's to_be_confirmed lists facts only the Requester can give. If the change gives "
+                             "one, put it in the charter and leave its entry out of to_be_confirmed; giving a fact is not a "
+                             "new done-when item.")
 
         def mock():
             if change:
@@ -5933,12 +6132,17 @@ class J2Run:
             facts = (r.get("goal") or {}).get("facts") if isinstance(r.get("goal"), dict) else None
             return json.dumps({**r, "email_updates": j2_send.asks_updates(said),
                                **({"exact_facts": [{"fact": f, "item": None} for f in facts]} if facts else {}),
-                               **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {})})
+                               **({"item_kinds": [mock_item_kind(c) for c in dw]} if dw and len(kinds) > 1 else {}),
+                               **({"item_checks": [mock_item_check(self.out)] * len(dw)} if dw and not llm.MOCK else {})})
         kinds_fmt = ('"item_kinds": [str] (one per done-when item, same order: the kind of work each item is, one of '
                      + json.dumps(dict(kinds), ensure_ascii=False) + '), ') if len(kinds) > 1 else ""
         kinds_fmt += ('"exact_facts": [{"fact": str, "item": int}] (facts from facts that must appear exactly as written, '
                       'each with the done-when item it belongs to), "date_rule_items": [int] (done-when items whose rule '
                       'depends on a date, such as a deadline or an early-bird price), ')
+        kinds_fmt += ('"item_checks": [{"type": one of ' + json.dumps(self._item_check_types())
+                      + ', "target": str|[str]|null, "expect": any|null}] (one per done-when item, same order: the check code '
+                      'runs to show the item is built; "real-run" for an item only running it on the Requester\'s own files '
+                      'can show), ')      # P30 (D433)
         r = self.call("identity", '{"say": str (when you ask: to the Requester), ' + REPLY_FMT + ' (when enough is '
                       'true), "enough": bool, "questions": [{"question": str, "options": [str] '
                       '(0-4)}] (when enough is false), "email_updates": bool (true only when the Requester asked to get '
@@ -5971,7 +6175,7 @@ class J2Run:
                       "number of the done-when item it blocks: that item is not met until they confirm it. "
                       "Keep everything the brief "
                       "asks for; if the charter leaves any of it out, list it in dropped_from_brief with the reason. "
-                      "Don't plan costs or resources.") + (SITE_LATER.format(page=self._page_word()) if self.docset and not self.doc and not change else "")
+                      "Don't plan costs or resources.") + BEHAVIOUR_RULE + (SITE_LATER.format(page=self._page_word()) if self.docset and not self.doc and not change else "")
                       + ("\nRecord the charter now (enough=true) from what you have." if last else ""), mock,
                       defaults=("Thanks, I have everything I need. I'm starting the build now.",
                                 "Charter is ready. Propose the first workflows."))
@@ -5982,6 +6186,7 @@ class J2Run:
         if goal and (r.get("email_updates") is True or (self.goal or {}).get("email_updates")):
             goal["email_updates"] = True      # recorded only when asked for, so other charters stay as they were
         tags = r.get("item_kinds") if isinstance(r.get("item_kinds"), list) else []
+        checks = r.get("item_checks") if isinstance(r.get("item_checks"), list) else []      # P30 (D433)
         marks = {k: r.get(k) if isinstance(r.get(k), list) else [] for k in ("exact_facts", "date_rule_items")}
         if not goal:
             self._event("identity", "invalid_move", "J2.a reply had neither questions nor a charter")
@@ -6014,7 +6219,9 @@ class J2Run:
             goal["facts"] = [f for f in goal.get("facts") or [] if f not in bad]
             self.post("system", f"The charter still lists facts not in the brief or the answers; code drops them: "
                                 f"{bad}.", warning=True)
-        goal["to_be_confirmed"] = self._tbc(goal.get("to_be_confirmed"), goal.get("done_when") or [])
+        goal["to_be_confirmed"] = self._tbc(goal.get("to_be_confirmed"), goal.get("done_when") or [], keep=[
+            t for t in (self.goal or {}).get("to_be_confirmed") or [] if t["criterion"] in goal["done_when"]]
+            if change and "to_be_confirmed" not in goal else ())      # review R5-5: an absent key is no answer
         goal.pop("open_inputs", None)
         if self.doc:      # code reads site_name (titles, core facts) and business_type (playbooks) for every output
             goal.setdefault("site_name", goal.get("product_name") or "Document")
@@ -6022,6 +6229,7 @@ class J2Run:
             if self.output in ("hld", "lld"):      # a design document asked for without a PRD: its own sections and checks
                 goal = stage_goal(self.output, goal, self.chain)
                 tags = []          # code's items replace Identity's: their kinds are the sections' parts
+                checks = [goal["item_checks"][c] for c in goal["done_when"]]      # P30 (D433): and their checks are code's
                 marks = {k: [] for k in marks}     # and Identity's item numbers no longer point at them
         # The no-errors gate has fixed wording: Identity can't extend it with features (runs/j2-20261009-133203
         # item 16 added filters and category browsing, so it couldn't pass once those were dropped).
@@ -6049,6 +6257,12 @@ class J2Run:
         kept = {c: k for c, k in ((self.goal or {}).get("item_kinds") or {}).items() if c in crit}
         if given or kept or goal.get("item_kinds"):
             goal["item_kinds"] = {**kept, **(goal.get("item_kinds") or {}), **given}
+        # P30 (D433): each item's runnable check, stored by text like its kind; a change request keeps the checks of items that
+        # stay; the no-errors gate is code's own render check. An item left without one is refused at the stamp.
+        kept = {c: k for c, k in ((self.goal or {}).get("item_checks") or {}).items() if c in crit}
+        mocked = [mock_item_check(self.out)] * len(crit) if llm.MOCK and not checks else []      # mock only: any mock reply
+        goal["item_checks"] = {**kept, **self._item_checks_from(checks or mocked, crit),
+                               **({GATE_TEXT: {"type": "render-check"}} if GATE_TEXT in crit else {})}
         # Identity's exact facts and date-rule items, stored by item text (item numbers are charter positions here)
         at = lambda n: crit[as_int(n) - 1] if 1 <= as_int(n) <= len(crit) else None
         old = self.goal or {}
@@ -6068,7 +6282,8 @@ class J2Run:
         self.save("goal.json", self.goal)
         ok, why = self._stamp_check()
         dropped = [str(d) for d in self.goal.get("dropped_from_brief") or [] if str(d).strip()]
-        if ok and dropped and not self.drop_answer:
+        if ok and dropped and not self.drop_answer and not (      # review R5-2: a follow-up keeps the Requester's answer
+                change and set(dropped) <= {str(d) for d in old.get("dropped_from_brief") or []}):
             return self._ask_user("The charter leaves out these items from your brief: " + "; ".join(dropped)
                                   + ". Work starts after your answer.",
                                   [{"question": "Keep them in scope, or drop them?",
@@ -6091,6 +6306,15 @@ class J2Run:
             self._say("validator", f"Charter rejected: {why}.", "identity", stamp=False)
             return self._handoff("identity", kind="intake", force=True, attempt=2, change=change, mark=mark,
                                  feedback=f"The validator rejected the charter: {why}. Fix only that.")
+        have = self.goal.get("item_checks")      # P30 (D433): None for a charter without item_checks (FR-9)
+        miss = [c for c in self.goal.get("done_when") or [] if have is not None and c not in have]
+        if miss:
+            self._event("validator", "refused", f"charter, second time: {why}")
+            self.post("system", f"Charter rejected twice: {why}. Code stops: no work starts, Identity asks the Requester.")
+            return self._ask_user("I could not give a runnable check for these done-when items: "
+                                  + "; ".join(f"{self._no(c)}. {c}" for c in miss) + ". Work starts after your answer.",
+                                  [{"question": "How can each of these be checked, or should it be reworded or dropped?",
+                                    "options": []}], "info", handoff={"kind": "intake", "change": change, "mark": mark})
         self.stamped = True
         self.post("system", "Charter accepted after two attempts; the validator's concern is on record.")
         self._start_work(change, start)
@@ -6118,6 +6342,11 @@ class J2Run:
         if len(g.get("done_when") or []) < need:
             return False, (f"fewer than {need} 'done when' criteria (the {j2_types.info(self.output)['label'].lower()} "
                            f"needs at least {need})")
+        if "item_checks" in g:      # P30 (D433): structural only, by set membership at normalise
+            miss = [n for n, c in enumerate(g.get("done_when") or [], 1) if c not in g["item_checks"]]
+            if miss:
+                allowed = self._item_check_types()
+                return False, f"done-when item(s) {miss} have no runnable check (item_checks: one of {allowed})"
         return True, "passes code checks"
 
     def _positions(self, c):
@@ -6642,10 +6871,14 @@ class J2Run:
                         else self.out["done"])
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
-        if self.audits and (fails := workable(self.audits[-1]) + self._real_run_pending()) and \
-                (self.real_runs_done or self._real_run_pending()):    # step 7: workable only after an approved run passed
-            self.outcome = (f"Done with open items: the real run {'did not pass' if self.real_runs_done else 'has not run'}."
-                            f" Still not workable: {'; '.join(fails)}.")
+        rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
+            + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
+        rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
+        opened = self._stage_blocked() + (self._open_items() if self.audits else [])      # P30 (D433), R4-1: earlier stages too
+        if rr or opened:
+            self.outcome = ("Done with open items: "
+                            + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
+                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -6881,8 +7114,17 @@ class J2Run:
                 return self._identity_limit({**p, "left_out": left, "at_audit": True,
                                              "budget_needed": need if need > 0 else None})
         tbc = {t["criterion"] for t in (self.goal or {}).get("to_be_confirmed") or []}
-        if not fails and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
+        held = workable({**last, "accepted": list(last.get("accepted") or []) + self._blocked_items()}) if last else fails
+        if not held and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
             return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
+        if fails and not held and (blocked := self._blocked_items()) and not self._open_items(skip=blocked) \
+                and not self._real_run_pending():
+            # beta fix d (D433): everything else is built and passes, and what is left is blocked on what only the Requester
+            # has: the run ends now, "Done with open items" naming each with its missing fact, with no retry, no Adaptation
+            # and no second audit (it looped to Adaptation and then the same-failure limit question: run 8b10)
+            self.post("system", "Everything else is built and passes. What is left is blocked, so no fix round is started.")
+            return self._goal_done({"to_requester": "Everything else is built and passes. Still open: "
+                                                    + "; ".join(self._open_items())})
         rr = self._real_run_nums()
         facts = [x for x in findings if x.get("needs_requester_fact") and x.get("verdict") not in ("PASS", "PASS_WITH_WARNING")
                  and x.get("criterion") not in tbc and as_int(x.get("item")) not in rr]
@@ -9293,9 +9535,13 @@ class J2Run:
                 rel = self._out_rel()      # (file_sorter/sort_files.py): a run template finds the type they belong to
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
+                w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
                 bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
+                    continue
+                if bad := real_run_expect_problems(w["real_run"]):      # P35 (D438): what it will create, change and delete
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_expect",)))
                     continue
                 checks = w["real_run"].get("checks") or []
                 at = self._item_at()
@@ -9312,7 +9558,7 @@ class J2Run:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_checks", tuple(
                         as_int(i) for i in checks) if isinstance(checks, list) else ())))
                     continue
-                wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
+                wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
@@ -9767,6 +10013,14 @@ class J2Run:
         brief["atoms"] = [{k: v for k, v in a.items() if k not in ("results", "status", "attempts")}
                           for a in w.get("atoms") or []]
         brief["covers_items"] = [((self.goal or {}).get("done_when") or [])[i - 1] for i in self._wf_items(w)]
+        if "item_checks" in (self.goal or {}):      # P30 (D433): the items it owns, each with its check and its status so far
+            states, checks = self._item_states(), self.goal["item_checks"]
+            brief["items"] = [{"item": self._no(t), "text": t, "check": checks.get(t),
+                               "status": (states.get(t) or {}).get("status", "not_built")} for t in self._owned_items(w)]
+        mine = set((w.get("real_run") or {}).get("checks") or [])      # P31 (D434): the latest workflow whose real run checked one of
+        if mine and (rv := next((x for x in reversed(self.workflows) if x is not w and (x.get("failure") or [None])[0] == "dry_run"
+                                 and mine & set(x["real_run"].get("checks") or [])), None)):      # these items and failed its dry run
+            brief["dry_run_failure"] = rv.get("dry_run_output")      # (by item number: a folder run drops "revises"): what it printed
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
         if self._file_wf(w):
             return self._run_artifact(w, brief, max_calls)
@@ -9808,7 +10062,8 @@ class J2Run:
             first = self.style is None and not self.doc      # a document has no style guide
 
             def mock():
-                board_extra = self._mock_board_extra(w, attempt) if j2_board.enabled() else {}
+                board_extra = {**(self._mock_board_extra(w, attempt) if j2_board.enabled() else {}),
+                               "item_status": self._built_status(w)}      # P30 (D433)
                 if art_model is not None:      # J2_ARTIFACT_SCHEMA=1: one JSON object, built from the charter only
                     rep = self._mock_artifact(w, art_kind, art_sec, art_model, sid, first, board_extra)
                     if art_tpl is not None:      # the specialised template's own fields, from the need's facts only
@@ -9849,6 +10104,7 @@ class J2Run:
                     extra["design"] = {k: v for k, v in
                                        j2_artifact_models.transport_schema(style_model()).items()
                                        if k != "$schema"}
+                extra["item_status"] = ITEM_STATUS_SCHEMA      # P30 (D433): the closed reply schema takes the builder's status
                 schema = j2_artifact_models.reply_schema(art_model, extra)
                 if art_sec_schema is not None:      # the library template's schema.json is the section the builder fills
                     schema = self._with_section(schema, art_sec_schema)
@@ -9878,7 +10134,7 @@ class J2Run:
                                           if self.doc else (
                                     'First line: a JSON object {"say": str (one short line reporting to @Coordination: '
                                     'what you changed; code runs your checks and reports them, so don\'t claim they pass), '
-                                    '"human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise), "next": "Coordination", ' + (self.SPEC_FMT if self.blueprint else '') + (self.BOARD_FMT if j2_board.enabled() else '') + self.REASON + '}. '
+                                    '"human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise)' + ITEM_STATUS_FMT + ', "next": "Coordination", ' + (self.SPEC_FMT if self.blueprint else '') + (self.BOARD_FMT if j2_board.enabled() else '') + self.REASON + '}. '
                                     + ('Then a ```style block with the style guide as JSON: ' + STYLE_FMT + '. ' if first
                                        else '')
                                     + 'Then, '
@@ -10115,14 +10371,15 @@ class J2Run:
         fmt = ('First line: a JSON object {"say": str (one short line to @Coordination: what you wrote; code runs your '
                'checks, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what '
                'this file contains), "atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no '
-               'selectors), "next": "Coordination"}. Then the whole file between a line <<<FILE and a line FILE>>>.')
+               'selectors)' + ITEM_STATUS_FMT + ', "next": "Coordination"}. Then the whole file between a line <<<FILE and a '
+               'line FILE>>>.')      # P30 (D433)
         g = self.goal or {}
         charter = {k: g.get(k) for k in ("statement", "audience", "standards", "rules", "done_when", "to_be_confirmed")}
 
         def mock():
             return (json.dumps({"say": f"@Coordination {fn} wrote {f}.", "human_output": f"I wrote {f} for the "
                                 "workflows after it.", "atom_human_output": "This sets what the later parts of the "
-                                "page follow.", "next": "Coordination"})
+                                "page follow.", "item_status": self._built_status(w), "next": "Coordination"})      # P30
                     + f"\n<<<FILE\n# {w['name']}\n\nWhat {w['name']} sets for the workflows after it, from the charter.\n"
                       "FILE>>>")
         attempt, evidence, text, meta, failed = 0, "", None, {}, []
@@ -10189,8 +10446,8 @@ class J2Run:
     # tools; code publishes the result where the checks, Audit and the views read it, and runs the work atoms' checks
     TOOLS_FMT = ('{"say": str (one short line to @Coordination: what you wrote; code runs your checks, so don\'t claim '
                  'they pass), "human_output": str (1 to 3 plain sentences telling a person what you built), '
-                 '"atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no selectors), '
-                 '"next": "Coordination"}')
+                 '"atom_human_output": str (1 or 2 plain sentences in everyday words: no ids, no selectors)'
+                 + ITEM_STATUS_FMT + ', "next": "Coordination"}')      # P30 (D433)
 
     def _general(self):
         """True when builders work with tools (the general path); a provider that can't give tools keeps the old one."""
@@ -10273,7 +10530,8 @@ class J2Run:
         if self.doc:
             names = (self.out["file"], f"site/{self.site_tag}v{n}.md")
         elif m and self.out.get("output") != "folder":
-            shutil.copytree(d, os.path.join(self.dir, "site"), dirs_exist_ok=True)
+            shutil.copytree(d, os.path.join(self.dir, "site"), dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns(".claude"))      # P34 (D437)
             names = (f"site/v{n}{os.path.splitext(m)[1]}",)
         else:
             names = ()
@@ -10309,7 +10567,8 @@ class J2Run:
             with open(p, "w", encoding="utf-8") as f:
                 f.write(text)
         return json.dumps({"say": f"@Coordination {w['id']} wrote its files.", "human_output": f"I wrote {w['name']}.",
-                           "atom_human_output": "This adds a working part of the result.", "next": "Coordination"})
+                           "atom_human_output": "This adds a working part of the result.",
+                           "item_status": self._built_status(w), "next": "Coordination"})      # P30 (D433)
 
     def _run_tools(self, w, brief, max_calls):
         """One workflow on the general path: its builder writes and edits files in the output folder with its tools,
@@ -10435,9 +10694,195 @@ class J2Run:
             last = new
         return last
 
+    def _item_check_types(self):
+        """P30 (D433): the check types an item may have: the form's, without inside-folder (a guard on the whole build that
+        holds for every build, never evidence for one item; review R1-5), and "real-run"."""
+        return sorted(set(self.out["check_types"]) - {"inside-folder"} | {"real-run"})
+
+    def _item_checks_from(self, raw, crit):
+        """P30 (D433): Identity's item_checks (one per item, same order) as {item text: {type, target, expect}}: only a type
+        of _item_check_types is kept, and a list of the wrong length gives none (the stamp then refuses)."""
+        allowed = set(self._item_check_types())
+        if len(raw) != len(crit):
+            return {}
+        return {c: {k: x[k] for k in ("type", "target", "expect") if k in x} for c, x in zip(crit, raw)
+                if isinstance(x, dict) and x.get("type") in allowed}
+
+    def _owned_items(self, w):
+        """P30 (D433): the texts of the done-when items a workflow owns: those it covers, and the items of the findings
+        (F-n is item n) it fixes."""
+        crit, at = (self.goal or {}).get("done_when") or [], self._item_at()
+        fixed = [crit[at[int(f[2:])] - 1] for f in map(str, w.get("fixes") or []) if FINDING_ID.fullmatch(f) and int(f[2:]) in at]
+        return list(dict.fromkeys([crit[i - 1] for i in self._wf_items(w)] + fixed))
+
+    def _built_status(self, w):
+        """P30 (D433), mock builders only: every item the workflow owns, set built (the scripted builder's reply)."""
+        return [{"item": self._no(t), "status": "built", "reason": ""} for t in self._owned_items(w)]
+
+    def _served_status(self, w, src):
+        """P30 (D433): a section the content door served unchanged carries the status the earlier run's builders set for the
+        items this workflow owns (its stored workflows.json, the latest done workflow wins, by item text); an item it holds
+        none for is not_built. Code copies a status an agent set, never decides one (review R1-6)."""
+        try:
+            with open(os.path.join((src or {}).get("dir") or "", "workflows.json"), encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            old = []
+        st = {}
+        for x in old if isinstance(old, list) else []:
+            if isinstance(x, dict) and x.get("status") == "done" and isinstance(x.get("item_status"), dict):
+                st.update(x["item_status"])
+        return [{"item": self._no(t), "status": (st.get(t) or {}).get("status", "not_built"),
+                 "reason": (st.get(t) or {}).get("reason") or ("" if t in st else "the earlier run stored no status for it")}
+                for t in self._owned_items(w)]
+
+    def _store_item_status(self, w, meta):
+        """P30 (D433): the builder's item_status field, kept on its workflow by item text. A missing entry or an unknown
+        status is not_built, and blocked without a reason is not_built: a field, never the reply's words."""
+        if "item_checks" not in (self.goal or {}):
+            return
+        mine = {self._no(t): t for t in self._owned_items(w)}
+        raw = meta.get("item_status") if isinstance(meta, dict) else None
+        got = {}
+        for x in raw if isinstance(raw, list) else []:
+            if isinstance(x, dict) and as_int(x.get("item")) in mine:
+                got.setdefault(mine[as_int(x.get("item"))], x)
+        w["item_status"] = {}
+        for t in mine.values():
+            s, why = got.get(t, {}).get("status"), str(got.get(t, {}).get("reason") or "").strip()
+            if s not in ITEM_STATUSES:
+                s, why = "not_built", "the builder set no status"
+            elif s == "blocked" and not why:
+                s, why = "not_built", "blocked without a reason"
+            w["item_status"][t] = {"status": s, "reason": why}
+
+    def _item_states(self):
+        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins."""
+        out = {}
+        for w in self.workflows:
+            if w.get("status") == "done":
+                out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
+        return out
+
+    def _open_items(self, skip=()):
+        """P30 (D433): every done-when item whose builder did not set it built, with why ([] for a charter without item_checks).
+        The no-errors gate is code's own (render-check): no builder owns it, and the audit gate and workable() decide it.
+        Neither does a builder own an item a planned real run decides (_register refuses a builder that covers one): its
+        receipt, Audit's reading of the output (P33), _real_run_pending and workable() decide it (review R1-1)."""
+        if "item_checks" not in (self.goal or {}):
+            return []
+        states, out, by_run, tbc = self._item_states(), [], set(self._real_run_items()), self._tbc_blocked()
+        for t in (self.goal or {}).get("done_when") or []:
+            if t in skip:
+                continue
+            s = {"status": "blocked", "reason": tbc[t]} if t in tbc else \
+                states.get(t) or {"status": "not_built", "reason": "no workflow built it"}      # beta fix b: the charter's fact
+            if t not in tbc and (t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check"):
+                continue
+            if s["status"] == "blocked":      # beta fix d: the missing fact (an agent's field) and how to give it (code's text)
+                out.append(f"done-when item {self._no(t)}: {t.rstrip('.')} blocked: needs {s['reason'].rstrip('.')}. "
+                           "Send it as a follow-up to finish.")
+            elif s["status"] != "built":
+                out.append(f"done-when item {self._no(t)}: {t} ({s['status'].replace('_', ' ')}: {s['reason'] or 'no reason given'})")
+        return out
+
+    def _blocked_items(self):
+        """P30 (D433, beta fix): the done-when items whose latest done owner set them blocked (always with a reason:
+        _store_item_status keeps blocked only with one). They never hold back the planned real run; the run then ends
+        "Done with open items", naming each with its reason (_open_items). The builder's field, never a word of a reply."""
+        if "item_checks" not in (self.goal or {}):
+            return []
+        states, by_run = self._item_states(), set(self._real_run_items())     # review R3-1: a real-run item is decided
+        tbc = self._tbc_blocked()                                             # by its receipt and Audit, never a builder
+        return [t for t in self.goal.get("done_when") or []
+                if t in tbc or (t not in by_run and (states.get(t) or {}).get("status") == "blocked")]
+
+    def _tbc_blocked(self):
+        """P30 (D433, beta fix b): {item text: fact} for each done-when item the latest audit marks TO_BE_CONFIRMED because
+        the charter's to_be_confirmed (Identity's field) names it: it counts as blocked, its reason the entry's own fact
+        field, never a word of a note. Never an item a planned real run decides (review R3-1)."""
+        if "item_checks" not in (self.goal or {}) or not self.audits:
+            return {}
+        facts, by_run = {t["criterion"]: t["fact"] for t in self.goal.get("to_be_confirmed") or []}, set(self._real_run_items())
+        return {r["criterion"]: facts[r["criterion"]] for r in self.audits[-1].get("results") or []
+                if r.get("verdict") == "TO_BE_CONFIRMED" and r["criterion"] in facts and r["criterion"] not in by_run}
+
+    def _stage_blocked(self):
+        """P30 (D433, review R4-1): the blocked lines of each earlier stage of a design-document chain, kept when it was left
+        (_next_stage), named by stage: _begin_stage resets the goal, audits and workflows, so the outcome reads them here.
+        A follow-up continues the last stage only, so an earlier stage's line ends with "Start a new run with it to finish."
+        in place of _open_items' own hint (review R5-3: code's fixed text, swapped as a suffix)."""
+        hint = " Send it as a follow-up to finish."
+        return [f"{a['stage'].upper()} {line[:-len(hint)] + ' Start a new run with it to finish.' if line.endswith(hint) else line}"
+                for a in self.stage_archive if a.get("stage") != self.stage_kind for line in a.get("blocked") or []]
+
+    def _chain_blocked(self):
+        """P30 (D433, review R5-1): every blocked line a run's ending names when it writes the outcome itself: the earlier
+        stages' (_stage_blocked) and the current stage's, archived when the chain left it; in a run of one output, the
+        current goal's blocked items."""
+        if not self.stages:
+            blocked = set(self._blocked_items())
+            return self._open_items(skip=[t for t in (self.goal or {}).get("done_when") or [] if t not in blocked]) \
+                if blocked else []
+        return self._stage_blocked() + [f"{a['stage'].upper()} {line}" for a in self.stage_archive
+                                        if a.get("stage") == self.stage_kind for line in a.get("blocked") or []]
+
+    def _chain_done(self, done, head="not every done-when item is built."):
+        """P30 (D433, review R5-1): a chain ending's outcome: done as given while no blocked line is left, else "Done with
+        open items: <head> Still not workable: <every blocked line>." (_deeds_finished, _stages_finished, _run_tpl_stage_end)."""
+        lines = self._chain_blocked()
+        return f"Done with open items: {head} Still not workable: {'; '.join(lines).rstrip('.')}." if lines else done
+
+    def _run_item_check(self, text, chk, built, mech):
+        """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the
+        runners the work atoms' checks use."""
+        t, folder = chk.get("type"), self._out_dir() if self.folder else None
+        try:
+            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0) and Audit's reading of
+                n = self._no(text)      # its output for this item (real_run_item_ok, P33; review R1-4), never by a builder
+                ok = any(self.real_runs_done.get(w["id"]) is True for w in self.workflows
+                         if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []}) \
+                    and self.real_run_item_ok.get(text, True)
+                return {"pass": ok, "evidence": "its real run was approved, exited 0 and Audit passed its output" if ok else
+                        "its real run did not pass (approved, exit 0 and Audit PASS)"}
+            if t == "render-check":
+                if not mech.get("available"):
+                    return {"pass": None, "evidence": f"the render check didn't run: {mech.get('note')}"}
+                probs = j2_check.problems(mech)
+                return {"pass": not probs, "evidence": "; ".join(probs) or "the render check found no problem"}
+            if folder and t == "test-passed":
+                if not self.out.get("test_runner"):
+                    return {"pass": None, "evidence": "this output's form names no test runner"}
+                tg = chk.get("target")
+                rr = sandbox_rerun(folder, self.out["test_runner"], tg[0] if isinstance(tg, list) else tg, builder_timeout())
+                return {"pass": rr["pass"], "evidence": rr["evidence"]}
+            return run_check(chk, folder or os.path.join(self.dir, "site"), built, self.doc)
+        except (OSError, ValueError) as e:
+            return {"pass": None, "evidence": f"the check could not run: {e}"}
+
+    def _item_check_gate(self, results, built, mech):
+        """P30 (D433): an item Audit passed stays passed only when code ran its check and it passed; otherwise the row is
+        BLOCKED_BY_EVIDENCE with code's evidence. Nothing for a charter without item_checks."""
+        checks = (self.goal or {}).get("item_checks")
+        if checks is None:
+            return
+        for i, row in enumerate(results):
+            chk = checks.get(row["criterion"])
+            if not row["pass"]:
+                continue
+            res = self._run_item_check(row["criterion"], chk, built, mech) if chk else \
+                {"pass": False, "evidence": "this item has no runnable check"}
+            if res.get("pass") is True:
+                continue
+            results[i] = {**row, "verdict": "BLOCKED_BY_EVIDENCE", "pass": False,
+                          "note": f"Code ran this item's check ({(chk or {}).get('type', 'none')}): {res['evidence']}. "
+                                  f"(Audit's own note: {row.get('note') or 'none'})"}
+            self._event("validator", "item_check", f"{row['id']} item {row['item']}: {res['evidence']}")
+
     def _atom_outputs(self, w, meta, attempt):
         """Every atom's human_output (the builder's words, checked by atom_human_problem, asked once more if bad, else
         written by code from the atom's expected output), then, for an atom whose checks passed, its agent_output."""
+        self._store_item_status(w, meta)      # P30 (D433): the builder's status of each item it owns, a field
         for n, a in enumerate(w.get("atoms") or []):
             text = str(meta.get("atom_human_output") or "") if n == 0 else ""
             p = atom_human_problem(text) if n == 0 else None
@@ -11400,7 +11845,7 @@ class J2Run:
         self._record_given(w, self._chain_edges() + dep_edges + (self._manifest_edges(w) if slim() else [])
                            + self._board_edges(), whole=not slim())
         return ('First line: a JSON object {"say": str (one short line reporting to @Coordination: what you changed; '
-                'code runs your checks and reports them, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise), "next": "Coordination", '
+                'code runs your checks and reports them, so don\'t claim they pass), "human_output": str (1 to 3 plain sentences telling a person what you built; \"done.\" alone is rejected), "atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in everyday words: no ids, no selectors, no \"units\"), "blocked_by": [str] (only when a check fails because of another workflow\'s work: the ids of those workflows, e.g. [\"W-2\"]; [] otherwise)' + ITEM_STATUS_FMT + ', "next": "Coordination", '
                 + (self.BOARD_FMT if j2_board.enabled() else '')
                 + self.REASON + '}. Then a ```markdown block: your section only, starting with its "## <Section>" '
                 'heading. Markdown only, never HTML.',
@@ -11498,6 +11943,7 @@ class J2Run:
                 "human_output": f"I reused the {w['name']} section of an earlier finished run, unchanged; code checked it "
                                 "against this charter.",
                 "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
+                "item_status": self._served_status(w, src),      # P30 (D433): the earlier run's builder set it (review R1-6)
                 "next": "Coordination"}
         raw = json.dumps({**meta, "section": src.get("data")}, ensure_ascii=False)
         state.update(prev_section=self.sections.get(sid), prev_data=(self.art_data.get(kind) or {}).get(section),
@@ -11770,6 +12216,7 @@ class J2Run:
                   '"human_output": str (1 to 3 plain sentences telling a person what you built)',
                   '"atom_human_output": str (1 or 2 plain sentences telling the Requester what this part created, in '
                   'everyday words)',
+                  ITEM_STATUS_FMT[2:],      # P30 (D433)
                   '"next": "Coordination"',
                   f'"section": the {model.template()} object for your section only']
         if j2_board.enabled():
@@ -12340,6 +12787,7 @@ class J2Run:
             r, mech, shot, measured, conds = self._audit_site(site, crit)
             extra = {"conditions": conds}
         results, extras = self._audit_findings(r.get("findings") or r.get("results") or [], crit)
+        self._item_check_gate(results, site, mech)      # P30 (D433): a PASS needs its item's check to pass, run by code
         forced = self._force_fail(results)
         self._flag_unpaid(results)
         rubric = self._audit_rubric(r.get("rubric") or [], measured, self.out["rubric"])

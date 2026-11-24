@@ -2093,5 +2093,35 @@
   "id": "D432",
   "label": "beta on Windows too, built from a checkout of main",
   "anchor": "Desktop app · Electron window"
+ },
+ {
+  "id": "D433",
+  "label": "every item: a runnable check + builder status; Done only when all built (P30)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D434",
+  "label": "failed dry run goes back to the build; only Run or Don't run answers (P31, E28)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D435",
+  "label": "dry run always network-fenced, or not run (P32)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D436",
+  "label": "Audit reads the real run's output; exit 0 alone never passes (P33)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D437",
+  "label": "build output holds only built files: no .claude (P34)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D438",
+  "label": "real run states expect; a dry run unlike it, or writing a read folder, goes back (P35)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

@@ -348,3 +348,14 @@ def test_the_export_command_is_registered_and_needs_a_subcommand(capsys):
     with pytest.raises(SystemExit) as caught:
         cli.main(["export"])
     assert caught.value.code == 2
+
+
+def test_copy_tree_leaves_out_claude_folders(tmp_path):
+    """D437: the Claude CLI's .claude folder never travels, at the top or deeper, whatever it holds."""
+    src, dest = tmp_path / "site", tmp_path / "copy"
+    for rel, text in {"index.html": "<p>hi</p>", "pages/about.html": "<p>about</p>", ".claude/.cc-writes/x.tmp": "x",
+                      ".claude/note.json": "{}", "pages/.claude/y.json": "{}"}.items():
+        (src / rel).parent.mkdir(parents=True, exist_ok=True)
+        (src / rel).write_text(text, encoding="utf-8")
+    assert sorted(exporter._copy_tree(src, dest)) == ["index.html", "pages/about.html"]
+    assert not any(p.name == ".claude" for p in dest.rglob("*"))

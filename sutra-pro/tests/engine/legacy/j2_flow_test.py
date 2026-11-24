@@ -4909,7 +4909,8 @@ def run_for_real():
     try:
         source = j2.squash(f"Sort the files in {real} into folders by type, reading samples from {src}, and run it.")
         runner = ("python3", "{target}")
-        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them"}
+        rr = {"command": ["python3", "sort.py", real, src], "folder": real, "reads": [src], "why": "sort them",
+              "expect": {"created": ["sorted.txt"], "changed": ["keep.txt"], "deleted": ["gone.txt"]}}      # Sutra P35 (D438)
         P = lambda x, **kw: j2.real_run_problems({**rr, **x}, source, runner, "/nowhere/run")
         assert P({}) == [], P({})
         assert any("must start with python3" in x for x in P({"command": ["bash", "sort.sh"]}))
@@ -4958,8 +4959,10 @@ def run_for_real():
             run.post("user", text, auto=auto)
             run.paused = None
             run._identity_real_run({"wid": "W-1", "answer": text, "r": {}})
-            r = receipts(run)[-1]
-            assert not r["approved"] and not r["ran"] and not os.path.exists(os.path.join(real, "sorted.txt")), r
+            # Sutra P31 (D434): neither is an answer: the same question again, no receipt, the run still paused
+            assert not os.path.exists(os.path.join(run.dir, "receipts.jsonl")) and run.paused["kind"] == "real_run" \
+                and run.real_runs_asked["W-1"] == code and f"Not run. Press Run or type RUN {code}." in run.chat[-1]["text"] \
+                and not os.path.exists(os.path.join(real, "sorted.txt")), run.chat[-1]
         run, code = made_run()
         run.post("user", f"  RUN {code} ")
         run.paused = None
@@ -5017,7 +5020,8 @@ def real_run_checks():
                 "how": {"kind": "AI", "agent": "Builder", "steps": "write go.py"},
                 "expected_output": [{"text": "go.py exists", "kind": "file", "target": "go.py"}],
                 "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
-        rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x"}
+        rr = {"command": ["python3", "go.py", real], "folder": real, "why": "x",
+              "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}      # Sutra P35 (D438): what go.py creates
         wf = lambda covers, checks: {"name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
                                      "covers": covers, "parts": ["agent_file"] * len(covers), "atoms": [atom], "real_run": {**rr, "checks": checks}}
         for covers, checks, why in (([1, 2], [2], "so no workflow covers it: take it out of covers and keep it in real_run checks"),
@@ -5030,7 +5034,7 @@ def real_run_checks():
         # Sutra P22 (D246): the workflow without a real run is refused, not the real-run one
         assert [x["name"] for x in reg] == ["Builder"] and any("Later (it covers done-when item(s) 2, which the real run of "
                                                                "'Builder' checks" in str(x) for x in refused), (reg, refused)
-        for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
+        for reply, ends in (("RUN {code}", "Done:"), ("Don't run", "Done with open items")):      # Sutra P31 (D434): a loose yes is asked again
             run = made_run()
             reg, refused, _ = run._register([wf([1], [2])])
             assert reg and not refused and run.workflows[0]["real_run"]["checks"] == [2], refused
@@ -5038,7 +5042,8 @@ def real_run_checks():
             assert run._real_run_items(pending=True) == [crit[1]]
             res = [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1, "verdict": "PASS" if i == 1 else "FAIL",
                     "note": ""} for i, c in enumerate(crit, 1)]
-            audit = {"output": FT, "results": res, "rubric": [], "conditions": [], "after_real_run": run._real_run_items(True)}
+            audit = {"output": FT, "results": res, "rubric": [], "conditions": [], "after_real_run": run._real_run_items(True),
+                     "cycle": 1, "version": 1, "all_pass": False}      # Sutra P33 (D436): as _turn_audit makes it; Audit's call reads them
             assert j2.workable(audit) == [] and j2.workable({**audit, "after_real_run": []}), "the item waits for the run"
             run.audits = [audit]
             run.post("user", "go")
@@ -5137,6 +5142,9 @@ def dry_run_real_folders():
         run2._run_tools(w2, {"id": "W-1", "name": "copier", "outputs": w2["outputs"]}, 3)
         assert w2["status"] == "failed" and any("still hold the Requester's real folder paths" in m["text"] for m in run2.chat), w2["status"]
         assert open(os.path.join(b, "one.txt")).read() == "kept" and os.listdir(b) == ["one.txt"]
+        # Sutra P32 (D435): the dry run runs only inside the sandbox runtime; the stand-in (FAKE_SRT) is it, the switch still off
+        open(os.path.join(base, "fake_srt.py"), "w").write(FAKE_SRT)
+        os.environ.update(J2_SANDBOX_CMD=f"python3 {os.path.join(base, 'fake_srt.py')}", J2_SANDBOX="0")
         # (c) the fixed script with its folders as arguments: the dry run passes the copies, the real folders untouched
         open(os.path.join(run._out_dir(), "copy_files.py"), "w").write(fixed)
         dry = j2.real_run_dry(run._out_dir(), good, 60)
@@ -5301,7 +5309,8 @@ def grant_and_question_kind():
                 "verification": [{"text": "go.py exists", "type": "file-exists", "target": "go.py", "expect": True}]}
         prop = {"id": "build-go", "name": "Builder", "goal_gap": "x", "outputs": ["go.py"], "completion_check": "z",
                 "covers": [1], "parts": ["agent_file"], "atoms": [atom], "estimated_resources": {"money": 20},
-                "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2]}}
+                "real_run": {"command": ["python3", "go.py", real], "folder": real, "why": "x", "checks": [2],
+                             "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}}      # Sutra P35 (D438)
         run.proposed_fields = {"build-go": copy.deepcopy(prop), "Builder": copy.deepcopy(prop)}
         env = {"money_limit": 25, "model_call_limit": 3, "time_limit_minutes": 5, "retry_limit": 1, "stop_loss": "s"}
         echo = {**{k: v for k, v in prop.items() if k != "real_run"}, "covers": [1, 2], "goal_gap": "changed",
@@ -9062,7 +9071,18 @@ SAVED_RUNS_GOLDEN = {
 # Re-recorded 2026-11-19 (Sutra Pro P24, D249/D250) for Priority's prompts only: its reply format is each workflow's id
 # and envelope. Outcomes, spend, the agents called, workflows and the documents are identical to J2's
 # {"prd": "264da0c4a2c8", "design docs": "c31742c23e07", "docs then site": "54eb770c8e21"}.
-DOC_RUN_GOLDEN = {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}      # P24: Priority's move is id + envelope
+# Re-recorded 2026-11-24 (Sutra Pro P30, D433, D249) for prompts and the new P30 fields only: Identity's intake format
+# and rule and every builder's reply format and brief (prompts); each workflow carries item_status (the mock builders
+# set every item built); each stage goal (stage-*.json) carries item_checks. Compared field by field with the engine of
+# origin/main 541e572c: outcomes, spend, the call count and order, every other workflow field and value, and the
+# documents (prd/hld/lld.md, documents.json) are identical to
+# {"prd": "711f7892f1c0", "design docs": "94bc5e70777b", "docs then site": "c03a6ff44f4c"}. P31 to P35 change none of them.
+# Re-recorded 2026-11-24 (Sutra Pro P30 beta fix c, D433, D249) for one prompt text only: every builder's item_status format says
+# a blocked reason is the fact or access it needs, and an item whose action was prepared but not performed (a message
+# written but never sent) is blocked, never built. Compared field by field with the engine before it: outcomes, spend,
+# the call order, every workflow field, the documents and every user prompt are identical; only the builders' system
+# prompts differ, by that text. Before: {"prd": "21389698fc4e", "design docs": "329d16437aaa", "docs then site": "ed6fa6e18d61"}.
+DOC_RUN_GOLDEN = {"prd": "06aa6f78ed32", "design docs": "2e43c43f3eed", "docs then site": "a886b4154aec"}      # Sutra P30 (D433, beta fix c)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",

@@ -18,7 +18,7 @@ J2's goal.json has no `kind` key: the caller of `Gate.check("goal", ...)` suppli
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Final, Literal, NoReturn, Self
 
-from pydantic import Field, StringConstraints, ValidationError, model_validator
+from pydantic import Field, JsonValue, StringConstraints, ValidationError, model_validator
 from pydantic_core import InitErrorDetails
 
 from .base import Record, Value
@@ -93,6 +93,15 @@ class ExactFact(Value):
 
     fact: Fact
     item: Item | None = None
+
+
+class ItemCheck(Value):
+    """D433: the runnable check of one done-when item (`goal.item_checks`, keyed by item text): a check type of the form, or
+    `real-run`, or code's own `render-check`; code runs it at every audit."""
+
+    type: Annotated[str, StringConstraints(min_length=1, max_length=40)]
+    target: JsonValue = None
+    expect: JsonValue = None
 
 
 class UserGroup(Value):
@@ -191,6 +200,7 @@ class _StoredCharter(Value):
     # J2 dee83d5c (group C): Identity's marks, stored by item text: each item's kind of work, the facts that must appear exactly,
     # the items whose rule depends on a date, and whether the Requester asked for progress updates by email
     item_kinds: dict[Item, KindName] = Field(default_factory=dict)
+    item_checks: Annotated[dict[Item, ItemCheck], Field(max_length=200)] = Field(default_factory=dict)      # D433: the runnable check of each item, by text
     exact_facts: Annotated[list[ExactFact], Field(max_length=200)] = []
     date_rules: Annotated[list[Item], Field(max_length=200)] = []
     email_updates: bool | None = None
