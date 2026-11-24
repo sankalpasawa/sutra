@@ -6278,7 +6278,8 @@ class J2Run:
         self.save("goal.json", self.goal)
         ok, why = self._stamp_check()
         dropped = [str(d) for d in self.goal.get("dropped_from_brief") or [] if str(d).strip()]
-        if ok and dropped and not self.drop_answer:
+        if ok and dropped and not self.drop_answer and not (      # review R5-2: a follow-up keeps the Requester's answer
+                change and set(dropped) <= {str(d) for d in old.get("dropped_from_brief") or []}):
             return self._ask_user("The charter leaves out these items from your brief: " + "; ".join(dropped)
                                   + ". Work starts after your answer.",
                                   [{"question": "Keep them in scope, or drop them?",

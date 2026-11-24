@@ -3148,10 +3148,11 @@ def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, stat
 TEAM_POST = "Post the summary to the team channel."      # made up, as the fact (WEBHOOK)
 
 
-def scripted_identity(run, *, tbc):
+def scripted_identity(run, *, tbc, dropped=()):
     """The mock Identity, scripted by structure, never by a message's words: the first charter adds TEAM_POST and (tbc)
     records WEBHOOK as to be confirmed for it; an intake given the current charter (a follow-up) returns that charter
-    without any to_be_confirmed entry, as Identity does when the follow-up supplies the fact. Returns those intakes' tasks."""
+    without any to_be_confirmed entry, as Identity does when the follow-up supplies the fact. Every charter leaves out the
+    brief items in dropped (review R5-2). Returns those intakes' tasks."""
     intakes, real_call = [], run.call
 
     def call(fn, fmt, task, mock, *a, **k):
@@ -3161,9 +3162,12 @@ def scripted_identity(run, *, tbc):
         def scripted():
             r = json.loads(mock())
             goal = r.get("goal")
-            if isinstance(goal, dict) and not run.goal:
-                goal["done_when"] = list(goal["done_when"]) + [TEAM_POST]
-                goal["to_be_confirmed"] = [{"item": len(goal["done_when"]), "fact": WEBHOOK}] if tbc else []
+            if isinstance(goal, dict) and dropped:
+                goal["dropped_from_brief"] = list(dropped)
+            if isinstance(goal, dict) and (not run.goal or "CURRENT CHARTER" not in task):      # run 1's charter (again
+                if TEAM_POST not in goal["done_when"]:                                       # after a drop answer)
+                    goal["done_when"] = list(goal["done_when"]) + [TEAM_POST]
+                goal["to_be_confirmed"] = [{"item": goal["done_when"].index(TEAM_POST) + 1, "fact": WEBHOOK}] if tbc else []
             elif isinstance(goal, dict) and "CURRENT CHARTER" in task:
                 intakes.append(task)
                 goal["to_be_confirmed"] = []
@@ -3207,6 +3211,38 @@ def test_p30_a_follow_up_that_gives_the_missing_fact_finishes_the_item(make_run)
     assert row["pass"] is True, row
     assert follow.outcome.startswith("Done:") and "open items" not in follow.outcome and FOLLOW_UP not in follow.outcome, \
         follow.outcome
+
+
+def test_p30_a_follow_up_does_not_ask_again_about_brief_items_already_dropped(make_run):
+    """review R5-2: run 1's charter left a brief item out and the Requester answered "Drop them"; the follow-up that gives
+    the fact goes through Identity's intake, whose charter still leaves it out, and must not ask the drop question again."""
+    run = make_run()
+    scripted_identity(run, tbc=True, dropped=["a printed menu"])
+    say(run, BREW_LAB)
+    assert run.paused and run.paused["kind"] == "charter_drop", run.paused
+    say(run, "Drop them")
+    if run.paused:
+        say(run, "Finish as it is")
+    assert run.goal["dropped_from_brief"] == ["a printed menu"] and run.outcome.startswith("Done with open items"), run.outcome
+    follow = make_run()
+    follow.rehydrate(run.dir)
+    intakes = scripted_identity(follow, tbc=True, dropped=["a printed menu"])
+    say(follow, "The webhook address is https://hooks.example.test/T000/B000")
+    assert len(intakes) == 1 and not (follow.paused and follow.paused["kind"] == "charter_drop"), follow.paused
+    assert follow.goal["to_be_confirmed"] == [] and follow.outcome.startswith("Done:"), follow.outcome
+
+
+def test_p30_a_follow_up_still_asks_about_a_brief_item_newly_dropped(make_run):
+    """review R5-2, guard: a brief item the follow-up's charter newly leaves out is still asked about."""
+    run = make_run()
+    scripted_identity(run, tbc=True)
+    say(run, BREW_LAB)
+    say(run, "Finish as it is")
+    follow = make_run()
+    follow.rehydrate(run.dir)
+    scripted_identity(follow, tbc=True, dropped=["a printed menu"])
+    say(follow, "The webhook address is https://hooks.example.test/T000/B000")
+    assert follow.paused and follow.paused["kind"] == "charter_drop", follow.paused
 
 
 def test_p30_a_follow_up_without_a_to_be_confirmed_item_skips_identitys_intake(make_run):
