@@ -3013,6 +3013,39 @@ def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_
     assert run._blocked_items() == []      # a builder's status never decides a real-run item
 
 
+def to_be_confirmed(run, n, fact):
+    """Identity's charter field to_be_confirmed names item n, and the latest audit marks it TO_BE_CONFIRMED (as
+    _audit_findings does for that entry), whatever the builder set."""
+    crit = run.goal["done_when"]
+    run.goal["to_be_confirmed"] = [{"criterion": crit[n - 1], "fact": fact}]
+    row = next(r for r in run.audits[-1]["results"] if r["item"] == n)
+    row.update(verdict="TO_BE_CONFIRMED", note=f"Waiting on the Requester: {fact}. (Audit's own note: x)", **{"pass": False})
+
+
+def test_p30_a_to_be_confirmed_item_is_blocked_with_its_missing_fact(p31):
+    """Beta fix (b): a charter with one to_be_confirmed item: it is blocked, its reason the entry's fact (a field, never a
+    word of a note), so it does not hold back the real run, and the outcome names it once with that fact."""
+    run = blocked_run(p31, {"status": "built", "reason": "the post is written, it was never sent"})      # 8b10: built
+    crit = run.goal["done_when"]
+    to_be_confirmed(run, 2, "the team channel's address")
+    assert run._blocked_items() == [crit[1]]
+    assert run._open_items() == [f"done-when item 2: {crit[1]} (blocked: the team channel's address)"]
+    run._identity_audit({})
+    assert run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # it does not hold back the real run
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {crit[1]} (blocked: the team channel's address)" in out and out.count("done-when item 2") == 1, out
+    run.sites = ["x"]
+    assert run._ship_outcome("on request").count("done-when item 2") == 1      # listed once there too
+
+
+def test_p30_a_to_be_confirmed_real_run_item_is_never_blocked(p31):
+    run = blocked_run(p31, {"status": "built", "reason": ""})
+    to_be_confirmed(run, 3, "the real folder")      # review R3-1: only its receipt and Audit decide a real-run item
+    assert run.goal["done_when"][2] not in run._blocked_items()
+
+
 @pytest.mark.parametrize("status", [{"status": "not_built", "reason": "the builder set no status"},
                                     {"status": "built", "reason": ""}])      # Audit failed it: built alone never passes
 def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, status):

@@ -4137,7 +4137,8 @@ class J2Run:
         """Outcome of "finish as it is". "Done with open items" only with items to name: a workable site is done."""
         if not self.sites:
             return f"Stopped {why}: nothing was built."
-        fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
+        fails = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
+            if self.audits else ["nothing has been checked"]      # beta fix (b): a blocked item is listed once, by _open_items
         fails = self.open_docs + fails + self._real_run_pending() + self._open_items()      # P30 (D433)
         if not fails:
             return self.out["done"]
@@ -10745,8 +10746,11 @@ class J2Run:
         receipt, Audit's reading of the output (P33), _real_run_pending and workable() decide it (review R1-1)."""
         if "item_checks" not in (self.goal or {}):
             return []
-        states, out, by_run = self._item_states(), [], set(self._real_run_items())
+        states, out, by_run, tbc = self._item_states(), [], set(self._real_run_items()), self._tbc_blocked()
         for t in (self.goal or {}).get("done_when") or []:
+            if t in tbc:      # beta fix (b): blocked on the charter's to_be_confirmed fact, whatever its builder set
+                out.append(f"done-when item {self._no(t)}: {t} (blocked: {tbc[t]})")
+                continue
             if t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check":
                 continue
             s = states.get(t) or {"status": "not_built", "reason": "no workflow built it"}
@@ -10761,8 +10765,19 @@ class J2Run:
         if "item_checks" not in (self.goal or {}):
             return []
         states, by_run = self._item_states(), set(self._real_run_items())     # review R3-1: a real-run item is decided
-        return [t for t in self.goal.get("done_when") or []                   # by its receipt and Audit, never a builder
-                if t not in by_run and (states.get(t) or {}).get("status") == "blocked"]
+        tbc = self._tbc_blocked()                                             # by its receipt and Audit, never a builder
+        return [t for t in self.goal.get("done_when") or []
+                if t in tbc or (t not in by_run and (states.get(t) or {}).get("status") == "blocked")]
+
+    def _tbc_blocked(self):
+        """P30 (D433, beta fix b): {item text: fact} for each done-when item the latest audit marks TO_BE_CONFIRMED because
+        the charter's to_be_confirmed (Identity's field) names it: it counts as blocked, its reason the entry's own fact
+        field, never a word of a note. Never an item a planned real run decides (review R3-1)."""
+        if "item_checks" not in (self.goal or {}) or not self.audits:
+            return {}
+        facts, by_run = {t["criterion"]: t["fact"] for t in self.goal.get("to_be_confirmed") or []}, set(self._real_run_items())
+        return {r["criterion"]: facts[r["criterion"]] for r in self.audits[-1].get("results") or []
+                if r.get("verdict") == "TO_BE_CONFIRMED" and r["criterion"] in facts and r["criterion"] not in by_run}
 
     def _run_item_check(self, text, chk, built, mech):
         """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the
