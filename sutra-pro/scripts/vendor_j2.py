@@ -2398,24 +2398,28 @@ def mock_item_check(out):
     # ---- P35 (D438): a real run states what it creates, changes and deletes; the dry run must match it and leave read-only folders alone
     Edit("P35", "j2.py", r'''def real_run_problems(rr, source, runner, run_dir):
 ''', r'''EXPECT_KEYS = ("created", "changed", "deleted")      # P35 (D438): a real run's expected result, by kind
-REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": {"created": [paths or globs], "changed": [...], '
-                        '"deleted": [...]}, each relative to folder: exactly what running it on the folder creates, changes and '
-                        'deletes (an empty list: nothing of that kind). Code runs it on copies first and compares; anything else, '
-                        'or any change in a folder it only reads, sends it back.')
+REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": {"created": [file paths or globs], "changed": [...], '
+                        '"deleted": [...]}, each relative to folder, naming files, never a folder (pdf/a.pdf or pdf/*, not pdf/ '
+                        'or ./a.pdf): exactly what running it on the folder creates, changes and deletes (an empty list: nothing '
+                        'of that kind). Code runs it on copies first and compares; anything else, or any change in a folder it '
+                        'only reads, sends it back.')
 
 
 def real_run_expect_problems(rr):
     """P35 (D438): why a planned real run's "expect" is not usable ([] when it is): exactly the three lists of EXPECT_KEYS,
-    each of non-empty relative paths or globs (no absolute path, no ..), not all empty. Structure only, no word read."""
+    each of non-empty relative file paths or globs (no absolute path, no .., no leading ./, no trailing / that names a
+    folder: the dry run lists file paths, so such a glob never matches; review R1-8), not all empty. Structure only."""
     ex = rr.get("expect")
     if ex is None:
         return ['real_run expect is missing: say what running it does to folder, {"created": [...], "changed": [...], '
-                '"deleted": [...]}, each a list of paths or globs relative to folder']
+                '"deleted": [...]}, each a list of file paths or globs relative to folder']
     if not isinstance(ex, dict) or set(ex) != set(EXPECT_KEYS):
         return ['real_run expect must be exactly {"created": [...], "changed": [...], "deleted": [...]}']
-    out = [f"real_run expect {k} must be a list of non-empty paths or globs relative to folder (no absolute path, no ..)"
+    out = [f"real_run expect {k} must be a list of non-empty file paths or globs relative to folder (no absolute path, "
+           "no .., no leading ./, no trailing / naming a folder)"
            for k in EXPECT_KEYS if not (isinstance(ex[k], list) and all(
-               isinstance(g, str) and g.strip() and not os.path.isabs(g) and ".." not in re.split(r"[/\\]", g) for g in ex[k]))]
+               isinstance(g, str) and g.strip() and not os.path.isabs(g) and ".." not in re.split(r"[/\\]", g)
+               and not g.startswith(("./", ".\\")) and not g.endswith(("/", "\\")) for g in ex[k]))]
     if not out and not any(ex.values()):
         out.append("real_run expect lists nothing: a real run that creates, changes and deletes nothing has nothing to run")
     return out

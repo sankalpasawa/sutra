@@ -3109,7 +3109,9 @@ def test_p35_two_identical_mismatches_stop_the_cycle(p35, j2ft):
 @pytest.mark.parametrize("expect", [None, {"created": [], "changed": [], "deleted": []}, "report.txt",
                                     {"created": ["report.txt"]}, {"created": ["report.txt", ""], "changed": [], "deleted": []},
                                     {"created": ["/abs/report.txt"], "changed": [], "deleted": []},
-                                    {"created": ["../report.txt"], "changed": [], "deleted": []}])
+                                    {"created": ["../report.txt"], "changed": [], "deleted": []},
+                                    {"created": ["./report.txt"], "changed": [], "deleted": []},      # review R1-8: never matches a
+                                    {"created": ["pdf/"], "changed": [], "deleted": []}])      # dry-run file path, so refused
 def test_p35_a_real_run_without_expect_is_refused_with_its_own_key(p35, j2ft, expect):
     go, src, dst = p35
     run = go()
@@ -3129,6 +3131,7 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
     assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES
