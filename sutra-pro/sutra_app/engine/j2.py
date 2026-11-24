@@ -6853,7 +6853,6 @@ class J2Run:
                         else self.out["done"])
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
-        fails = workable(self.audits[-1]) + self._real_run_pending() if self.audits else []
         rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
         rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
@@ -6861,7 +6860,7 @@ class J2Run:
         if rr or opened:
             self.outcome = ("Done with open items: "
                             + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
-                               "not every done-when item is built.") + f" Still not workable: {'; '.join(fails + opened)}.")
+                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened)}.")
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -10761,8 +10760,9 @@ class J2Run:
         "Done with open items", naming each with its reason (_open_items). The builder's field, never a word of a reply."""
         if "item_checks" not in (self.goal or {}):
             return []
-        states = self._item_states()
-        return [t for t in self.goal.get("done_when") or [] if (states.get(t) or {}).get("status") == "blocked"]
+        states, by_run = self._item_states(), set(self._real_run_items())     # review R3-1: a real-run item is decided
+        return [t for t in self.goal.get("done_when") or []                   # by its receipt and Audit, never a builder
+                if t not in by_run and (states.get(t) or {}).get("status") == "blocked"]
 
     def _run_item_check(self, text, chk, built, mech):
         """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the

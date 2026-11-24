@@ -2985,6 +2985,32 @@ def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_don
     out = str(run.outcome)
     assert out.startswith("Done with open items: not every done-when item is built."), out
     assert f"done-when item 2: {crit[1]} (blocked: no channel token given)" in out and "done-when item 3" not in out, out
+    assert out.count("done-when item 2") == 1, out      # review R3-2: listed once, with its reason
+
+
+def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_run(p31):
+    """Review R3-1: a fix workflow of F-3 owns real-run item 3 and its builder sets it blocked. The Requester declines the
+    real run: the run ends "Done with open items" naming the real run, never "Done:"."""
+    go, _ = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}, crit[1]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-9", "status": "done", "covers_text": [], "fixes": ["F-3"],
+                          "item_status": {crit[2]: {"status": "blocked", "reason": "needs the real folder"}}})
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i < 3,
+                                "verdict": "PASS" if i < 3 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    assert crit[2] in run._owned_items(run.workflows[-1])
+    run._identity_audit({})
+    p31_answer(run, "Don't run")
+    out = str(run.outcome)
+    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: the real run did not pass."), out
+    assert out.count("done-when item 3") == 1, out
+    assert run._blocked_items() == []      # a builder's status never decides a real-run item
 
 
 @pytest.mark.parametrize("status", [{"status": "not_built", "reason": "the builder set no status"},
