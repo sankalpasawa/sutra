@@ -19,7 +19,12 @@ Requester's approval and ended ready without it): python real_run_fix_test.py
 (6) a top-level import that does not resolve blocks the offer and goes back to the builder;
 (7) a requirements.txt line that is not "name==version" from PyPI is refused back to the builder; with no
     interpreter the real run is not offered, with a plain reason;
-(8) with J2_SANDBOX=1 only the install step may reach the network, and only pypi.org and files.pythonhosted.org.
+(8) with J2_SANDBOX=1 only the install step may reach the network, and only pypi.org and files.pythonhosted.org;
+(9) a real run that must call a service names its hosts in its plan: with the sandbox on, none named means no network;
+    named hosts are asked for before the dry run (nothing is allowed without RUN <code>, another reply keeps the
+    question open), then they are the only ones reachable in the dry run and the real run, and a host that is not
+    named stays blocked; the approval card lists them; the receipt and its dry run record the hosts allowed; without
+    the sandbox the list is shown and recorded, and not enforced; a host that is not a plain name is refused.
 
 No AI calls and no network: a fake python stands in for the interpreter, its venv module and pip (installing a
 package writes a one-line module), and a fake sandbox runtime records the settings it is given. Nothing is written
@@ -87,8 +92,15 @@ FAKE_SANDBOX = '''import json, os, subprocess, sys
 a = sys.argv[1:]
 with open(os.environ["FAKE_LOG"], "a") as f:
     f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
-sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
+allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]      # what the command may reach: told to it as FAKE_NET
+sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True, env={**os.environ, "FAKE_NET": json.dumps(allowed)}).returncode)
 '''
+# TEST ONLY: a built script that "reaches" the hosts given after its folder. Inside the fake sandbox a host that is not
+# allowed is refused, as the real one refuses the connection; outside a sandbox every host is reachable. No network.
+NET = ("import json, os, sys\nallowed = json.loads(os.environ['FAKE_NET']) if 'FAKE_NET' in os.environ else None\n"
+       "for h in sys.argv[2:]:\n    if allowed is not None and h not in allowed:\n"
+       "        sys.stderr.write('blocked by the sandbox: ' + h + '\\n')\n        sys.exit(9)\n"
+       "open(os.path.join(sys.argv[1], 'out.txt'), 'w').write('reached ' + ' '.join(sys.argv[2:]))\n")
 GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
 BAD = "import sys\nsys.stderr.write('boom: the token file is missing\\n')\nsys.exit(3)\n"
 NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
@@ -122,7 +134,7 @@ def system(run):
     return [m["text"] for m in run.chat if m["who"] == "system"]
 
 
-def made(files, real, status="done", attempts=1, test=None):
+def made(files, real, status="done", attempts=1, test=None, hosts=None, reaches=()):
     """A run of the folder type with one workflow that plans a real run on `real`, its files already built."""
     run = j2.J2Run()
     run.set_output(FT)
@@ -134,7 +146,8 @@ def made(files, real, status="done", attempts=1, test=None):
         [{"text": "its test passes", "type": "test-passed", "target": test, "expect": True}] if test else [])
     w = {"id": "W-1", "name": "reader", "purpose": "read", "outputs": [f"{FT}/s.py"], "status": status,
          "calls_used": attempts, "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [],
-         "real_run": {"command": ["python3", "s.py", real], "folder": real, "why": "read it", "checks": [1]},
+         "real_run": {"command": ["python3", "s.py", real, *reaches], "folder": real, "why": "read it", "checks": [1],
+                      **({"hosts": hosts} if hosts else {})},
          "atoms": [{"id": "W-1.a1", "goal": "read", "expected_output": [], "verification": checks}]}
     if status == "done":
         w["build_attempts"] = attempts
@@ -469,6 +482,93 @@ def sandbox_opens_the_network_for_the_install_only():
           "rerun, the dry run and the real run stay without network ok")
 
 
+@t.with_folder_type
+def hosts_are_named_approved_and_the_only_ones_allowed():
+    real = new_real()
+    fake = os.path.join(TMP, "fake_srt.py")
+    open(fake, "w").write(FAKE_SANDBOX)
+    A, B, C = "api.example.com", "auth.example.com", "other.example.com"
+    nets = lambda rows: [r["settings"]["network"]["allowedDomains"] for r in rows]
+    # the plan's hosts are data, checked by code
+    rr = {"command": ["python3", "s.py", real], "folder": real, "why": "x"}
+    P = lambda hosts: j2.real_run_problems({**rr, "hosts": hosts}, j2.squash(f"run it on {real}"), ("python3", "{target}"), "/nowhere/run")
+    ok(P([A, B]) == [] and P([]) == [], f"(9) plain host names are accepted: {P([A, B])}")
+    for bad in (["*.example.com"], ["https://api.example.com"], ["api.example.com:443"], ["10.0.0.1"], ["localhost"], "api.example.com", [7]):
+        ok(any("real_run hosts must be a list of the plain host names" in x for x in P(bad)), f"(9) {bad!r} is refused")
+    ok(j2.real_hosts({"hosts": [" API.Example.com ", A, B]}) == [A, B] and j2.real_hosts({}) == [] and j2.real_hosts(None) == [],
+       "(9) hosts are used in lower case, each once")
+    os.environ.update(J2_SANDBOX="1", J2_SANDBOX_CMD=f"{sys.executable} {fake}")
+    try:
+        # no hosts named: no network, so a script that calls a service fails its dry run and is not offered
+        n = len(log("sandbox"))
+        run, w = made({"s.py": NET}, real, attempts=j2.MAX_CHECK_ATTEMPTS, reaches=[A])
+        ok(run._ask_real_run({}) is False and not run.paused and nets(log("sandbox")[n:]) == [[]], f"(9) no hosts listed = no network: {nets(log('sandbox')[n:])}")
+        d = receipts(run)[-1]["dry_run"]
+        ok(d["exit"] == 9 and f"blocked by the sandbox: {A}" in d["stderr"] and d["network"] == {"hosts": [], "enforced": True},
+           f"(9) the dry run was blocked and its receipt says no host was allowed: {d['network']}")
+        # hosts named: asked for first; nothing is allowed, and nothing runs, before the approval
+        n = len(log("sandbox"))
+        run, w = made({"s.py": NET}, real, hosts=[A, B], reaches=[A, B])
+        ok(run._ask_real_run({}) and run.paused["kind"] == "real_run" and run.paused["handoff"]["kind"] == "real_run_hosts"
+           and run._auto_pick() is None, "(9) the hosts are asked for before the dry run; Decide for me never answers")
+        card, code = system(run)[-1], run.hosts_asked["W-1"]
+        ok(f"Hosts it would reach, and no others: {A}, {B}" in card and f"RUN {code}" in card and "Nothing is allowed until you approve" in card,
+           f"(9) the question lists the hosts: {card}")
+        ok(len(log("sandbox")) == n and not run.hosts_ok and not run.real_runs_dry and "W-1" not in run.real_runs_asked,
+           "(9) nothing is allowed and nothing runs without approval")
+        reply(run, "ok go ahead")
+        ok(run.paused and run.paused["handoff"]["kind"] == "real_run_hosts" and system(run)[-1] == f"Not allowed. Reply exactly RUN {code}, or decline."
+           and len(log("sandbox")) == n and not run.hosts_ok, "(9) a reply without the code allows nothing and keeps the question open")
+        reply(run, f"run {code}")
+        ok(run.hosts_ok == {"W-1": [A, B]} and nets(log("sandbox")[n:]) == [[A, B]], f"(9) approved: the dry run may reach exactly those hosts: {nets(log('sandbox')[n:])}")
+        ok(run.paused and run.paused["handoff"]["kind"] == "real_run", "(9) the dry run passed, so the real run is offered")
+        ask = system(run)[-1]
+        ok(f"Network: it can reach only {A}, {B}. RUN {run.real_runs_asked['W-1']} approves them." in ask and "dry run on a copy: exit 0" in ask,
+           f"(9) the approval card lists the hosts: {ask}")
+        ok(not os.path.exists(os.path.join(real, "out.txt")), "(9) the dry run reached the hosts from copies, not the real folder")
+        reply(run, f"RUN {run.real_runs_asked['W-1']}")
+        r = receipts(run)[-1]
+        ok(r["approved"] and r["exit"] == 0 and open(os.path.join(real, "out.txt")).read() == f"reached {A} {B}" and nets(log("sandbox")[n:]) == [[A, B], [A, B]],
+           "(9) the real run reached the approved hosts, and only they were allowed")
+        ok(r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": True} and r["dry_run"]["network"] == r["network"],
+           f"(9) the receipt and its dry run record the hosts allowed: {r['network']}")
+        os.remove(os.path.join(real, "out.txt"))
+        # a host that is not named stays blocked, also after the others were approved
+        run, w = made({"s.py": NET}, real, attempts=j2.MAX_CHECK_ATTEMPTS, hosts=[A], reaches=[A, C])
+        run._ask_real_run({})
+        reply(run, f"RUN {run.hosts_asked['W-1']}")
+        d = receipts(run)[-1]
+        ok(d["offered"] is False and d["dry_run"]["exit"] == 9 and f"blocked by the sandbox: {C}" in d["dry_run"]["stderr"]
+           and d["dry_run"]["network"]["hosts"] == [A] and not run.paused, f"(9) an unlisted host is blocked and the run is not offered: {d['evidence']}")
+        ok(run.outcome.startswith("Done with open items") and "its dry run on copies exited 9" in run.outcome, f"(9) the outcome says so: {run.outcome}")
+        # a decline: nothing allowed, no dry run, not offered
+        n = len(log("sandbox"))
+        run, w = made({"s.py": NET}, real, hosts=[A], reaches=[A])
+        run._ask_real_run({})
+        reply(run, "decline")
+        ok(len(log("sandbox")) == n and not run.hosts_ok and not run.paused and receipts(run)[-1]["offered"] is False
+           and f"the Requester declined letting it reach {A}" in run.outcome, f"(9) declined hosts: nothing ran, and the outcome says why: {run.outcome}")
+    finally:
+        os.environ.pop("J2_SANDBOX", None)
+        os.environ.pop("J2_SANDBOX_CMD", None)
+    # without the sandbox: no extra question, the list is shown and recorded, and nothing is enforced
+    run, w = made({"s.py": NET}, real, hosts=[A, B], reaches=[A, B])
+    ok(run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run" and not run.hosts_asked, "(9) without the sandbox there is no hosts question")
+    ask = system(run)[-1]
+    ok(f"Network: it says it reaches {A}, {B}. No sandbox is on, so this is not enforced." in ask, f"(9) the card still lists them: {ask}")
+    reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = receipts(run)[-1]
+    ok(r["exit"] == 0 and r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": False} and r["dry_run"]["network"]["enforced"] is False,
+       f"(9) recorded, and marked as not enforced: {r['network']}")
+    run, w = made({"s.py": GOOD}, real)
+    run._ask_real_run({})
+    ok("Network: it names no hosts. No sandbox is on, so the network is not blocked." in system(run)[-1], "(9) a plan without hosts says so on the card")
+    ok("REAL RUN AND THE NETWORK" in j2.REAL_RUN_HOSTS_RULE and '"hosts"' in j2.REAL_RUN_HOSTS_RULE, "(9) the planning rules name the field")
+    print("a real run's hosts: named in the plan and checked by code; with the sandbox on none named means no network, "
+          "named ones are approved before the dry run and are the only ones reachable, an unlisted host stays blocked; "
+          "the card lists them and the receipt records them; without the sandbox they are shown and recorded ok")
+
+
 def main():
     keep = {k: os.environ.get(k) for k in KEYS}
     fake = os.path.join(TMP, "python3.12")
@@ -484,6 +584,7 @@ def main():
         requirements_get_an_environment()
         missing_import_blocks_the_offer()
         sandbox_opens_the_network_for_the_install_only()
+        hosts_are_named_approved_and_the_only_ones_allowed()
     finally:
         for k, v in keep.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
