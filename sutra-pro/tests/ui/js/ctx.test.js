@@ -97,7 +97,7 @@ test("the public surface is exactly the one the design lists", () => {
   assert.deepEqual(Object.keys(SutraCtx).sort(),
     ["ApiError", "J2_PATHS", "api", "boot", "currentTab", "dept", "esc", "installFetch", "libraryPath", "onLibrary",
       "pagePath", "paint", "run", "tab", "withDept"]);
-  assert.deepEqual(Object.keys(SutraCtx.api).sort(), ["del", "get", "post", "put"]);
+  assert.deepEqual(Object.keys(SutraCtx.api).sort(), ["del", "get", "patch", "post", "put"]);
   for (const name of ["run", "esc", "paint", "tab", "installFetch", "withDept", "onLibrary"]) assert.equal(typeof SutraCtx[name], "function", name);
   for (const name of ["pagePath", "libraryPath"]) assert.equal(typeof SutraCtx[name], "string", name);
   assert.equal(SutraCtx.currentTab, "");

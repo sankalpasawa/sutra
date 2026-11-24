@@ -416,7 +416,7 @@ Classic scripts, one global per file; each pure file also does `module.exports` 
 ```js
 SutraCtx   // sutra_ctx.js
   boot, dept, currentTab, run(), esc(s), paint(el, html), tab(name)   // paint = J2's: skip if unchanged, keep <details data-key> open; tab(name) first sets currentTab = name (also without document.dispatchEvent), then dispatches `sutra:tab` when it can; currentTab defaults to '' [S3-web-10]
-  api.get(path, query?) -> Promise<json>   api.post(path, body?)   api.put(path, body?)   api.del(path)   // ORCH endpoints, never get dept (the Settings pane puts dept in the query itself); every non-GET carries X-Sutra-Token; reject ApiError{status, code, message, details} [S1-contracts-03] [S1-contracts-08] [S3-web-03]
+  api.get(path, query?) -> Promise<json>   api.post(path, body?)   api.put(path, body?)   api.patch(path, body?)   api.del(path)   // ORCH endpoints, never get dept (the Settings pane puts dept in the query itself); every non-GET carries X-Sutra-Token; reject ApiError{status, code, message, details} [S1-contracts-03] [S1-contracts-08] [S3-web-03]
   installFetch(win), withDept(url), J2_PATHS (23 exact pathnames and the prefixes /api/library/, /site/, /file/, /shot/), ApiError   // [S3-web-15]
 SutraEvents // sutra_events.js
   TYPES = ["server.hello","server.resync","chat.turn","chat.message","chart.changed","chart.approval","graph.updated","task.updated","atom.updated","usage.recorded","needs_you.changed","connector.health","connector.switch","connector.mode"]   // 14 names [S3-web-06]
