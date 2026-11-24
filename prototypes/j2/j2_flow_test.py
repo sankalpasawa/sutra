@@ -4809,8 +4809,9 @@ def run_for_real():
     """remove-restrictions step 7: a planned real run is checked by code (real_run_problems: the form's runner, absolute
     folders the brief names, not /, home, the repo or the run folder, no argument climbing out); when the deliverable
     is workable code posts the exact command with a one-time code and the run pauses (Decide for me never answers);
-    only the exact reply RUN <code>, typed by the Requester, runs it once in the sandbox, writing only that folder;
-    every answer leaves a receipt, which the deliverable's Summary shows."""
+    only the reply RUN <code>, typed by the Requester, runs it once in the sandbox, writing only that folder; any
+    other reply keeps the question open (real_run_fix_test.py); the run's receipt is what the deliverable's Summary
+    shows."""
     real = tempfile.mkdtemp(prefix="j2-real-")      # the Requester's folder: outside the repo and the home folder
     src = tempfile.mkdtemp(prefix="j2-real-src-")
     tools = tempfile.mkdtemp(prefix="j2-fake-srt-")
@@ -4867,8 +4868,10 @@ def run_for_real():
             run.post("user", text, auto=auto)
             run.paused = None
             run._identity_real_run({"wid": "W-1", "answer": text, "r": {}})
-            r = receipts(run)[-1]
-            assert not r["approved"] and not r["ran"] and not os.path.exists(os.path.join(real, "sorted.txt")), r
+            assert not os.path.exists(os.path.join(run.dir, "receipts.jsonl")) and not os.path.exists(os.path.join(real, "sorted.txt")), \
+                "nothing ran, nothing was closed"
+            assert run.paused and run.paused["kind"] == "real_run" and any(
+                m["text"] == f"Not run. Reply exactly RUN {code}, or decline." for m in run.chat), "the question stays open"
         run, code = made_run()
         run.post("user", f"  RUN {code} ")
         run.paused = None
@@ -4889,7 +4892,8 @@ def run_for_real():
         for d in (real, src, tools):
             shutil.rmtree(d, ignore_errors=True)
     print("run for real: a planned real run checked by code; the exact command posted with a one-time code; a loose yes "
-          "or Decide for me runs nothing; the exact reply runs it once, writing only its folder, with a receipt ok")
+          "or Decide for me runs nothing and the question stays open; the exact reply runs it once, writing only its "
+          "folder, with a receipt ok")
 
 
 @with_folder_type
@@ -4937,7 +4941,7 @@ def real_run_checks():
                  "parts": ["agent_file"], "atoms": [{**atom, "id": "a2"}]}      # a workflow after it in the plan covers item 2
         reg, refused, _ = made_run()._register([wf([1], [2]), later])
         assert "Builder" not in [x["name"] for x in reg] and any("so no workflow covers it" in str(x) for x in refused), (reg, refused)
-        for reply, ends in (("RUN {code}", "Done:"), ("yes", "Done with open items")):
+        for reply, ends in (("RUN {code}", "Done:"), ("decline", "Done with open items")):
             run = made_run()
             reg, refused, _ = run._register([wf([1], [2])])
             assert reg and not refused and run.workflows[0]["real_run"]["checks"] == [2], refused
@@ -5159,7 +5163,8 @@ def real_run_order():
         assert out.startswith("Done with open items") and "real run has not run" in out, out
         run.real_runs_asked["W-1"] = "abc123"           # asked, never answered: the run reaches its end without it
         run._goal_done({})
-        assert run.outcome.startswith("Done with open items: the real run has not run"), run.outcome
+        assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: it "
+                                      "waits for the Requester's approval"), run.outcome
         # (3) Audit's question about the run is answered by code, not asked; an answer can't confirm it
         run = made_run(item1_pass=False, fact="whether the script has been run on the folder")
         seen = []
