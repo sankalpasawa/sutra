@@ -2953,6 +2953,48 @@ def test_p33_the_judge_call_counts_in_budget_and_dollar_mode_and_raises_no_route
     assert not [e for e in run.events[events:] if e["type"] in ("redirect", "invalid_move")]
 
 
+# ---- beta fix, P30 amended (D433): a blocked item does not hold back the real run ----------------------------------------
+def blocked_run(p31, status):
+    """p31's run with an item_checks charter: item 1 built (W-1, which also holds the real run of item 3), item 2 with the
+    given builder status (W-2) and failed by Audit, item 3 pending its real run."""
+    go, _ = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-2", "status": "done", "covers_text": [crit[1]], "item_status": {crit[1]: status}})
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1,
+                                "verdict": "PASS" if i == 1 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    return run
+
+
+def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_done_with_open_items(p31, monkeypatch):
+    run = blocked_run(p31, {"status": "blocked", "reason": "no channel token given"})
+    crit, calls, real_call = run.goal["done_when"], [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
+    run._identity_audit({})
+    assert calls == [] and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # asked at once, by code
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and calls == ["audit"]      # only P33's reading of the output
+    assert len(run.audits) == 1 and run.paused is None and run.turn is None      # no audit loop, no question: the end
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {crit[1]} (blocked: no channel token given)" in out and "done-when item 3" not in out, out
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "the builder set no status"},
+                                    {"status": "built", "reason": ""}])      # Audit failed it: built alone never passes
+def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, status):
+    run = blocked_run(p31, status)
+    run._identity_audit({})
+    assert "W-1" not in run.real_runs_asked and not [m for m in run.chat if m.get("real_run")] and p31_receipts(run) == []
+
+
 # ---- P34 (D437): a build's output holds only what was built; the CLI's .claude folder is removed and never copied ---------------
 
 CLI_FOLDER = {".claude/.cc-writes/.keep": "", ".claude/note.json": "{}"}      # made up: the CLI's staging folder, and a file beside it

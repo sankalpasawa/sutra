@@ -6830,7 +6830,9 @@ class J2Run:
         if self.accepted and not self.open_docs:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
         fails = workable(self.audits[-1]) + self._real_run_pending() if self.audits else []
-        rr = bool(fails and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
+        rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
+            + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
+        rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
         opened = self._open_items() if self.audits else []      # P30 (D433): an item its builder did not set built
         if rr or opened:
             self.outcome = ("Done with open items: "
@@ -7071,7 +7073,8 @@ class J2Run:
                 return self._identity_limit({**p, "left_out": left, "at_audit": True,
                                              "budget_needed": need if need > 0 else None})
         tbc = {t["criterion"] for t in (self.goal or {}).get("to_be_confirmed") or []}
-        if not fails and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
+        held = workable({**last, "accepted": list(last.get("accepted") or []) + self._blocked_items()}) if last else fails
+        if not held and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
             return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
         rr = self._real_run_nums()
         facts = [x for x in findings if x.get("needs_requester_fact") and x.get("verdict") not in ("PASS", "PASS_WITH_WARNING")
@@ -10726,6 +10729,15 @@ class J2Run:
             if s["status"] != "built":
                 out.append(f"done-when item {self._no(t)}: {t} ({s['status'].replace('_', ' ')}: {s['reason'] or 'no reason given'})")
         return out
+
+    def _blocked_items(self):
+        """P30 (D433, beta fix): the done-when items whose latest done owner set them blocked (always with a reason:
+        _store_item_status keeps blocked only with one). They never hold back the planned real run; the run then ends
+        "Done with open items", naming each with its reason (_open_items). The builder's field, never a word of a reply."""
+        if "item_checks" not in (self.goal or {}):
+            return []
+        states = self._item_states()
+        return [t for t in self.goal.get("done_when") or [] if (states.get(t) or {}).get("status") == "blocked"]
 
     def _run_item_check(self, text, chk, built, mech):
         """P30 (D433): {"pass": True|False|None (did not run), "evidence"} of one item's check on the latest build, with the
