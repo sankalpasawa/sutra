@@ -564,6 +564,10 @@ def real_run_problems(rr, source, runner, run_dir):
     if not isinstance(reads, list) or not all(isinstance(x, str) for x in reads):
         out.append("real_run reads must be a list of folders")
         reads = []
+    hosts = rr.get("hosts") or []
+    if not isinstance(hosts, list) or not all(isinstance(x, str) and HOST.fullmatch(x.strip().lower()) for x in hosts):
+        out.append("real_run hosts must be a list of the plain host names the command must reach (like api.example.com): "
+                   "no address, port, path, number-only address or *")
     home, repo, rd = (os.path.realpath(x) for x in (os.path.expanduser("~"), _repo_root(), run_dir))
     within = lambda a, b: a == b or llm.inside(a, b)      # a folder counts as within itself
     roots = []
@@ -594,6 +598,21 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
                        "points that argument at a copy, so what you build must take the folder from its arguments")
     return out
+
+
+# a host a real run may name: a plain DNS name with at least one dot whose last label is letters (so no IP address)
+HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+REAL_RUN_HOSTS_RULE = ('REAL RUN AND THE NETWORK: when the command of a real run must reach a service over the network, its '
+                       '"real_run" also names "hosts": [each host name it must reach, exactly, like api.example.com: no '
+                       'address, port, path or *]. Code shows the list to the Requester with the command; where a sandbox '
+                       'is on, only those hosts are reachable, in the dry run on copies and in the real run, and only '
+                       'after the Requester approved them. Without "hosts" the command has no network there. Name only '
+                       'hosts the built files really call.')
+
+
+def real_hosts(rr):
+    """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
+    return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
 
 
 DECLINE_REPLIES = ("decline", "declined", "i decline", "no", "do not run", "don't run")
@@ -634,13 +653,16 @@ def real_paths_in(root, folders):
     return out
 
 
-def real_run(out_dir, rr, timeout, env=None):
+def real_run(out_dir, rr, timeout, env=None, hosts=()):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
     and the receipt are the same either way. env: the built folder's environment (its requirements.txt, installed):
-    its python runs the command, never the form's. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last
-    2,000 characters of each), "env" (run_facts), "seconds", "sha256" of the built files it names, "evidence"}."""
+    its python runs the command, never the form's. hosts: the hosts the Requester approved for it (its plan's
+    "hosts"): in the sandbox they are the only ones it can reach, and with none it has no network; without a sandbox
+    nothing is blocked. {"ran", "exit", "output" (its end), "stdout" and "stderr" (the last 2,000 characters of
+    each), "env" (run_facts), "network" ({"hosts": the hosts allowed, "enforced": whether a sandbox held it to
+    them}), "seconds", "sha256" of the built files it names, "evidence"}."""
     cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
@@ -655,9 +677,10 @@ def real_run(out_dir, rr, timeout, env=None):
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
     t0 = time.time()
     command, facts = run_command(rr["command"], env), run_facts(rr["command"], env)
+    net = {"hosts": list(hosts or ()), "enforced": bool(cmd)}
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+            json.dump({"network": {"allowedDomains": net["hosts"], "deniedDomains": []},
                        "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
                                       "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
@@ -666,11 +689,12 @@ def real_run(out_dir, rr, timeout, env=None):
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
         return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),
-                "stderr": j2_runenv.tail(p.stderr), "env": facts, "seconds": round(time.time() - t0, 2), "sha256": shas,
+                "stderr": j2_runenv.tail(p.stderr), "env": facts, "network": net, "seconds": round(time.time() - t0, 2),
+                "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired as e:
         return {"ran": True, "exit": None, "stdout": j2_runenv.tail(e.stdout), "stderr": j2_runenv.tail(e.stderr),
-                "env": facts, "sha256": shas, "seconds": round(time.time() - t0, 2),
+                "env": facts, "network": net, "sha256": shas, "seconds": round(time.time() - t0, 2),
                 "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
                             "and was stopped"}
     finally:
@@ -694,14 +718,14 @@ def _tree_diff(before, after):
             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
 
 
-def real_run_dry(out_dir, rr, timeout, env=None):
+def real_run_dry(out_dir, rr, timeout, env=None, hosts=()):
     """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
     folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
     the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
     "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
     "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
-    copy's counts. "command": the command as run, on the copies' paths. env: as for real_run; its "stdout", "stderr"
-    (the last 2,000 characters of each) and "env" are kept, whatever the exit code."""
+    copy's counts. "command": the command as run, on the copies' paths. env and hosts: as for real_run; its "stdout",
+    "stderr" (the last 2,000 characters of each), "env" and "network" are kept, whatever the exit code."""
     tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
     try:
         roots = [rr["folder"]] + list(rr.get("reads") or [])
@@ -721,11 +745,11 @@ def real_run_dry(out_dir, rr, timeout, env=None):
             return k + eq + v
         before = _tree(copies[0])
         cmd = [moved(x) for x in rr["command"]]
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env)
+        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout, env, hosts)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
-        kept = {k: res.get(k) for k in ("stdout", "stderr", "env")}
+        kept = {k: res.get(k) for k in ("stdout", "stderr", "env", "network")}
         if real:
             return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, **kept, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
@@ -3934,7 +3958,7 @@ class J2Run:
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
-                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
+                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + "\n" + REAL_RUN_HOSTS_RULE
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -8908,6 +8932,8 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
+                if real_hosts(w["real_run"]):      # the hosts its command must reach: shown, approved, then allowed
+                    wf["real_run"]["hosts"] = real_hosts(w["real_run"])
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if own:       # the document sections this workflow writes, as the planner named them
                 wf["sections"] = list(own)
