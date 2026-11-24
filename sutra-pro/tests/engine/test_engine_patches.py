@@ -3143,6 +3143,78 @@ def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, stat
     assert "W-1" not in run.real_runs_asked and not [m for m in run.chat if m.get("real_run")] and p31_receipts(run) == []
 
 
+# ---- beta fix, P30 amended (D433): a follow-up to a run with a to-be-confirmed item goes through Identity's intake ---------
+TEAM_POST = "Post the summary to the team channel."      # made up, as the fact (WEBHOOK)
+
+
+def scripted_identity(run, *, tbc):
+    """The mock Identity, scripted by structure, never by a message's words: the first charter adds TEAM_POST and (tbc)
+    records WEBHOOK as to be confirmed for it; an intake given the current charter (a follow-up) returns that charter
+    without any to_be_confirmed entry, as Identity does when the follow-up supplies the fact. Returns those intakes' tasks."""
+    intakes, real_call = [], run.call
+
+    def call(fn, fmt, task, mock, *a, **k):
+        if fn != "identity":
+            return real_call(fn, fmt, task, mock, *a, **k)
+
+        def scripted():
+            r = json.loads(mock())
+            goal = r.get("goal")
+            if isinstance(goal, dict) and not run.goal:
+                goal["done_when"] = list(goal["done_when"]) + [TEAM_POST]
+                goal["to_be_confirmed"] = [{"item": len(goal["done_when"]), "fact": WEBHOOK}] if tbc else []
+            elif isinstance(goal, dict) and "CURRENT CHARTER" in task:
+                intakes.append(task)
+                goal["to_be_confirmed"] = []
+            return json.dumps(r)
+        return real_call(fn, fmt, task, scripted, *a, **k)
+    run.call = call
+    return intakes
+
+
+def first_run(make_run, tbc):
+    """A mock Brew Lab run. With tbc, a website's open fact holds a necessary condition, so Identity asks the limit question
+    (`only_tbc`) and the Requester picks "finish as it is" (a folder run, 8b10, ends at once, fix d)."""
+    run = make_run()
+    scripted_identity(run, tbc=tbc)
+    say(run, BREW_LAB)
+    if tbc:
+        assert run.paused and "finish as it is" in run.outcome, run.outcome
+        say(run, "Finish as it is")
+    return run
+
+
+def follow_up(make_run, earlier, text, tbc):
+    run = make_run()
+    run.rehydrate(earlier.dir)
+    intakes = scripted_identity(run, tbc=tbc)
+    say(run, text)
+    return run, intakes
+
+
+def test_p30_a_follow_up_that_gives_the_missing_fact_finishes_the_item(make_run):
+    run = first_run(make_run, tbc=True)
+    n = run.goal["done_when"].index(TEAM_POST) + 1
+    assert run.outcome.startswith("Done with open items"), run.outcome
+    assert f"done-when item {n}: {TEAM_POST.rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in run.outcome, run.outcome
+    follow, intakes = follow_up(make_run, run, "The webhook address is https://hooks.example.test/T000/B000", tbc=True)
+    assert len(intakes) == 1 and WEBHOOK in intakes[0] and "leave its entry out of to_be_confirmed" in intakes[0], \
+        "Identity's intake gets the charter with the entry, and is told it may drop it"
+    assert follow.goal["to_be_confirmed"] == [] and TEAM_POST in follow.goal["done_when"]
+    assert follow._item_states()[TEAM_POST]["status"] == "built" and len(follow.audits) > len(run.audits)
+    row = next(r for r in follow.audits[-1]["results"] if r["criterion"] == TEAM_POST)
+    assert row["pass"] is True, row
+    assert follow.outcome.startswith("Done:") and "open items" not in follow.outcome and FOLLOW_UP not in follow.outcome, \
+        follow.outcome
+
+
+def test_p30_a_follow_up_without_a_to_be_confirmed_item_skips_identitys_intake(make_run):
+    run = first_run(make_run, tbc=False)
+    assert run.outcome.startswith("Done:"), run.outcome
+    follow, intakes = follow_up(make_run, run, "Add a section for visiting hours", tbc=False)
+    assert intakes == [] and follow.outcome.startswith("Done:"), follow.outcome
+
+
 # ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
 @pytest.mark.parametrize("stated", ["~/demo/rename-test", "{home}/demo/rename-test"])
 def test_p31_a_tilde_folder_and_its_expanded_form_both_register(sort_run, tmp_path, monkeypatch, stated):

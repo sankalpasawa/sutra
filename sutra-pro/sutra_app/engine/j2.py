@@ -5178,7 +5178,8 @@ class J2Run:
                 self.request = last_user
                 if self._plan_stages() is not False:
                     self._handoff("identity", kind="intake")
-            elif self.fixes or self._change_applies():   # fix (b): a change request is checked at J2.a first
+            elif self.fixes or self._change_applies() or self.goal.get("to_be_confirmed"):   # fix (b): a change request is
+                # checked at J2.a first; beta fix (D433): always, while the charter waits on a fact only the Requester has
                 self._handoff("identity", kind="intake", change=self.feedback, mark=len(self.intake))
             else:
                 self._handoff("adaptation", kind="propose", new_cycle=True,
@@ -6067,6 +6068,10 @@ class J2Run:
                          "outcome; a reworded item counts as new. Each new item stands on its own: name the feature it "
                          "is about, and copy the Requester's exact words for labels and examples. "
                          f"CURRENT CHARTER: {json.dumps(self.goal, ensure_ascii=False)}")
+            if self.goal.get("to_be_confirmed"):      # beta fix (D433): the follow-up may give a fact the charter waits on
+                feedback += ("\nThe charter's to_be_confirmed lists facts only the Requester can give. If the change gives "
+                             "one, put it in the charter and leave its entry out of to_be_confirmed; giving a fact is not a "
+                             "new done-when item.")
 
         def mock():
             if change:
