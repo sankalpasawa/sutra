@@ -233,6 +233,7 @@ def _ask(tag, *args, **kw):
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
 AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
+REAL_RUN_DECLINE = "Don't run"      # P31 (D434): the real-run card's decline, compared whole (stripped, any case)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
 
@@ -790,14 +791,15 @@ def real_run_dry(out_dir, rr, timeout):
         before = _tree(copies[0])
         cmd = [moved(x) for x in rr["command"]]
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
+        out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))
         real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
         counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
         if real:
-            return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": real,
+            return {"ran": res.get("ran"), "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real,
                     "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
                         f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "exit": res.get("exit"), "command": cmd, **d, "real_changed": {},
+        return {"ran": res.get("ran"), "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {},
                 "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -4106,7 +4108,9 @@ class J2Run:
                               "choices": self.paused["handoff"].get("choices"),
                               "suggested": self._auto_choice(self.paused)[2],      # the option Decide for me would take
                               "auto_waits": self.paused["kind"] in AUTO_ASK or bool(self.paused["handoff"].get("usd")),       # a question it never answers for you
-                              "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
+                              "workflow": self.paused["handoff"].get("wid"),
+                              "code": self.real_runs_asked.get(self.paused["handoff"].get("wid"))      # P31 (D434): the Run button's
+                              if self.paused["kind"] == "real_run" else None}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
@@ -5675,9 +5679,10 @@ class J2Run:
         """Step 7: the done-when items (texts) planned real runs check ("checks"); pending: only those whose run has no
         receipt yet. A builder never meets them; the real run's receipt does, after the Requester's approval."""
         at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
+        ran = {n for w in self.workflows if w.get("real_run") and w["id"] in self.real_runs_done
+               for n in w["real_run"].get("checks") or []} if pending else set()      # P31 (D434): any receipt decides it (a replacement)
         return [crit[at[n] - 1] for w in self.workflows if w.get("real_run")
-                and not (pending and w["id"] in self.real_runs_done)
-                for n in w["real_run"].get("checks") or [] if n in at and at[n] <= len(crit)]
+                for n in w["real_run"].get("checks") or [] if n not in ran and n in at and at[n] <= len(crit)]
 
     def _real_run_nums(self):
         """Step 7: the run-long done-when item numbers a planned real run decides (its "checks")."""
@@ -5742,14 +5747,43 @@ class J2Run:
             self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
             self.turn, self.handoff = None, {}
             return True
+        if dry.get("ran") and dry.get("exit") != 0:      # P31 (D434): a failed dry run goes back to the build, never to the Requester
+            last = next((x.strip() for x in reversed((dry.get("output") or "").splitlines()) if x.strip()), "no output")
+            return self._dry_run_failed(w, dry, (f"exit {dry['exit']}" if dry["exit"] is not None else "stopped at the time limit")
+                                        + f": {last[:160]}")
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
                             + show("created") + show("changed") + show("deleted")
                             + f"\nTo run it, reply exactly: RUN {code}\n"
-                            "Any other reply: it is not run.", real_run=w["id"])
+                            "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _dry_run_failed(self, w, dry, detail):
+        """P31 (D434): a real run whose dry run on copies failed is a build failure, never a question: w fails with code's
+        detail (P28's signature), keeps its output's end for the revising builder, a not-run receipt is written, its code is
+        forgotten, and Adaptation proposes the fix, unless the same failure twice in a row stops the cycle. True (handled)."""
+        w["status"], w["failure"], w["dry_run_output"] = "failed", ["dry_run", detail], dry.get("output") or ""
+        code = self.real_runs_asked.pop(w["id"], None)
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "real_run", "workflow": w["id"], **w["real_run"], "code": code, "approved": False,
+                                "ran": False, "exit": None, "evidence": f"not asked: the dry run on copies failed ({detail})",
+                                "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "real_run", f"{w['id']}: the dry run on copies failed ({detail})")
+        self.post("system", f"{w['id']}'s dry run on copies failed ({detail}). It goes back to the build; you are not asked.",
+                  warning=True)
+        self.save("workflows.json", self.workflows)
+        if self.last_failure is None:      # a passing build in between cleared P28's memory; it says nothing of the dry run after it
+            self.last_failure = getattr(self, "dry_failure", None)
+        stop = self._repeat_build_stop(w["id"])
+        self.dry_failure = self.last_failure
+        if not stop:
+            self._handoff("adaptation", kind="propose", new_cycle=True,
+                          why=f"{w['id']}'s real run failed its dry run on copies ({detail}). Propose a workflow that revises "
+                              f"{w['id']} and keeps its real_run. Its output (end): {w['dry_run_output']}")
         return True
 
     def _identity_real_run(self, h):
@@ -5757,9 +5791,16 @@ class J2Run:
         once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
         last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
-        ok = bool(w and code) and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}"
+        ans = str(h.get("answer") or "").strip()
+        ok = bool(w and code) and not last.get("auto") and ans == f"RUN {code}"
+        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()      # P31 (D434): the whole reply
+        if w and code and not ok and not declined:      # P31 (D434): any other reply asks again, the same code; the run stays open
+            self._event("identity", "real_run_unclear", f"{h.get('wid')}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
+            return self._ask_user(f"Not run. Press Run or type RUN {code}.", [{"question": "Run it for real?"}], "real_run",
+                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": h.get("wid")})
         res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
-            {"ran": False, "exit": None, "evidence": "not run: the reply was not exactly RUN " + str(code)}
+            {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
+             "not run: the reply was not exactly RUN " + str(code)}
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
                                 "approved": ok, "answer_msg": last.get("id"), **res,
@@ -9815,6 +9856,10 @@ class J2Run:
             states, checks = self._item_states(), self.goal["item_checks"]
             brief["items"] = [{"item": self._no(t), "text": t, "check": checks.get(t),
                                "status": (states.get(t) or {}).get("status", "not_built")} for t in self._owned_items(w)]
+        mine = set((w.get("real_run") or {}).get("checks") or [])      # P31 (D434): the latest workflow whose real run checked one of
+        if mine and (rv := next((x for x in reversed(self.workflows) if x is not w and (x.get("failure") or [None])[0] == "dry_run"
+                                 and mine & set(x["real_run"].get("checks") or [])), None)):      # these items and failed its dry run
+            brief["dry_run_failure"] = rv.get("dry_run_output")      # (by item number: a folder run drops "revises"): what it printed
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
         if self._file_wf(w):
             return self._run_artifact(w, brief, max_calls)

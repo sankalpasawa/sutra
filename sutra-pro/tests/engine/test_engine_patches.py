@@ -2559,3 +2559,163 @@ def test_p30_a_charter_without_item_checks_behaves_as_before(make_run):
     run._item_check_gate(rows, "", {})
     assert [r["verdict"] for r in rows] == ["PASS"] * 3
     assert run._open_items() == [] and finish(run, None).startswith("Done:")
+
+
+# ---- P31 (D434): a failed dry run goes back to the build; only Run or Don't run answers the real-run question ----------
+# Made-up script: it names the folder it was given (a temp copy in the dry run) and fails with "missing argument".
+P31_FAIL = "import sys\nsys.stderr.write('cannot read ' + sys.argv[1] + '\\nmissing argument\\n')\nsys.exit(2)\n"
+P31_OK = "import os, sys\nopen(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n"
+P31_SRT = ("import json, subprocess, sys\na = sys.argv[1:]\njson.load(open(a[a.index('-s') + 1]))\n"
+           "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
+
+
+@pytest.fixture
+def p31(sort_run, tmp_path, monkeypatch):
+    """A sort run with W-1 (the script and its real run on item 3) registered and done, its sort_files.py written; the dry
+    run goes through a fake srt the test writes."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P31_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    make, real = sort_run
+
+    def go(script=P31_FAIL):
+        run = make()
+        reg, refused, _ = run._register(sort_proposals(real, fix=True))
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        (Path(run._out_dir()) / "sort_files.py").write_text(script)
+        run.post("user", "Build it and run it on my folder")
+        return run
+    return go, real
+
+
+def p31_receipts(run):
+    p = Path(run.dir) / "receipts.jsonl"
+    return [json.loads(x) for x in p.read_text().splitlines() if '"real_run"' in x] if p.exists() else []
+
+
+def p31_revise(run, real, wid):
+    """Adaptation's fix: a workflow that revises wid and keeps its real run; built (no failed check), so P28 sees a pass."""
+    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": wid}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    assert run._repeat_build_stop(reg[0]["id"]) is False
+    return reg[0]
+
+
+def test_p31_a_failed_dry_run_goes_to_adaptation_never_to_the_requester(p31):
+    go, real = p31
+    run = go()
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")] and run.paused is None and run.turn == "adaptation"
+    assert w["status"] == "failed" and w["failure"] == ["dry_run", "exit 2: missing argument"], w.get("failure")
+    assert "W-1" not in run.real_runs_asked and run.handoff["kind"] == "propose" and "missing argument" in run.handoff["why"]
+    assert not any(m.get("to_user") for m in run.chat if m["who"] == "system")
+    # the plan's open point: P22 takes a replacement real-run workflow for the item whose first real run failed its dry run
+    w2 = p31_revise(run, real, "W-1")
+    assert w2["real_run"]["checks"] == [3]
+
+
+def test_p31_two_identical_dry_run_failures_stop_the_cycle_across_temp_folders(p31, j2ft):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")      # its build passed: P28's memory of the dry-run failure stays
+    assert run._ask_real_run({}) is True
+    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
+    assert sig[0] == sig[1] == ("dry_run", "exit 2: missing argument")
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
+    assert "the same failure came back twice" in run.handoff["reason"].lower()
+
+
+def test_p31_the_revising_builder_sees_the_dry_run_output(p31, monkeypatch):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")
+    w2["status"] = "registered"
+    seen = {}
+    monkeypatch.setattr(run, "_file_wf", lambda w: True)      # the brief goes to the builder call, caught here
+    monkeypatch.setattr(run, "_run_artifact", lambda w, brief, n: seen.update(brief))
+    run._build_workflow({"wid": w2["id"]})
+    assert "missing argument" in seen["dry_run_failure"] and seen["dry_run_failure"] == run.workflows[0]["dry_run_output"]
+    seen.clear()
+    run._build_workflow({"wid": "W-1"})      # a workflow that revises nothing: no field, so other prompts don't change
+    assert "dry_run_failure" not in seen and seen
+
+
+def test_p31_the_receipt_keeps_the_dry_run_output(p31):
+    go, _ = p31
+    run = go()
+    run._ask_real_run({})
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["evidence"] == "not asked: the dry run on copies failed (exit 2: missing argument)"
+    assert "missing argument" in r["dry_run"]["output"] and "cannot read <copy>/f0" in r["dry_run"]["output"]
+    assert ".dryrun-" not in json.dumps(r["dry_run"]["output"]) and r["dry_run"]["exit"] == 2
+
+
+def test_p31_the_snapshot_carries_the_code_for_a_real_run_pause(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    assert run.snapshot()["paused"]["code"] == run.real_runs_asked["W-1"]
+    ask = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "Or press Run. To decline, press Don't run." in ask and "Any other reply" not in ask
+
+
+def p31_answer(run, text, auto=False):
+    run.post("user", text, **({"auto": True} if auto else {}))
+    p, run.paused = run.paused, None      # as _run does when the Requester answers
+    run._identity_real_run({**p["handoff"], "answer": text})
+
+
+def test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open(p31):
+    go, real = p31
+    run = go(P31_OK)
+    run._ask_real_run({})
+    code = run.real_runs_asked["W-1"]
+    for text, auto in (("yes", False), ("RUN", False), (f"RUN {code}", True)):      # Decide for me's exact code is no answer either
+        p31_answer(run, text, auto)
+        last = run.chat[-1]
+        assert last["who"] == "identity" and f"Not run. Press Run or type RUN {code}." in last["text"], last["text"]
+        assert run.paused["kind"] == "real_run" and run.real_runs_asked["W-1"] == code and run.snapshot()["paused"]["code"] == code
+        assert str(run.outcome).startswith("Paused") and p31_receipts(run) == [] and not os.path.exists(os.path.join(real, "done.txt"))
+    p31_answer(run, f"RUN {code}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and os.path.exists(os.path.join(real, "done.txt"))
+    assert run._real_run_pending() == []
+
+
+def test_p31_dont_run_declines_as_before(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    crit = run.goal["done_when"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]],
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3, "verdict": "PASS" if i != 3 else "FAIL",
+                                "note": ""} for i, c in enumerate(crit, 1)]}]
+    run._ask_real_run({})
+    p31_answer(run, "  don't RUN ")
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["evidence"] == "not run: the Requester chose Don't run"
+    assert run.paused is None and str(run.outcome).startswith("Done with open items"), run.outcome
+
+
+def test_p31_decide_for_me_still_never_answers_a_real_run(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    run.auto = True
+    run._ask_real_run({})
+    assert run.paused["kind"] == "real_run" and run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"]
+
+
+def test_p31_a_replacements_approved_run_decides_the_item_the_failed_one_checked(p31):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")
+    (Path(run._out_dir()) / "sort_files.py").write_text(P31_OK)
+    assert run._real_run_pending() and run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
+    assert run.real_runs_done == {w2["id"]: True} and run._real_run_pending() == []
