@@ -1962,11 +1962,15 @@ ITEM_STATUS_SCHEMA = {"type": "array", "items": {"type": "object", "additionalPr
 
 def mock_item_check(out):
     """P30 (D433), mock only: a check the mock build passes, from the form's fields (never a type name)."""
-    if out.get("output") == "folder":
-        return {"type": "inside-folder", "target": "."}
+    if out.get("output") == "folder":      # main.py: the file the mock folder builder always writes (mock_form_folder_files)
+        return {"type": "file-exists", "target": "main.py", "expect": True}
     if out.get("sections"):
         return {"type": "heading-present", "target": out["sections"][0]}
     return {"type": "file-exists", "target": PAGE_FILE, "expect": True}
+'''),
+    Edit("P30", "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+''', r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
 '''),
     Edit("P30", "j2.py", r'''            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
 ''', r'''            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
@@ -1975,7 +1979,7 @@ def mock_item_check(out):
 '''),
     Edit("P30", "j2.py", r'''                      'depends on a date, such as a deadline or an early-bird price), ')
 ''', r'''                      'depends on a date, such as a deadline or an early-bird price), ')
-        kinds_fmt += ('"item_checks": [{"type": one of ' + json.dumps(sorted(set(self.out["check_types"]) | {"real-run"}))
+        kinds_fmt += ('"item_checks": [{"type": one of ' + json.dumps(self._item_check_types())
                       + ', "target": str|[str]|null, "expect": any|null}] (one per done-when item, same order: the check code '
                       'runs to show the item is built; "real-run" for an item only running it on the Requester\'s own files '
                       'can show), ')      # P30 (D433)
@@ -2007,7 +2011,7 @@ def mock_item_check(out):
         if "item_checks" in g:      # P30 (D433): structural only, by set membership at normalise
             miss = [n for n, c in enumerate(g.get("done_when") or [], 1) if c not in g["item_checks"]]
             if miss:
-                allowed = sorted(set(self.out["check_types"]) | {"real-run"})
+                allowed = self._item_check_types()
                 return False, f"done-when item(s) {miss} have no runnable check (item_checks: one of {allowed})"
         return True, "passes code checks"
 '''),
@@ -2020,7 +2024,7 @@ def mock_item_check(out):
 '''),
     Edit("P30", "j2.py", r'''                "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
 ''', r'''                "atom_human_output": "This part was taken from an earlier finished run and checked again here.",
-                "item_status": self._built_status(w),      # P30 (D433): served unchanged, no builder to set it
+                "item_status": self._served_status(w, src),      # P30 (D433): the earlier run's builder set it (review R1-6)
 '''),
     Edit("P30", "j2.py", r'''                board_extra = self._mock_board_extra(w, attempt) if j2_board.enabled() else {}
 ''', r'''                board_extra = {**(self._mock_board_extra(w, attempt) if j2_board.enabled() else {}),
@@ -2060,10 +2064,15 @@ def mock_item_check(out):
     Edit("P30", "j2.py", r'''    def _atom_outputs(self, w, meta, attempt):
         """Every atom's human_output (the builder's words, checked by atom_human_problem, asked once more if bad, else
         written by code from the atom's expected output), then, for an atom whose checks passed, its agent_output."""
-''', r'''    def _item_checks_from(self, raw, crit):
+''', r'''    def _item_check_types(self):
+        """P30 (D433): the check types an item may have: the form's, without inside-folder (a guard on the whole build that
+        holds for every build, never evidence for one item; review R1-5), and "real-run"."""
+        return sorted(set(self.out["check_types"]) - {"inside-folder"} | {"real-run"})
+
+    def _item_checks_from(self, raw, crit):
         """P30 (D433): Identity's item_checks (one per item, same order) as {item text: {type, target, expect}}: only a type
-        of the form or "real-run" is kept, and a list of the wrong length gives none (the stamp then refuses)."""
-        allowed = set(self.out["check_types"]) | {"real-run"}
+        of _item_check_types is kept, and a list of the wrong length gives none (the stamp then refuses)."""
+        allowed = set(self._item_check_types())
         if len(raw) != len(crit):
             return {}
         return {c: {k: x[k] for k in ("type", "target", "expect") if k in x} for c, x in zip(crit, raw)
@@ -2077,9 +2086,25 @@ def mock_item_check(out):
         return list(dict.fromkeys([crit[i - 1] for i in self._wf_items(w)] + fixed))
 
     def _built_status(self, w):
-        """P30 (D433): every item the workflow owns, set built: the mock builders' reply, and a section the content door served
-        unchanged from a finished run (no builder runs; code re-runs its checks)."""
+        """P30 (D433), mock builders only: every item the workflow owns, set built (the scripted builder's reply)."""
         return [{"item": self._no(t), "status": "built", "reason": ""} for t in self._owned_items(w)]
+
+    def _served_status(self, w, src):
+        """P30 (D433): a section the content door served unchanged carries the status the earlier run's builders set for the
+        items this workflow owns (its stored workflows.json, the latest done workflow wins, by item text); an item it holds
+        none for is not_built. Code copies a status an agent set, never decides one (review R1-6)."""
+        try:
+            with open(os.path.join((src or {}).get("dir") or "", "workflows.json"), encoding="utf-8") as f:
+                old = json.load(f)
+        except (OSError, ValueError):
+            old = []
+        st = {}
+        for x in old if isinstance(old, list) else []:
+            if isinstance(x, dict) and x.get("status") == "done" and isinstance(x.get("item_status"), dict):
+                st.update(x["item_status"])
+        return [{"item": self._no(t), "status": (st.get(t) or {}).get("status", "not_built"),
+                 "reason": (st.get(t) or {}).get("reason") or ("" if t in st else "the earlier run stored no status for it")}
+                for t in self._owned_items(w)]
 
     def _store_item_status(self, w, meta):
         """P30 (D433): the builder's item_status field, kept on its workflow by item text. A missing entry or an unknown
@@ -2111,12 +2136,14 @@ def mock_item_check(out):
 
     def _open_items(self):
         """P30 (D433): every done-when item whose builder did not set it built, with why ([] for a charter without item_checks).
-        The no-errors gate is code's own (render-check): no builder owns it, and the audit gate and workable() decide it."""
+        The no-errors gate is code's own (render-check): no builder owns it, and the audit gate and workable() decide it.
+        Neither does a builder own an item a planned real run decides (_register refuses a builder that covers one): its
+        receipt, Audit's reading of the output (P33), _real_run_pending and workable() decide it (review R1-1)."""
         if "item_checks" not in (self.goal or {}):
             return []
-        states, out = self._item_states(), []
+        states, out, by_run = self._item_states(), [], set(self._real_run_items())
         for t in (self.goal or {}).get("done_when") or []:
-            if (self.goal["item_checks"].get(t) or {}).get("type") == "render-check":
+            if t in by_run or (self.goal["item_checks"].get(t) or {}).get("type") == "render-check":
                 continue
             s = states.get(t) or {"status": "not_built", "reason": "no workflow built it"}
             if s["status"] != "built":
@@ -2128,19 +2155,18 @@ def mock_item_check(out):
         runners the work atoms' checks use."""
         t, folder = chk.get("type"), self._out_dir() if self.folder else None
         try:
-            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0), never by an agent
-                n = self._no(text)
+            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0) and Audit's reading of
+                n = self._no(text)      # its output for this item (real_run_item_ok, P33; review R1-4), never by a builder
                 ok = any(self.real_runs_done.get(w["id"]) is True for w in self.workflows
-                         if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []})
-                return {"pass": ok, "evidence": "its real run was approved and exited 0" if ok else
-                        "no approved real run of this item exited 0"}
+                         if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []}) \
+                    and self.real_run_item_ok.get(text, True)
+                return {"pass": ok, "evidence": "its real run was approved, exited 0 and Audit passed its output" if ok else
+                        "its real run did not pass (approved, exit 0 and Audit PASS)"}
             if t == "render-check":
                 if not mech.get("available"):
                     return {"pass": None, "evidence": f"the render check didn't run: {mech.get('note')}"}
                 probs = j2_check.problems(mech)
                 return {"pass": not probs, "evidence": "; ".join(probs) or "the render check found no problem"}
-            if t == "inside-folder":      # a change outside the folder stops the build before any check
-                return {"pass": True, "evidence": "nothing changed outside the folder"}
             if folder and t == "test-passed":
                 if not self.out.get("test_runner"):
                     return {"pass": None, "evidence": "this output's form names no test runner"}
@@ -2322,8 +2348,9 @@ def mock_item_check(out):
                                               for t, v in judged.items()}} if judged else {}),      # P33 (D436)
 '''),
     Edit("P33", "j2.py", r'''        passed = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)
-''', r'''        ran_ok = bool(ok and res.get("ran") and res.get("exit") == 0)      # P33 (D436): and Audit passed every item it decides
-        passed = self.real_runs_done[h.get("wid")] = ran_ok and all(v[0] for v in judged.values())
+''', r'''        ran_ok = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)      # the receipt
+        self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): Audit's verdict per item (P30 reads it)
+        passed = ran_ok and all(v[0] for v in judged.values())      # P33 (D436): an item it did not judge needs every one passed
 '''),
     Edit("P33", "j2.py", r'''                    x.update({"pass": passed, "verdict": "PASS" if passed else "FAIL",
                               "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"})

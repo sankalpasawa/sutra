@@ -2565,6 +2565,35 @@ def test_p30_a_charter_without_item_checks_behaves_as_before(make_run):
     assert run._open_items() == [] and finish(run, None).startswith("Done:")
 
 
+def test_p30_inside_folder_is_no_item_check_and_the_mock_folder_default_is_file_exists(j2ft, sort_run):
+    # review R1-5: inside-folder holds for every build, so it is never evidence for one item
+    run = sort_run[0]()
+    assert "inside-folder" in run.out["check_types"] and "inside-folder" not in run._item_check_types()
+    crit = list(SORT_DONE_WHEN)
+    got = run._item_checks_from([{"type": "inside-folder", "target": "."}, {"type": "file-exists", "target": "sort_files.py"},
+                                 {"type": "real-run"}], crit)
+    assert set(got) == set(crit[1:])
+    assert j2ft.mock_item_check(run.out) == {"type": "file-exists", "target": "main.py", "expect": True}
+    assert "main.py" in j2ft.mock_form_folder_files(FT, {})      # the file the mock folder builder always writes
+
+
+def test_p30_a_served_section_carries_the_earlier_runs_status_or_not_built(site_run, tmp_path):
+    # review R1-6: code copies the status the earlier run's builder set; it never sets one
+    run = site_run
+    morning_goal(run)
+    old = tmp_path / "earlier-run"
+    old.mkdir()
+    (old / "workflows.json").write_text(json.dumps([
+        {"id": "W-1", "status": "done", "item_status": {MORNING[0]: {"status": "built", "reason": ""},
+                                                        MORNING[1]: {"status": "blocked", "reason": "no channel token given"}}},
+        {"id": "W-2", "status": "failed", "item_status": {MORNING[1]: {"status": "built", "reason": ""}}}]))
+    w = {"id": "W-1", "covers_text": list(MORNING)}
+    assert run._served_status(w, {"dir": str(old), "workflow": "W-1"}) == [
+        {"item": 1, "status": "built", "reason": ""}, {"item": 2, "status": "blocked", "reason": "no channel token given"},
+        {"item": 3, "status": "not_built", "reason": "the earlier run stored no status for it"}]
+    assert {x["status"] for x in run._served_status(w, {"dir": str(tmp_path / "gone"), "workflow": "W-1"})} == {"not_built"}
+
+
 # ---- P31 (D434): a failed dry run goes back to the build; only Run or Don't run answers the real-run question ----------
 # Made-up script: it names the folder it was given (a temp copy in the dry run) and fails with "missing argument".
 P31_FAIL = "import sys\nsys.stderr.write('cannot read ' + sys.argv[1] + '\\nmissing argument\\n')\nsys.exit(2)\n"
@@ -2846,8 +2875,11 @@ def test_p33_exit_0_with_audit_needs_revision_leaves_the_item_open(p33, monkeypa
     assert r["approved"] and r["ran"] and r["exit"] == 0      # it ran and exited 0 ...
     assert row["pass"] is False and row["verdict"] == "NEEDS_REVISION"      # ... and that alone does not pass the item
     assert f"real run receipt (W-1): {r['evidence']}" in row["note"] and row["note"].endswith(f"Audit read its output: {says}")
-    assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": says}} and run.real_runs_done == {"W-1": False}
-    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {})["pass"] is False
+    assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": says}}
+    # the receipt's result stays "approved and exit 0" (review R1-4); Audit's verdict is kept per item, and the check reads both
+    assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {run.goal["done_when"][2]: False}
+    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {}) == {
+        "pass": False, "evidence": "its real run did not pass (approved, exit 0 and Audit PASS)"}
     assert str(run.outcome).startswith("Done with open items"), run.outcome
 
 
@@ -2862,6 +2894,39 @@ def test_p33_no_judge_call_when_the_run_did_not_pass(p33, j2ft, monkeypatch, ans
     r = p31_receipts(run)[-1]
     assert calls == [] and "audit" not in r and p33_row(run)["verdict"] == "FAIL" and run.real_runs_done == {"W-1": False}
     assert "Audit read" not in p33_row(run)["note"] and str(run.outcome).startswith("Done with open items")
+
+
+def test_p33_mixed_verdicts_leave_the_passed_item_passing(p33, monkeypatch):
+    # review R1-4: PASS on item 3 and NEEDS_REVISION on item 2 of the same run; item 3's check still passes
+    run, _, calls = p33
+    crit = run.goal["done_when"]
+    run.workflows[0]["real_run"]["checks"] = [2, 3]
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [
+        {"item": 3, "verdict": "PASS", "evidence": "pdf/a.pdf is listed"}, {"item": 2, "verdict": "NEEDS_REVISION", "evidence": "no test ran"}]})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    rows = {x["item"]: x for x in run.audits[-1]["results"]}
+    assert (rows[3]["pass"], rows[3]["verdict"]) == (True, "PASS") and (rows[2]["pass"], rows[2]["verdict"]) == (False, "NEEDS_REVISION")
+    assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {crit[1]: False, crit[2]: True}
+    assert run._run_item_check(crit[2], {"type": "real-run"}, "", {}) == {
+        "pass": True, "evidence": "its real run was approved, exited 0 and Audit passed its output"}
+    assert run._run_item_check(crit[1], {"type": "real-run"}, "", {})["pass"] is False
+
+
+def test_p33_an_item_checks_charter_with_a_real_run_item_ends_done(p33):
+    # review R1-1: no builder owns an item a real run decides; an approved run, exit 0 and Audit PASS ends "Done:"
+    run, _, calls = p33
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-2", "status": "done", "covers_text": [crit[1]],
+                          "item_status": {crit[1]: {"status": "built", "reason": ""}}})
+    for x in run.audits[-1]["results"]:
+        x["pass"], x["verdict"] = (x["item"] != 3, "PASS" if x["item"] != 3 else "FAIL")
+    assert run._open_items() == []      # item 3 is the real run's, never "not built: no workflow built it"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run.real_runs_done == {"W-1": True} and str(run.outcome).startswith("Done:"), run.outcome
 
 
 def test_p33_without_the_real_run_the_item_stays_open(p33):
