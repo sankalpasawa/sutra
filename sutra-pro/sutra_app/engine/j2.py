@@ -865,7 +865,7 @@ def real_run_env_problems(rr, source, run_dir):
             elif n.upper() in base:
                 out.append(f"real_run may not set {n}: the script already gets it")
             elif llm.is_loader_name(n):
-                out.append(f"real_run may not set {n}: it changes how a program starts (a fixed guardrail list)")
+                out.append(f"real_run may not set {n}: it changes how a program starts or where it connects (a fixed guardrail list)")
             if "\0" in v:
                 out.append(f"real_run {key} {n} holds a NUL character")
             if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own

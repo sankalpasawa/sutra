@@ -735,17 +735,18 @@ def test_run_env_keeps_only_the_allowlist():
     assert set(llm.RUN_PASS_NAMES) >= {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
                                        "TMPDIR", "SYSTEMROOT", "APPDATA", "USERNAME"}
     assert len(llm.RUN_PASS_NAMES) == len(set(llm.RUN_PASS_NAMES)), "no name twice"
-    assert not {n for n in llm.RUN_PASS_NAMES if "PROXY" in n.upper()}, "proxies are named by the plan (D446)"
+    assert not {n for n in llm.RUN_PASS_NAMES if "PROXY" in n.upper()}, "proxies are not passed and a plan may not set them (D446, D449)"
 
 
 def test_is_loader_name_fixed_list():
-    """D446: the loader names are a fixed safety guardrail, not a secret detector: an exact list, compared upper-case."""
+    """D446, D449: the loader and proxy names are a fixed safety guardrail, not a secret detector: an exact list, compared
+    upper-case. FTP_PROXY and PROXY_HOST stay accepted: it is a list, not a pattern."""
     for name in ("LD_PRELOAD", "ld_library_path", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH",
-                 "PERL5OPT", "RUBYOPT"):
+                 "PERL5OPT", "RUBYOPT", "HTTP_PROXY", "https_proxy", "ALL_PROXY", "no_proxy"):
         assert llm.is_loader_name(name), name
-    for name in ("LDAP_HOST", "NODE_ENV", "PYTHONUNBUFFERED", "PLAN_LEVEL"):
+    for name in ("LDAP_HOST", "NODE_ENV", "PYTHONUNBUFFERED", "PLAN_LEVEL", "FTP_PROXY", "PROXY_HOST"):
         assert not llm.is_loader_name(name), name
-    assert len(llm.RUN_LOADER_NAMES) == 7, "growing the guardrail list is a decision (D446)"
+    assert len(llm.RUN_LOADER_NAMES) == 11, "growing the guardrail list is a decision (D446, D449)"
 
 
 def test_login_homes_overrides_and_defaults(tmp_path):

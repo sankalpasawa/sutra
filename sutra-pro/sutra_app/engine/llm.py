@@ -15,7 +15,7 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
                                      when the sandbox runtime (J2_SANDBOX_CMD, default srt) is found, else off; offline it is J2's (J2_SANDBOX=1)
     inside                           J2's helper: a path strictly inside a folder
     run_env, RUN_PASS_NAMES          the allowlisted environment of a script the engine runs, plus what its plan states (D446)
-    is_loader_name, RUN_LOADER_NAMES a fixed safety guardrail of loader names, not a secret detector (D446)
+    is_loader_name, RUN_LOADER_NAMES a fixed safety guardrail of loader and proxy names, not a secret detector (D446, D449)
     login_homes                      where the CLI sign-ins and the app's data live: never a plan's secret file (D446)
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
                    structured); a mock call leaves it empty, as J2's did
@@ -165,12 +165,13 @@ def sandbox_on() -> bool:
 
 
 # D446: the whole environment of a script the engine runs (real run, dry run, test rerun) is an allowlist, never a blocklist.
-# Common, never secret; Windows' own (USERNAME, USERPROFILE, TEMP, ...) come from WINDOWS_PASS_NAMES. Proxies stay out: a plan names them.
+# Common, never secret; Windows' own (USERNAME, USERPROFILE, TEMP, ...) come from WINDOWS_PASS_NAMES. Proxies stay out, and a plan may not set them either (D449).
 RUN_PASS_NAMES: tuple[str, ...] = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
                                    "TMPDIR") + WINDOWS_PASS_NAMES
 # D446: a fixed safety guardrail, not a secret detector: names that change how a runtime or the dynamic loader starts a
-# program. Entries ending "_" are prefixes. Never extended by pattern.
-RUN_LOADER_NAMES: tuple[str, ...] = ("LD_", "DYLD_", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT")
+# program, or (D449) where it connects. Entries ending "_" are prefixes. Never extended by pattern.
+RUN_LOADER_NAMES: tuple[str, ...] = ("LD_", "DYLD_", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT",
+                                     "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
 
 
 def run_env(extra: Optional[Mapping[str, str]] = None, environ: Optional[Mapping[str, str]] = None) -> dict[str, str]:
@@ -181,7 +182,7 @@ def run_env(extra: Optional[Mapping[str, str]] = None, environ: Optional[Mapping
 
 
 def is_loader_name(name: str) -> bool:
-    """D446: True when name (upper-cased) is in RUN_LOADER_NAMES, or starts with one of its "_"-ending prefixes."""
+    """D446, D449: True when name (upper-cased) is in RUN_LOADER_NAMES, or starts with one of its "_"-ending prefixes."""
     n = name.upper()
     return any(n.startswith(x) if x.endswith("_") else n == x for x in RUN_LOADER_NAMES)
 

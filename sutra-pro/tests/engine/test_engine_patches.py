@@ -3924,7 +3924,7 @@ def test_p41_loader_names_are_refused(j2ft, tmp_path):
     cred.write_text(P41_CRED)
     probs = j2ft.real_run_env_problems({"secret_files": {"LD_PRELOAD": str(cred)}}, j2ft.squash(f"use {cred}"),
                                        str(tmp_path / "run"))
-    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts (a fixed guardrail list)"], probs
+    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts or where it connects (a fixed guardrail list)"], probs
     assert j2ft.real_run_env_problems({"settings": {"NODE_ENV": "x", "LDAP_HOST": "x"}}, "", str(tmp_path)) == []
 
 
@@ -5071,3 +5071,14 @@ def test_p44_a_failed_real_run_is_never_run_again_without_its_own_code(j2ft, p44
     assert any(m.get("real_run") == w2["id"] for m in run.chat), "the replacement gets its own card"
     p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
     assert unfenced() == 2
+
+# ---- P44 (D449) T7: the proxy names join the fixed guardrail list (D446 amended, P41 amended) -------------------------------
+@pytest.mark.parametrize("name", ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy",
+                                  "no_proxy"])
+@pytest.mark.parametrize("hosts", [True, False])
+def test_p44_proxy_settings_are_refused_with_or_without_hosts(p44_reg, name, hosts):
+    """srt's own proxy can't be overridden by a plan: a proxy name is refused as a setting, in either case, with hosts or not."""
+    kw = {} if hosts else {"hosts": MISSING, "offline": MISSING}
+    run, reg, refused = p44_reg.register(settings={name: "http://made-up.invalid:3128"}, **kw)
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
+    assert f"real_run may not set {name}" in refused[0] and "where it connects (a fixed guardrail list)" in refused[0], refused
