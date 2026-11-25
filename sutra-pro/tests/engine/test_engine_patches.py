@@ -3860,3 +3860,50 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES
+
+
+P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, language, temp folder)"
+P41_PLACEHOLDERS = "\nThe dry run got the settings and an empty placeholder file for each secret file."
+
+
+def test_p41_card_lines(j2ft, tmp_path):
+    lines = j2ft.real_run_env_lines
+    assert lines({"command": ["x"]}) == P41_NONE
+    assert lines({"settings": {}, "secret_files": {}}) == P41_NONE
+    assert lines({"settings": {"PLAN_LEVEL": "basic", "REGION": "eu"}}) == "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu"
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    card = lines({"settings": {"PLAN_LEVEL": "basic"}, "secret_files": {"API_CRED_FILE": str(cred)}})
+    assert card == ("\nSettings it gets: PLAN_LEVEL=basic"
+                    f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}" + P41_PLACEHOLDERS)
+    assert P41_CRED not in card
+    card = lines({"secret_files": {"API_CRED_FILE": str(cred)}})      # a secret file alone: no setting, still every line
+    assert card.startswith(P41_NONE + "\nSecret files it may read") and card.endswith(P41_PLACEHOLDERS)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the FT form's runner is python3, which a Windows runner may not have")
+def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch, tmp_path):
+    register, home, _ = p41_reg
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P41_SRT)
+    p41_fake_srt(monkeypatch, fake)
+    cred = os.path.expanduser("~/cred.txt")
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic", "REGION": "eu"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    run.workflows[0]["status"] = "done"
+    os.makedirs(run._out_dir(), exist_ok=True)
+    (Path(run._out_dir()) / "copy.py").write_text(P35_COPY)
+    (tmp_path / "in" / "a.txt").write_text("alpha\n")
+    (tmp_path / "in" / "b.txt").write_text("beta\n")
+    run.post("user", "Build it and run it on my notes")
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu\n" in card, card
+    assert f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}\n" in card, card
+    assert P41_PLACEHOLDERS in card and card.index("Settings it gets") < card.index("To run it, reply exactly")
+    assert P41_CRED not in card
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0, r
+    assert r["settings"] == {"PLAN_LEVEL": "basic", "REGION": "eu"} and r["secret_files"] == {"API_CRED_FILE": cred}
+    assert P41_CRED not in json.dumps(r) and P41_CRED not in json.dumps(run.chat)

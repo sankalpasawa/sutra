@@ -853,6 +853,16 @@ def real_run_env_problems(rr, source, run_dir):
     return out
 
 
+def real_run_env_lines(rr):
+    """P41 (D446): the real-run card's lines, before approval: every setting as NAME=value, and every secret file by name
+    and real path only (the app never opens it), then what the dry run got instead."""
+    s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
+    return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
+                                      or "none beyond the basics (PATH, HOME, language, temp folder)")
+            + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
+               + "\nThe dry run got the settings and an empty placeholder file for each secret file." if f else ""))
+
+
 def real_run(out_dir, rr, timeout):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
@@ -5934,6 +5944,7 @@ class J2Run:
                                         + f": {last[:160]}")
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
                             + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
                                                                             "dry run had no network access: results may differ."
                                                                             if dry.get("fenced") else      # P32 (D435)
