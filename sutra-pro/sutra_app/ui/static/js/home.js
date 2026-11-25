@@ -661,6 +661,8 @@
     if (!choice && !(isObj(opts) && opts.plan === true) && directOn()) return sendDirect(value);
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
+    const held = !choice && root.ChatComposer ? composer() : null;
+    if (held !== null && held.state().files.length > 0) { showBanner({text: root.ChatComposer.TEAM_FILES}); return false; }          // a file only goes to the model (D440, FR-3): never dropped unseen
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
       pause: null, answered_by: null, task_id: null, state: "pending", at: ""}};
     S.pending.push(entry);

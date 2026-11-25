@@ -690,3 +690,12 @@ test("FR-3: the file bar is drawn in Tell the team too, and a team send with a f
   assert.equal(out.error, "Files go only to the model. Remove them, or ask the model.");
   assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
 });
+
+test("FR-3: the panel and the home page refuse a team send while a file is held, with the composer's own sentence (source pin: the pages are not loadable in node)", () => {
+  const fs = require("node:fs");
+  const panel = fs.readFileSync(path.join(JS, "node_panel.js"), "utf8");
+  const home = fs.readFileSync(path.join(JS, "home.js"), "utf8");
+  assert.match(panel, /held\.state\(\)\.files\.length > 0\) \{ st\.banner = root\.ChatComposer\.TEAM_FILES;/);
+  assert.match(home, /held\.state\(\)\.files\.length > 0\) \{ showBanner\(\{text: root\.ChatComposer\.TEAM_FILES\}\)/);
+  assert.equal(ChatComposer.TEAM_FILES, "Files go only to the model. Remove them, or ask the model.");
+});
