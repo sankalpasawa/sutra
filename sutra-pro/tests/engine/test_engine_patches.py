@@ -4688,7 +4688,7 @@ def p45_run_it(env_run, script, result=None):
     assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
     p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
     r = p42_receipts(run)[-1]
-    return run, w, real, r, json.loads(Path(run.dir, r["output"]).read_text()) if r.get("id") else None
+    return run, w, real, r, json.loads(Path(run.dir, r["run_output"]).read_text()) if r.get("id") else None
 
 
 def test_p45_an_approved_real_run_leaves_a_run_output_record_as_the_contract_says(j2env, env_run):
@@ -4698,12 +4698,16 @@ def test_p45_an_approved_real_run_leaves_a_run_output_record_as_the_contract_say
     lim = j2env.OWN_RUNS["run_output"]["limits"]
     assert lim == {"stdout_lines": 200, "stderr_lines": 50, "tail_bytes": 65536, "max_files": 500, "text_cap_bytes": 65536}
     run, w, real, r, rec = p45_run_it(env_run, P45_PRINTS, result="out.json")
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["output"] == "run_output/rr-W-1-1.json"
-    assert r["output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}
-    assert r["result"] == "out.json" and "capture" not in r and "capture" not in w["real_run"]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["run_output"] == "run_output/rr-W-1-1.json"
+    assert r["output"] == "read 3 threads\n1 warning\n"      # as before P45: the last 1,500 characters of stdout and stderr
+    assert r["run_output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}
+    # the real run's own file changes, on the real folder, in the format of dry_run.created / changed / deleted (relative paths, sorted)
+    assert (r["created"], r["changed"], r["deleted"]) == (["out.json"], ["mail.txt"], ["old.txt"])
+    assert all(isinstance(x, str) for k in ("created", "changed", "deleted") for x in r["dry_run"].get(k) or [])      # no sandbox here: no dry run
+    assert r["files_truncated"] is False and r["result"] == "out.json" and "capture" not in r and "capture" not in w["real_run"]
     assert r["stdout"].strip() == "read 3 threads" and r["stderr"].strip() == "1 warning"      # P42's tails stay in the receipt
     assert list(rec) == ["schema", "receipt", "workflow", "command", "folder", "approved", "started_at", "ended_at", "exit", "main_result",
-                         "files", "stdout", "stderr", "limits"]
+                         "files", "files_truncated", "stdout", "stderr", "limits"] and rec["files_truncated"] is False
     assert rec["schema"] == "run-output/1" and rec["receipt"] == "rr-W-1-1" and rec["workflow"] == "W-1" and rec["folder"] == str(real)
     assert rec["command"] == ["python3", "s.py", str(real)] and rec["approved"] is True and rec["exit"] == 0 and rec["limits"] == lim
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", rec["started_at"]) and rec["started_at"] <= rec["ended_at"]
@@ -4732,8 +4736,28 @@ def test_p45_the_run_output_limits_hold_and_the_main_result_is_null_missing_or_w
     assert rec["stdout"]["lines_total"] == 300 and rec["stdout"]["truncated"] and rec["stdout"]["tail"].splitlines() == [f"line {i}" for i in range(100, 300)]
     assert rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)]
     assert rec["main_result"]["exists"] and rec["main_result"]["size"] == len(big) and "text" not in rec["main_result"]
-    assert p45_run_it(env_run, P45_PRINTS)[-1]["main_result"] is None      # the plan declares none
+    run, _, _, r, rec = p45_run_it(env_run, P45_PRINTS)      # the plan declares none, and the type's entry_file is a pattern
+    assert rec["main_result"] is None and r["result"] == run.out["entry_file"] == f"{FT}/*"
     assert p45_run_it(env_run, P45_PRINTS, result="never.json")[-1]["main_result"] == {"path": "never.json", "exists": False}
+
+
+def test_p45_without_a_declared_result_the_types_entry_file_is_the_result_when_it_names_one_file(j2env, env_run):
+    made, real = env_run
+    run, w = made({"s.py": P45_PRINTS})
+    run.out = {**run.out, "entry_file": f"{FT}/s.py"}
+    run._ask_real_run({})
+    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p42_receipts(run)[-1]
+    main = json.loads(Path(run.dir, r["run_output"]).read_text())["main_result"]
+    assert r["result"] == f"{FT}/s.py" and main["path"] == f"{FT}/s.py" and main["exists"] and main["text"] == P45_PRINTS
+
+
+def test_p45_more_files_than_max_files_stops_the_lists_and_says_files_truncated(j2env, env_run, monkeypatch):
+    monkeypatch.setitem(j2env.OWN_RUNS["run_output"]["limits"], "max_files", 2)
+    many = "import os, sys\nfor i in range(5):\n    open(os.path.join(sys.argv[1], 'n%d.txt' % i), 'w').write('x')\n"
+    _, _, _, r, rec = p45_run_it(env_run, many)
+    assert r["files_truncated"] is True and rec["files_truncated"] is True and r["created"] == ["n0.txt", "n1.txt"]
+    assert [f["path"] for f in rec["files"]["created"]] == ["n0.txt", "n1.txt"] and r["run_output_counts"]["created"] == 5
 
 
 def test_p45_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_is_checked_by_code(j2env, env_run):
@@ -4742,7 +4766,8 @@ def test_p45_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_i
     run._ask_real_run({})
     p42_reply(run, "Don't run")
     r = p42_receipts(run)[-1]
-    assert "id" not in r and "output_counts" not in r and not Path(run.dir, "run_output").exists() and "capture" not in w["real_run"]
+    assert not {"id", "run_output", "run_output_counts", "created", "changed", "deleted", "files_truncated"} & set(r)
+    assert not Path(run.dir, "run_output").exists() and "capture" not in w["real_run"]
     for bad in ("/etc/passwd", "../out.json", "a/../../x", "", 7, "out/"):
         assert j2env.real_run_result_problems({"result": bad}), bad
     assert j2env.real_run_result_problems({"result": "out/report.json"}) == [] and j2env.real_run_result_problems({}) == []
