@@ -5043,3 +5043,31 @@ def test_p44_a_dry_run_failure_keeps_the_builders_built_items(p44):
     w2["status"] = "done"
     w2["item_status"] = {crit[0]: {"status": "not_built", "reason": "x"}}
     assert run._item_states()[crit[0]]["status"] == "not_built" and run._item_states()[crit[0]]["wid"] == w2["id"]
+
+# ---- P44 (D449) T6: a real run is never run again without its own Run press (a pin; no code change) ------------------------
+def test_p44_a_failed_real_run_is_never_run_again_without_its_own_code(j2ft, p44, p44_reg, monkeypatch):
+    """FR-10: an approved real run that fails is not run again by itself: the same workflow is never asked again, and a
+    replacement gets its own card and code and runs only after its own RUN <code>. That Decide for me's exact RUN <code> never
+    runs one is pinned by P31 (test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open); not repeated here.
+    Passes before and after P44: _ask_real_run skips a workflow already asked (real_runs_asked)."""
+    go, real, _ = p44
+    calls, orig = [], j2ft.real_run
+    monkeypatch.setattr(j2ft, "real_run", lambda out, rr, t: calls.append(rr.get("fence") is True) or orig(out, rr, t))
+    unfenced = lambda: sum(1 for f in calls if not f)
+    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src != '--offline' else None\nbody = "))      # real: exit 1
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 1 and unfenced() == 1, (r, calls)
+    assert run._ask_real_run({}) is False and unfenced() == 1
+    assert (run.paused or {}).get("kind") != "real_run"
+    reg, refused, _ = run._register([{**p44_reg.proposal(run)[0], "revises": "W-1", "parts": ["fix"]}])      # a replacement
+    # that keeps the real run; W-1 is done (only its real run failed), so rewriting it is priced as a fix
+    assert len(reg) == 1 and not refused, refused
+    w2 = reg[0]
+    w2["status"] = "done"
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run" and unfenced() == 1
+    assert run.real_runs_asked[w2["id"]] != run.real_runs_asked["W-1"]
+    assert any(m.get("real_run") == w2["id"] for m in run.chat), "the replacement gets its own card"
+    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
+    assert unfenced() == 2
