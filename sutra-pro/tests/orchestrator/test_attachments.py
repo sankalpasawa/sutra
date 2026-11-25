@@ -19,5 +19,5 @@ def test_ten_files_a_message_at_most(tmp_path):
 
 
 def test_a_refused_file_is_a_sentence(tmp_path):
-    with pytest.raises(InvalidRequestError, match="images, PDFs and text"):
+    with pytest.raises(InvalidRequestError, match="images, PDFs, Word and text"):
         Attachments(tmp_path).upload("a.exe", b"MZ")
