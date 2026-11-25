@@ -1235,6 +1235,69 @@ def with_base(page, folder):
     return page[:m.end()] + tag + page[m.end():] if m else tag + (page or "")
 
 
+FILE_CHECKS = ("file-exists", "test-passed")      # the folder checks whose target names files
+
+
+def target_list(target):
+    """A check's target as a list: a list names several files, each checked on its own."""
+    return [x for x in target] if isinstance(target, list) else [target]
+
+
+def in_folder(target, folder):
+    """One path form for a folder check's target: relative to the folder the builder writes to. An absolute path inside
+    the folder becomes relative; a path that starts with the folder's own name (the run-relative form, "<folder>/x") loses
+    it, unless a file is really there under that name or it was written "./<folder>/x" (a subfolder of that name)."""
+    t = str(target or "").strip().replace("\\", "/")
+    if not t:
+        return t
+    root, name = os.path.realpath(folder), os.path.basename(os.path.realpath(folder))
+    if os.path.isabs(t):
+        rel = os.path.relpath(os.path.realpath(t), root)
+        return t if rel.startswith("..") else rel.replace(os.sep, "/")
+    kept, t = t.startswith("./"), os.path.normpath(t).replace(os.sep, "/")
+    if not kept and t.startswith(name + "/") and not os.path.exists(os.path.join(root, t)):
+        t = t[len(name) + 1:]
+    return t
+
+
+def path_form_problems(w, name):
+    """A folder workflow's file and test targets (FILE_CHECKS, and the expected files) name files one way: relative to
+    the builder's folder `name`. All written with the folder's name in front: code takes it off, in place (returns how
+    many). Some with and some without, an absolute path, or one that climbs out: a problem (the workflow is refused).
+    (problems, fixed)"""
+    atoms = [a for a in w.get("atoms") or [] if isinstance(a, dict)]
+    holders = [(c, "target") for a in atoms for c in a.get("verification") or []
+               if isinstance(c, dict) and c.get("type") in FILE_CHECKS]
+    holders += [(e, "target") for a in atoms for e in a.get("expected_output") or []
+                if isinstance(e, dict) and e.get("kind") in ("file", "test")]
+    names = [str(x).replace("\\", "/") for c, k in holders for x in target_list(c.get(k)) if isinstance(x, str) and x.strip()]
+    out = [x for x in names if os.path.isabs(x) or ".." in x.split("/")]
+    if out:
+        return [f"a check names a path outside the folder ({', '.join(out[:4])}): name every file relative to the "
+                f"{name} folder"], 0
+    front = [x for x in names if x.startswith(name + "/")]
+    if front and len(front) != len(names):
+        other = next(x for x in names if x not in front)
+        return [f"the checks name files in two forms ({front[0]} and {other}): name every file relative to the {name} "
+                f"folder, without the folder's name in front (a subfolder that is itself called {name} is written "
+                f"./{name}/...)"], 0
+    strip = lambda x: x[len(name) + 1:] if isinstance(x, str) and x.replace("\\", "/").startswith(name + "/") else x
+    for c, k in holders if front else ():
+        c[k] = [strip(x) for x in c[k]] if isinstance(c.get(k), list) else strip(c.get(k))
+    return [], len(front)
+
+
+def check_results(results):
+    """One result for a check whose target was a list: it passes only when every item passes (None: one could not
+    run and none failed); the evidence names each."""
+    if len(results) == 1:
+        return results[0]
+    bad = [r for r in results if r.get("pass") is False]
+    return {"actual": [r.get("actual") for r in results],
+            "pass": False if bad else None if any(r.get("pass") is None for r in results) else True,
+            "evidence": "; ".join(str(r.get("evidence")) for r in (bad or results))}
+
+
 def run_check(c, site_dir, page, doc=False):
     """{actual, pass, evidence} for one check against the built site (doc=True: page is a markdown document). Code
     only."""
@@ -5428,15 +5491,19 @@ class J2Run:
             self._real_run_not_offered(w, f"the Requester declined letting it reach {and_list(hosts)}")
         self._goal_done(h.get("r") or {})
 
-    def _run_env(self):
-        """The environment the built folder's commands run in. (None, "") without a requirements.txt: the form's own
-        python runs them. (the environment, "") once it is installed: its python runs the test rerun, the dry run
-        and the real run, never the system one. (None, why) while it is not: nothing of the build is run."""
+    def _run_env(self, test=None):
+        """The environment the built folder's commands run in. (None, "") without a requirements.txt (or one that
+        names no package): the form's own python runs them. (the environment, "") once it is installed: its python
+        runs the test rerun, the dry run and the real run, never the system one. (None, why) while it is not: nothing
+        of the build is run, except a test (`test`: its path in the folder) that needs only the standard library and
+        the folder's own modules (j2_runenv.beyond_stdlib): the form's python reruns that one, installed or not."""
         p = j2_runenv.plan(self._out_dir())
         if not p:
             return None, ""
         if p["ready"]:
             return p, ""
+        if test and j2_runenv.beyond_stdlib(os.path.join(self._out_dir(), str(test)), self._out_dir()) == []:
+            return None, ""
         return None, "its packages are not installed: " + (self.env_why.get(p["hash"]) or p["problem"]
                                                             or "the Requester has not approved them")
 
@@ -8175,6 +8242,12 @@ class J2Run:
             for a in w["atoms"]:
                 facts_to_headings(a, src)
         self._fix_atoms(w, src, types, up, real)
+        form, stripped = path_form_problems(w, os.path.basename(self._out_dir())) if self.folder else ([], 0)
+        if form:      # one path form for every file a folder's checks name; a mix is refused
+            return form
+        if stripped:
+            self._autofix(w.get("name") or "?", "path_form", f"{stripped} check target(s) named with the folder in front: "
+                                                              "now relative to the folder")
         out = [f"work atom {n}: {x}" for n, a in enumerate(w["atoms"], 1)
                for x in expected_problems(a, types) or check_problems(cover_expected(copy.deepcopy(a)), src, types, up,
                                                                       ranges=real, tag=True, rules=self._item_rules(w))]
@@ -11658,7 +11731,10 @@ class J2Run:
         """Code runs every check of the workflow's atoms on the built site (doc=True: page is a markdown document, as
         for an artifact workflow); each result is a receipt and the atom keeps its latest ones. Returns the failed
         receipts."""
-        site_dir, failed, doc = folder or os.path.join(self.dir, "site"), [], self.doc if doc is None else doc
+        doc = self.doc if doc is None else doc
+        if folder is None and self.folder and not doc:      # a recheck (a corrected check, an answer on the board) of a
+            folder = self._out_dir()                        # folder's atom runs where its build's checks ran
+        site_dir, failed = folder or os.path.join(self.dir, "site"), []
         advisory = set((self.out or {}).get("advisory_checks") or ()) if folder else set()
         t0 = time.time()
         # the document sections this workflow owns: its sections field only (wf_sections), never its name or words
@@ -11674,16 +11750,12 @@ class J2Run:
             if folder and c.get("type") in ("file-exists", "test-passed", "inside-folder"):
                 if c["type"] == "inside-folder":      # a change outside the folder stops the build before any check
                     return {"actual": True, "pass": True, "evidence": "nothing changed outside the folder"}
+                targets = [in_folder(x, folder) for x in target_list(c.get("target"))] or [""]      # each file, one path form
                 if c["type"] == "test-passed":
                     if not self.out.get("test_runner"):
                         return {"actual": None, "pass": None, "evidence": "this output's form names no test runner"}
-                    t = c.get("target")
-                    env, why = self._run_env()
-                    if why:      # its packages are not installed: the test never runs with another python
-                        return {"actual": None, "pass": None, "evidence": f"the test was not rerun: {why}"}
-                    rr = sandbox_rerun(folder, self.out["test_runner"], t[0] if isinstance(t, list) else t, builder_timeout(), env)
-                    return {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
-                return run_check(c, folder, page, False)
+                    return check_results([self._rerun_test(folder, t) for t in targets])
+                return check_results([run_check({**c, "target": t}, folder, page, False) for t in targets])
             if doc and c.get("type") == "file-exists" and self._file_wf(w):      # a file workflow: the file it wrote
                 f = artifact_path(w)
                 ok = os.path.isfile(os.path.join(self.dir, f))
@@ -12052,6 +12124,27 @@ class J2Run:
                       max_tokens=1600, images=[shot] if shot else None)
         return r, mech, shot, measured, conds
 
+    def _wf_test(self):
+        """The test file the latest workflow with a test-passed check names (its first target), "" when none does."""
+        for w in reversed(self.workflows):
+            if w.get("status") == "superseded":
+                continue
+            for a in w.get("atoms") or []:
+                for c in (a.get("verification") or []) if isinstance(a, dict) else []:
+                    t = [x for x in target_list(c.get("target")) if x] if isinstance(c, dict) and c.get("type") == "test-passed" else []
+                    if t:
+                        return str(t[0])
+        return ""
+
+    def _rerun_test(self, folder, target):
+        """One test of the folder, rerun by code on a copy (sandbox_rerun), as a check result {actual, pass, evidence}.
+        Its packages not installed: not rerun (pass None), unless it needs only the standard library (_run_env)."""
+        env, why = self._run_env(target)
+        if why:      # its packages are not installed: the test never runs with another python
+            return {"actual": None, "pass": None, "evidence": f"the test was not rerun: {why}"}
+        rr = sandbox_rerun(folder, self.out.get("test_runner") or (), target, builder_timeout(), env)
+        return {"actual": rr.get("exit"), "pass": rr["pass"], "evidence": rr["evidence"]}
+
     def _folder_condition(self, c):
         """(met, evidence) of one folder condition (FOLDER_CHECKS) on the output folder; its data (charter_field,
         charter_fields) from the conditions file."""
@@ -12067,11 +12160,9 @@ class J2Run:
                                               f"all {len(want)} files are in the folder") if want else
                     f"the charter lists no {cond.get('charter_field')}")
         if k == "test-passed":
-            t = (charter_list(g, cond.get("charter_field")) or [""])[0]
-            env, why = self._run_env()
-            if why:      # its packages are not installed: the test never runs with another python
-                return False, f"the test was not rerun: {why}"
-            rr = sandbox_rerun(folder, self.out.get("test_runner") or (), t, builder_timeout(), env)
+            # the charter's test; a charter that names none: the test the latest workflow's own check names
+            t = in_folder((charter_list(g, cond.get("charter_field")) or [self._wf_test()])[0], folder)
+            rr = self._rerun_test(folder, t)
             return rr["pass"] is True, ("code reran the test itself, on a copy of the folder, not the builder's own run: "
                                         + rr["evidence"]) if rr["pass"] is not None else rr["evidence"]
         if k == "inside-folder":      # a build that changed anything outside its folder is stopped before this
