@@ -267,6 +267,8 @@
     });
   }
 
+  let limitsAsked = false;
+
   function create(options) {
     const o = isObj(options) ? options : {};
     const api = o.api;
@@ -281,6 +283,14 @@
     const rememberedMode = (() => { try { return modes && typeof modes.loadMode === "function" ? modes.loadMode(sid) : ""; } catch (e) { return ""; } })();
     let modeNow = rememberedMode !== "" ? rememberedMode : (o.mode === "direct" ? "direct" : "team");
     const state = {files: [], note: ""};
+    // The page checks a file with the server's own lists (D440, A4): read once per page load, the built-in lists stay the offline default and a failed read changes nothing.
+    if (!limitsAsked && api && typeof api.get === "function") {
+      const CSL = searchOf();
+      if (CSL && typeof CSL.setLimits === "function") {
+        limitsAsked = true;
+        try { Promise.resolve(api.get("/api/chats/attachment-limits")).then(r => CSL.setLimits(r)).catch(() => { limitsAsked = false; }); } catch (e) { limitsAsked = false; }
+      }
+    }
     // Ask (DV-1): `askAllowed` is the page's word that the server has it; `askNow` the switch; `modeBefore` where Do goes back to (the team / model toggle, which Ask never remembers)
     let askAllowed = false;
     let askNow = "do";

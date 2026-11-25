@@ -8,6 +8,7 @@
      results(rows)                        the list: active matches first, "Older chats" below
      archiveButton(session)               the Archive or Un-archive button, "" where the app refuses it (the org chat, an imported chat)
      limits / checkFile(file)             the attachment limits shown to the owner and the check of one file ("" when it is fine)
+     setLimits(payload)                   the server's own lists (GET /api/chats/attachment-limits) replace the ones built in, which stay the offline default (D440)
      limitsNote()                         "Up to 10 files, 20 MB each: images, PDFs and text files. The model reads the first 40,000 characters of a text file."
 
    Buttons carry data-act (open-chat with data-sid and data-mid, archive, unarchive). A classic script with ONE global, ChatSearch. */
@@ -20,9 +21,27 @@
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const clean = v => text(v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
   const ID = /^[a-z][a-z0-9_.-]{1,60}$/;
-  const limits = Object.freeze({files: 10, bytes: 20 * 1024 * 1024, kinds: "images, PDFs and text files"});
-  const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|log|ya?ml|toml|ini|xml|html?|css|jsx?|tsx?|py|sql|sh|rb|go|java|rs)$/i;
-  const BINARY_EXT = /\.(png|jpe?g|gif|webp|pdf)$/i;
+  let limits = Object.freeze({files: 10, bytes: 20 * 1024 * 1024, kinds: "images, PDFs, Word and text files"});
+  // The lists the server holds (connectors/attachments.py `limits()`), as the offline default: the page reads the server's own with setLimits, so the two cannot drift (D440, A4).
+  const DEFAULT_LISTS = {text_ext: ["txt", "md", "markdown", "csv", "tsv", "json", "jsonl", "log", "yaml", "yml", "toml", "ini", "xml", "html", "htm", "css", "js", "jsx", "ts", "tsx", "py",
+    "sql", "sh", "rb", "go", "java", "rs", "c", "h", "cc", "cpp", "hpp", "cs", "php", "swift", "kt", "scala", "lua", "r", "tex", "ipynb", "tf", "gradle", "properties", "conf", "cfg",
+    "bat", "ps1"], text_names: ["makefile", "dockerfile", "readme", "license"], binary: ["png", "jpg", "jpeg", "gif", "webp", "pdf"], word: ["docx"], office_refused: ["xlsx", "xls", "pptx", "ppt"]};
+  let lists = DEFAULT_LISTS;
+  const BLOCKED = /^(\.env.*|id_rsa.*|credentials.*|.*\.pem|.*\.key)$/i;          // names that usually hold a secret: never attached
+  const wordList = v => (Array.isArray(v) ? v.filter(x => typeof x === "string" && /^[a-z0-9]{1,12}$/i.test(x)).map(x => x.toLowerCase()) : []);
+  const extOf = name => { const i = name.lastIndexOf("."); return i > 0 ? name.slice(i + 1).toLowerCase() : ""; };
+
+  function setLimits(payload) {
+    if (!isObj(payload)) return false;
+    const next = {};
+    Object.keys(DEFAULT_LISTS).forEach(k => { const got = wordList(payload[k]); next[k] = got.length ? got : DEFAULT_LISTS[k]; });
+    lists = next;
+    const files = Number.isInteger(payload.max_files) && payload.max_files > 0 ? payload.max_files : limits.files;
+    const bytes = Number.isInteger(payload.max_bytes) && payload.max_bytes > 0 ? payload.max_bytes : limits.bytes;
+    limits = Object.freeze({files, bytes, kinds: limits.kinds});
+    if (ChatSearch) ChatSearch.limits = limits;
+    return true;
+  }
 
   function request(q, scope, includeArchived) {
     const words = clean(q);
@@ -70,11 +89,14 @@
     const name = clean(file.name);
     if (!Number.isFinite(file.size) || file.size <= 0) return name + " is empty.";
     if (file.size > limits.bytes) return name + " is over " + limits.bytes / (1024 * 1024) + " MB.";
-    if (!BINARY_EXT.test(name) && !TEXT_EXT.test(name)) return "Only " + limits.kinds + " can be attached.";
-    return "";
+    const ext = extOf(name);
+    if (lists.office_refused.includes(ext)) return name + ": Excel and PowerPoint files cannot be attached. Save it as CSV or PDF, or paste the text.";
+    if (ext === "doc") return name + ": save it as a .docx Word file to attach it.";
+    const takes = lists.binary.includes(ext) || lists.word.includes(ext) || (!BLOCKED.test(name) && (lists.text_ext.includes(ext) || (ext === "" && lists.text_names.includes(name.toLowerCase()))));
+    return takes ? "" : name + ": only " + limits.kinds + " can be attached.";
   }
 
-  const ChatSearch = {request, scopeOf, results, archiveButton, checkFile, limitsNote, limits};
+  const ChatSearch = {request, scopeOf, results, archiveButton, checkFile, limitsNote, limits, setLimits};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatSearch;
   else root.ChatSearch = ChatSearch;
 })(globalThis);

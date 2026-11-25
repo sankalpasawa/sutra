@@ -40,7 +40,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
 from sutra_app.connectors.chat_blocks import join_text
-from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
+from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name, limits as attachment_limits_of
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
 from sutra_app.connectors.errors import CallCancelledError, ConnectorError, ReplyTruncatedError
@@ -131,6 +131,10 @@ def build_router() -> APIRouter:
         db = _need(request, "db")
         found = await run_blocking(lambda: ChatSearch(db).search(q, scope=scope, include_archived=include == "archived", limit=MAX_RESULTS))
         return respond(request, {"results": found})
+
+    @router.get("/chats/attachment-limits", summary="What can be attached to a chat")
+    async def attachment_limits(request: Request) -> RedactedJSONResponse:
+        return respond(request, attachment_limits_of())
 
     @router.post("/chats/{sid}/archive", summary="Archive a chat (a mark)", dependencies=[Depends(require_token)])
     async def archive(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:

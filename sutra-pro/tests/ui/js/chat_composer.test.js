@@ -699,3 +699,19 @@ test("FR-3: the panel and the home page refuse a team send while a file is held,
   assert.match(home, /held\.state\(\)\.files\.length > 0\) \{ showBanner\(\{text: root\.ChatComposer\.TEAM_FILES\}\)/);
   assert.equal(ChatComposer.TEAM_FILES, "Files go only to the model. Remove them, or ask the model.");
 });
+
+test("A4: the composer asks the server for the attachment lists once and the check uses them; a failed read leaves the built-in lists", async () => {
+  const gets = [];
+  const CS = require(path.join(JS, "chat_search.js"));
+  globalThis.ChatSearch = CS;
+  const api = {calls: [], post: async () => ({id: ID, kind: "text", size: 5}), get: async p => { gets.push(p); return {text_ext: ["zzz"], text_names: [], binary: [], word: [], office_refused: []}; }};
+  const c = create({api, sid: SID, mode: "direct", readFile: async () => "aGVsbG8=", onChange: () => {}});
+  await new Promise(r => setTimeout(r, 5));
+  assert.deepEqual(gets, ["/api/chats/attachment-limits"]);
+  create({api, sid: SID, mode: "direct", onChange: () => {}});                                 // a second composer on the page does not ask again
+  assert.equal(gets.length, 1);
+  await c.addFiles([file("a.zzz"), file("a.txt")]);
+  assert.deepEqual(c.state().files.map(f => f.status === "failed"), [false, true]);
+  assert.equal(CS.setLimits({}), true);
+  delete globalThis.ChatSearch;
+});

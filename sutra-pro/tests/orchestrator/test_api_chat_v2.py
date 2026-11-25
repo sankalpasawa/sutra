@@ -384,3 +384,31 @@ def test_the_session_names_a_real_running_direct_turn_until_its_reply_is_stored(
 def test_the_old_name_of_the_running_set_is_the_same_set(rig):
     from sutra_app.orchestrator import direct_running
     assert chat_v2._running is direct_running.RUNNING
+
+
+def test_the_attachment_limits_are_served_without_a_token_and_are_the_stores_own_lists(rig):
+    """A4: one list, read by the page; the route is not taken for a session id."""
+    client, *_ = rig
+    r = client.get("/api/chats/attachment-limits")
+    assert r.status_code == 200
+    got = r.json()
+    assert got["max_files"] == 10 and got["inline_chars"] == 40_000 and "docx" in got["word"] and "py" in got["text_ext"] and "c" in got["text_ext"]
+
+
+def test_a_word_file_goes_through_the_routes_and_reaches_the_model_as_text(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = _spy_on_model_input(services)
+    import io
+
+    import docx
+    d = docx.Document()
+    d.add_paragraph("WORD-BODY-MARKER")
+    out = io.BytesIO()
+    d.save(out)
+    ref = _upload(client, sid, "plan.docx", out.getvalue())
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "summarise", "attachments": [ref], "names": ["plan.docx"]}, headers=H)
+    assert r.status_code == 202 and r.json()["files"][0]["sent"] == "text"
+    assert wait_for(lambda: bool(seen)) and "WORD-BODY-MARKER" in seen[0].text
+    bad = client.post(f"/api/chats/{sid}/attachments", json={"name": "x.docx", "content_b64": base64.b64encode(b"nope").decode()}, headers=H)
+    assert error_code(bad, 422) == "validation" and "x.docx could not be read as a Word file" in bad.json()["error"]["message"]

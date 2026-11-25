@@ -47,11 +47,30 @@ test("archive and un-archive appear where the app allows them", () => {
 });
 
 test("the attachment limits are shown and checked", () => {
-  assert.equal(CS.limitsNote(), "Up to 10 files, 20 MB each: images, PDFs and text files. The model reads the first 40,000 characters of a text file.");
+  assert.equal(CS.limitsNote(), "Up to 10 files, 20 MB each: images, PDFs, Word and text files. The model reads the first 40,000 characters of a text file.");
   assert.equal(CS.checkFile({name: "a.png", size: 10}), "");
   assert.equal(CS.checkFile({name: "notes.md", size: 10}), "");
-  assert.match(CS.checkFile({name: "a.exe", size: 10}), /Only images, PDFs and text files/);
+  assert.equal(CS.checkFile({name: "a.exe", size: 10}), "a.exe: only images, PDFs, Word and text files can be attached.");
   assert.match(CS.checkFile({name: "big.png", size: 21 * 1024 * 1024}), /over 20 MB/);
   assert.match(CS.checkFile({name: "e.txt", size: 0}), /empty/);
   assert.match(CS.checkFile(null), /could not be read/);
+});
+
+test("D440: Word and the added source types are taken; secret-bearing names, Excel and PowerPoint are refused in a sentence that names the file", () => {
+  ["plan.docx", "main.c", "x.swift", "a.ipynb", "Makefile", "README", "Dockerfile", "data.jsonl"].forEach(name => assert.equal(CS.checkFile({name, size: 10}), "", name));
+  [".env", ".env.local", "id_rsa", "credentials.json", "server.pem", "my.key"].forEach(name => assert.equal(CS.checkFile({name, size: 10}), name + ": only images, PDFs, Word and text files can be attached.", name));
+  assert.equal(CS.checkFile({name: "sheet.xlsx", size: 10}), "sheet.xlsx: Excel and PowerPoint files cannot be attached. Save it as CSV or PDF, or paste the text.");
+  assert.match(CS.checkFile({name: "deck.pptx", size: 10}), /Excel and PowerPoint files cannot be attached/);
+  assert.equal(CS.checkFile({name: "old.doc", size: 10}), "old.doc: save it as a .docx Word file to attach it.");
+});
+
+test("D440 A4: the lists the server sends replace the built-in ones; a bad payload changes nothing", () => {
+  assert.equal(CS.setLimits(null), false);
+  assert.equal(CS.checkFile({name: "a.zzz", size: 10}).length > 0, true);
+  assert.equal(CS.setLimits({max_files: 5, max_bytes: 1048576, text_ext: ["zzz", "<b>"], text_names: [], binary: [], word: [], office_refused: []}), true);
+  assert.equal(CS.checkFile({name: "a.zzz", size: 10}), "");
+  assert.match(CS.checkFile({name: "a.txt", size: 10}), /only images/);               // the server's list is the whole truth once it was read
+  assert.match(CS.checkFile({name: "a.zzz", size: 2 * 1048576}), /over 1 MB/);
+  assert.equal(CS.setLimits({}), true);                                                   // empty lists fall back to the built-in ones
+  assert.equal(CS.checkFile({name: "a.txt", size: 10}), "");
 });
