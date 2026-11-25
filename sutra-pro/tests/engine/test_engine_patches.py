@@ -4812,6 +4812,33 @@ def test_p44_t1b_the_hosts_typed_out_register(p44_ask):
     assert run.paused is None and run.hosts_asked == {"api.made-up.invalid": True}
 
 
+@pytest.mark.parametrize("answer", ["Option 1", "Option 2"])
+def test_p44_t1b_the_host_question_loses_no_other_workflow_of_its_batch(p44_reg, monkeypatch, answer):
+    """R1-4: one batch registers a workflow without hosts and asks about the other's. The question takes coordination's
+    schedule turn; after the answer the batch-mate is still registered and coordination still schedules it."""
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+    hosted, other = p44_reg.proposal(run)[0], {**sort_proposals("x")[1], "dependencies": []}
+    again = hosted if answer == "Option 1" else {**hosted, "real_run": None}
+    it, turns = iter([[hosted, other], [again]]), []
+
+    def turn():
+        turns.append((run.turn, run.handoff.get("kind")))
+        if run.turn == "adaptation":
+            run._agree(next(it))
+        else:
+            run.turn = None
+    monkeypatch.setattr(run, "_dispatch_turn", turn)
+    run.post("user", "Build it, please")
+    run._run()
+    assert run.paused["kind"] == "hosts" and [w["name"] for w in run.workflows] == [other["name"]], run.rejections
+    assert ("coordination", "schedule") not in turns, turns
+    run.post("user", answer)
+    run._run()
+    assert run.paused is None and turns[-1] == ("coordination", "schedule"), turns
+    assert sorted(w["name"] for w in run.workflows) == sorted([other["name"], hosted["name"]]), run.rejections
+    assert all(w["status"] == "registered" for w in run.workflows), run.workflows
+
+
 def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
     run, _, _ = p44_ask()
     assert "hosts" in j2ft.AUTO_ASK
