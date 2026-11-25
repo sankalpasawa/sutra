@@ -3808,6 +3808,20 @@ def test_p41_secret_file_rules(j2ft, tmp_path, monkeypatch):
         "secret_files": {"API_CRED_FILE": os.path.expanduser("~/home.txt")}}
 
 
+def test_p41_case_variant_of_a_sign_in_file_is_refused(j2ft, tmp_path, monkeypatch):
+    """R1-1: on a case-insensitive disk (macOS, Windows default) an upper-cased path names the same sign-in file: refused."""
+    claude = tmp_path / "claudecfg"
+    claude.mkdir()
+    (claude / "creds.json").write_text(P41_CRED)
+    if not (tmp_path / "CLAUDECFG").exists():
+        pytest.skip("the temp folder's file system is case-sensitive: a case variant is another file there")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    variant = str(tmp_path / "CLAUDECFG" / "creds.json")
+    probs = j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": variant}}, j2ft.squash(f"use {variant}"),
+                                       str(tmp_path / "run"))
+    assert any("sign-in" in x for x in probs), probs
+
+
 @pytest.fixture
 def p41_reg(j2ft, tmp_path, monkeypatch):
     """register(**fields): a fresh p35-style run (copy.py reading in/, writing out/) whose request names the made-up secret

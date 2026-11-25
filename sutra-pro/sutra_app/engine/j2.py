@@ -805,6 +805,15 @@ def real_run_env_fields(rr):
     return {k: v for k, v in out.items() if v}
 
 
+def _self_and_parents(p):
+    """P41 (D446): p, then each folder above it, up to the root."""
+    while True:
+        yield p
+        if os.path.dirname(p) == p:
+            return
+        p = os.path.dirname(p)
+
+
 def real_run_env_problems(rr, source, run_dir):
     """P41 (D446): why a planned real run's settings and secret_files are not usable ([] when usable or absent). Structure
     only: each a {name: string} object; names match ENV_NAME, are no llm.RUN_PASS_NAMES name (upper-case compare), not a
@@ -832,7 +841,8 @@ def real_run_env_problems(rr, source, run_dir):
                 out.append(f"real_run {key} {n} holds a NUL character")
     out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
         {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
-    locked = [os.path.realpath(x) for x in llm.login_homes() + [_repo_root(), run_dir]]
+    # by file identity, not by name: a case variant names the same file on a case-insensitive disk (macOS, Windows)
+    locked = [os.stat(x) for x in llm.login_homes() + [_repo_root(), run_dir] if os.path.exists(x)]
     for n, f in maps.get("secret_files", {}).items():
         p = os.path.expanduser(f) if f == "~" or f.startswith("~/") else f
         if "\0" in p:
@@ -847,7 +857,7 @@ def real_run_env_problems(rr, source, run_dir):
         r = os.path.realpath(p)
         if not os.path.isfile(r):
             out.append(f"real_run secret file {f} is not an existing file")
-        elif any(r == x or llm.inside(r, x) for x in locked):
+        elif any(os.path.samestat(os.stat(q), s) for q in _self_and_parents(r) for s in locked):
             out.append(f"real_run secret file {f} may not be in a sign-in folder of Claude, Codex or gh, the app's data, "
                        "the repo or the run folder")
     return out
