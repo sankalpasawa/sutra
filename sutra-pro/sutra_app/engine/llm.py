@@ -14,6 +14,9 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
     sandbox_on, sandbox_status       the sandbox (D245): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
                                      when the sandbox runtime (J2_SANDBOX_CMD, default srt) is found, else off; offline it is J2's (J2_SANDBOX=1)
     inside                           J2's helper: a path strictly inside a folder
+    run_env, RUN_PASS_NAMES          the allowlisted environment of a script the engine runs, plus what its plan states (D446)
+    is_loader_name, RUN_LOADER_NAMES a fixed safety guardrail of loader names, not a secret detector (D446)
+    login_homes                      where the CLI sign-ins and the app's data live: never a plan's secret file (D446)
     LAST_META      cleared before each call, then filled from the result (model, provider, tokens, usd, duration_ms,
                    structured); a mock call leaves it empty, as J2's did
     MOCK, PROVIDER, MODEL    what J2 reads; fixed by `configure`. In mock mode PROVIDER and MODEL are None, as in J2
@@ -41,6 +44,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Optional
 
+from sutra_app.connectors.env import WINDOWS_PASS_NAMES
 from sutra_app.library.replies import close_json, extract_json     # re-exported: one copy, tested in test_lib_replies.py
 from sutra_app.library.types import clip
 
@@ -53,6 +57,7 @@ __all__ = [
     "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
     "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS", "NodeMeter", "NodeCapReached", "CAP_WORDS",
+    "RUN_PASS_NAMES", "RUN_LOADER_NAMES", "run_env", "is_loader_name", "login_homes",
 ]
 
 MOCK_ENV = ("SUTRA_MOCK", "SUTRA_OFFLINE", "STUDIO_MOCK")     # any of them set to "1" means mock mode (D36)
@@ -157,6 +162,41 @@ def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, s
 def sandbox_on() -> bool:
     """J2's switch: builders' commands, the test rerun and a real run go through a sandbox (`sandbox_status`)."""
     return sandbox_status()[0]
+
+
+# D446: the whole environment of a script the engine runs (real run, dry run, test rerun) is an allowlist, never a blocklist.
+RUN_PASS_NAMES: tuple[str, ...] = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR") + WINDOWS_PASS_NAMES
+# D446: a fixed safety guardrail, not a secret detector: names that change how a runtime or the dynamic loader starts a
+# program. Entries ending "_" are prefixes. Never extended by pattern.
+RUN_LOADER_NAMES: tuple[str, ...] = ("LD_", "DYLD_", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT")
+
+
+def run_env(extra: Optional[Mapping[str, str]] = None, environ: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+    """The whole environment of a script the engine runs (real run, dry run, test rerun; D446): the RUN_PASS_NAMES found in
+    environ (default os.environ), then extra (the plan's settings and secret-file paths, checked by _register) on top."""
+    source = os.environ if environ is None else environ
+    return {**{n: source[n] for n in RUN_PASS_NAMES if n in source}, **(extra or {})}
+
+
+def is_loader_name(name: str) -> bool:
+    """D446: True when name (upper-cased) is in RUN_LOADER_NAMES, or starts with one of its "_"-ending prefixes."""
+    n = name.upper()
+    return any(n.startswith(x) if x.endswith("_") else n == x for x in RUN_LOADER_NAMES)
+
+
+def login_homes(environ: Optional[Mapping[str, str]] = None) -> list[str]:
+    """Where the sign-ins the app relies on live, and the app's own data: a plan may never hand a script a file there (D446).
+    Claude ($CLAUDE_CONFIG_DIR, ~/.claude, ~/.claude.json), Codex ($CODEX_HOME, ~/.codex), gh ($GH_CONFIG_DIR,
+    ${XDG_CONFIG_HOME:-~/.config}/gh, %APPDATA%/GitHub CLI), the app ($SUTRA_DATA_DIR, $SUTRA_ENV_FILE,
+    paths.default_data_dir(), paths.default_env_file()). Unset ones left out; duplicates dropped."""
+    from . import paths      # lazily: paths is the host's module
+    env = os.environ if environ is None else environ
+    xdg = env.get("XDG_CONFIG_HOME") or "~/.config"
+    appdata = env.get("APPDATA")
+    found = [env.get("CLAUDE_CONFIG_DIR"), "~/.claude", "~/.claude.json", env.get("CODEX_HOME"), "~/.codex", env.get("GH_CONFIG_DIR"),
+             os.path.join(xdg, "gh"), appdata and os.path.join(appdata, "GitHub CLI"), env.get("SUTRA_DATA_DIR"),
+             env.get("SUTRA_ENV_FILE"), str(paths.default_data_dir(env)), str(paths.default_env_file(env))]
+    return list(dict.fromkeys(os.path.expanduser(p) for p in found if p))
 
 
 def _tool_problems(tools) -> list:

@@ -722,3 +722,41 @@ def test_builder_tools_are_on_live_with_a_provider_that_can_run_them_and_follow_
     llm.configure()
 
 
+
+
+def test_run_env_keeps_only_the_allowlist():
+    """D446: a script the engine runs gets only the allowlisted names found, plus what the plan states; nothing looks at a
+    name's meaning (made-up values)."""
+    environ = {n: "x" for n in ("PATH", "HOME", "LANG", "TMPDIR", "SYSTEMROOT", "SUT22_LEAK", "J2_SMTP_PASSWORD", "PYTHONPATH",
+                                "HTTPS_PROXY", "SUTRA_ENV_FILE", "CLAUDE_CONFIG_DIR")}
+    assert set(llm.run_env(environ=environ)) == {"PATH", "HOME", "LANG", "TMPDIR", "SYSTEMROOT"}
+    assert llm.run_env({"PLAN_LEVEL": "basic"}, environ=environ) == {
+        "PATH": "x", "HOME": "x", "LANG": "x", "TMPDIR": "x", "SYSTEMROOT": "x", "PLAN_LEVEL": "basic"}
+    assert set(llm.RUN_PASS_NAMES) >= {"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SYSTEMROOT", "APPDATA"}
+
+
+def test_is_loader_name_fixed_list():
+    """D446: the loader names are a fixed safety guardrail, not a secret detector: an exact list, compared upper-case."""
+    for name in ("LD_PRELOAD", "ld_library_path", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH",
+                 "PERL5OPT", "RUBYOPT"):
+        assert llm.is_loader_name(name), name
+    for name in ("LDAP_HOST", "NODE_ENV", "PYTHONUNBUFFERED", "PLAN_LEVEL"):
+        assert not llm.is_loader_name(name), name
+    assert len(llm.RUN_LOADER_NAMES) == 7, "growing the guardrail list is a decision (D446)"
+
+
+def test_login_homes_overrides_and_defaults(tmp_path):
+    """D446: each CLI's sign-in home counts with its override and its default; the app's data too; an unset one is absent."""
+    over = {n: str(tmp_path / n.lower()) for n in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "APPDATA",
+                                                  "SUTRA_DATA_DIR")}
+    homes = llm.login_homes(over)
+    for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "GH_CONFIG_DIR", "SUTRA_DATA_DIR"):
+        assert over[name] in homes, name
+    for default in ("~/.claude", "~/.claude.json", "~/.codex"):
+        assert os.path.expanduser(default) in homes, default
+    assert os.path.join(over["XDG_CONFIG_HOME"], "gh") in homes
+    assert os.path.join(over["APPDATA"], "GitHub CLI") in homes
+    assert len(homes) == len(set(homes))
+    bare = llm.login_homes({})
+    assert not any(str(tmp_path) in h for h in bare), "an unset variable is absent"
+    assert os.path.join(os.path.expanduser("~/.config"), "gh") in bare
