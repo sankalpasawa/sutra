@@ -51,6 +51,7 @@ from .models import (
 from .policy import Resolved, RoutingPolicy
 from .quota_windows import plan_label
 from .schema import fits_native, schema_sha, to_json_schema
+from .attachments import PDF_PROVIDERS
 from .budget import carry_chars
 from .discover import explain_missing
 from .transcript import render_carry_over
@@ -540,7 +541,7 @@ class Router:
         usable: list[str] = []
         models: dict[str, str] = {}
         for provider in order:
-            reason = self._skip_reason(provider, bool(req.images), bool(tools))
+            reason = self._skip_reason(provider, bool(req.images), bool(tools), need_pdf=any(str(p).lower().endswith(".pdf") for p in req.images))
             if reason is None and getattr(req, "run_tools", None) is not None and not self._connectors[provider].capabilities.run_tools:
                 reason = RUN_TOOLS_REFUSED          # D245: a builder tools call goes only where it can run, never to a fallback without tools
             if reason is None:
@@ -568,7 +569,7 @@ class Router:
                                                          "reason": reason, "used": usable[0]})
         return Plan(order=tuple(usable), skipped=tuple(skipped), resolved=resolved, models=models, tools=tools, pick=pick, pick_miss=miss)
 
-    def _skip_reason(self, provider: str, need_images: bool, need_tools: bool) -> Optional[str]:
+    def _skip_reason(self, provider: str, need_images: bool, need_tools: bool, need_pdf: bool = False) -> Optional[str]:
         connector = self._connectors.get(provider)
         if connector is None:
             return "not configured"
@@ -579,6 +580,8 @@ class Router:
             return "disabled in the routing policy"
         if need_images and not connector.capabilities.images:
             return "cannot take images"
+        if need_pdf and provider not in PDF_PROVIDERS:
+            return "cannot take a PDF"          # D440: a PDF is judged by the provider that will run, so a fallback never meets one it cannot read
         if need_tools and not connector.capabilities.mcp:
             return "cannot use tools"
         if provider != "stub":

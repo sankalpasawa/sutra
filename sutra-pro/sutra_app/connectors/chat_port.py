@@ -217,8 +217,23 @@ class RouterChatPort:
             return None
         if self.attachments is None:
             raise InvalidRequestError("attachments are not available here", detail={"names": [a.name for a in turn.attachments]})
-        provider = self._chosen(session_id) or self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn))).order[0]
-        return deliver(self.attachments, turn.attachments, provider)
+        return deliver(self.attachments, turn.attachments, self._provider_for(session_id, turn))
+
+    def _provider_for(self, session_id: str, turn: ChatTurnIn) -> str:
+        """The provider that will run this turn's files: the chat's choice, else the first the router would try FOR THESE FILES (it drops a provider that cannot take a PDF, so a
+        fallback never meets one: D440, FR-11). When the files leave no provider, the refusal names them."""
+        chosen = self._chosen(session_id)
+        if chosen is not None:
+            return chosen
+        paths = [str(p) for p in (self.attachments.path_of(a.id) for a in turn.attachments if a.kind in ("image", "pdf")) if p is not None]       # type: ignore[union-attr]
+        try:
+            return self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn), images=paths)).order[0]
+        except NoProviderError as exc:
+            pdfs = [a.name for a in turn.attachments if a.kind == "pdf"]
+            if not pdfs:
+                raise
+            raise InvalidRequestError(f"{', '.join(pdfs)}: only Claude can read a PDF, and Claude cannot run now. Remove the PDF or sign in to Claude.",
+                                      detail={"names": pdfs, "kind": "pdf"}) from exc
 
     def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
         d = self._delivery(session_id, turn)

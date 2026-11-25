@@ -184,3 +184,24 @@ def test_the_port_preflight_is_the_delivery_without_a_turn(tmp_path):
     port.choose("cs_port_a", "codex")
     with pytest.raises(InvalidRequestError, match="p.pdf"):
         port.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[pdf]))
+
+
+def test_a_pdf_is_judged_by_the_provider_that_will_run_so_a_fallback_never_meets_one(tmp_path):
+    """D440 FR-11: with a PDF in the turn the router plans only providers that read it; Claude down is a refusal that names the file, never a silent drop."""
+    from sutra_app.connectors.models import AskRequest
+    port, router, *_ = make(tmp_path)
+    port.attachments = AttachmentStore(tmp_path / "att")
+    pdf = port.attachments.save("plan.pdf", PDF).model_copy(update={"name": "plan.pdf"})
+    paths = [str(port.attachments.path_of(pdf.id))]
+    assert router.plan(AskRequest(user="x", ctx=RouteContext(), images=paths)).order == ("claude",)
+    assert "codex" in router.plan(AskRequest(user="x", ctx=RouteContext())).order                 # no file: codex stays a fallback
+    from sutra_app.connectors.models import ConnectorConfig
+    from sutra_app.connectors.router import Router
+    from sutra_app.connectors.usage import MemoryUsageSink
+    from test_chat_port import Named, SignedOut, policy
+    cfg = ConnectorConfig(data_dir=tmp_path / "d2", work_root=tmp_path / "w2", claude_exe=sys.executable, codex_exe=sys.executable)
+    down = Router({"claude": SignedOut("claude", cfg), "codex": Named("codex", cfg)}, policy(), usage_sink=MemoryUsageSink(), sleep=lambda s: None, rng=lambda: 0.0)
+    port2 = RouterChatPort(down, attachments=port.attachments)
+    with pytest.raises(InvalidRequestError, match="plan.pdf"):
+        port2.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[pdf]))
+    assert port2.preflight("cs_port_a", ChatTurnIn(text="x")) == ()

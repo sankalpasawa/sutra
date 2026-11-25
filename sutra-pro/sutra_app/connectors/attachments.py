@@ -23,7 +23,7 @@ from sutra_app import oslayer
 from .chat_models import AttachmentRef
 from .errors import InvalidRequestError
 
-__all__ = ["AttachmentStore", "Delivery", "FileReceipt", "deliver", "sniff", "clean_name", "MAX_BYTES", "MAX_PER_MESSAGE", "INLINE_CHARS", "TEXT_EXT"]
+__all__ = ["PDF_PROVIDERS", "AttachmentStore", "Delivery", "FileReceipt", "deliver", "sniff", "clean_name", "MAX_BYTES", "MAX_PER_MESSAGE", "INLINE_CHARS", "TEXT_EXT"]
 
 MAX_BYTES = 20 * 1024 * 1024
 MAX_PER_MESSAGE = 10
@@ -31,6 +31,7 @@ INLINE_CHARS = 40_000
 _BINARY = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp", "application/pdf": ".pdf"}
 TEXT_EXT = (".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".log", ".yaml", ".yml", ".toml", ".ini", ".xml", ".html", ".htm", ".css",
             ".js", ".jsx", ".ts", ".tsx", ".py", ".sql", ".sh", ".rb", ".go", ".java", ".rs")      # `.env` and secret-bearing names are not listed
+PDF_PROVIDERS = ("claude",)          # the providers that read a PDF as a document block; Codex takes images and text only
 _ID = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -152,7 +153,7 @@ def deliver(store: AttachmentStore, refs: Sequence[AttachmentRef], provider: str
         if path is None:
             raise InvalidRequestError(f"attachment not found: {ref.name or ref.id[:12]}")
         kind = ref.kind
-        if kind == "image" or (kind == "pdf" and provider == "claude"):
+        if kind == "image" or (kind == "pdf" and provider in PDF_PROVIDERS):
             images.append(str(path))
             receipts.append(FileReceipt(name=ref.name, kind=kind, sent="image" if kind == "image" else "pdf"))
         elif kind == "pdf":
