@@ -160,10 +160,12 @@
   const unesc = x => x.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const escape = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
   // A made file's title: the plan part(s) whose workflows made it (the same link as filesOfPart), else its builder's line, else its
-  // file name. Never the project's title, never a guess from the file name.
+  // file name. A file made by three or more parts (a website made by every part) keeps the page's own title: null. Never a guess
+  // from the file name.
   function artTitle(s, row) {
     const names = ((s && s.studio && s.studio.parts) || []).filter(p => p && filesOfPart(p, [row]).length).map(p => String(p.name || p.sec || ""));
-    if (names.length) return names.length === 1 ? names[0] : names.length === 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+    if (names.length > 2) return null;
+    if (names.length) return names.join(" and ");
     const line = summaryOf(s, {workflows: row.workflows || []});
     return line !== WORDS.finished ? line : base(row.file);
   }
@@ -174,7 +176,8 @@
     let i = 0;
     return html.replace(/(<button type="button" class="sartc" data-art="[^"]*">[\s\S]*?<b>)([^<]*)(<\/b>)/g, (all, a, title, b) => {
       const row = rows[i++];
-      return row && project.has(title) ? a + escape(artTitle(s, row)) + b : all;
+      const name = row && project.has(title) ? artTitle(s, row) : null;
+      return name === null ? all : a + escape(name) + b;
     });
   }
 

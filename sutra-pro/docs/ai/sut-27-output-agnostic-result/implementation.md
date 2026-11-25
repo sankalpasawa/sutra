@@ -16,6 +16,7 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T5 decision D450 | done | `SUT-27: D450 record the decision` (D450 free after fetch: origin/main max D448, SUT-28 has D449). `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_docs.py tests/test_ownership.py tests/test_traceability.py -q`: exit 0 |
 | T6 | final targeted run, no commit |
 | owner fixes after the beta look | done | `SUT-27: D450 readable Download links, and each made file is titled by its part` |
+| owner decision: 3+ parts keep the page's title | done | `SUT-27: D450 a file made by three or more parts keeps the page's title` (41 node pass; goldens 54 pass; pytest UI list exit 0, 363 passed, 5 skipped; browser 7 passed) |
 
 ### T1
 
@@ -69,7 +70,7 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | dark | #9db8de | #232624 (`--s-surface`) | 7.53:1 | |
 
    Pinned by a unit test on `result_view.css` (both rules use `--s-accent`, no `--s-accentink` left) and by the script-run browser test, which measures the Download link against `#rvpane` in both themes (>= 4.5).
-2. "What the team made" cards. The page titles every card with the row's label, and every row of a type carries the type's label, so each card repeated the project's title. In the `sTeamwork` wrapper (string level), a card whose title is the project's title (`output_label` or the output type's label) is titled by `artTitle`: the plan part(s) whose workflows made the file (same link as `filesOfPart`; two parts "A and B", more "A, B and N more"), else the builder's line for its workflows, else the file name. The file name stays the second line. Cards are matched to rows in order. A document set's cards already name their documents ("Product requirements") and are not changed. Visual change on a website run: its one card, "Website", now reads the parts that built the site (the website fixture: "Item 1, Item 2 and 2 more"). Goldens unchanged (they do not load modules).
+2. "What the team made" cards. The page titles every card with the row's label, and every row of a type carries the type's label, so each card repeated the project's title. In the `sTeamwork` wrapper (string level), a card whose title is the project's title (`output_label` or the output type's label) is titled by `artTitle`: the plan part(s) whose workflows made the file (same link as `filesOfPart`; one part "A", two parts "A and B"; three or more parts keep the page's own title, owner decision), else the builder's line for its workflows, else the file name. The file name stays the second line. Cards are matched to rows in order. A document set's cards already name their documents ("Product requirements") and are not changed. A website run's card is made by every part (the fixture: four), so it keeps "Website": no visual change there. Goldens unchanged (they do not load modules).
 
 ## Deviations
 

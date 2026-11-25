@@ -625,9 +625,14 @@ test("made files: each card is titled by the part that made it, never the projec
   // a card that already names itself (a document set's documents) keeps its title
   const docs = [row("prd.md", {label: "Product requirements", workflows: ["W-1"]})];
   assert.deepEqual(titles(RV.team(artCards(SCRIPT, docs), scriptRun({output_label: "Design documents", types: {}}), docs))[0], ["Product requirements", "prd.md"]);
-  // a website's one card repeats the project's title too: it names the parts that built it
-  assert.equal(titles(RV.team(artCards(WEB, WEBARTS), WEB, WEBARTS))[0][0], "Item 1, Item 2 and 2 more");
+  // one part, two parts: their names; three or more (a website made by every part): the page's own title stays
+  assert.equal(RV.artTitle(SCRIPT, row("x", {workflows: ["W-2"]})), "Write the report script");
   assert.equal(RV.artTitle(SCRIPT, row("x", {workflows: ["W-1", "W-2"]})), "Plan and Write the report script");
+  const three = scriptRun({studio: {parts: [{sec: "W-1", name: "A", workflows: ["W-1"]}, {sec: "W-2", name: "B", workflows: ["W-2"]}, {sec: "W-3", name: "C", workflows: ["W-3"]}]}});
+  assert.equal(RV.artTitle(three, row("x", {workflows: ["W-1", "W-2", "W-3"]})), null);
+  const threeRows = [row("all.txt", {label: "Environment report", workflows: ["W-1", "W-2", "W-3"]})];
+  assert.equal(titles(RV.team(artCards(three, threeRows), three, threeRows))[0][0], "Environment report");
+  assert.deepEqual(titles(RV.team(artCards(WEB, WEBARTS), WEB, WEBARTS))[0], ["Website", "version 5 · index.html"], "the website's card keeps its title");
   // escaped
   const evil = scriptRun({studio: {parts: [{sec: "W-2", name: '<img src=x onerror="y">', workflows: ["W-2"]}]}});
   assert.match(RV.team(artCards(evil, [ARTS[0]]), evil, [ARTS[0]]), /<b>&lt;img src=x onerror=&quot;y&quot;&gt;<\/b>/);
