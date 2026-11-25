@@ -5656,7 +5656,13 @@ class J2Run:
         note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
                 if self.output else "")
         r = j2_realization.plan_goal(goal, web=llm.tools_on(), log=lambda m: None, extra=note, types=types,
-                                     mocks=j2_realization.deliverable_mocks(goal, offline))
+                                     mocks=j2_realization.deliverable_mocks(goal, offline), trail=True)      # P44 (D449)
+        bad = [{"who": t["who"], "seconds": t["seconds"], "chars": len(t["raw"]), "raw": t["raw"][:20000]}
+               for t in r.pop("trail") if not t["parsed"]]      # P44 (D449): a reply that was not JSON is kept, the rest of the trail is not
+        if bad:
+            r["unparsed"] = bad
+            self.post("system", f"The planner's reply could not be read as JSON ({len(bad)} times); kept in deliverables.json "
+                                "under unparsed.")
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
         self.declared_secs = {n: [str(x) for x in spec.get("sections") or []]
                               for n, spec in j2_realization.new_types(r["plan"]).items()}

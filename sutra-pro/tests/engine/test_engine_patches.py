@@ -5178,3 +5178,30 @@ def test_p44_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
     told = p44_builder_prompt(j2ft, tmp_path, runner=True)
     assert j2ft.SCRIPT_ENV_RULE + hint in told, told[:2000]
     assert hint not in p44_builder_prompt(j2ft, tmp_path, runner=False)
+
+
+# ---- P44 (D449): the deliverables planner's replies that were not JSON are kept in deliverables.json -----------------------
+NOT_JSON = "Here is the plan: (not JSON)"      # made-up text, no model call
+
+
+def test_p44_the_deliverables_planners_unreadable_replies_are_kept(j2, make_run, monkeypatch):
+    """The plan and its one revision both come back as text: the run stops as before, and both replies are kept."""
+    real = j2.j2_realization.deliverable_mocks
+    monkeypatch.setattr(j2.j2_realization, "deliverable_mocks",
+                        lambda goal, names: {**real(goal, names), "plan": lambda rnd: NOT_JSON, "revise": lambda rnd: NOT_JSON})
+    run = make_run()
+    say(run, BREW_LAB)
+    assert run.outcome == "Stopped: the plan chose nothing J2 can build.", run.outcome
+    saved = json.loads((Path(run.dir) / "deliverables.json").read_text())
+    assert [(u["who"], u["raw"], u["chars"]) for u in saved["unparsed"]] == [("adaptation", NOT_JSON, len(NOT_JSON))] * 2, saved
+    assert "trail" not in saved
+    note = "The planner's reply could not be read as JSON (2 times); kept in deliverables.json under unparsed."
+    assert [m for m in run.chat if m.get("text") == note and m["who"] == "system"], run.chat[-5:]
+
+
+def test_p44_a_json_plan_keeps_no_unparsed_key(j2, make_run):
+    run = make_run()
+    say(run, BREW_LAB)
+    saved = json.loads((Path(run.dir) / "deliverables.json").read_text())
+    assert "unparsed" not in saved and "trail" not in saved and saved["deliverables"]
+    assert not [m for m in run.chat if "could not be read as JSON" in str(m.get("text"))]
