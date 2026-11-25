@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -4567,3 +4568,145 @@ def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
     assert not_named("~/Documents/Made", "read ~/Documents/Made Up/key.txt"), "a shorter file is not named"
     for said in ("read `~/Documents/Made Up/key.txt`?", "is it ~/Documents/Made Up/key.txt?", "yes ~/Documents/Made Up/key.txt! now"):
         assert not not_named("~/Documents/Made Up/key.txt", said), said
+
+
+# ---- P44 (D449): a real run's internet hosts; the dry run runs an offline command ----------------------------------------------
+# Made-up hosts only (.invalid, RFC 2606); nothing here resolves a name or reaches the internet.
+P44_DONE_WHEN = ["fetch.py saves the page title", "A test covers fetch.py with a fake server", "fetch.py ran for real on the folder"]
+P44_URL = "http://api.made-up.invalid/v1"
+MISSING, DEFAULT = object(), object()      # a field left out of the plan; the fixture's default value
+
+
+@pytest.fixture
+def p44_reg(j2ft, tmp_path, monkeypatch):
+    """new(request, goal, runner): a fresh run of the folder type whose brief names the made-up folder and host;
+    register(run, hosts, offline, folder, **fields): W-1 proposed with a real run on that folder: (run, registered, refused)."""
+    dst, home = tmp_path / "out", tmp_path / "home"
+    dst.mkdir()
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # Windows: expanduser reads USERPROFILE
+    counter = itertools.count(1)
+
+    def new(request=None, goal=None, runner=None):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-1000{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        if runner:
+            run.out = {**run.out, "test_runner": runner}
+        run.request = request or f"Build fetch.py and run it on {dst}: it reads {P44_URL} and writes title.txt"
+        run.goal, run.budget = goal or {"statement": "x", "done_when": list(P44_DONE_WHEN)}, 100
+        return run
+
+    def register(run=None, hosts=DEFAULT, offline=DEFAULT, folder=None, **fields):
+        run = run or new()
+        x, f = run.out["test_runner"][0], folder or str(dst)
+        rr = {"command": [x, "fetch.py", f, P44_URL], "folder": f, "reads": [], "why": "x", "checks": [3],
+              "expect": {"created": ["title.txt"], "changed": [], "deleted": []},
+              "hosts": ["api.made-up.invalid"] if hosts is DEFAULT else hosts,
+              "offline": {"command": [x, "fetch.py", f, "--offline"], "same_files": True} if offline is DEFAULT else offline,
+              **fields}
+        rr = {k: v for k, v in rr.items() if v is not MISSING}
+        reg, refused, _ = run._register([{**sort_proposals(f, fix=True)[0], "real_run": rr}])
+        return run, reg, refused
+    return SimpleNamespace(new=new, register=register, dst=dst, home=home)
+
+
+def test_p44_a_good_plan_registers_hosts_and_offline(p44_reg):
+    run, reg, refused = p44_reg.register(hosts=[" API.Made-Up.invalid ", "api.made-up.invalid"])
+    assert len(reg) == 1 and not refused, refused
+    x = run.out["test_runner"][0]
+    assert reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"]      # lower case, each once (Kaivan's real_hosts)
+    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", str(p44_reg.dst), "--offline"], "same_files": True}
+    run, reg, refused = p44_reg.register(hosts=MISSING, offline=MISSING)
+    assert len(reg) == 1 and not {"hosts", "offline"} & set(reg[0]["real_run"]), reg[0]["real_run"]
+    run, reg, refused = p44_reg.register(hosts=MISSING)      # offline without hosts is not stored
+    assert len(reg) == 1 and "offline" not in reg[0]["real_run"], reg[0]["real_run"]
+    (p44_reg.home / "x").mkdir()
+    run = p44_reg.new(request=f"Build fetch.py and run it on ~/x: it reads {P44_URL}")
+    run, reg, refused = p44_reg.register(run, folder="~/x", offline={"command": [x, "fetch.py", "~/x", "--offline"], "same_files": False})
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", os.path.expanduser("~/x"), "--offline"], "same_files": False}
+
+
+@pytest.mark.parametrize("case, want", [
+    ("missing", 'also needs "offline"'), ("no_same_files", "must be exactly"), ("same_files_text", "must be exactly"),
+    ("real_command", "is the real command"), ("no_folder", "offline: real_run command must pass the folder")])
+def test_p44_hosts_without_offline_are_refused_with_their_key(p44_reg, case, want):
+    x, f = "python3", str(p44_reg.dst)
+    offline = {"missing": MISSING, "no_same_files": {"command": [x, "fetch.py", f, "--offline"]},
+               "same_files_text": {"command": [x, "fetch.py", f, "--offline"], "same_files": "yes"},
+               "real_command": {"command": [x, "fetch.py", f, P44_URL], "same_files": True},
+               "no_folder": {"command": [x, "fetch.py", "--offline"], "same_files": True}}[case]
+    run, reg, refused = p44_reg.register(offline=offline)
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_offline"], refused
+    assert want in refused[0] and (case != "no_folder" or "offline: real_run command must pass the folder" in run.rejections[-1]["reason"])
+
+
+@pytest.mark.parametrize("host, ok", [
+    ("https://api.made-up.invalid", False), ("api.made-up.invalid/v1", False), ("*", False), ("*.invalid", False),
+    ("10.0.0.8", False), ("localhost", False), ("api.made-up.invalid:0", False), ("api.made-up.invalid:65536", False),
+    ("api.made-up.invalid:08", False), ("made-up", False), (5, False),
+    ("*.made-up.invalid", True), ("api.made-up.invalid:8443", True)])
+def test_p44_host_format_refused_and_accepted(p44_reg, host, ok):
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}: it reads {host} and {P44_URL}")
+    run, reg, refused = p44_reg.register(run, hosts=[host])
+    if ok:
+        assert len(reg) == 1 and reg[0]["real_run"]["hosts"] == [host], refused
+        return
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+    assert ("must be a list of host names" if host == 5 else "must be a host name") in refused[0], refused
+
+
+def test_p44_host_named_only_whole_in_brief_typed_or_picked(j2ft):
+    named = lambda h, *pieces: j2ft.host_named(h, [j2ft.squash(p) for p in pieces])
+    for said in ("https://api.made-up.invalid/v1 and", "api.made-up.invalid:8443/x", "api.made-up.invalid.", "(api.made-up.invalid)"):
+        assert named("api.made-up.invalid", said), said
+    for said in ("x.api.made-up.invalid", "notapi.made-up.invalid", "api.made-up.invalid.evil.example", "bob@api.made-up.invalid",
+                 "*.api.made-up.invalid"):
+        assert not named("api.made-up.invalid", said), said
+    assert named("api.made-up.invalid:8443", "use api.made-up.invalid"), "a port only narrows: it need not be written"
+    assert named("*.made-up.invalid", "use *.made-up.invalid") and not named("*.made-up.invalid", "made-up.invalid")
+    assert not named("api.made-up.invalid", "api.made-", "up.invalid"), "a host split across two texts is not named"
+
+
+def p44_option(run, monkeypatch):
+    """P43's option setup: one decision question whose first option names the made-up host."""
+    run._ask_user("Which host?", [{"question": "Which host should it reach?", "options": ["Use api.made-up.invalid", "Another host"],
+                                   "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+    monkeypatch.setattr(run, "_plan_stages", lambda: None)
+
+
+def test_p44_host_only_in_charter_or_decide_for_me_is_refused(p44_reg, monkeypatch):
+    """Owner answer 1: the charter (an agent writes it) and Decide for me never name a host; _fact_source would have."""
+    brief = f"Build fetch.py and run it on {p44_reg.dst}"
+    goal = {"statement": "x", "done_when": ["fetch.py saves the page title of api.made-up.invalid"] + P44_DONE_WHEN[1:]}
+    run, reg, refused = p44_reg.register(p44_reg.new(request=brief, goal=goal))
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"] and "not named" in refused[0], refused
+    assert "api.made-up.invalid" in run._fact_source()
+    run = p44_reg.new(request=brief)
+    p44_option(run, monkeypatch)
+    run.auto = True
+    run._auto_go()
+    assert [m for m in run.chat if m["who"] == "user"][-1].get("auto") and "picked" not in run.decisions[-1]
+    run, reg, refused = p44_reg.register(run)
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+    run = p44_reg.new(request=brief)
+    run.post("user", "api.made-up.invalid", auto=True)
+    run, reg, refused = p44_reg.register(run)
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+
+
+def test_p44_host_in_a_requester_click_registers(p44_reg, monkeypatch):
+    brief = f"Build fetch.py and run it on {p44_reg.dst}"
+    run = p44_reg.new(request=brief)
+    p44_option(run, monkeypatch)
+    run.post("user", "Option 1")
+    run._run()
+    assert run.decisions[-1]["picked"] == "Use api.made-up.invalid"
+    run, reg, refused = p44_reg.register(run)
+    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
+    run = p44_reg.new(request=brief)
+    run.post("user", "it calls api.made-up.invalid")
+    run, reg, refused = p44_reg.register(run)
+    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused

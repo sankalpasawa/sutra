@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P43" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P44" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -3112,6 +3112,96 @@ def env_missing(env):
         return [f for f in goal.get("facts")''', r'''                              + [m["text"] for m in self.chat if m["who"] == "user"]
                               + [d["picked"] for d in self.decisions if d.get("picked")]))      # P43 (D448)
         return [f for f in goal.get("facts")'''),
+    # ---- P44 (D449): a real run names the internet hosts it reaches and an offline command its dry run runs; only the hosts the
+    # Requester named count (the brief, their typed messages, their own picks), checked at registration
+    Edit("P44", "j2.py", r'''def _tree(root):
+''', r'''# P44 (D449): the internet hosts a real run may reach. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
+HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?")      # srt's allowedDomains form, narrowed
+
+
+def real_hosts(rr):
+    """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
+    return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
+
+
+def host_entry_ok(h):
+    """P44 (D449): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
+    return bool(HOST_ENTRY.fullmatch(h)) and not (":" in h and int(h.rpartition(":")[2]) > 65535)
+
+
+def host_pieces(request, decisions, chat):
+    """P44 (D449): where a host counts as named, each text squashed on its own: the brief, the Requester's own picks (P43)
+    and the Requester's typed messages. Never the charter (an agent writes it) and never Decide for me (auto)."""
+    return [squash(t) for t in [request or ""] + [d["picked"] for d in decisions if d.get("picked")]
+            + [m["text"] for m in chat if m["who"] == "user" and not m.get("auto")]]
+
+
+def host_named(h, pieces):
+    """P44 (D449): host h (lower case) is named whole in one piece. Its :port is left out (a port only narrows); *.x only
+    as written. Not after a name character, ".", "@" (an e-mail address names no host) or "*"; not before a name character
+    or a further ".label"."""
+    pat = r"(?<![\w.@*-])" + re.escape(re.sub(r":\d+\Z", "", h)) + r"(?![\w-]|\.[\w-])"
+    return any(re.search(pat, s) for s in pieces)
+
+
+def real_run_hosts_problems(rr, pieces):
+    """P44 (D449): why a planned real run's hosts are not usable ([] when usable or none): a list of strings, each an srt
+    allowedDomains entry of HOST_ENTRY's narrow form (no scheme, path, address, localhost, * or *.com), named whole."""
+    hosts = rr.get("hosts")
+    if hosts is None or hosts == []:
+        return []
+    if not (isinstance(hosts, list) and all(isinstance(x, str) for x in hosts)):
+        return ['real_run hosts must be a list of host names, like ["api.example.com"]']
+    out = []
+    for x in hosts:
+        h = x.strip().lower()
+        if not host_entry_ok(h):
+            out.append(f"real_run host {x!r} must be a host name like api.example.com, or *.example.com for its subdomains, "
+                       "with an optional :port; no scheme, path, address, localhost, * or *.com")
+        elif not host_named(h, pieces):
+            out.append(f"real_run host {x} is not named in the brief or the Requester's own answers: ask for it")
+    return out
+
+
+def real_run_offline_problems(rr, source, runner, run_dir):
+    """P44 (D449): a real run that names hosts also states "offline": {"command": [...], "same_files": bool}, the command its
+    dry run runs without internet access, checked as the real command is (real_run_problems) and not the same command."""
+    if not real_hosts(rr):
+        return []
+    off = rr.get("offline")
+    if off is None:
+        return ['real_run names hosts, so it also needs "offline": {"command": [...], "same_files": true or false}: the dry '
+                'run runs that command on copies without internet access']
+    if not (isinstance(off, dict) and set(off) == {"command", "same_files"} and isinstance(off["same_files"], bool)):
+        return ['real_run offline must be exactly {"command": [...], "same_files": true or false}']
+    if home_expanded({"command": off["command"]}).get("command") == home_expanded(rr).get("command"):
+        return ["real_run offline command is the real command: the dry run has no internet access, so give one that uses "
+                "made-up data instead"]
+    return ["offline: " + p for p in real_run_problems({**rr, "command": off["command"]}, source, runner, run_dir)]
+
+
+def real_run_net_fields(rr):
+    """P44 (D449): what _register stores of checked hosts: hosts (real_hosts) and offline (~ written out), only with hosts."""
+    if not real_hosts(rr):
+        return {}
+    return {"hosts": real_hosts(rr), "offline": {"command": home_expanded({"command": rr["offline"]["command"]})["command"],
+                                                 "same_files": rr["offline"]["same_files"]}}
+
+
+def _tree(root):
+'''),
+    Edit("P44", "j2.py", r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
+''', r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
+                if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
+                    continue
+                if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
+                                                    self.out.get("test_runner"), self.dir):
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_offline",)))
+                    continue
+                wf["real_run"].update(real_run_net_fields(w["real_run"]))      # P44 (D449): stored only with hosts
+'''),
 )
 
 OTHER_EDITS = (
@@ -3363,6 +3453,7 @@ PATCH_NOTES = {
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
     "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. When the answer gives such an item's fact (Identity's `confirmed`), its `to_be_confirmed` entry is dropped too (review R1-2): the item no longer waits on the Requester, so it is never blocked on that fact or asked for it again, is still never a confirmed fact, and passes only on its real run's receipt; an item Identity puts in `still_to_be_confirmed` keeps its entry. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers. When the paused question is one question with options and the Requester's own reply is a bare pick (`ONLY_PICK`, resolved by `option_picked`), `_run` records the option's full text as `picked` on the decision record; a pick Decide for me sent (its chat message is flagged `auto`) records nothing, so it never names a folder, a secret file or a charter fact. `_fact_source` (the source of `real_run_problems`, `real_run_env_problems`, `check_problems` and `requester_words`) and `_fact_problems` add every `picked` text; `real_run_problems` and `real_run_env_problems` get `_fact_source(pieces=True)`, each text squashed on its own, and `named_whole` accepts a path named whole in any one of them, so a path that ends one text is never read as going on into the next text's first word (review R1-1: a brief starting `CSV/Excel`). A typed bare option number or `Option n` from the Requester is their pick too (it is what a card click sends, and its message is not flagged `auto`); any other typed answer is never read as a pick",
+    "P44": "(D449; no model prompt changes in this part) a planned real run may name `hosts`, a list of srt allowedDomains entries of a narrow form (`HOST_ENTRY`: Kaivan's `HOST` from the J2 prototype 780f1eb9, with an optional `*.` and `:port` 1-65535; no scheme, path, address, localhost, `*` or `*.com`), each named whole (`host_named`: its port left out, a wildcard only as written, never after `@`) in one text of `host_pieces`: the brief, the Requester's own picks (P43) and their typed messages, never the charter and never Decide for me; a plan with hosts also states `offline` `{command, same_files}`, checked as the real command is (`real_run_problems`) and not the same command; `_register` refuses with the P22 keys `(\"real_run_hosts\",)` and `(\"real_run_offline\",)` and stores `hosts` (Kaivan's `real_hosts`: lower case, each once) and `offline` (~ written out) only with hosts",
 }
 
 
@@ -3540,7 +3631,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, P25 the raise "
         "question's text, and P30 Identity's intake and every builder's reply format and brief. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. P43 (D448) keeps an answer from confirming a real-run item, planned or not yet, and counts the Requester's own pick of an option (never Decide for me's) as their answer with the option's full text. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. P43 (D448) keeps an answer from confirming a real-run item, planned or not yet, and counts the Requester's own pick of an option (never Decide for me's) as their answer with the option's full text. P44 (D449) lets a real run name the internet hosts it reaches, dry-runs a stated offline command, and grants the hosts only to the approved run. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

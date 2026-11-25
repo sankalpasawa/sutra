@@ -961,6 +961,80 @@ def real_run(out_dir, rr, timeout):
         os.unlink(conf)
 
 
+# P44 (D449): the internet hosts a real run may reach. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
+HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?")      # srt's allowedDomains form, narrowed
+
+
+def real_hosts(rr):
+    """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
+    return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
+
+
+def host_entry_ok(h):
+    """P44 (D449): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
+    return bool(HOST_ENTRY.fullmatch(h)) and not (":" in h and int(h.rpartition(":")[2]) > 65535)
+
+
+def host_pieces(request, decisions, chat):
+    """P44 (D449): where a host counts as named, each text squashed on its own: the brief, the Requester's own picks (P43)
+    and the Requester's typed messages. Never the charter (an agent writes it) and never Decide for me (auto)."""
+    return [squash(t) for t in [request or ""] + [d["picked"] for d in decisions if d.get("picked")]
+            + [m["text"] for m in chat if m["who"] == "user" and not m.get("auto")]]
+
+
+def host_named(h, pieces):
+    """P44 (D449): host h (lower case) is named whole in one piece. Its :port is left out (a port only narrows); *.x only
+    as written. Not after a name character, ".", "@" (an e-mail address names no host) or "*"; not before a name character
+    or a further ".label"."""
+    pat = r"(?<![\w.@*-])" + re.escape(re.sub(r":\d+\Z", "", h)) + r"(?![\w-]|\.[\w-])"
+    return any(re.search(pat, s) for s in pieces)
+
+
+def real_run_hosts_problems(rr, pieces):
+    """P44 (D449): why a planned real run's hosts are not usable ([] when usable or none): a list of strings, each an srt
+    allowedDomains entry of HOST_ENTRY's narrow form (no scheme, path, address, localhost, * or *.com), named whole."""
+    hosts = rr.get("hosts")
+    if hosts is None or hosts == []:
+        return []
+    if not (isinstance(hosts, list) and all(isinstance(x, str) for x in hosts)):
+        return ['real_run hosts must be a list of host names, like ["api.example.com"]']
+    out = []
+    for x in hosts:
+        h = x.strip().lower()
+        if not host_entry_ok(h):
+            out.append(f"real_run host {x!r} must be a host name like api.example.com, or *.example.com for its subdomains, "
+                       "with an optional :port; no scheme, path, address, localhost, * or *.com")
+        elif not host_named(h, pieces):
+            out.append(f"real_run host {x} is not named in the brief or the Requester's own answers: ask for it")
+    return out
+
+
+def real_run_offline_problems(rr, source, runner, run_dir):
+    """P44 (D449): a real run that names hosts also states "offline": {"command": [...], "same_files": bool}, the command its
+    dry run runs without internet access, checked as the real command is (real_run_problems) and not the same command."""
+    if not real_hosts(rr):
+        return []
+    off = rr.get("offline")
+    if off is None:
+        return ['real_run names hosts, so it also needs "offline": {"command": [...], "same_files": true or false}: the dry '
+                'run runs that command on copies without internet access']
+    if not (isinstance(off, dict) and set(off) == {"command", "same_files"} and isinstance(off["same_files"], bool)):
+        return ['real_run offline must be exactly {"command": [...], "same_files": true or false}']
+    if home_expanded({"command": off["command"]}).get("command") == home_expanded(rr).get("command"):
+        return ["real_run offline command is the real command: the dry run has no internet access, so give one that uses "
+                "made-up data instead"]
+    return ["offline: " + p for p in real_run_problems({**rr, "command": off["command"]}, source, runner, run_dir)]
+
+
+def real_run_net_fields(rr):
+    """P44 (D449): what _register stores of checked hosts: hosts (real_hosts) and offline (~ written out), only with hosts."""
+    if not real_hosts(rr):
+        return {}
+    return {"hosts": real_hosts(rr), "offline": {"command": home_expanded({"command": rr["offline"]["command"]})["command"],
+                                                 "same_files": rr["offline"]["same_files"]}}
+
+
 def _tree(root):
     """{relative path: sha256} of every file under root."""
     out = {}
@@ -9850,6 +9924,14 @@ class J2Run:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
                     continue
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
+                if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
+                    continue
+                if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
+                                                    self.out.get("test_runner"), self.dir):
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_offline",)))
+                    continue
+                wf["real_run"].update(real_run_net_fields(w["real_run"]))      # P44 (D449): stored only with hosts
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
                 wf["cause_change"] = str(w["cause_change"]).strip()
