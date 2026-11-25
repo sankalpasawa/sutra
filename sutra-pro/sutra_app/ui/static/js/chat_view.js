@@ -93,6 +93,21 @@
   const attachedHtml = names => (names.length === 0 ? "" : '<ul class="cattached" aria-label="Attached files">' +
     names.map(n => '<li><span class="cctile" aria-hidden="true">' + FILE_TILE(n) + "</span>" + esc(n) + "</li>").join("") + "</ul>");
 
+  // What the model received of each file, under the owner's line (D440): the `attachments` of the stored line (the server's receipt: name, kind, sent, chars, cut, total).
+  // "Read: notes.txt (all 12,000 characters)", "Read: big.csv (first 40,000 of 90,000 characters)", "Sent as an image: shot.png", "Sent as a PDF: plan.pdf". Every word is escaped.
+  function fileReceiptLine(f) {
+    const name = esc(clean(f.name));
+    if (f.sent === "image") return "Sent as an image: " + name;
+    if (f.sent === "pdf") return "Sent as a PDF: " + name;
+    const sent = Number.isFinite(f.chars) ? f.chars : 0;
+    const total = Number.isFinite(f.total) && f.total >= sent ? f.total : sent;
+    return "Read: " + name + (f.cut === true ? " (first " + grouped(Math.max(0, Math.floor(sent))) + " of " + grouped(Math.max(0, Math.floor(total))) + " characters)" : " (all " + grouped(Math.max(0, Math.floor(sent))) + " characters)");
+  }
+  const fileReceiptHtml = files => {
+    const list = (Array.isArray(files) ? files : []).filter(f => isObj(f) && ["text", "image", "pdf"].includes(f.sent)).slice(0, 10);
+    return list.length === 0 ? "" : '<ul class="creceipt" aria-label="What the model received">' + list.map(f => "<li>" + fileReceiptLine(f) + "</li>").join("") + "</ul>";
+  };
+
   // The agents address each other with a leading "@Name" (J2's chat). The owner reads the sentence, not the address, so the tag is dropped from
   // what the owner reads; a working log keeps it.
   const stripTag = value => text(value).replace(/^\s*@[\w-]+[,:]?[ \t]*/, "");
@@ -561,7 +576,7 @@
         const failed = clean(m.state) === "error";
         const att = attachedOf(m.text);
         return '<div class="' + klass + (failed ? " failed" : "") + '"' + attrs + ">" + passedOnHtml(m) + (ask === "q" ? '<small class="nask">' + ASK_WORDS.q + "</small>" : "") +
-          safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) +
+          safeText(chosen ? clean(chosen) : att.text) + attachedHtml(att.names) + fileReceiptHtml(m.attachments) +
           (failed ? '<div class="nerr">Something went wrong. Try again.' + (clean(s.kind) === "org" ? ' <button type="button" class="linkbtn" data-act="retry">Retry</button>' : "") + "</div>" : "") + "</div>";
       }
       if (kind === "note" || kind === "error" || bubbleClass(m) === "nmsg sys") return '<div class="' + klass + '"' + attrs + ">" + (clean(s.kind) === "org" ? projectAddress(safeText(text(m.text))) : safeText(text(m.text))) + retryOf(m) + "</div>";      // D389, D408: the app's own address, in the org chat only
@@ -636,7 +651,7 @@
 
   const providerLabel = connector => (hasOwn(PROVIDERS, connector) ? PROVIDERS[connector] : clean(connector));
 
-  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, askOf, workDraft, BUSY, ONE_AT_A_TIME, ASK_WORDS,
+  const ChatView = {transcript, transcriptItems, card, answersOf, composerState, workdirChip, safeText, whoLabel, parseAsk, stripTag, providerLabel, attachedOf, fileReceiptHtml, askOf, workDraft, BUSY, ONE_AT_A_TIME, ASK_WORDS,
     PROVIDERS, PERSONA};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatView;
   else root.ChatView = ChatView;

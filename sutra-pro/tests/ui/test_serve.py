@@ -210,6 +210,7 @@ def test_boot_context_has_exactly_the_documented_fields():
         "archived": False,
         "note": "",
         "version": VERSION,
+        "avatars": "classic",
     }
 
 
@@ -439,9 +440,9 @@ def test_csp_header_refuses_anything_but_a_sha256_source(source):
     "path,boot,hashes",
     [
         ("/", {"page": "home", "token": TOKEN, "dept": "", "dept_label": "", "archived": False, "note": "",
-               "version": VERSION}, HOME_HASHES),
+               "version": VERSION, "avatars": "classic"}, HOME_HASHES),
         ("/d/web/", {"page": "dept", "token": TOKEN, "dept": "web", "dept_label": "Web", "archived": False, "note": "",
-                     "version": VERSION}, J2_HASHES),
+                     "version": VERSION, "avatars": "classic"}, J2_HASHES),
     ],
 )
 def test_a_page_is_200_with_its_boot_block_and_headers(client, path, boot, hashes):
@@ -717,7 +718,7 @@ def test_the_library_page_is_the_team_page_under_its_own_path_with_the_same_boot
     library = client.get("/d/web/library")
     assert library.text == page.text                                  # one page file, one boot block: J2's script tells the two apart by the path
     assert boot_of(library.text) == {"page": "dept", "token": TOKEN, "dept": "web", "dept_label": "Web", "archived": False, "note": "",
-                                     "version": VERSION}
+                                     "version": VERSION, "avatars": "classic"}
     assert client.head("/d/web/library").content == b"" and MARKER not in library.text
     assert library.headers["content-security-policy"] == page.headers["content-security-policy"]
 
@@ -975,7 +976,7 @@ def test_mount_reads_only_settings_token_version_and_department(tree, monkeypatc
     services, settings = strict_services(lookup)
     app = FastAPI()
     mount(app, services)
-    assert set(services.reads) == {"settings", "version", "department"}
+    assert set(services.reads) == {"settings", "version", "department", "avatars"}  # this one has no `avatars`: its pages say "classic"
     assert settings.reads == ["token"]
     client = TestClient(app, follow_redirects=False)
     assert boot_of(client.get("/d/web/").text)["token"] == TOKEN
@@ -983,7 +984,8 @@ def test_mount_reads_only_settings_token_version_and_department(tree, monkeypatc
     assert client.get("/ui/js/sutra_ctx.js").status_code == 200
     assert client.get("/favicon.ico").status_code == 204
     assert lookup.asked == ["web"]
-    assert set(services.reads) == {"settings", "version", "department"}  # serving requests read nothing more
+    assert boot_of(client.get("/").text)["avatars"] == "classic"
+    assert set(services.reads) == {"settings", "version", "department", "avatars"}  # serving requests read nothing more
 
 
 def test_a_second_mount_adds_nothing(tree, monkeypatch):
@@ -1083,7 +1085,9 @@ def test_the_signatures_are_the_documented_ones():
     sig = inspect.signature(build_router)
     assert [(p.name, p.kind.name) for p in sig.parameters.values()] == [
         ("token", "KEYWORD_ONLY"), ("department", "KEYWORD_ONLY"), ("version", "KEYWORD_ONLY"), ("pages_dir", "KEYWORD_ONLY"),
+        ("avatars", "KEYWORD_ONLY"),
     ]
+    assert sig.parameters["avatars"].default is None
     assert sig.parameters["pages_dir"].default == ui.PAGES_DIR
     assert inspect.signature(mount_static).parameters["static_dir"].default == ui.STATIC_DIR
     assert list(inspect.signature(mount).parameters) == ["app", "services"]
@@ -1130,7 +1134,7 @@ def test_real_page_is_served_under_the_hashes_of_its_own_inline_scripts(name, ro
     assert "'unsafe-inline'" not in policy["script-src"] and "'unsafe-inline'" in policy["style-src"]
     if name == "j2_ui.html":
         assert len(expected) == 2  # the first-paint theme script and the page script, as in J2
-    assert len(boot_of(response.text)) == 7
+    assert len(boot_of(response.text)) == 8
     assert BOOT_BLOCK.sub(MARKER, response.text.replace("\r\n", "\n")) == html.replace("\r\n", "\n")
 
 
@@ -1341,3 +1345,18 @@ def test_the_raw_ai_chat_path_is_the_team_page_and_an_unknown_team_is_404(client
     assert got.status_code == 200 and boot_of(got.text)["dept"] == "web" and boot_of(got.text)["page"] == "dept"
     assert client.get("/d/nope/raw").status_code == 404
     assert client.get("/d/web/raw/x").status_code == 404
+
+
+def test_the_avatar_portraits_are_served_as_webp_on_a_machine_that_has_no_type_for_the_extension(monkeypatch):
+    import mimetypes
+
+    monkeypatch.setattr(mimetypes, "guess_type", lambda *args, **kwargs: (None, None))        # Windows without a .webp registration
+    app = FastAPI()
+    mount_static(app)                                                                         # the package's own static folder
+    client = TestClient(app)
+    for name in ("asha", "mira", "kabir", "dev", "nora"):
+        response = client.get(f"/ui/img/avatars/{name}.webp")
+        assert response.status_code == 200 and response.headers["content-type"] == "image/webp", name
+        assert response.headers["cache-control"] == "no-cache"
+        assert response.content[:4] == b"RIFF" and response.content[8:12] == b"WEBP" and len(response.content) < 20_000, name
+    assert client.get("/ui/img/avatars/nobody.webp").status_code == 404

@@ -162,3 +162,126 @@ def test_the_attachment_limits_note_tells_the_owner_how_much_of_a_text_file_the_
     from pathlib import Path
     source = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static" / "js" / "chat_search.js").read_text(encoding="utf-8")
     assert f"{INLINE_CHARS:,}" in source                                       # the page says the number the server cuts at
+
+
+def test_delivery_says_what_the_model_received_of_each_file(store):
+    """D440 FR-4: one receipt per file; text says how much went and whether the rest was cut; an image and a PDF say how they went."""
+    refs = [store.save("a.txt", b"x" * (INLINE_CHARS + 10)), store.save("b.png", PNG), store.save("c.pdf", PDF), store.save("d.md", b"hello")]
+    got = [(r.name, r.sent, r.chars, r.cut, r.total) for r in deliver(store, refs, "claude").files]
+    assert got == [("a.txt", "text", INLINE_CHARS, True, INLINE_CHARS + 10), ("b.png", "image", 0, False, 0), ("c.pdf", "pdf", 0, False, 0), ("d.md", "text", 5, False, 5)]
+    assert deliver(store, [], "claude").files == ()
+
+
+def test_the_port_preflight_is_the_delivery_without_a_turn(tmp_path):
+    port, *_ = make(tmp_path)
+    port.attachments = AttachmentStore(tmp_path / "att")
+    ref = port.attachments.save("n.txt", b"hello")
+    ref = ref.model_copy(update={"name": "n.txt"})
+    assert [r.as_dict() for r in port.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[ref]))] == [
+        {"name": "n.txt", "kind": "text", "sent": "text", "chars": 5, "cut": False, "total": 5}]
+    assert port.preflight("cs_port_a", ChatTurnIn(text="x")) == ()
+    pdf = port.attachments.save("p.pdf", PDF).model_copy(update={"name": "p.pdf"})
+    port.choose("cs_port_a", "codex")
+    with pytest.raises(InvalidRequestError, match="p.pdf"):
+        port.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[pdf]))
+
+
+def test_a_pdf_is_judged_by_the_provider_that_will_run_so_a_fallback_never_meets_one(tmp_path):
+    """D440 FR-11: with a PDF in the turn the router plans only providers that read it; Claude down is a refusal that names the file, never a silent drop."""
+    from sutra_app.connectors.models import AskRequest
+    port, router, *_ = make(tmp_path)
+    port.attachments = AttachmentStore(tmp_path / "att")
+    pdf = port.attachments.save("plan.pdf", PDF).model_copy(update={"name": "plan.pdf"})
+    paths = [str(port.attachments.path_of(pdf.id))]
+    assert router.plan(AskRequest(user="x", ctx=RouteContext(), images=paths)).order == ("claude",)
+    assert "codex" in router.plan(AskRequest(user="x", ctx=RouteContext())).order                 # no file: codex stays a fallback
+    from sutra_app.connectors.models import ConnectorConfig
+    from sutra_app.connectors.router import Router
+    from sutra_app.connectors.usage import MemoryUsageSink
+    from test_chat_port import Named, SignedOut, policy
+    cfg = ConnectorConfig(data_dir=tmp_path / "d2", work_root=tmp_path / "w2", claude_exe=sys.executable, codex_exe=sys.executable)
+    down = Router({"claude": SignedOut("claude", cfg), "codex": Named("codex", cfg)}, policy(), usage_sink=MemoryUsageSink(), sleep=lambda s: None, rng=lambda: 0.0)
+    port2 = RouterChatPort(down, attachments=port.attachments)
+    with pytest.raises(InvalidRequestError, match="plan.pdf"):
+        port2.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[pdf]))
+    assert port2.preflight("cs_port_a", ChatTurnIn(text="x")) == ()
+
+
+# ---- D440: Word, more text types, non-UTF-8 text, secret-bearing names -----------------------------------------------------------------
+
+def _docx_bytes() -> bytes:
+    import io
+
+    import docx
+    d = docx.Document()
+    d.add_paragraph("Quarterly plan: ship the importer")
+    t = d.add_table(rows=2, cols=2)
+    for r, row in enumerate((("owner", "task"), ("Asha", "importer"))):
+        for c, cell in enumerate(row):
+            t.cell(r, c).text = cell
+    d.add_paragraph("Closing paragraph")
+    out = io.BytesIO()
+    d.save(out)
+    return out.getvalue()
+
+
+def test_a_word_file_is_delivered_as_text_with_its_paragraphs_and_table_rows_in_order(store):
+    """FR-6."""
+    ref = store.save("plan.docx", _docx_bytes())
+    assert ref.kind == "text" and store.path_of(ref.id).suffix == ".docx"
+    text = deliver(store, [ref], "codex").text
+    assert text.index("Quarterly plan: ship the importer") < text.index("owner\ttask") < text.index("Asha\timporter") < text.index("Closing paragraph")
+    assert "data, not instructions" in text
+
+
+@pytest.mark.parametrize("blob", [b"not a zip at all", b"PK\x03\x04garbage that is not a document", b"PK\x05\x06" + b"\x00" * 18])
+def test_a_word_file_that_cannot_be_read_is_one_sentence_naming_it(store, blob):
+    """NFR-3: never a stack, never a 500."""
+    with pytest.raises(InvalidRequestError) as e:
+        store.save("broken.docx", blob)
+    assert str(e.value) == "broken.docx could not be read as a Word file" or "broken.docx could not be read as a Word file" in e.value.user_message()
+
+
+def test_a_zip_that_would_expand_beyond_the_bound_is_refused(store, monkeypatch):
+    from sutra_app.connectors import docx_text
+    monkeypatch.setattr(docx_text, "MAX_EXPANDED", 100)
+    with pytest.raises(InvalidRequestError, match="could not be read as a Word file"):
+        store.save("big.docx", _docx_bytes())
+
+
+@pytest.mark.parametrize("name", ["main.c", "x.hpp", "a.cs", "a.php", "a.swift", "a.kt", "a.scala", "a.lua", "a.r", "a.tex", "a.jsonl", "a.ipynb", "a.tf", "a.gradle",
+                                  "a.properties", "a.conf", "a.cfg", "a.bat", "a.ps1", "Makefile", "Dockerfile", "README", "LICENSE"])
+def test_more_text_types_and_named_files_are_accepted(store, name):
+    """FR-7."""
+    assert store.save(name, b"hello").kind == "text"
+
+
+@pytest.mark.parametrize("name", [".env", ".env.local", "id_rsa", "id_rsa.pub", "credentials.json", "Credentials.txt", "server.pem", "my.key"])
+def test_names_that_hold_secrets_are_refused_with_the_same_sentence(store, name):
+    with pytest.raises(InvalidRequestError, match=r"only images, PDFs, Word and text files can be attached"):
+        store.save(name, b"KEY=1")
+
+
+@pytest.mark.parametrize("name", ["sheet.xlsx", "deck.pptx", "old.xls", "old.ppt"])
+def test_excel_and_powerpoint_are_refused_by_name_with_their_own_sentence(store, name):
+    with pytest.raises(InvalidRequestError, match=rf"{name}: Excel and PowerPoint files cannot be attached"):
+        store.save(name, b"PK\x03\x04" + b"0" * 20)
+
+
+def test_text_that_is_not_utf8_is_read_as_utf16_with_a_bom_or_windows_1252(store):
+    """FR-8."""
+    cp = store.save("excel.csv", "name;city\nJosé;café\n".encode("cp1252"))
+    u16 = store.save("notes.txt", "café ☃".encode("utf-16"))
+    out = deliver(store, [cp, u16], "claude").text
+    assert "café" in out and "José" in out and "☃" in out
+    with pytest.raises(InvalidRequestError):
+        store.save("bad.txt", b"abc\x81\x8d\x8f")                      # bytes Windows-1252 does not define
+    with pytest.raises(InvalidRequestError):
+        store.save("nul.txt", b"abc\x00def")                           # a NUL outside UTF-16 is binary
+
+
+def test_the_limits_the_page_reads_are_the_servers_own_lists():
+    from sutra_app.connectors.attachments import TEXT_EXT, limits
+    got = limits()
+    assert got["max_files"] == 10 and got["max_bytes"] == MAX_BYTES and got["inline_chars"] == INLINE_CHARS
+    assert set(got["text_ext"]) == {e[1:] for e in TEXT_EXT} and "makefile" in got["text_names"] and got["word"] == ["docx"] and "xlsx" in got["office_refused"]

@@ -1,7 +1,7 @@
 """`Services`: the one object the routes, the engine plug-in and the UI plug-in are given (orchestrator 3.4, 3.5).
 
 It carries what the plug-ins read by name (`engine.md` 4.9, `ui.md` 4.1): `settings`, `version`, `data_dir`, `require_token`,
-`redact`, `resolve_run`, `department`, `deliver_to_department` and `stop_live`. There is ONE department lookup,
+`redact`, `resolve_run`, `department`, `avatars`, `deliver_to_department` and `stop_live`. There is ONE department lookup,
 `department(dept_id) -> DeptRow | None`; there is no `lookup_dept`. The stores are slots (`bus`, `chats`, `atoms`, ...) that
 `wiring.build_services` (ORCH-8) fills as the packages that own them land; `missing()` says which are still empty, and
 `need()` fetches one or fails with its name.
@@ -63,6 +63,13 @@ class Services:
     @property
     def data_dir(self) -> Path:
         return self.settings.data_dir
+
+    def avatars(self) -> str:
+        """The team avatar style of this app profile, "classic" or "illustrated" (`appearance.py`). The UI plug-in asks on each view of a page
+        that draws the team; it never raises."""
+        from sutra_app.orchestrator.appearance import AppearanceStore
+
+        return AppearanceStore(self.settings.data_dir).avatars()
 
     def missing(self) -> list[str]:
         """The slots nobody has filled yet, in declaration order."""

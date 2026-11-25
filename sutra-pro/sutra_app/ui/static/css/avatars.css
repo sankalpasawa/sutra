@@ -1,0 +1,112 @@
+/* avatars.css - the team avatars' own colours, the activity ring and badge around an avatar, and the Team avatars choice in Settings.
+   Home links it; a team page gets it from avatars.js (its <head> is J2's). Works with either avatar style (avatars.js).
+
+   Tokens (dark is the base, light under :root[data-theme=light], as every sheet here; a team page copies every --av-* into its frames):
+     --av-d1..5   the disc behind an illustrated avatar (Asha, Mira, Kabir, Dev, Nora)
+     --av-m1..5   the compact mark drawn on that disc below 32 px
+     --av-c1..5   each person's ring: 3:1 or better on --s-bg, --s-surface and --s-surface2 in its theme
+     --av-ask, --av-askbg, --av-askink   the amber of "needs your reply": the ring, the badge and its "?" (4.5:1 on the badge)
+
+   The ring and badge sit on the element that wraps one avatar: Home's <span class="avact"> (Avatars.ring) and a team page's own .sface, which
+   avatars.js marks after each render. data-act: work | ask | done. data-badge: ask | msg | done. The badge has ONE anchor for all three: its
+   box starts 80% across and 76% down the avatar and is 28% of it wide (the owner's reference), so "?" and the tick sit in the same place. */
+:root {
+  --av-d1:#47688a;--av-d2:#88596b;--av-d3:#3c716c;--av-d4:#896332;--av-d5:#70578d;
+  --av-m1:#c6dcf5;--av-m2:#fbe0e7;--av-m3:#ccece5;--av-m4:#f9e3b0;--av-m5:#ead7fa;
+  --av-c1:#9db8de;--av-c2:#ec9a86;--av-c3:#7fcfc2;--av-c4:#e6b45e;--av-c5:#c3aed2;
+  --av-ask:#e89a4c;--av-askbg:#33261a;--av-askink:#f0b070;
+}
+:root[data-theme=light] {
+  --av-d1:#dbe7f5;--av-d2:#f1d9de;--av-d3:#d6ebe6;--av-d4:#f3e2bb;--av-d5:#ebe1f2;
+  --av-m1:#294665;--av-m2:#793e50;--av-m3:#235f55;--av-m4:#784b21;--av-m5:#614674;
+  --av-c1:#3d5a80;--av-c2:#b3452e;--av-c3:#1d7a6f;--av-c4:#96600c;--av-c5:#634f70;
+  --av-ask:#b8661a;--av-askbg:#fbeedf;--av-askink:#93500e;
+}
+
+.avill { display: block; flex: none; border-radius: 50%; }
+.avact { position: relative; display: inline-flex; flex: none; line-height: 0; border-radius: 50%; }
+
+[data-who=asha] { --avc: var(--av-c1); }
+[data-who=mira] { --avc: var(--av-c2); }
+[data-who=kabir] { --avc: var(--av-c3); }
+[data-who=dev] { --avc: var(--av-c4); }
+[data-who=nora] { --avc: var(--av-c5); }
+
+/* ---- a team page's rail. J2's sheet has an older `.av` rule (the Detailed view's letter tile: 30 px wide, the person's colour behind it) that also
+   catches the avatar pictures, so a rail face drew at 30 px in the top-left corner of its 40 px slot and the ring around the slot looked off-centre.
+   The rail face fills its slot, and an illustrated avatar has no tile colour behind its disc. */
+#sview .smate .sface > svg.av { width: 100%; height: 100%; }
+#sview svg.avill { background: none; }
+
+/* ---- the ring. The three selectors are one host; the long ones only outrank the team page's own busy ring and dot (j2.css). */
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])::before { content: none; }
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act]::before {
+  content: ""; position: absolute; inset: -5px; box-sizing: border-box; border-radius: 50%; pointer-events: none; background: none; box-shadow: none;
+  border: 2.5px solid var(--avc); transform: none; animation: none;
+}
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=work]::before {
+  /* A calm arc, not a loading spinner: this turns for minutes beside text the owner is reading. One turn takes 2.4 s (--dur-turn), at the slow
+     end of the 1 to 2.5 s that reads as "at work" (faster feels hurried, slower looks stuck). The arc has no hard ends: it fades from the quiet
+     track up to the person's colour at its head, so no edge sweeps past the eye, and the speed is constant (linear), with no pulse. */
+  border: 0;
+  background: conic-gradient(from 0turn, color-mix(in srgb, var(--avc) 20%, transparent) 0 38%, var(--avc) 96%, color-mix(in srgb, var(--avc) 20%, transparent) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+}
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=ask]::before {
+  border-color: var(--av-ask); border-left-color: color-mix(in srgb, var(--av-ask) 26%, transparent);
+}
+#sview .sdock .sface[data-who][data-avid][data-act]::before { inset: -3px; }
+
+/* ---- the badge */
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])::after { content: none; }
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-badge]::after {
+  content: ""; position: absolute; left: 80%; top: 76%; right: auto; bottom: auto; inset-inline-end: auto; width: 28%; height: 28%; min-width: 14px; min-height: 14px;
+  box-sizing: border-box; border-radius: 50%; border: 0; display: grid; place-items: center; pointer-events: none; transform: none; animation: none;
+  font: 700 10px/1 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; text-align: center;
+  background: var(--avc); color: var(--s-surface); box-shadow: 0 0 0 2px var(--s-surface);
+}
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-badge=ask]::after {
+  content: "?"; background: var(--av-askbg); color: var(--av-askink); box-shadow: 0 0 0 1.5px var(--av-ask), 0 0 0 3px var(--s-surface);
+}
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-badge=done]::after { content: "\2713"; }
+:is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-badge=msg]::after {
+  border-radius: 50% 50% 50% 22%; background-color: var(--s-surface); box-shadow: 0 0 0 1.5px var(--avc), 0 0 0 3px var(--s-surface);
+  background-image: radial-gradient(circle at 28% 50%, var(--avc) 0 1.1px, transparent 1.5px), radial-gradient(circle at 50% 50%, var(--avc) 0 1.1px, transparent 1.5px),
+    radial-gradient(circle at 72% 50%, var(--avc) 0 1.1px, transparent 1.5px);
+}
+/* the team page's own question pips give way to the badge */
+#sview .sface[data-badge=ask] > :is(.spip, .pip) { display: none; }
+
+/* ---- motion: only when the viewer allows it. Without it the arc stays an arc, the badge and the words say the rest. */
+@keyframes avturn { to { transform: rotate(1turn); } }
+@keyframes avpop { from { opacity: 0; transform: scale(.75); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: no-preference) {
+  :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=work]::before {
+    animation: avturn var(--dur-turn) linear infinite; animation-delay: var(--avd, 0ms);
+  }
+  :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid]).avfresh[data-badge]::after { animation: avpop var(--dur-base) var(--ease-out) both; }
+}
+
+/* ---- Settings & logs > Appearance > Team avatars */
+.avset { margin: 18px 0 0; padding: 15px 0 0; border: 0; border-top: 1px solid var(--s-line); min-width: 0; }
+.avset legend { padding: 0; font: 700 16px var(--s-body); color: var(--s-ink); float: left; width: 100%; margin: 0 0 3px; }
+.avset .sethint { display: block; clear: both; margin: 0 0 10px; }
+.avopts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.avopt { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; border: 1px solid var(--s-line2); border-radius: 10px; padding: 11px 12px; cursor: pointer; }
+.avopt:has(input:checked) { border-color: var(--s-accent); background: var(--s-accentbg); }
+.avopt:has(input:focus-visible) { outline: 2px solid var(--s-accent); outline-offset: 2px; }
+.avopt input { margin: 4px 0 0; accent-color: var(--s-accent); }
+.avopt b { display: block; font: 700 15px var(--s-body); color: var(--s-ink); }
+.avopt small { display: block; color: var(--s-muted); font-size: 13px; margin-top: 1px; }
+.avthumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.avprev { padding: 13px 15px; border-radius: 10px; border: 1px solid var(--s-line); margin-top: 15px; background: var(--s-bg); }
+.avprev h4 { margin: 0; color: var(--s-muted); font: 600 13px var(--s-body); }
+.avprev .fdfaces { justify-content: flex-start; margin: 10px 0 0; }
+.avnote { display: block; min-height: 1.4em; margin: 8px 0 0; color: var(--s-muted); font-size: 13px; }
+@media (max-width: 420px) { .avopts { grid-template-columns: 1fr; } }
+
+/* ---- a team page, Run settings > Appearance: the line that names the style and leads to Settings & logs */
+.avline { margin: 12px 0 0; color: var(--s-muted); font-size: 13.5px; }
+.avline b { color: var(--s-ink); font-weight: 600; }
+.avline a { color: var(--s-accent); }

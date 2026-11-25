@@ -1472,6 +1472,7 @@ WRITES = [  # every non-GET route that is not a test control: (method, a concret
     ("POST", "/api/limits/continue", {}, "/api/limits/continue"),
     ("PUT", "/api/ops/attention", {"nudges_per_hour": 1}, "/api/ops/attention"),
     ("PUT", "/api/sections", {"version": 1, "sections": []}, "/api/sections"),
+    ("PUT", "/api/appearance", {"avatars": "illustrated"}, "/api/appearance"),
     ("POST", "/api/recurring", {"dept_id": "web", "text": "x", "schedule": {"every": "day"}}, "/api/recurring"),
     ("PUT", "/api/recurring/rec_000000000001", {"enabled": False}, "/api/recurring/{rec_id}"),
     ("DELETE", "/api/recurring/rec_000000000001", None, "/api/recurring/{rec_id}"),

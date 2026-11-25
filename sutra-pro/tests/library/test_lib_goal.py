@@ -276,6 +276,17 @@ def test_the_stored_charter_is_closed_and_bounded():
     assert ("requester_answers.0", "string_too_long") in problems(SiteGoal, {**stored(SITE_DRAFT), "kind": "site", "requester_answers": ["a" * 20_001]})
 
 
+def test_the_stored_charter_takes_item_checks_closed_and_bounded():
+    """D433: each item's runnable check, by item text; a check is closed, and at most 200 are kept."""
+    check = {"type": "file-exists", "target": "index.html", "expect": True}
+    charter = SiteGoal.model_validate({**stored(SITE_DRAFT), "kind": "site", "item_checks": {ITEMS[0]: check, ITEMS[1]: {"type": "real-run"}}})
+    assert charter.item_checks[ITEMS[0]].target == "index.html" and charter.item_checks[ITEMS[1]].expect is None
+    assert ("item_checks.x.why", "extra_forbidden") in problems(SiteGoal, {**stored(SITE_DRAFT), "kind": "site",
+                                                                          "item_checks": {"x": {**check, "why": "made up"}}})
+    assert ("item_checks", "too_long") in problems(SiteGoal, {**stored(SITE_DRAFT), "kind": "site",
+                                                               "item_checks": {f"item {i}": check for i in range(201)}})
+
+
 def test_a_stored_charter_changes_only_through_evolve_which_checks_it_again():
     charter = SiteGoal.model_validate({**stored(SITE_DRAFT), "kind": "site"})
     assert charter.evolve(site_name="Brew Lab 2").site_name == "Brew Lab 2" and charter.site_name == "Brew Lab"

@@ -40,7 +40,7 @@ from fastapi import APIRouter, Depends, Path, Query, Request
 from pydantic import ConfigDict, Field, StringConstraints
 
 from sutra_app.connectors.chat_blocks import join_text
-from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name
+from sutra_app.connectors.attachments import MAX_BYTES, MAX_PER_MESSAGE, clean_name, limits as attachment_limits_of
 from sutra_app.connectors.chat_models import AttachmentRef, ChatTurnIn
 from sutra_app.connectors.egress import scan
 from sutra_app.connectors.errors import CallCancelledError, ConnectorError, ReplyTruncatedError
@@ -131,6 +131,11 @@ def build_router() -> APIRouter:
         db = _need(request, "db")
         found = await run_blocking(lambda: ChatSearch(db).search(q, scope=scope, include_archived=include == "archived", limit=MAX_RESULTS))
         return respond(request, {"results": found})
+
+    # not in the published document: `tests/fixtures/openapi/chat_routes_before_ask.json` pins that document byte for byte, and this is the page's own read of one list (D440)
+    @router.get("/chats/attachment-limits", summary="What can be attached to a chat", include_in_schema=False)
+    async def attachment_limits(request: Request) -> RedactedJSONResponse:
+        return respond(request, attachment_limits_of())
 
     @router.post("/chats/{sid}/archive", summary="Archive a chat (a mark)", dependencies=[Depends(require_token)])
     async def archive(request: Request, sid: str = Path(pattern=ID_PATTERN)) -> RedactedJSONResponse:
@@ -252,25 +257,29 @@ def build_router() -> APIRouter:
             # the model is told the owner's file name (cleaned), never the content hash the store keeps the file under
             named = clean_name(owner_names[n]) if owner_names else ""
             refs.append(AttachmentRef(id=ref_id, name=named or f"attachment-{n + 1}{path.suffix}", kind=_kind_of(path.name), size=path.stat().st_size))
+        # D440: a file that cannot be delivered (a PDF to Codex, a stored file gone, a Word file that cannot be read) refuses the whole send HERE, before the owner's line is
+        # stored or a process starts; what each file becomes is the receipt the 202 carries and the page shows under the owner's line
+        receipts = await _preflight(port, sid, said=_clean(services, body.text), refs=refs)
         # DV-1: the Ask mode, only when the flag is on and the request named `ask` (a request without a mode never gets here, and the flag off never reads one)
         asking = (await run_blocking(ask_mode.begin, services, port, session, _clean(services, body.text), lambda value: _clean(services, value))
                   if ask_mode.requested(request) == "ask" else None)
         if _live_on(services):
             return await _start_live(request, services, port, sid, said=_clean(services, body.text),
-                                     attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id, ask=asking)
+                                     attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id, ask=asking,
+                                     receipts=receipts)
         if not direct_running.begin(sid):
             raise Busy("This chat is already answering")
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
-            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None)
+            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None, _line_files(refs, receipts))
             direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
             await run_blocking(_ground, services, port, sid, asking is not None)
         except BaseException:
             direct_running.end(sid)
             raise
         asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs) if asking is None else asking.turn_in(said, refs), 1, asking))
-        return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started"})
+        return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", **_files_of(receipts)})
 
     # DV-1: registered here, where the decorator was, with the route class that takes `mode` out of the body when the flag is on (orchestrator/ask_mode.py); inert while it is off
     router.add_api_route("/chats/{sid}/direct", direct, methods=["POST"], summary="Ask the chat model directly", dependencies=[Depends(require_token)],
@@ -321,14 +330,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None, mode: str | None = None) -> int | None:
+          src_ref: str | None = None, mode: str | None = None, attachments: list | None = None) -> int | None:
     """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
     not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
             kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now(),
-            **({"mode": mode} if mode else {})), ctx=tx.ctx))
+            **({"mode": mode} if mode else {}), **({"attachments": attachments} if attachments else {})), ctx=tx.ctx))
     return None if out is None else out.id
 
 
@@ -354,12 +363,23 @@ def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: s
     return ids
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None) -> int:
+def _line_files(refs: list, receipts: tuple) -> list[dict]:
+    """What is recorded with the owner's line for each file: the store's id (a later carry-over reads the text again from it) and the receipt the page draws. One receipt per ref,
+    in order; a port that gave none records the ids alone."""
+    out = []
+    for n, ref in enumerate(refs):
+        got = receipts[n].as_dict() if n < len(receipts) else {"name": ref.name, "kind": ref.kind, "sent": "", "chars": 0, "cut": False, "total": 0}
+        out.append({"id": ref.id, **got, "name": ref.name})
+    return out
+
+
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None,
+                     files: list | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
     start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
     `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
     ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
-    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode)
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode, attachments=files)
     if stored is None:                                      # the ref was stored already: this is the same line
         found = find_owner_line(services.db.conn(), sid, client_id or "")
         if found is None:
@@ -473,8 +493,24 @@ def _duplicate(sid: str, services: Any, client_id: str, message_id: int | None, 
         "generation_id": live.generation_id if live is not None else None})
 
 
+async def _preflight(port: Any, sid: str, *, said: str, refs: list) -> tuple:
+    """The receipts of a send's files (empty for no file); a file that cannot be delivered raises the connector's sentence, as a 422, before anything is stored."""
+    check = getattr(port, "preflight", None)
+    if not refs or not callable(check):
+        return ()
+    try:
+        return tuple(await run_blocking(check, sid, ChatTurnIn(text=said, attachments=refs)))
+    except ConnectorError as exc:
+        raise AppError("validation", exc.user_message()) from None
+
+
+def _files_of(receipts: tuple) -> dict:
+    """The 202's `files`: only a send that carried files has the key, so a chat with no file answers exactly what it always did."""
+    return {"files": [r.as_dict() for r in receipts]} if receipts else {}
+
+
 async def _start_live(request: Request, services: Any, port: Any, sid: str, *, said: str, attached: str, refs: list, client_id: str | None,
-                      ask: "ask_mode.AskTurn | None" = None) -> RedactedJSONResponse:
+                      ask: "ask_mode.AskTurn | None" = None, receipts: tuple = ()) -> RedactedJSONResponse:
     """One send as a live turn. The order matters (D220): look the `client_id` up, claim the chat (which also creates the stop token), store the owner's line, ground the chat,
     build and bind the live turn, publish `turn.accepted` (seq 1), and only then return the 202."""
     if client_id:
@@ -490,7 +526,7 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     generation = uuid.uuid4().hex
     live: LiveTurn | None = None
     try:
-        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None)
+        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None, _line_files(refs, receipts))
         direct_running.attach(sid, message_id)
         await run_blocking(_ground, services, port, sid, ask is not None)
         live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)
@@ -507,7 +543,7 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     turn = ChatTurnIn(text=said, attachments=refs) if ask is None else ask.turn_in(said, refs)
     asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, message_id, turn, live, 1, ask))
     return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", "generation_id": generation, "attempt_no": 1,
-                                                          "client_id": client_id or _client_of_line(services, sid, message_id)})
+                                                          "client_id": client_id or _client_of_line(services, sid, message_id), **_files_of(receipts)})
 
 
 def _client_of_line(services: Any, sid: str, message_id: int) -> str | None:

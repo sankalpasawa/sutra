@@ -118,6 +118,9 @@
   // What a file is, from the server's kind once it is uploaded, else from its name: image, pdf or text.
   const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
   const kindOf = f => (["image", "pdf", "text"].includes(clean(f.kind)) ? clean(f.kind) : (IMAGE_EXT.test(clean(f.name)) ? "image" : (/\.pdf$/i.test(clean(f.name)) ? "pdf" : "text")));
+  const REMOVE_FAILED = "Remove the file that was not attached, or it will not be read.";
+  const WAIT_UPLOAD = "Wait for the files to finish uploading.";
+  const TEAM_FILES = "Files go only to the model. Remove them, or ask the model.";
   const TILE = Object.freeze({image: "IMG", pdf: "PDF", text: "TXT"});
   const BLOB = /^blob:[A-Za-z0-9+.:\/_-]+$/;            // a thumbnail is only ever a blob: URL this page made
 
@@ -194,7 +197,9 @@
       '<button type="button" class="ccmode-opt' + (mode === "team" ? " on" : "") + '" data-act="composer-mode" data-mode="team" aria-pressed="' + (mode === "team") + '">' + esc(team) + "</button>" +
       '<button type="button" class="ccmode-opt' + (mode === "direct" ? " on" : "") + '" data-act="composer-mode" data-mode="direct" aria-pressed="' + (mode === "direct") + '">' + esc(direct) + "</button></div>";
     // the team's route has no note of its own; with Ask available the page can say something there (a draft that could not be written), and only then
-    if (mode !== "direct") return askSwitch + toggle + (askOn && clean(s.note) !== "" ? '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>" : "");
+    // a file is never hidden: the chips are drawn in "Tell the team" too (a file only ever goes to the model, FR-3), and so is the note that says why a send was refused
+    const held = chips(s.files);
+    if (mode !== "direct") return askSwitch + toggle + held + ((askOn || held !== "") && clean(s.note) !== "" ? '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>" : "");
     const CS = searchOf();
     const limit = CS ? CS.limitsNote() : "";
     const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' +
@@ -239,8 +244,13 @@
     const f = isObj(flags) ? flags : {};
     const turn = isObj(s.turn) ? s.turn : idle();
     if (s.mode === "direct" && turn.active === true) return {label: turn.stopping === true ? "Stopping…" : "Stop", act: "composer-stop", disabled: turn.stopping === true};
-    const uploading = (Array.isArray(s.files) ? s.files : []).some(x => isObj(x) && x.status === "uploading");
-    return {label: s.ask === "ask" ? "Ask" : "Send", act: "send", disabled: f.disabled === true || (s.mode === "direct" && (uploading || f.blocked === true))};
+    const files = Array.isArray(s.files) ? s.files : [];
+    const uploading = files.some(x => isObj(x) && x.status === "uploading");
+    const failed = files.some(x => isObj(x) && x.status === "failed");
+    const why = s.mode !== "direct" ? "" : (failed ? REMOVE_FAILED : (uploading ? WAIT_UPLOAD : ""));          // FR-2: the reason is the button's title
+    const out = {label: s.ask === "ask" ? "Ask" : "Send", act: "send", disabled: f.disabled === true || (s.mode === "direct" && (uploading || failed || f.blocked === true))};
+    if (why !== "") out.title = why;
+    return out;
   }
 
   /* ---------------------------------------------------------------- the controller */
@@ -257,6 +267,8 @@
     });
   }
 
+  let limitsAsked = false;
+
   function create(options) {
     const o = isObj(options) ? options : {};
     const api = o.api;
@@ -271,6 +283,14 @@
     const rememberedMode = (() => { try { return modes && typeof modes.loadMode === "function" ? modes.loadMode(sid) : ""; } catch (e) { return ""; } })();
     let modeNow = rememberedMode !== "" ? rememberedMode : (o.mode === "direct" ? "direct" : "team");
     const state = {files: [], note: ""};
+    // The page checks a file with the server's own lists (D440, A4): read once per page load, the built-in lists stay the offline default and a failed read changes nothing.
+    if (!limitsAsked && api && typeof api.get === "function") {
+      const CSL = searchOf();
+      if (CSL && typeof CSL.setLimits === "function") {
+        limitsAsked = true;
+        try { Promise.resolve(api.get("/api/chats/attachment-limits")).then(r => CSL.setLimits(r)).catch(() => { limitsAsked = false; }); } catch (e) { limitsAsked = false; }
+      }
+    }
     // Ask (DV-1): `askAllowed` is the page's word that the server has it; `askNow` the switch; `modeBefore` where Do goes back to (the team / model toggle, which Ask never remembers)
     let askAllowed = false;
     let askNow = "do";
@@ -407,8 +427,14 @@
       list.forEach(file => {
         const name = nameFor(file, pasted, pastes + 1);
         const why = CS ? CS.checkFile(isObj(file) ? {name, size: file.size} : file) : "";
-        if (why !== "") { state.note = why; return; }
-        if (state.files.length >= MAX_FILES) { state.note = "Up to " + MAX_FILES + " files can go with one message."; return; }
+        // a file that cannot go is a chip that says why and stays until the owner removes it (FR-1): a note alone is cleared by the next action and the file is lost unseen
+        const over = state.files.filter(f => f.status !== "failed").length >= MAX_FILES;
+        if (why !== "" || over) {
+          seq += 1;
+          state.files.push({key: "f" + seq, name: name || "file", size: Number.isFinite(file && file.size) ? file.size : 0, status: "failed", id: "", kind: "", preview: "",
+            error: why !== "" ? why : "Up to " + MAX_FILES + " files can go with one message."});
+          return;
+        }
         if (pasted && name !== clean(file.name)) pastes += 1;
         seq += 1;
         const entry = {key: "f" + seq, name, size: file.size, status: "uploading", id: "", kind: "", error: "", preview: IMAGE_EXT.test(name) ? previewOf(file) : ""};
@@ -440,12 +466,13 @@
 
     async function send(value) {
       const body = text(value).trim();
-      if (state.mode !== "direct") return {ok: false, error: "This message goes to the team."};
+      if (state.mode !== "direct") return state.files.length > 0 ? refuse(TEAM_FILES) : {ok: false, error: "This message goes to the team."};
       if (body === "") return {ok: false, error: "Write a message first."};
       const long = tooLong(body);
       if (long !== "") return refuse(long);                              // nothing is sent and the box keeps the words
       if (state.turn.active) return refuse("This chat is already answering.");
-      if (state.files.some(f => f.status === "uploading")) return refuse("Wait for the files to finish uploading.");
+      if (state.files.some(f => f.status === "failed")) return refuse(REMOVE_FAILED);          // never send the rest and erase the one that failed (FR-2)
+      if (state.files.some(f => f.status === "uploading")) return refuse(WAIT_UPLOAD);
       const ready = state.files.filter(f => f.status === "ready");
       const accepted = await ask(body, ready.map(f => f.id), ready.map(f => f.name));
       if (accepted.ok) {
@@ -780,7 +807,7 @@
     return true;
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, fillBox, MAX_FILES, MAX_MESSAGE};
+  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, fillBox, MAX_FILES, MAX_MESSAGE, TEAM_FILES};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

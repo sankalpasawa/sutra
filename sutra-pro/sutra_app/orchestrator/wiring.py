@@ -176,15 +176,15 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     # the connector layer: the real router reports usage to the ledger, health and mode to the bus, and session ids to the chats
     router_settings = settings if connector is None else settings.model_copy(update={"connector": "stub"})
     # offline (and only offline) the stub answers the chat agent from the message, so a team can be made with no CLI (D97, GAP-DEMO)
+    attachments = Attachments(settings.data_dir)                                   # built before the router: a new model session's carry-over reads earlier files from it (D440)
     router = build_connector_router(router_settings, usage_sink=usage, events=lambda type_, data: bus.publish_one(type_, data),
-                                    transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
+                                    transcripts=ChatTranscripts(chats, attachments=attachments.store), session_hook=chats.set_provider,
                                     replybook=demo_book() if router_settings.offline else None, redactor=redactor)
     if settings.slots_on and not router_settings.offline:                     # SUTRA_NODES_SLOTS: the model-program limits count the whole computer, engine processes too (MAN-12)
         from sutra_app.connectors.slots import SlotPool
         router.slots = SlotPool(settings.data_dir / "connectors" / "slots", {name: router.policy.max_concurrency(name) for name in ("claude", "codex") if name in router.policy.providers})
     port = connector if connector is not None else AsyncConnector(router)
     router.choice_source = ChatChoices(db).get                       # the pill governs the org chat agent too (ABS-8)
-    attachments = Attachments(settings.data_dir)
     chat_port = RouterChatPort(router, attachments=attachments.store)
     recurring = Recurring(db, tasks, clock=clock, redact=redactor)
     limits = Limits(settings.data_dir / LIMITS_FILE, db, quotas=lambda: {name: router.health.quota(name) for name in ("claude", "codex")},

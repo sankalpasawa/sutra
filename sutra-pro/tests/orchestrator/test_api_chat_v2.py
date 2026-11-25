@@ -36,12 +36,12 @@ def world(db, clock):
 def rig(world, settings, tmp_path):
     chats = ChatStore(world.db)
     bus = EventBus(clock=world.db._clock)
+    attachments = Attachments(settings.data_dir)
     # a private work root: the default is the machine-wide <tempdir>/sutra-app-<uid>/work, where a session.json or system.txt of an earlier
     # run (the session ids are the same every run) would be read back and a test of what the route writes there would pass without the write
     config = ConnectorConfig(data_dir=settings.data_dir, work_root=tmp_path / "work")
-    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
+    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats, attachments=attachments.store), session_hook=chats.set_provider,
                           config=config)
-    attachments = Attachments(settings.data_dir)
     services = Services(settings=settings, version="t", db=world.db, redact=Redactor(None, environ={}))
     services.chats, services.bus = chats, bus
     services.chat_port, services.attachments = RouterChatPort(router, attachments=attachments.store), attachments
@@ -160,6 +160,51 @@ def test_an_upload_stores_the_file_once_and_refuses_what_is_not_a_kind_we_take(r
     assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.exe", "content_b64": base64.b64encode(b"MZ").decode()}, headers=H), 422) == "validation"
     assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.txt", "content_b64": "***"}, headers=H), 422) == "validation"
     assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.txt", "content_b64": blob}), 401) == "bad_token"
+
+
+def _upload(client, sid, name, blob):
+    r = client.post(f"/api/chats/{sid}/attachments", json={"name": name, "content_b64": base64.b64encode(blob).decode()}, headers=H)
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def _spy_on_model_input(services):
+    seen = []
+    router = services.chat_port.router
+    real = router.chat_stream
+
+    def spy(session_id, message, ctx, **kw):
+        seen.append(message)
+        return real(session_id, message, ctx, **kw)
+    router.chat_stream = spy
+    return seen
+
+
+def test_a_long_text_file_reaches_the_model_cut_and_the_receipt_says_so(rig):
+    """FR-4: the 202 says what the model received. 50,000 characters: the first 40,000 go, `cut` is true."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = _spy_on_model_input(services)
+    ref = _upload(client, sid, "big.txt", ("SECRET-HEAD " + "x" * 49_988).encode())
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "summarise", "attachments": [ref], "names": ["big.txt"]}, headers=H)
+    assert r.status_code == 202, r.text
+    receipt = r.json()["files"][0]
+    assert (receipt["name"], receipt["kind"], receipt["sent"], receipt["chars"], receipt["cut"]) == ("big.txt", "text", "text", 40_000, True)
+    assert wait_for(lambda: bool(seen))
+    assert "SECRET-HEAD" in seen[0].text and "x" * 39_000 in seen[0].text and "x" * 40_000 not in seen[0].text
+
+
+def test_a_pdf_for_codex_is_refused_naming_the_file_and_nothing_is_stored(rig):
+    """FR-10: a file that cannot be delivered refuses the whole send BEFORE the owner's line is stored."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    services.chat_port._chosen = lambda session_id: "codex"
+    ref = _upload(client, sid, "plan.pdf", b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n")
+    before = len(chats.messages(sid))
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read it", "attachments": [ref], "names": ["plan.pdf"]}, headers=H)
+    assert error_code(r, 422) == "validation"
+    assert "plan.pdf" in r.json()["error"]["message"]
+    assert len(chats.messages(sid)) == before          # no owner line, no reply
 
 
 # ---- the direct chat ---------------------------------------------------------------------------------------------------------------
@@ -339,3 +384,49 @@ def test_the_session_names_a_real_running_direct_turn_until_its_reply_is_stored(
 def test_the_old_name_of_the_running_set_is_the_same_set(rig):
     from sutra_app.orchestrator import direct_running
     assert chat_v2._running is direct_running.RUNNING
+
+
+def test_the_attachment_limits_are_served_without_a_token_and_are_the_stores_own_lists(rig):
+    """A4: one list, read by the page; the route is not taken for a session id."""
+    client, *_ = rig
+    r = client.get("/api/chats/attachment-limits")
+    assert r.status_code == 200
+    got = r.json()
+    assert got["max_files"] == 10 and got["inline_chars"] == 40_000 and "docx" in got["word"] and "py" in got["text_ext"] and "c" in got["text_ext"]
+
+
+def test_a_word_file_goes_through_the_routes_and_reaches_the_model_as_text(rig):
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = _spy_on_model_input(services)
+    import io
+
+    import docx
+    d = docx.Document()
+    d.add_paragraph("WORD-BODY-MARKER")
+    out = io.BytesIO()
+    d.save(out)
+    ref = _upload(client, sid, "plan.docx", out.getvalue())
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "summarise", "attachments": [ref], "names": ["plan.docx"]}, headers=H)
+    assert r.status_code == 202 and r.json()["files"][0]["sent"] == "text"
+    assert wait_for(lambda: bool(seen)) and "WORD-BODY-MARKER" in seen[0].text
+    bad = client.post(f"/api/chats/{sid}/attachments", json={"name": "x.docx", "content_b64": base64.b64encode(b"nope").decode()}, headers=H)
+    assert error_code(bad, 422) == "validation" and "x.docx could not be read as a Word file" in bad.json()["error"]["message"]
+
+
+def test_the_owners_line_keeps_what_was_attached_so_a_reload_shows_the_same_receipt(rig):
+    """FR-13: the ids and the receipt are stored with the owner's line (meta, like `mode`); a line with no file shows no key at all (NFR-2)."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    ref = _upload(client, sid, "notes.txt", b"twelve chars")
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read", "attachments": [ref], "names": ["notes.txt"]}, headers=H)
+    assert r.status_code == 202
+    assert wait_for(lambda: len(chats.messages(sid)) == 2)
+    line = chats.messages(sid)[0]
+    assert line.attachments == [{"id": ref, "name": "notes.txt", "kind": "text", "sent": "text", "chars": 12, "cut": False, "total": 12}]
+    wire = client.get(f"/api/chats/{sid}/messages", headers=H).json()["messages"]
+    assert wire[0]["attachments"][0]["name"] == "notes.txt" and "attachments" not in wire[1]
+    assert wait_for(lambda: not chat_v2.direct_running.answering(sid))
+    client.post(f"/api/chats/{sid}/direct", json={"text": "no file here"}, headers=H)
+    assert wait_for(lambda: len(chats.messages(sid)) == 4)
+    assert "attachments" not in client.get(f"/api/chats/{sid}/messages", headers=H).json()["messages"][2]

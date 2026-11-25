@@ -32,6 +32,7 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from .boot import (
+    AVATAR_STYLES,
     BootContext,
     BootMarkerError,
     DeptLike,
@@ -319,12 +320,24 @@ def build_router(
     department: Callable[[str], DeptLike | None],
     version: str,
     pages_dir: Path = PAGES_DIR,
+    avatars: Callable[[], str] | None = None,
 ) -> APIRouter:
     """The router of the pages: `/`, `/d/{dept}`, `/d/{dept}/library`, `/d/{dept}/raw` (the Raw AI chat), `/console` and `/favicon.ico`. `department` is `Services.department`; the pages
-    are read from `pages_dir` (a parameter so tests run on a temp tree)."""
+    are read from `pages_dir` (a parameter so tests run on a temp tree). `avatars` answers the team avatar style of this app profile (`Services.avatars`); it is asked on each view of
+    Home and of a team page, the two pages that draw the team, so a change shows on the next load. Without it, or when it fails or answers anything unknown, the style is "classic"."""
     BootContext(page="home", token=token, version=version)  # a bad token fails at mount time, not at the first view
     pages = Path(pages_dir)
     cache = _PageCache()
+
+    def style() -> str:
+        if avatars is None:
+            return "classic"
+        try:
+            chosen = avatars()
+        except Exception:  # noqa: BLE001  (a look choice never stops a page)
+            log.warning("the avatar style could not be read; serving the classic avatars", exc_info=True)
+            return "classic"
+        return chosen if chosen in AVATAR_STYLES else "classic"
 
     def serve(name: str, boot: BootContext, patch: Callable[[str], str] | None = None) -> Response:
         return _serve(cache, pages, name, boot, patch)
@@ -343,7 +356,7 @@ def build_router(
         if dept is not None:
             return _redirect(f"/d/{dept}/", _without_dept(request.url.query))
         links = getattr(request.app.state, "home_links", None)                          # the Work and Recipes entries: present only while their switches are on (DV-2b, DV-3b)
-        return serve(HOME_PAGE, BootContext(page="home", token=token, version=version), patch=(lambda html: add_home_links(html, links)) if links else None)
+        return serve(HOME_PAGE, BootContext(page="home", token=token, version=version, avatars=style()), patch=(lambda html: add_home_links(html, links)) if links else None)
 
     def dept_slash(dept: str, request: Request) -> Response:
         return _redirect(f"/d/{quote(dept, safe=':')}/", request.url.query)
@@ -352,7 +365,7 @@ def build_router(
         row = department(dept) if is_url_id(dept) else None
         if row is None:
             return _not_found(dept)
-        return serve(DEPT_PAGE, dept_boot(row, token=token, version=version))
+        return serve(DEPT_PAGE, dept_boot(row, token=token, version=version, avatars=style()))
 
     def dept_library(dept: str) -> Response:
         # D141: the page that J2 serves at /library, under the team. The file is the team page's and J2's own script tells the two apart by
@@ -400,11 +413,14 @@ class _UiStatic(StaticFiles):
         response = await super().get_response(path, scope)
         vendor = path.split(os.sep, 1)[0] == "vendor"
         response.headers["Cache-Control"] = VENDOR_CACHE if vendor else ASSET_CACHE  # 200 and 304 alike
+        if path.lower().endswith(".webp"):
+            # the avatar portraits (img/avatars): Windows has no type for .webp unless a program registered one, and the answer would be application/octet-stream
+            response.headers["Content-Type"] = "image/webp"
         return response
 
 
 def mount_static(app: FastAPI, static_dir: Path = STATIC_DIR) -> None:
-    """Serve `css/`, `js/` and `vendor/` of `static_dir` at `/ui`. `StaticFiles` answers only GET and HEAD, refuses a
+    """Serve `css/`, `js/`, `img/` and `vendor/` of `static_dir` at `/ui`. `StaticFiles` answers only GET and HEAD, refuses a
     path that leaves the directory and follows no symlink out of it. Also installs the HTML error pages (`install_error_pages`)."""
     install_error_pages(app)
     static_dir = Path(static_dir)

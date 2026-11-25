@@ -860,3 +860,19 @@ test("an approval that starts a project offers Name it and No (D427)", () => {
   assert.match(html, /data-act="choose" data-id="no" data-option="No">No</);
   assert.doesNotMatch(html, /data-id="yes"/);
 });
+
+test("FR-5: under the owner's line the page says what the model received of each file, escaped; a line with no receipt shows nothing", () => {
+  const line = Object.assign(owner(10, "read these\n(attached: notes.txt, big.csv, shot.png, plan.pdf)"), {attachments: [
+    {name: "notes.txt", kind: "text", sent: "text", chars: 12000, cut: false, total: 12000},
+    {name: "big.csv", kind: "text", sent: "text", chars: 40000, cut: true, total: 90000},
+    {name: "shot.png", kind: "image", sent: "image", chars: 0, cut: false, total: 0},
+    {name: "plan.pdf", kind: "pdf", sent: "pdf", chars: 0, cut: false, total: 0},
+    {name: "<img src=x onerror=1>.txt", kind: "text", sent: "text", chars: 3, cut: false, total: 3}]});
+  const html = transcript(writable(), [line]);
+  assert.doesNotMatch(html, /<img src=x/);
+  const items = select(one(dom(html), "div.nmsg.me"), "ul.creceipt li").map(textOf);
+  assert.deepEqual(items.slice(0, 4), ["Read: notes.txt (all 12,000 characters)", "Read: big.csv (first 40,000 of 90,000 characters)", "Sent as an image: shot.png", "Sent as a PDF: plan.pdf"]);
+  assert.match(items[4], /^Read: <img src=x onerror=1>\.txt \(all 3 characters\)$/);          // text content, so the markup was escaped, not run
+  assert.equal(ChatView.fileReceiptHtml([]), "");
+  assert.equal(select(one(dom(transcript(writable(), [owner(11, "plain")])), "div.nmsg.me"), "ul.creceipt").length, 0);
+});

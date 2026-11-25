@@ -452,6 +452,45 @@ def test_the_connector_layer_port_gets_the_port_spec_and_the_sink(j2, make_run_d
     assert events(run_dir)[0]["mock"] is False
 
 
+class NoChecksPort(llm.ScriptedPort):
+    """The scripted replies, but Identity's charter comes without item_checks: a live model that leaves the field out."""
+
+    @staticmethod
+    def _reply(req):
+        text = llm.ScriptedPort._reply(req)
+        try:
+            reply = json.loads(text)
+        except ValueError:
+            return text
+        if isinstance(reply, dict) and isinstance(reply.get("goal"), dict):
+            reply.pop("item_checks", None)
+            return json.dumps(reply)
+        return text
+
+
+def test_a_live_charter_without_item_checks_twice_stops_and_asks_and_never_starts_work(j2, make_run_dir, monkeypatch):
+    # T5 gate fix (D433): refused twice for items with no runnable check, the run stops and asks; code fills no check in
+    monkeypatch.delenv("STUDIO_MOCK")
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    module = type(sys)("sutra_app.connectors.engine_port")
+    module.make_port = lambda spec, *, usage_sink=None: NoChecksPort(usage_sink=usage_sink)
+    monkeypatch.setitem(sys.modules, "sutra_app.connectors.engine_port", module)
+    running = Running(run_dir)
+    wait_until(lambda: running.host.run is not None and running.host.run.paused, what="the question")
+    run = running.host.run
+    assert run.paused["kind"] == "info" and run.paused["handoff"]["kind"] == "intake"
+    assert not run.stamped and not run.workflows, "no work starts on a charter with unchecked items"
+    assert set(run.goal["item_checks"]) < set(run.goal["done_when"]), "code filled in no check"
+    said = of(events(run_dir), "say")
+    asked = [e["text"] for e in said if e.get("act") == "ASK_REQUESTER"]
+    assert len(asked) == 1 and "runnable check" in asked[0] and run.goal["done_when"][0] in asked[0]
+    assert [e["who"] for e in said if "Charter rejected" in e["text"]] == ["validator", "system"]
+    assert not [e for e in said if "Charter accepted" in e["text"]]
+    append_inbox(run_dir, 1, "stop")
+    assert running.wait() == 0
+    assert events(run_dir)[-1]["status"] == "stopped"
+
+
 def test_without_the_connector_layer_the_run_cannot_start_and_says_so(j2, run_dir, monkeypatch):
     monkeypatch.delenv("STUDIO_MOCK")
     monkeypatch.setitem(sys.modules, "sutra_app.connectors.engine_port", None)          # an import of None raises ImportError

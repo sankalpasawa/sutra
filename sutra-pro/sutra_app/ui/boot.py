@@ -3,7 +3,7 @@
 Three small pure pieces live here, all used by `routes.py`:
 
 * `render_page` is the ONE boot injector. It replaces the marker `<!--SUTRA-BOOT-->` of a page file with a JSON block
-  (the per-launch token, the department, the version). The token reaches a page only this way and is sent back only in
+  (the per-launch token, the department, the version, the team avatar style). The token reaches a page only this way and is sent back only in
   the `X-Sutra-Token` header; no cookie exists anywhere (D81).
 * `inline_script_hashes` and `csp_header` build the `script-src` allow-list from the page's own inline scripts, so the
   policy needs no `'unsafe-inline'` for scripts (D82, S3-web-09).
@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 BOOT_MARKER = "<!--SUTRA-BOOT-->"
 BOOT_BLOCK_ID = "sutra-boot"
 TOKEN_MIN_LENGTH = 16  # Settings.token has the same minimum, also when it comes from SUTRA_TOKEN
+
+AVATAR_STYLES = ("classic", "illustrated")  # the team avatar styles a page can be told to draw; "classic" is the default everywhere
 
 URL_ID_PATTERN = r"[A-Za-z0-9_.:-]{1,120}"
 URL_ID_RE = re.compile(URL_ID_PATTERN)
@@ -58,6 +60,7 @@ class BootContext(BaseModel):
     archived: bool = False
     note: str = ""  # the archived banner text, empty otherwise
     version: str
+    avatars: Literal["classic", "illustrated"] = "classic"  # the team avatar style of this app profile (orchestrator/appearance.py); Home and the team page draw it
 
     @model_validator(mode="after")
     def _check_page(self) -> "BootContext":
@@ -80,7 +83,7 @@ def archived_note(merged_into_name: str) -> str:
     return f"This team was merged into {target}. Its history stays available."
 
 
-def dept_boot(row: DeptLike, *, token: str, version: str) -> BootContext:
+def dept_boot(row: DeptLike, *, token: str, version: str, avatars: str = "classic") -> BootContext:
     """The boot context of a department page, from the row `Services.department` returned."""
     archived = bool(getattr(row, "archived", False))
     merged_into = str(getattr(row, "merged_into_name", "") or "")
@@ -92,6 +95,7 @@ def dept_boot(row: DeptLike, *, token: str, version: str) -> BootContext:
         archived=archived,
         note=archived_note(merged_into) if archived else "",
         version=version,
+        avatars=avatars,  # type: ignore[arg-type]  (the caller passes a checked style; the model refuses anything else)
     )
 
 

@@ -14,7 +14,9 @@
      connectorsHtml(health, state) -> html        the Connectors group from GET /api/health: a row per provider with Test and, for codex only, Sign in;
                                           the plan in words and one meter per usage window (plan_meter.js, GAP-providers)
      signInState(prev, answer) -> {step, url, code, expires_in, message}   the sign-in reducer (start answer, poll answer, an error)
-     appearanceHtml(pref) -> html                 the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages)
+     appearanceHtml(pref, av?) -> html            the Appearance group: Light | Dark | System (localStorage j2theme, one choice for both pages); with `av`
+                                                  {style, note, face(style, key, size)} also Team avatars: Classic | Illustrated (kept by the server, avatars.js)
+     avatarRowHtml(av) -> html                    the five faces of the Home preview in the chosen style (home.js repaints only this while a radio has the focus)
      workdirHtml(state) -> html                   the Working folder group (GAP3-workdir, D125): a text field, "Choose folder…" (only where the desktop
                                           app bridges its folder dialog), Save, Clear, the access choice (Read and change files | Read only), the
                                           project instructions file the team follows, "What the model can see" (the folder's top-level names from
@@ -380,12 +382,31 @@
   }
 
   /* ---------------------------------------------------------------- Appearance group */
-  function appearanceHtml(pref) {
+  // Team avatars, right under the theme: Classic (the default, the faces Sutra Pro has always drawn) or Illustrated (the portrait artwork). `av` is
+  // {style, note, face(style, key, size) -> svg}; home.js gives it when avatars.js is on the page, and without it the group is the theme alone.
+  // Real radio buttons in a fieldset: the arrow keys, the focus ring and the group's name come from the browser.
+  const AVATAR_CHOICES = [["classic", "Classic", "Your current Sutra avatars"], ["illustrated", "Illustrated", "The new portrait artwork"]];
+  const AVATAR_TEAM = ["asha", "mira", "kabir", "dev", "nora"];
+  const avatarStyleOf = av => (isObj(av) && AVATAR_CHOICES.some(c => c[0] === av.style) ? av.style : "classic");
+  const avatarFaceOf = av => (isObj(av) && typeof av.face === "function" ? (style, key, size) => String(av.face(style, key, size) || "") : () => "");
+  function avatarRowHtml(av) {
+    const now = avatarStyleOf(av), face = avatarFaceOf(av);
+    return '<span class="fdfacerow">' + AVATAR_TEAM.map(k => face(now, k, 40)).join("") + '</span><span class="fdteam">Asha, Mira, Kabir, Dev and Nora are ready.</span>';
+  }
+  function avatarsHtml(av) {
+    const now = avatarStyleOf(av), face = avatarFaceOf(av);
+    return '<fieldset class="avset"><legend>Team avatars</legend><span class="sethint">Choose how the team appears on Home, in Studio, and in chat.</span>' +
+      '<div class="avopts">' + AVATAR_CHOICES.map(c => '<label class="avopt"><input type="radio" name="avatar-style" value="' + c[0] + '"' + (c[0] === now ? " checked" : "") +
+        "><span><b>" + c[1] + "</b><small>" + c[2] + '</small><span class="avthumbs">' + ["asha", "kabir", "nora"].map(k => face(c[0], k, 32)).join("") + "</span></span></label>").join("") +
+      '</div><div class="avprev"><h4>Home preview</h4><div class="fdfaces">' + avatarRowHtml(av) + "</div></div>" +
+      '<span class="avnote" role="status">' + esc(isObj(av) && typeof av.note === "string" ? av.note : "") + "</span></fieldset>";
+  }
+  function appearanceHtml(pref, av) {
     const now = THEMES.some(t => t[0] === pref) ? pref : "light";
     return '<section class="setgrp" data-group="appearance" aria-labelledby="set-appearance-h"><h3 id="set-appearance-h">' + GROUPS.appearance + "</h3>" +
       '<div class="appear"><span class="seg" role="group" aria-label="Appearance">' +
       THEMES.map(t => '<button type="button" data-themepick="' + t[0] + '" aria-pressed="' + (t[0] === now) + '">' + t[1] + "</button>").join("") +
-      '</span><span class="sethint">One choice for every page. System follows your device.</span></div></section>';
+      '</span><span class="sethint">One choice for every page. System follows your device.</span></div>' + (isObj(av) ? avatarsHtml(av) : "") + "</section>";
   }
 
   /* ---------------------------------------------------------------- sign-in */
@@ -1040,7 +1061,7 @@
   }
 
   const SettingsView = {
-    engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml,
+    engineHtml, engineBody, engineErrors, formProblems, connectorsHtml, signInState, appearanceHtml, avatarRowHtml,
     testConnector, signIn, watchHealth, loadEngine, saveEngine, enginePath, testLine, kindOf, parseValue, setCliPath,
     policyHtml, policyBody, policyProblem, policyErrors, loadPolicy, savePolicy, answering, aboutHtml, checkUpdate, updateWords, setAutoUpdate,
     workdirHtml, loadWorkdir, saveWorkdir, saveWorkdirAccess, clearWorkdir, chooseWorkdir, canChooseFolder, WORKDIR_PATH, WORKDIR_WORDS,

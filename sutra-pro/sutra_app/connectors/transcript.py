@@ -17,13 +17,27 @@ from typing import Optional, Sequence
 
 from .models import Message
 
-__all__ = ["render_carry_over", "FULL_CHARS", "TAIL_MESSAGES", "DIGEST_LINE_CHARS", "DIGEST_CAP_CHARS", "ROLE_LABELS"]
+__all__ = ["same_turn", "render_carry_over", "FULL_CHARS", "TAIL_MESSAGES", "DIGEST_LINE_CHARS", "DIGEST_CAP_CHARS", "ROLE_LABELS"]
 
 FULL_CHARS = 60_000          # J2 CHAT_FULL_CHARS
 TAIL_MESSAGES = 40           # J2 CHAT_TAIL
 DIGEST_LINE_CHARS = 120      # one shortened line per older message
 DIGEST_CAP_CHARS = 8_000     # all shortened lines together
 ROLE_LABELS = {"user": "User", "assistant": "Assistant", "system": "System"}
+
+
+_RECORD = "\n(attached: "                  # the line the app stores after an owner's words that carried files (orchestrator/direct_turns.py attached_line)
+_FILE_BLOCK = "\n\n[Attached file: "        # where the text of the files begins in what the model is sent (connectors/attachments.py)
+
+
+def same_turn(stored: str, new: str) -> bool:
+    """Whether the last stored owner line IS the message being sent now. Equal text, or: the stored line is the owner's words plus the record of their files (and, in a carry-over,
+    the files' text), the new message is the words plus the files' text, and the words are the same. It is dropped from the history so it is not carried twice (D440)."""
+    if stored == new:
+        return True
+    if _RECORD not in stored:
+        return False
+    return stored.split(_RECORD, 1)[0] == new.split(_FILE_BLOCK, 1)[0]
 
 
 def _line(m: Message) -> str:

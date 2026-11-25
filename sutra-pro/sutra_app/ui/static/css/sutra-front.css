@@ -156,7 +156,6 @@ body.home .swacts .sethint { color: var(--s-muted); font-size: 13px; }
 .fdlatest.fdready .fdlh { color: var(--s-goodink); }
 .fdwatch { padding: 13px 24px; font-size: 16px; }
 .fdoops { border-color: var(--s-bad); }
-.fdspin { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--s-accent); border-top-color: transparent; }
 .fdphase { margin: 0 0 6px; color: var(--s-muted); font: 500 13px/1.4 var(--s-body); }
 .fdlink { border: 0; background: none; padding: 0; color: var(--s-accent); font: 600 14px/1.4 var(--s-body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .fdlatest .fdcard { margin-top: 6px; }
@@ -245,9 +244,7 @@ a.fdrowlink:hover .fdname { text-decoration: underline; text-underline-offset: 3
 }
 @media (prefers-reduced-motion: no-preference) {
   .fdcard, .fdlatest { animation: fdin var(--dur-base) var(--ease-out) both; }
-  .fdspin { animation: fdspin calc(var(--dur-slow) * 4) linear infinite; }
   @keyframes fdin { from { opacity: 0; transform: translateY(4px); } }
-  @keyframes fdspin { to { transform: rotate(360deg); } }
 }
 body.home .railhead, body.home #dview h3.railhead { font-family: var(--s-body); }
 

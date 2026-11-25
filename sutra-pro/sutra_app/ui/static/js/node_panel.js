@@ -1362,6 +1362,9 @@
       if (directOn() && team !== true) return sendDirect(value, fromBox);
       const body = text(value).trim();
       if (body === "") return false;
+      // a file only ever goes to the model: a team send with a chip in the box would drop it unseen (D440, FR-3), so it is refused with the one sentence that says what to do
+      const held = st.tab === "chat" && root.ChatComposer ? composerOf() : null;
+      if (held !== null && held.state().files.length > 0) { st.banner = root.ChatComposer.TEAM_FILES; paintChat(); return false; }
       const g = gen;
       const sid = st.sid;
       st.sending = true;

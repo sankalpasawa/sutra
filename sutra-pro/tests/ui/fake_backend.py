@@ -386,6 +386,7 @@ class FakeState:
                            "guard": {"enabled": False, "level": "none", "holding": False, "top": None, "line": "", "windows": []}}
             self.attention = {"quiet_hours": None, "nudges_per_hour": 3, "default_nudges_per_hour": 3, "max_nudges_per_hour": 10, "quiet_now": False}
             self.sections = {"version": 1, "sections": []}          # the sidebar's sections (GET/PUT /api/sections)
+            self.avatars = "classic"                                # the team avatar style (GET/PUT /api/appearance, and each page's boot block)
             self.recurring: list[dict] = []
             self.recurring_runs: dict[str, list[dict]] = {}
             self.chart_notes: list[dict] = []       # gap chart-insight: GET /api/chart/notes (set by /__fake/chart-notes)
@@ -1059,7 +1060,7 @@ class _Settings:
 
 
 class _Services:
-    """The three members `sutra_app.ui.mount` reads from the orchestrator's Services."""
+    """The four members `sutra_app.ui.mount` reads from the orchestrator's Services."""
 
     def __init__(self, state: FakeState) -> None:
         self.settings = _Settings(state.token)
@@ -1069,6 +1070,9 @@ class _Services:
     def department(self, dept_id: str):
         found = self._state.department(dept_id)
         return _DeptRow(found["id"], found["name"]) if found else None
+
+    def avatars(self) -> str:
+        return getattr(self._state, "avatars", "classic")
 
 
 class FakeMiddleware:
@@ -1317,6 +1321,22 @@ def register_api(app: FastAPI, state: FakeState) -> None:
         with state.lock:
             state.sections = {"version": 1, "sections": copy.deepcopy(body["sections"])}
             return JSONResponse(copy.deepcopy(state.sections))
+
+    # ---- the team avatar style (the real route is sutra_app/orchestrator/api/appearance.py; the pages are told it in their boot block)
+    @app.get("/api/appearance")
+    def get_appearance():
+        with state.lock:
+            return JSONResponse({"version": 1, "avatars": getattr(state, "avatars", "classic")})
+
+    @app.put("/api/appearance")
+    async def put_appearance(request: Request):
+        require_token(request, state)
+        body = await json_body(request)
+        if not isinstance(body, dict) or set(body) != {"avatars"} or body["avatars"] not in ("classic", "illustrated"):
+            raise ApiError(422, "validation", "avatars is classic or illustrated")
+        with state.lock:
+            state.avatars = body["avatars"]
+            return JSONResponse({"version": 1, "avatars": state.avatars})
 
     @app.get("/api/heads-up")
     def heads_up():

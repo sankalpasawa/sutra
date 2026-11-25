@@ -1200,7 +1200,7 @@ def test_p19_the_edit_is_in_the_vendored_make_report():
 
 # ---- P21 (D245): the host's own run files during a builder tools call ----------------------------------------------------------
 
-def tools_call(j2, run, said=None, extra=None, temps=()):
+def tools_call(j2, run, said=None, extra=None, temps=(), inside=None):
     """One builder call with tools, through J2Run.call in mock mode: the scripted reply plays the CLI (it writes in the builder's
     folder, and `said` is what its tool calls named) and the app's host (it updates agent_live.json and snapshot.json meanwhile)."""
     from sutra_app.engine import llm
@@ -1214,6 +1214,9 @@ def tools_call(j2, run, said=None, extra=None, temps=()):
 
     def mock():
         (cwd / "build.py").write_text("print('built')\n")
+        for name, body in (inside or {}).items():      # more files in the builder's folder (P34: the CLI's .claude)
+            (cwd / name).parent.mkdir(parents=True, exist_ok=True)
+            (cwd / name).write_text(body)
         (Path(run.dir) / "agent_live.json").write_text(json.dumps({"agents": {"W-1": {"text": "writing"}}}))     # the host's live view
         (Path(run.dir) / "snapshot.json").write_text(json.dumps({"turn": "W-1"}))                                  # the host's snapshot
         for name, body in (extra or {}).items():
@@ -1308,7 +1311,8 @@ def sort_proposals(real, *, fix=False):
         return {"name": name, "kind": "build", "goal_gap": "x", "outputs": [out], "completion_check": "z", "covers": covers,
                 "dependencies": deps, "parts": ["agent_file"] * max(1, len(covers)), "atoms": [atom], "real_run": real_run}
     rr = {"command": ["python3", "sort_files.py", real], "folder": real, "reads": [],
-          "why": "The brief asks to run the script on the Requester's own folder.", "checks": [3]}
+          "why": "The brief asks to run the script on the Requester's own folder.", "checks": [3],
+          "expect": {"created": ["done.txt"], "changed": [], "deleted": []}}      # P35 (D438): what P31_OK and P33_OK create
     script = wf("Build sort_files.py", "sort_files.py", [1], [], rr)
     if fix:
         return [script]
@@ -2387,442 +2391,1223 @@ def test_p22_every_rejection_path_in_the_validator_sets_its_own_key():
     assert len(names) == len(set(names)), sorted(x for x in names if names.count(x) > 1)
 
 
-# ---- P30 (D433): the real-run fixes. A failing dry run is never offered, an approval is never lost, a run never ends ready with a
-# pending live step, receipts keep the evidence, and a built script's packages get their own environment after RUN <code>. No network:
-# a fake python stands in for the interpreter, its venv module and pip, and a fake sandbox runtime records its settings ------------
-# TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
-# "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
-P30_FAKE_PYTHON = '''#!{exe}
-import json, os, shutil, subprocess, sys
-me, a = os.path.abspath(sys.argv[0]), sys.argv[1:]
-site = os.path.join(os.path.dirname(os.path.dirname(me)), "site")
-def note(kind):
-    with open(os.environ["FAKE_LOG"], "a") as f:
-        f.write(json.dumps({{"kind": kind, "argv": a, "python": me}}) + "\\n")
-if a[:2] == ["-m", "venv"]:
-    note("venv")
-    os.makedirs(os.path.join(a[2], "bin"))
-    os.makedirs(os.path.join(a[2], "site"))
-    shutil.copy(me, os.path.join(a[2], "bin", "python"))
-    sys.exit(0)
-if a[:3] == ["-m", "pip", "install"]:
-    note("pip install")
-    if os.environ.get("FAKE_PIP_FAIL"):
-        sys.stderr.write("ERROR: No matching distribution found for " + os.environ["FAKE_PIP_FAIL"] + "\\n")
-        sys.exit(1)
-    for line in open(a[a.index("-r") + 1]):
-        name, _, version = line.strip().partition("==")
-        if name:
-            open(os.path.join(site, name.replace("-", "_") + ".py"), "w").write("VERSION = %r\\n" % version)
-    sys.exit(0)
-if a[:3] == ["-m", "pip", "list"]:
-    print(json.dumps([{{"name": f[:-3], "version": open(os.path.join(site, f)).read().split("'")[1]}}
-                      for f in sorted(os.listdir(site)) if f.endswith(".py")]))
-    sys.exit(0)
-note("run")
-env = dict(os.environ)
-if os.path.isdir(site):
-    env["PYTHONPATH"] = site
-sys.exit(subprocess.run([{exe!r}] + a, env=env).returncode)
-'''
-# TEST ONLY stand-in for the sandbox runtime (srt -s <settings> -c <command>): records the settings, runs the command WITHOUT a sandbox
-P30_FAKE_SANDBOX = '''import json, os, subprocess, sys
-a = sys.argv[1:]
-with open(os.environ["FAKE_LOG"], "a") as f:
-    f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
-allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]      # what the command may reach: told to it as FAKE_NET
-sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True, env={**os.environ, "FAKE_NET": json.dumps(allowed)}).returncode)
-'''
-# TEST ONLY: a built script that "reaches" the hosts given after its folder. Inside the fake sandbox a host that is not allowed is
-# refused, as the real one refuses the connection; outside a sandbox every host is reachable. No network.
-P30_NET = ("import json, os, sys\nallowed = json.loads(os.environ['FAKE_NET']) if 'FAKE_NET' in os.environ else None\n"
-           "for h in sys.argv[2:]:\n    if allowed is not None and h not in allowed:\n"
-           "        sys.stderr.write('blocked by the sandbox: ' + h + '\\n')\n        sys.exit(9)\n"
-           "open(os.path.join(sys.argv[1], 'out.txt'), 'w').write('reached ' + ' '.join(sys.argv[2:]))\n")
-P30_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
-P30_BAD = "import sys\nsys.stderr.write('boom: the token file is missing\\n')\nsys.exit(3)\n"
-P30_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
-# the fake interpreter is a `#!` script: Windows can't run one, so the tests that install with it run on macOS and Linux only
-p30_posix = pytest.mark.skipif(os.name == "nt", reason="the fake interpreter is a #! script, which Windows can't run")
-P30_FILES = {"s.py": P30_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
+# ---- P30 (D433): every done-when item has a runnable check and a builder-set status; Done only when all are built and pass
+MORNING = ["The tool lists new files every morning.", "The summary is posted to the team channel.", "The list names each file's size."]
 
 
-@pytest.fixture(scope="module")
-def j2rr(tmp_path_factory):
-    """J2 with the folder type FT, builder tools on (the general path), its data folder and the fake interpreter."""
-    base = tmp_path_factory.mktemp("j2-p30")
-    fake, srt = base / "python3.12", base / "fake_srt.py"
-    fake.write_text(P30_FAKE_PYTHON.format(exe=sys.executable), encoding="utf-8")
-    fake.chmod(0o755)
-    srt.write_text(P30_FAKE_SANDBOX, encoding="utf-8")
-    with fresh_j2(base, J2_TYPES_DIR=base / "types", J2_AGENT_TOOLS="1", J2_DATA_DIR=base / "data", J2_RUN_PYTHON=fake) as mod:
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("FAKE_LOG", str(base / "fake.log"))
-            mod.j2_types.create(FT, "Script", None, form="agent")
-            mod._data_type.cache_clear()
-            mod.p30_log = lambda kind: [r for r in map(json.loads, (base / "fake.log").read_text().splitlines())
-                                        if r["kind"] == kind] if (base / "fake.log").exists() else []
-            mod.p30_srt = f"{sys.executable} {srt}"
-            yield mod
+def recording(run, monkeypatch, who):
+    """run.call recorded for the functions `who` accepts (fmt, task), passed through to J2's mock."""
+    seen, real = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: (seen.append((fn, a[0], a[1])) if who(fn) else None) or real(fn, *a, **kw))
+    return seen
+
+
+def intake(run, monkeypatch, done_when, checks, **h):
+    """Identity's intake with a charter and item_checks of the test's own (no facts, so the fact check passes)."""
+    real = run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **kw: {"to_requester": "Thanks, starting now.", "to_agents": "@Adaptation Charter.",
+                                                           "enough": True, "next": "Adaptation", "item_checks": checks,
+                                                           "goal": {"statement": "A morning file list", "site_name": "Morning",
+                                                                    "done_when": list(done_when)}}
+                        if fn == "identity" else real(fn, *a, **kw))
+    run._identity_intake({"kind": "intake", **h})
 
 
 @pytest.fixture
-def rr_run(j2rr, tmp_path):
-    """made(files, status, attempts, test) -> (run, workflow): one workflow that plans a real run on a folder of the Requester's."""
-    real = tmp_path / "inbox"
-    real.mkdir()
-    (real / "mail.txt").write_text("one")
+def site_run(make_run):
+    run = make_run()
+    run.post("user", "A one-page website that lists new files every morning")
+    run.request = "A one-page website that lists new files every morning"
+    run._apply_output("website")
+    return run
+
+
+def test_p30_intake_stores_a_check_per_item_by_text(j2, make_run, site_run, monkeypatch):
+    run = make_run()
+    say(run, BREW_LAB)
+    g = run.goal
+    assert set(g["item_checks"]) == set(g["done_when"])
+    assert all(set(c) <= {"type", "target", "expect"} for c in g["item_checks"].values())
+    # a change request keeps the checks of the items that stay (Identity's new list has the wrong length: none of it is taken)
+    fe = {"type": "file-exists", "target": "index.html", "expect": True, "extra": "dropped"}
+    intake(site_run, monkeypatch, MORNING, [fe] * 3)
+    assert site_run.goal["item_checks"] == {t: {k: v for k, v in fe.items() if k != "extra"} for t in MORNING}
+    intake(site_run, monkeypatch, MORNING[:2] + ["The list is sorted by time."], [fe], change="sort the list by time")
+    assert site_run.goal["item_checks"] == {t: {"type": "file-exists", "target": "index.html", "expect": True} for t in MORNING[:2]}
+    # the no-errors gate is code's own render check, whatever Identity sent for it
+    intake(site_run, monkeypatch, MORNING[:2] + ["The page has no JavaScript errors."], [fe] * 3)
+    assert site_run.goal["item_checks"][j2.GATE_TEXT] == {"type": "render-check"}
+
+
+def test_p30_intake_prompt_asks_one_item_per_required_behaviour(j2, make_run, monkeypatch):
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn == "identity")
+    say(run, BREW_LAB)
+    fmt, task = next((f, t) for _, f, t in seen if '"item_checks"' in f)
+    assert j2.BEHAVIOUR_RULE in task and '"real-run"' in fmt
+
+
+def test_p30_code_made_items_carry_code_checks(j2):
+    g = j2.stage_goal("hld", {"product_name": "Morning"}, {})
+    secs = j2.output_def("hld")["sections"]
+    assert len(g["done_when"]) == len(secs)
+    assert [g["item_checks"][t] for t in g["done_when"]] == [{"type": "section-not-empty", "target": s, "expect": 1} for s in secs]
+
+
+def test_p30_a_charter_with_an_item_without_an_allowed_check_is_refused(site_run, monkeypatch):
+    intake(site_run, monkeypatch, MORNING, [{"type": "file-exists", "target": "index.html"}, {"type": "made-up-check"}, None])
+    assert set(site_run.goal["item_checks"]) == {MORNING[0]}
+    ok, why = site_run._stamp_check()
+    assert not ok and why.startswith("done-when item(s) [2, 3] have no runnable check"), why
+    assert any("Charter rejected: done-when item(s) [2, 3]" in m["text"] for m in site_run.chat)
+
+
+def test_p30_a_builder_sees_its_items_with_check_and_status(j2, make_run, monkeypatch):
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn.startswith("W-"))
+    say(run, BREW_LAB)
+    built = [(f, t) for _, f, t in seen if "YOUR WORKFLOW: " in t]
+    assert built and all('"item_status"' in f for f, _ in built)
+    brief = json.loads(built[0][1].split("YOUR WORKFLOW: ", 1)[1].split("\n", 1)[0])
+    assert brief["items"] and all(set(x) == {"item", "text", "check", "status"} for x in brief["items"])
+    assert all(x["check"] == run.goal["item_checks"][x["text"]] and x["status"] == "not_built" for x in brief["items"])
+    assert all(w["item_status"] and {s["status"] for s in w["item_status"].values()} == {"built"}
+               for w in run.workflows if w["status"] == "done" and w.get("covers_text"))
+
+
+PREPARED_NOT_PERFORMED = ("an item whose action you prepared but did not perform (e.g. a message written but never sent, "
+                          "for lack of access or credentials) is blocked with that reason, never built")
+
+
+def test_p30_a_prepared_but_not_performed_action_is_blocked_not_built(make_run, site_run, monkeypatch):
+    """Beta fix (c), plumbing only: every builder prompt carries the rule, and a scripted builder reply that follows it ends
+    blocked with its reason. Whether a live model follows the rule is not tested here."""
+    run = make_run()
+    seen = recording(run, monkeypatch, lambda fn: fn.startswith("W-"))
+    say(run, BREW_LAB)
+    built = [f for _, f, t in seen if "YOUR WORKFLOW: " in t]
+    assert built and all(PREPARED_NOT_PERFORMED in f for f in built)
+    morning_goal(site_run)
+    w = {"id": "W-2", "status": "done", "covers_text": [MORNING[1]]}
+    site_run.workflows = [w]
+    site_run._store_item_status(w, {"item_status": [{"item": 2, "status": "blocked",
+                                                     "reason": "the team channel's webhook address (the post is written, never sent)"}]})
+    assert w["item_status"] == {MORNING[1]: {"status": "blocked", "reason": "the team channel's webhook address (the post is written, never sent)"}}
+    assert site_run._blocked_items() == [MORNING[1]]
+
+
+def morning_goal(run, checks=True):
+    run.goal = {"statement": "A morning file list", "done_when": list(MORNING), "charter_items": list(MORNING),
+                **({"item_checks": {t: {"type": "file-exists", "target": "index.html", "expect": True} for t in MORNING}} if checks else {})}
+
+
+def test_p30_builder_status_is_a_field_missing_or_unknown_is_not_built(site_run):
+    run = site_run
+    morning_goal(run)
+    w = {"id": "W-1", "covers_text": list(MORNING)}
+    run._store_item_status(w, {"human_output": "The channel part is not yet built.", "item_status": [
+        {"item": 1, "status": "built", "reason": ""}, {"item": 2, "status": "done"}, {"item": 9, "status": "built"}]})
+    assert w["item_status"] == {MORNING[0]: {"status": "built", "reason": ""},       # words in human_output are never read
+                                MORNING[1]: {"status": "not_built", "reason": "the builder set no status"},
+                                MORNING[2]: {"status": "not_built", "reason": "the builder set no status"}}
+    run._store_item_status(w, {"item_status": [{"item": 1, "status": "blocked", "reason": " "},
+                                               {"item": 2, "status": "blocked", "reason": "no channel token given"},
+                                               {"item": 3, "status": "not_built", "reason": "out of time"}]})
+    assert w["item_status"] == {MORNING[0]: {"status": "not_built", "reason": "blocked without a reason"},
+                                MORNING[1]: {"status": "blocked", "reason": "no channel token given"},
+                                MORNING[2]: {"status": "not_built", "reason": "out of time"}}
+    morning_goal(run, checks=False)
+    w2 = {"id": "W-2", "covers_text": list(MORNING)}
+    run._store_item_status(w2, {})
+    assert "item_status" not in w2
+
+
+def passing_rows(crit):
+    return [{"id": f"F-{i}", "item": i, "criterion": c, "verdict": "PASS", "pass": True, "note": "Audit saw it"} for i, c in enumerate(crit, 1)]
+
+
+def test_p30_audit_pass_without_a_passing_check_is_blocked_by_evidence(site_run):
+    run = site_run
+    morning_goal(run)
+    del run.goal["item_checks"][MORNING[1]]
+    run.goal["item_checks"][MORNING[0]] = {"type": "file-exists", "target": "menu.html", "expect": True}
+    os.makedirs(Path(run.dir) / "site", exist_ok=True)
+    (Path(run.dir) / "site" / "index.html").write_text("<html><body></body></html>")
+    rows = passing_rows(MORNING)
+    run._item_check_gate(rows, "<html><body></body></html>", {})
+    assert [r["verdict"] for r in rows] == ["BLOCKED_BY_EVIDENCE", "BLOCKED_BY_EVIDENCE", "PASS"]
+    assert [r["pass"] for r in rows] == [False, False, True]
+    assert rows[0]["note"] == "Code ran this item's check (file-exists): menu.html not found in the build. (Audit's own note: Audit saw it)"
+    assert rows[1]["note"].startswith("Code ran this item's check (none): this item has no runnable check.")
+    assert [e["type"] for e in run.events if e["agent"] == "validator"].count("item_check") == 2
+
+
+def finish(run, statuses):
+    """Two done workflows own the items; the last audit passes everything; then Identity's done."""
+    run.workflows = [{"id": "W-1", "name": "List", "status": "done", "covers_text": MORNING[:1] + MORNING[2:], "cycle": 1},
+                     {"id": "W-2", "name": "Post", "status": "done", "covers_text": MORNING[1:2], "cycle": 1}]
+    for w in run.workflows:
+        if statuses is not None:
+            run._store_item_status(w, {"item_status": [{"item": run._no(t), **statuses.get(t, {"status": "built", "reason": ""})}
+                                                       for t in w["covers_text"]]})
+    run.audits = [audit_v0(MORNING, [], output="prd", version=1)]
+    run.outcome = None
+    run._goal_done({})
+    return run.outcome
+
+
+def test_p30_done_only_when_every_item_is_built_and_passes(make_run):
+    run = make_run()
+    run.post("user", "A PRD for a morning file list")
+    run._apply_output("prd")
+    morning_goal(run)
+    out = finish(run, {MORNING[1]: {"status": "blocked", "reason": "a channel token"}})
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {MORNING[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in out
+    run.sites = ["## Users"]
+    assert f"{MORNING[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in run._ship_outcome("on request")
+    assert finish(run, {}).startswith("Done:") and run._ship_outcome("on request").startswith("Done:")
+    # the no-errors gate is code's own check: no workflow owns it, and it is not an open item for that
+    run.goal["item_checks"][MORNING[2]] = {"type": "render-check"}
+    run.workflows[0]["covers_text"] = MORNING[:1]
+    run._store_item_status(run.workflows[0], {"item_status": [{"item": 1, "status": "built", "reason": ""}]})
+    assert run._open_items() == []
+
+
+def test_p30_a_charter_without_item_checks_behaves_as_before(make_run):
+    run = make_run()
+    run.post("user", "A PRD for a morning file list")
+    run._apply_output("prd")
+    morning_goal(run, checks=False)
+    assert run._stamp_check() == (True, "passes code checks")
+    rows = passing_rows(MORNING)
+    run._item_check_gate(rows, "", {})
+    assert [r["verdict"] for r in rows] == ["PASS"] * 3
+    assert run._open_items() == [] and finish(run, None).startswith("Done:")
+
+
+def test_p30_inside_folder_is_no_item_check_and_the_mock_folder_default_is_file_exists(j2ft, sort_run):
+    # review R1-5: inside-folder holds for every build, so it is never evidence for one item
+    run = sort_run[0]()
+    assert "inside-folder" in run.out["check_types"] and "inside-folder" not in run._item_check_types()
+    crit = list(SORT_DONE_WHEN)
+    got = run._item_checks_from([{"type": "inside-folder", "target": "."}, {"type": "file-exists", "target": "sort_files.py"},
+                                 {"type": "real-run"}], crit)
+    assert set(got) == set(crit[1:])
+    assert j2ft.mock_item_check(run.out) == {"type": "file-exists", "target": "main.py", "expect": True}
+    assert "main.py" in j2ft.mock_form_folder_files(FT, {})      # the file the mock folder builder always writes
+
+
+def test_p30_a_served_section_carries_the_earlier_runs_status_or_not_built(site_run, tmp_path):
+    # review R1-6: code copies the status the earlier run's builder set; it never sets one
+    run = site_run
+    morning_goal(run)
+    old = tmp_path / "earlier-run"
+    old.mkdir()
+    (old / "workflows.json").write_text(json.dumps([
+        {"id": "W-1", "status": "done", "item_status": {MORNING[0]: {"status": "built", "reason": ""},
+                                                        MORNING[1]: {"status": "blocked", "reason": "no channel token given"}}},
+        {"id": "W-2", "status": "failed", "item_status": {MORNING[1]: {"status": "built", "reason": ""}}}]))
+    w = {"id": "W-1", "covers_text": list(MORNING)}
+    assert run._served_status(w, {"dir": str(old), "workflow": "W-1"}) == [
+        {"item": 1, "status": "built", "reason": ""}, {"item": 2, "status": "blocked", "reason": "no channel token given"},
+        {"item": 3, "status": "not_built", "reason": "the earlier run stored no status for it"}]
+    assert {x["status"] for x in run._served_status(w, {"dir": str(tmp_path / "gone"), "workflow": "W-1"})} == {"not_built"}
+
+
+# ---- P31 (D434): a failed dry run goes back to the build; only Run or Don't run answers the real-run question ----------
+# Made-up script: it names the folder it was given (a temp copy in the dry run) and fails with "missing argument".
+P31_FAIL = "import sys\nsys.stderr.write('cannot read ' + sys.argv[1] + '\\nmissing argument\\n')\nsys.exit(2)\n"
+P31_OK = "import os, sys\nopen(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n"
+P31_SRT = ("import json, subprocess, sys\na = sys.argv[1:]\njson.load(open(a[a.index('-s') + 1]))\n"
+           "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
+
+
+@pytest.fixture
+def p31(sort_run, tmp_path, monkeypatch):
+    """A sort run with W-1 (the script and its real run on item 3) registered and done, its sort_files.py written; the dry
+    run goes through a fake srt the test writes."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P31_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    make, real = sort_run
+
+    def go(script=P31_FAIL):
+        run = make()
+        reg, refused, _ = run._register(sort_proposals(real, fix=True))
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        (Path(run._out_dir()) / "sort_files.py").write_text(script)
+        run.post("user", "Build it and run it on my folder")
+        return run
+    return go, real
+
+
+def p31_receipts(run):
+    p = Path(run.dir) / "receipts.jsonl"
+    return [json.loads(x) for x in p.read_text().splitlines() if '"real_run"' in x] if p.exists() else []
+
+
+def p31_revise(run, real, wid):
+    """Adaptation's fix: a workflow that revises wid and keeps its real run; built (no failed check), so P28 sees a pass."""
+    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": wid}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    assert run._repeat_build_stop(reg[0]["id"]) is False
+    return reg[0]
+
+
+def test_p31_a_failed_dry_run_goes_to_adaptation_never_to_the_requester(p31):
+    go, real = p31
+    run = go()
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")] and run.paused is None and run.turn == "adaptation"
+    assert w["status"] == "failed" and w["failure"] == ["dry_run", "exit 2: missing argument"], w.get("failure")
+    assert "W-1" not in run.real_runs_asked and run.handoff["kind"] == "propose" and "missing argument" in run.handoff["why"]
+    assert not any(m.get("to_user") for m in run.chat if m["who"] == "system")
+    # owner (review R1-7): one plain info line, never a warning, a question or a card
+    said = [m for m in run.chat if "dry run" in m["text"].lower()]
+    assert [m["text"] for m in said] == ["Dry run failed, sent back to the builder"], said
+    assert not said[0].get("warning") and not said[0].get("to_user") and not said[0].get("real_run") and run.paused is None
+    assert any(e["type"] == "real_run" and "the dry run on copies failed" in str(e) for e in run.events)
+    # the plan's open point: P22 takes a replacement real-run workflow for the item whose first real run failed its dry run
+    w2 = p31_revise(run, real, "W-1")
+    assert w2["real_run"]["checks"] == [3]
+
+
+def test_p31_two_identical_dry_run_failures_stop_the_cycle_across_temp_folders(p31, j2ft):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")      # its build passed: P28's memory of the dry-run failure stays
+    assert run._ask_real_run({}) is True
+    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
+    assert sig[0] == sig[1] == ("dry_run", "exit 2: missing argument")
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
+    assert "the same failure came back twice" in run.handoff["reason"].lower()
+
+
+def test_p31_the_revising_builder_sees_the_dry_run_output(p31, monkeypatch):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")
+    w2["status"] = "registered"
+    seen = {}
+    monkeypatch.setattr(run, "_file_wf", lambda w: True)      # the brief goes to the builder call, caught here
+    monkeypatch.setattr(run, "_run_artifact", lambda w, brief, n: seen.update(brief))
+    run._build_workflow({"wid": w2["id"]})
+    assert "missing argument" in seen["dry_run_failure"] and seen["dry_run_failure"] == run.workflows[0]["dry_run_output"]
+    seen.clear()
+    run._build_workflow({"wid": "W-1"})      # a workflow that revises nothing: no field, so other prompts don't change
+    assert "dry_run_failure" not in seen and seen
+
+
+def test_p31_the_receipt_keeps_the_dry_run_output(p31):
+    go, _ = p31
+    run = go()
+    run._ask_real_run({})
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["evidence"] == "not asked: the dry run on copies failed (exit 2: missing argument)"
+    assert "missing argument" in r["dry_run"]["output"] and "cannot read <copy>/f0" in r["dry_run"]["output"]
+    assert ".dryrun-" not in json.dumps(r["dry_run"]["output"]) and r["dry_run"]["exit"] == 2
+
+
+def test_p31_the_snapshot_carries_the_code_for_a_real_run_pause(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    assert run.snapshot()["paused"]["code"] == run.real_runs_asked["W-1"]
+    ask = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "Or press Run. To decline, press Don't run." in ask and "Any other reply" not in ask
+
+
+def p31_answer(run, text, auto=False):
+    run.post("user", text, **({"auto": True} if auto else {}))
+    p, run.paused = run.paused, None      # as _run does when the Requester answers
+    run._identity_real_run({**p["handoff"], "answer": text})
+
+
+def test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open(p31):
+    go, real = p31
+    run = go(P31_OK)
+    run._ask_real_run({})
+    code = run.real_runs_asked["W-1"]
+    for text, auto in (("yes", False), ("RUN", False), (f"RUN {code}", True)):      # Decide for me's exact code is no answer either
+        p31_answer(run, text, auto)
+        last = run.chat[-1]
+        assert last["who"] == "identity" and f"Not run. Press Run or type RUN {code}." in last["text"], last["text"]
+        assert run.paused["kind"] == "real_run" and run.real_runs_asked["W-1"] == code and run.snapshot()["paused"]["code"] == code
+        assert str(run.outcome).startswith("Paused") and p31_receipts(run) == [] and not os.path.exists(os.path.join(real, "done.txt"))
+    p31_answer(run, f"RUN {code}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and os.path.exists(os.path.join(real, "done.txt"))
+    assert run._real_run_pending() == []
+
+
+def test_p31_dont_run_declines_as_before(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    crit = run.goal["done_when"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]],
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3, "verdict": "PASS" if i != 3 else "FAIL",
+                                "note": ""} for i, c in enumerate(crit, 1)]}]
+    run._ask_real_run({})
+    p31_answer(run, "  don't RUN ")
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["evidence"] == "not run: the Requester chose Don't run"
+    assert run.paused is None and str(run.outcome).startswith("Done with open items"), run.outcome
+
+
+def test_p31_decide_for_me_still_never_answers_a_real_run(p31):
+    go, _ = p31
+    run = go(P31_OK)
+    run.auto = True
+    run._ask_real_run({})
+    assert run.paused["kind"] == "real_run" and run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"]
+
+
+def test_p31_a_replacements_approved_run_decides_the_item_the_failed_one_checked(p31):
+    go, real = p31
+    run = go()
+    run._ask_real_run({})
+    w2 = p31_revise(run, real, "W-1")
+    (Path(run._out_dir()) / "sort_files.py").write_text(P31_OK)
+    assert run._real_run_pending() and run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
+    assert run.real_runs_done == {w2["id"]: True} and run._real_run_pending() == []
+
+
+# ---- P32 (D435): the dry run always runs inside the sandbox runtime (no network), or it is not run --------------------
+# Made-up stand-in for srt: it keeps the settings it was given beside itself, then runs the command (no sandbox: test only).
+P32_SRT = ("import shutil, subprocess, sys\na = sys.argv[1:]\nshutil.copy(a[a.index('-s') + 1], sys.argv[0] + '.json')\n"
+           "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
+NO_DRY_RUN = "No dry run: this computer has no sandbox, so it wasn't tested first"
+
+
+@pytest.fixture
+def p32(p31, tmp_path, monkeypatch):
+    """p31's run with the sandbox switch off and the recording stand-in as J2_SANDBOX_CMD; (go, real, settings file)."""
+    go, real = p31
+    fake = tmp_path / "rec_srt.py"
+    fake.write_text(P32_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    return go, real, tmp_path / "rec_srt.py.json"
+
+
+def p32_card(run):
+    return next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+
+
+def test_p32_the_dry_run_is_fenced_with_the_sandbox_switch_off(p32):
+    go, _, seen = p32
+    run = go(P31_OK)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    assert json.loads(seen.read_text())["network"]["allowedDomains"] == []
+    assert run.real_runs_dry["W-1"]["ran"] is True and run.real_runs_dry["W-1"]["fenced"] is True
+    card = p32_card(run)
+    assert "dry run on a copy: exit 0" in card and "\nThe dry run had no network access: results may differ." in card, card
+    assert NO_DRY_RUN not in card
+
+
+@pytest.mark.parametrize("env", [{"J2_SANDBOX_CMD": "no-such-sandbox-xyz"},      # the program is not on PATH (Windows, no srt)
+                                 {"J2_SANDBOX": None}])      # an offline run without J2_SANDBOX: no sandbox, even with a runtime
+def test_p32_without_a_sandbox_runtime_the_dry_run_is_not_run_and_the_card_says_so(p32, monkeypatch, env):
+    go, real, seen = p32
+    for k, v in env.items():
+        monkeypatch.delenv(k) if v is None else monkeypatch.setenv(k, v)
+    run = go(P31_OK)
+
+    def boom(*a, **k):
+        raise AssertionError("the dry run must never run without the sandbox runtime")
+    import subprocess
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
+    dry = run.real_runs_dry["W-1"]
+    assert dry["ran"] is False and dry["fenced"] is False and not seen.exists()
+    assert dry["evidence"] == "no sandbox runtime here: the dry run was not run, because it never runs with network"
+    card = p32_card(run)
+    assert f"\n{NO_DRY_RUN}\n" in card and "no network access" not in card and "What it would do" not in card, card
+    assert not os.path.exists(os.path.join(real, "done.txt"))
+
+
+def test_p32_the_approved_run_still_follows_the_switch(p32):
+    go, real, seen = p32
+    run = go(P31_OK)
+    run._ask_real_run({})
+    assert seen.exists()
+    seen.unlink()
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and "without a sandbox" in r["evidence"], r["evidence"]
+    assert not seen.exists() and os.path.exists(os.path.join(real, "done.txt"))
+
+
+# ---- P33 (D436): Audit reads an approved real run's output against the brief; exit 0 alone never passes an item -------------
+# Made-up script: it exits 0 and prints what it did (in the dry run, to the temp copy).
+P33_OK = ("import os, sys\nprint('moved a.pdf to pdf/')\nprint('moved b.jpg to jpg/')\nprint('sorted 2 files in ' + sys.argv[1])\n"
+          "open(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n")      # P35 (D438): what its real run's expect says
+P33_SAYS = "the output lists only a.pdf and b.jpg moved; c.txt and d.csv are not named"
+
+
+@pytest.fixture
+def p33(p31, monkeypatch):
+    """p31's run with P33_OK written, item 3 pending its real run in the last audit, and every AI call recorded:
+    (run, real, calls [(fn, task)])."""
+    go, real = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,      # as an audit row holds them: the Audit call's context reads these
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3, "verdict": "PASS" if i != 3 else "FAIL",
+                                "note": ""} for i, c in enumerate(crit, 1)]}]
+    calls, real_call = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, fmt, task, *a, **k: calls.append((fn, task)) or real_call(fn, fmt, task, *a, **k))
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    calls.clear()
+    return run, real, calls
+
+
+def p33_row(run):
+    return next(x for x in run.audits[-1]["results"] if x["item"] == 3)
+
+
+def test_p33_an_approved_run_is_judged_by_audit_on_its_output(p33):
+    run, _, calls = p33
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"], calls
+    task = calls[0][1]
+    assert f"REQUESTER'S BRIEF: {run.request}" in task and "moved b.jpg to jpg/" in task and "sorted 2 files in " in task
+    assert '"item": 3' in task and "COMMAND: python3 sort_files.py" in task and "WHAT THE DRY RUN DID TO THE COPY" in task
+    row, r = p33_row(run), p31_receipts(run)[-1]
+    assert row["pass"] is True and row["verdict"] == "PASS" and row["note"].endswith("Audit read its output: mock: the output was read")
+    assert r["approved"] and r["exit"] == 0 and r["audit"] == {"3": {"verdict": "PASS", "evidence": "mock: the output was read"}}
+    assert run.real_runs_done == {"W-1": True}
+    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {})["pass"] is True
+
+
+@pytest.mark.parametrize("finding, says", [({"item": 3, "verdict": "NEEDS_REVISION", "evidence": P33_SAYS}, P33_SAYS),
+                                           ({"item": 3, "verdict": "PASS", "evidence": "  "}, "Audit gave no evidence"),
+                                           (None, "Audit filed no finding")])
+def test_p33_exit_0_with_audit_needs_revision_leaves_the_item_open(p33, monkeypatch, finding, says):
+    run, real, calls = p33
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [finding] if finding else []})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"]
+    row, r = p33_row(run), p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0      # it ran and exited 0 ...
+    assert row["pass"] is False and row["verdict"] == "NEEDS_REVISION"      # ... and that alone does not pass the item
+    assert f"real run receipt (W-1): {r['evidence']}" in row["note"] and row["note"].endswith(f"Audit read its output: {says}")
+    assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": says}}
+    # the receipt's result stays "approved and exit 0" (review R1-4); Audit's verdict is kept per item, and the check reads both
+    assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {run.goal["done_when"][2]: False}
+    assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {}) == {
+        "pass": False, "evidence": "its real run did not pass (approved, exit 0 and Audit PASS)"}
+    assert str(run.outcome).startswith("Done with open items"), run.outcome
+
+
+@pytest.mark.parametrize("answer, ran", [("RUN", {"ran": True, "exit": 3, "output": "boom", "evidence": "sort_files.py exited 3"}),
+                                         ("Don't run", None)])
+def test_p33_no_judge_call_when_the_run_did_not_pass(p33, j2ft, monkeypatch, answer, ran):
+    run, _, calls = p33
+    if ran:
+        monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: dict(ran))
+        answer = f"RUN {run.real_runs_asked['W-1']}"
+    p31_answer(run, answer)
+    r = p31_receipts(run)[-1]
+    assert calls == [] and "audit" not in r and p33_row(run)["verdict"] == "FAIL" and run.real_runs_done == {"W-1": False}
+    assert "Audit read" not in p33_row(run)["note"] and str(run.outcome).startswith("Done with open items")
+
+
+def test_p33_mixed_verdicts_leave_the_passed_item_passing(p33, monkeypatch):
+    # review R1-4: PASS on item 3 and NEEDS_REVISION on item 2 of the same run; item 3's check still passes
+    run, _, calls = p33
+    crit = run.goal["done_when"]
+    run.workflows[0]["real_run"]["checks"] = [2, 3]
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [
+        {"item": 3, "verdict": "PASS", "evidence": "pdf/a.pdf is listed"}, {"item": 2, "verdict": "NEEDS_REVISION", "evidence": "no test ran"}]})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    rows = {x["item"]: x for x in run.audits[-1]["results"]}
+    assert (rows[3]["pass"], rows[3]["verdict"]) == (True, "PASS") and (rows[2]["pass"], rows[2]["verdict"]) == (False, "NEEDS_REVISION")
+    assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {crit[1]: False, crit[2]: True}
+    assert run._run_item_check(crit[2], {"type": "real-run"}, "", {}) == {
+        "pass": True, "evidence": "its real run was approved, exited 0 and Audit passed its output"}
+    assert run._run_item_check(crit[1], {"type": "real-run"}, "", {})["pass"] is False
+
+
+def test_p33_an_item_checks_charter_with_a_real_run_item_ends_done(p33):
+    # review R1-1: no builder owns an item a real run decides; an approved run, exit 0 and Audit PASS ends "Done:"
+    run, _, calls = p33
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-2", "status": "done", "covers_text": [crit[1]],
+                          "item_status": {crit[1]: {"status": "built", "reason": ""}}})
+    for x in run.audits[-1]["results"]:
+        x["pass"], x["verdict"] = (x["item"] != 3, "PASS" if x["item"] != 3 else "FAIL")
+    assert run._open_items() == []      # item 3 is the real run's, never "not built: no workflow built it"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run.real_runs_done == {"W-1": True} and str(run.outcome).startswith("Done:"), run.outcome
+
+
+def test_p33_without_the_real_run_the_item_stays_open(p33):
+    run, real, calls = p33
+    crit = run.goal["done_when"]
+    assert run._real_run_pending() == [f"done-when item 3: {crit[2]} (its real run has not run)"]
+    assert run._run_item_check(crit[2], {"type": "real-run"}, "", {})["pass"] is False
+    assert calls == [] and p31_receipts(run) == [] and p33_row(run)["pass"] is False and run.paused["kind"] == "real_run"
+
+
+def test_p33_the_judge_call_counts_in_budget_and_dollar_mode_and_raises_no_route_event(p33, j2ft, monkeypatch):
+    run, _, calls = p33
+    monkeypatch.setattr(j2ft, "USD_BUDGET", 20.0)      # dollar mode (P26) for this run's accounting
+    n, usd, rows, events = run.calls, run.usd_used, len(run.call_log), len(run.events)
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert [fn for fn, _ in calls] == ["audit"] and run.calls == n + 1 and len(run.call_log) == rows + 1
+    logged = json.loads((Path(run.dir) / "calls.jsonl").read_text().splitlines()[-1])
+    assert logged["fn"] == "audit" and logged["usd_counted"] > 0 and run.usd_used == pytest.approx(usd + logged["usd_counted"], abs=1e-6)      # the row rounds to 6 places
+    assert not [e for e in run.events[events:] if e["type"] in ("redirect", "invalid_move")]
+
+
+# ---- beta fix, P30 amended (D433): a blocked item does not hold back the real run ----------------------------------------
+def blocked_run(p31, status):
+    """p31's run with an item_checks charter: item 1 built (W-1, which also holds the real run of item 3), item 2 with the
+    given builder status (W-2) and failed by Audit, item 3 pending its real run."""
+    go, _ = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-2", "status": "done", "covers_text": [crit[1]], "item_status": {crit[1]: status}})
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1,
+                                "verdict": "PASS" if i == 1 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    return run
+
+
+def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_done_with_open_items(p31, monkeypatch):
+    run = blocked_run(p31, {"status": "blocked", "reason": "a channel token"})
+    crit, calls, real_call = run.goal["done_when"], [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
+    run._identity_audit({})
+    assert calls == [] and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # asked at once, by code
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and calls == ["audit"]      # only P33's reading of the output
+    assert len(run.audits) == 1 and run.paused is None and run.turn is None      # no audit loop, no question: the end
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {crit[1].rstrip('.')} blocked: needs a channel token. Send it as a follow-up to finish." in out \
+        and "done-when item 3" not in out, out
+    assert out.count("done-when item 2") == 1, out      # review R3-2: listed once, with its reason
+
+
+def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_run(p31):
+    """Review R3-1: a fix workflow of F-3 owns real-run item 3 and its builder sets it blocked. The Requester declines the
+    real run: the run ends "Done with open items" naming the real run, never "Done:"."""
+    go, _ = p31
+    run = go(P33_OK)
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_sort_files.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}, crit[1]: {"status": "built", "reason": ""}}
+    run.workflows.append({"id": "W-9", "status": "done", "covers_text": [], "fixes": ["F-3"],
+                          "item_status": {crit[2]: {"status": "blocked", "reason": "needs the real folder"}}})
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i < 3,
+                                "verdict": "PASS" if i < 3 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    assert crit[2] in run._owned_items(run.workflows[-1])
+    run._identity_audit({})
+    p31_answer(run, "Don't run")
+    out = str(run.outcome)
+    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: the real run did not pass."), out
+    assert out.count("done-when item 3") == 1, out
+    assert run._blocked_items() == []      # a builder's status never decides a real-run item
+
+
+def to_be_confirmed(run, n, fact):
+    """Identity's charter field to_be_confirmed names item n, and the latest audit marks it TO_BE_CONFIRMED (as
+    _audit_findings does for that entry), whatever the builder set."""
+    crit = run.goal["done_when"]
+    run.goal["to_be_confirmed"] = [{"criterion": crit[n - 1], "fact": fact}]
+    row = next(r for r in run.audits[-1]["results"] if r["item"] == n)
+    row.update(verdict="TO_BE_CONFIRMED", note=f"Waiting on the Requester: {fact}. (Audit's own note: x)", **{"pass": False})
+
+
+def test_p30_a_to_be_confirmed_item_is_blocked_with_its_missing_fact(p31):
+    """Beta fix (b): a charter with one to_be_confirmed item: it is blocked, its reason the entry's fact (a field, never a
+    word of a note), so it does not hold back the real run, and the outcome names it once with that fact."""
+    run = blocked_run(p31, {"status": "built", "reason": "the post is written, it was never sent"})      # 8b10: built
+    crit = run.goal["done_when"]
+    to_be_confirmed(run, 2, "the team channel's address")
+    assert run._blocked_items() == [crit[1]]
+    assert run._open_items() == [f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. "
+                                 "Send it as a follow-up to finish."]
+    run._identity_audit({})
+    assert run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # it does not hold back the real run
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: not every done-when item is built."), out
+    assert f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. Send it as a follow-up to finish." \
+        in out and out.count("done-when item 2") == 1, out
+    run.sites = ["x"]
+    assert run._ship_outcome("on request").count("done-when item 2") == 1      # listed once there too
+
+
+def test_p30_a_to_be_confirmed_real_run_item_is_never_blocked(p31):
+    run = blocked_run(p31, {"status": "built", "reason": ""})
+    to_be_confirmed(run, 3, "the real folder")      # review R3-1: only its receipt and Audit decide a real-run item
+    assert run.goal["done_when"][2] not in run._blocked_items()
+
+
+# ---- beta fix d, P30 amended (D433): a blocked item with no real run ends the run at once -------------------------------
+FOLLOW_UP = "Send it as a follow-up to finish."
+WEBHOOK = "the team channel's webhook address"
+
+
+def no_real_run(sort_run, status, tbc=False):
+    """A folder run (no render check, as 8b10) with no planned real run: item 1 built by W-1 and passed, item 2 owned by W-2
+    with the given builder status and failed by Audit (TO_BE_CONFIRMED when tbc: the charter names it)."""
+    make, _ = sort_run
+    run = make()
+    crit = run.goal["done_when"] = list(SORT_DONE_WHEN[:2])
+    run.goal["item_checks"] = {t: {"type": "file-exists", "target": "sort_files.py", "expect": True} for t in crit}
+    run.workflows = [{"id": "W-1", "status": "done", "covers_text": [crit[0]], "item_status": {crit[0]: {"status": "built", "reason": ""}}},
+                     {"id": "W-2", "status": "done", "covers_text": [crit[1]], "item_status": {crit[1]: status}}]
+    run.sites = ["x"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "cycle": 1, "version": 1, "all_pass": False,
+                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i == 1,
+                                "verdict": "PASS" if i == 1 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
+    if tbc:
+        to_be_confirmed(run, 2, WEBHOOK)
+    return run
+
+
+def calls_of(run, monkeypatch):
+    calls, real_call = [], run.call
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
+    return calls
+
+
+@pytest.mark.parametrize("status, tbc", [({"status": "blocked", "reason": WEBHOOK}, False),      # the builder's field (c)
+                                         ({"status": "blocked", "reason": f"{WEBHOOK}."}, False),      # R4-3: no ".."
+                                         ({"status": "built", "reason": "the post is written"}, True)])      # the charter's (b), 8b10
+def test_p30_a_blocked_item_with_no_real_run_ends_the_run_at_once(sort_run, monkeypatch, status, tbc):
+    run = no_real_run(sort_run, status, tbc)
+    crit, calls = run.goal["done_when"], calls_of(run, monkeypatch)
+    run._identity_audit({})
+    out = str(run.outcome)
+    assert calls == [] and len(run.audits) == 1 and run.turn is None and run.paused is None, (calls, out)      # no Identity,
+    assert out.startswith("Done with open items: not every done-when item is built."), out      # no Adaptation, no audit
+    assert f"{crit[1].rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out and out.count("done-when item 2") == 1, out
+    assert "done-when item 1" not in out and ".." not in out, out
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "out of time"},
+                                    {"status": "built", "reason": ""}])      # Audit failed it while its builder says built
+def test_p30_a_not_built_or_failed_item_still_goes_back_to_adaptation(sort_run, monkeypatch, status):
+    run = no_real_run(sort_run, status)
+    calls = calls_of(run, monkeypatch)
+    run._identity_audit({})
+    assert run.outcome is None and calls == ["identity"] and run.turn == "adaptation", (calls, run.outcome)
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "out of time"},
+                                    {"status": "built", "reason": ""}])
+def test_p30_a_blocked_item_beside_an_open_one_does_not_end_the_run(sort_run, monkeypatch, status):
+    """Only when every other item is built and passes: a blocked item 2 beside a not-built or failed item 1 goes back."""
+    run = no_real_run(sort_run, {"status": "blocked", "reason": WEBHOOK})
+    crit = run.goal["done_when"]
+    run.workflows[0]["item_status"] = {crit[0]: status}
+    if status["status"] == "built":
+        run.audits[-1]["results"][0].update(verdict="NEEDS_REVISION", **{"pass": False})
+    calls = calls_of(run, monkeypatch)
+    run._identity_audit({})
+    assert run.outcome is None and calls == ["identity"] and run.turn == "adaptation", (calls, run.outcome)
+
+
+@pytest.mark.parametrize("status", [{"status": "not_built", "reason": "the builder set no status"},
+                                    {"status": "built", "reason": ""}])      # Audit failed it: built alone never passes
+def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, status):
+    run = blocked_run(p31, status)
+    run._identity_audit({})
+    assert "W-1" not in run.real_runs_asked and not [m for m in run.chat if m.get("real_run")] and p31_receipts(run) == []
+
+
+# ---- beta fix, P30 amended (D433): a follow-up to a run with a to-be-confirmed item goes through Identity's intake ---------
+TEAM_POST = "Post the summary to the team channel."      # made up, as the fact (WEBHOOK)
+
+
+def scripted_identity(run, *, tbc, dropped=()):
+    """The mock Identity, scripted by structure, never by a message's words: the first charter adds TEAM_POST and (tbc)
+    records WEBHOOK as to be confirmed for it; an intake given the current charter (a follow-up) returns that charter
+    without any to_be_confirmed entry, as Identity does when the follow-up supplies the fact. Every charter leaves out the
+    brief items in dropped (review R5-2). Returns those intakes' tasks."""
+    intakes, real_call = [], run.call
+
+    def call(fn, fmt, task, mock, *a, **k):
+        if fn != "identity":
+            return real_call(fn, fmt, task, mock, *a, **k)
+
+        def scripted():
+            r = json.loads(mock())
+            goal = r.get("goal")
+            if isinstance(goal, dict) and dropped:
+                goal["dropped_from_brief"] = list(dropped)
+            if isinstance(goal, dict) and (not run.goal or "CURRENT CHARTER" not in task):      # run 1's charter (again
+                if TEAM_POST not in goal["done_when"]:                                       # after a drop answer)
+                    goal["done_when"] = list(goal["done_when"]) + [TEAM_POST]
+                goal["to_be_confirmed"] = [{"item": goal["done_when"].index(TEAM_POST) + 1, "fact": WEBHOOK}] if tbc else []
+            elif isinstance(goal, dict) and "CURRENT CHARTER" in task:
+                intakes.append(task)
+                goal["to_be_confirmed"] = []
+            return json.dumps(r)
+        return real_call(fn, fmt, task, scripted, *a, **k)
+    run.call = call
+    return intakes
+
+
+def first_run(make_run, tbc):
+    """A mock Brew Lab run. With tbc, a website's open fact holds a necessary condition, so Identity asks the limit question
+    (`only_tbc`) and the Requester picks "finish as it is" (a folder run, 8b10, ends at once, fix d)."""
+    run = make_run()
+    scripted_identity(run, tbc=tbc)
+    say(run, BREW_LAB)
+    if tbc:
+        assert run.paused and "finish as it is" in run.outcome, run.outcome
+        say(run, "Finish as it is")
+    return run
+
+
+def follow_up(make_run, earlier, text, tbc):
+    run = make_run()
+    run.rehydrate(earlier.dir)
+    intakes = scripted_identity(run, tbc=tbc)
+    say(run, text)
+    return run, intakes
+
+
+def test_p30_a_follow_up_that_gives_the_missing_fact_finishes_the_item(make_run):
+    run = first_run(make_run, tbc=True)
+    n = run.goal["done_when"].index(TEAM_POST) + 1
+    assert run.outcome.startswith("Done with open items"), run.outcome
+    assert f"done-when item {n}: {TEAM_POST.rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in run.outcome, run.outcome
+    follow, intakes = follow_up(make_run, run, "The webhook address is https://hooks.example.test/T000/B000", tbc=True)
+    assert len(intakes) == 1 and WEBHOOK in intakes[0] and "leave its entry out of to_be_confirmed" in intakes[0], \
+        "Identity's intake gets the charter with the entry, and is told it may drop it"
+    assert follow.goal["to_be_confirmed"] == [] and TEAM_POST in follow.goal["done_when"]
+    assert follow._item_states()[TEAM_POST]["status"] == "built" and len(follow.audits) > len(run.audits)
+    row = next(r for r in follow.audits[-1]["results"] if r["criterion"] == TEAM_POST)
+    assert row["pass"] is True, row
+    assert follow.outcome.startswith("Done:") and "open items" not in follow.outcome and FOLLOW_UP not in follow.outcome, \
+        follow.outcome
+
+
+def test_p30_a_folder_run_ended_by_fix_d_takes_the_fact_from_a_follow_up(sort_run, monkeypatch):
+    """review R5-4, the 8b10 shape: a folder output whose to-be-confirmed item is the only gap ends at once (fix d) with its
+    "blocked: needs" line; the follow-up giving the fact goes first to Identity's intake with the current charter, which clears
+    the entry. The rebuild is not asserted: the mock Adaptation's workflows are refused for a folder type."""
+    run = no_real_run(sort_run, {"status": "built", "reason": "the post is written"}, tbc=True)
+    crit = run.goal["done_when"]
+    run._identity_audit({})
+    assert f"{crit[1].rstrip('.')} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in str(run.outcome), run.outcome
+    assert run.goal["to_be_confirmed"], run.goal
+    run.done, run.status = True, "waiting"      # the run ended (fix d); the Requester sends the follow-up
+    calls = calls_of(run, monkeypatch)
+    intakes = scripted_identity(run, tbc=True)
+    say(run, "The webhook address is https://hooks.example.test/T000/B000")
+    assert calls and calls[0] == "identity" and len(intakes) == 1, calls
+    assert "CURRENT CHARTER" in intakes[0] and WEBHOOK in intakes[0] and "leave its entry out of to_be_confirmed" in intakes[0]
+    assert run.goal["to_be_confirmed"] == [], run.goal["to_be_confirmed"]
+
+
+@pytest.mark.parametrize("reply", [None, []])      # None: Identity's charter has no to_be_confirmed key at all
+def test_p30_a_follow_up_keeps_a_to_be_confirmed_entry_unless_identity_lists_the_key(sort_run, monkeypatch, reply):
+    """review R5-5: a follow-up that does not give the fact goes through Identity's intake; a charter reply without the
+    to_be_confirmed key keeps the old entry (its item is still in the charter); an explicit empty list clears it."""
+    run = no_real_run(sort_run, {"status": "built", "reason": "the post is written"}, tbc=True)
+    run._identity_audit({})
+    run.done, run.status, old, real_call, seen = True, "waiting", list(run.goal["to_be_confirmed"]), run.call, []
+
+    def call(fn, fmt, task, mock, *a, **k):
+        if fn != "identity" or "CURRENT CHARTER" not in task:
+            return real_call(fn, fmt, task, mock, *a, **k)
+
+        def scripted():
+            r = json.loads(mock())
+            r["goal"]["done_when"] = list(run.goal["done_when"])      # everything already in it is kept, as the prompt asks
+            r["goal"].pop("to_be_confirmed", None) if reply is None else r["goal"].update(to_be_confirmed=reply)
+            return json.dumps(r)
+        out = real_call(fn, fmt, task, scripted, *a, **k)
+        seen.append(True)
+        return out
+    run.call = call
+    say(run, "Add a line about visiting hours to the notes")
+    assert seen, "Identity's intake ran"
+    assert run.goal["to_be_confirmed"] == (old if reply is None else []), run.goal["to_be_confirmed"]
+
+
+def test_p30_a_follow_up_does_not_ask_again_about_brief_items_already_dropped(make_run):
+    """review R5-2: run 1's charter left a brief item out and the Requester answered "Drop them"; the follow-up that gives
+    the fact goes through Identity's intake, whose charter still leaves it out, and must not ask the drop question again."""
+    run = make_run()
+    scripted_identity(run, tbc=True, dropped=["a printed menu"])
+    say(run, BREW_LAB)
+    assert run.paused and run.paused["kind"] == "charter_drop", run.paused
+    say(run, "Drop them")
+    if run.paused:
+        say(run, "Finish as it is")
+    assert run.goal["dropped_from_brief"] == ["a printed menu"] and run.outcome.startswith("Done with open items"), run.outcome
+    follow = make_run()
+    follow.rehydrate(run.dir)
+    intakes = scripted_identity(follow, tbc=True, dropped=["a printed menu"])
+    say(follow, "The webhook address is https://hooks.example.test/T000/B000")
+    assert len(intakes) == 1 and not (follow.paused and follow.paused["kind"] == "charter_drop"), follow.paused
+    assert follow.goal["to_be_confirmed"] == [] and follow.outcome.startswith("Done:"), follow.outcome
+
+
+def test_p30_a_follow_up_still_asks_about_a_brief_item_newly_dropped(make_run):
+    """review R5-2, guard: a brief item the follow-up's charter newly leaves out is still asked about."""
+    run = make_run()
+    scripted_identity(run, tbc=True)
+    say(run, BREW_LAB)
+    say(run, "Finish as it is")
+    follow = make_run()
+    follow.rehydrate(run.dir)
+    scripted_identity(follow, tbc=True, dropped=["a printed menu"])
+    say(follow, "The webhook address is https://hooks.example.test/T000/B000")
+    assert follow.paused and follow.paused["kind"] == "charter_drop", follow.paused
+
+
+def test_p30_a_follow_up_without_a_to_be_confirmed_item_skips_identitys_intake(make_run):
+    run = first_run(make_run, tbc=False)
+    assert run.outcome.startswith("Done:"), run.outcome
+    follow, intakes = follow_up(make_run, run, "Add a section for visiting hours", tbc=False)
+    assert intakes == [] and follow.outcome.startswith("Done:"), follow.outcome
+
+
+# ---- review R4-1, P30 amended (D433): a stage left with a blocked item is named in the run's outcome -------------------------
+CAMPUS_DOCS = ("Design docs for Campus Notes. Users: students and teachers. Problem: students lose track of their notes. "
+               "Must-have features: upload notes, search notes. Constraints: free to use. Success: 50 uploads per week.")
+
+
+NEW_RUN = "Start a new run with it to finish."      # review R5-3: the hint of an earlier stage's blocked item
+
+
+def blocked_prd(make_run, text=CAMPUS_DOCS, stages=("prd",)):
+    """A mock design-document chain whose builders in the given stages set the stage's first item blocked (a reason ending
+    in ".", R4-3); the other stages are clean. Returns the finished run and the PRD's blocked line up to "blocked" (with
+    more stages, {stage: that line})."""
+    run = make_run()
+    run.budget, real_call, targets = 400, run.call, {}
+
+    def call(fn, fmt, task, mock, *a, **k):
+        def scripted():
+            text = mock()      # a section builder's reply: its JSON, then the section's markdown
+            r, end = json.JSONDecoder().raw_decode(text) if run.stage_kind in stages and fn.startswith("W-") else (None, 0)
+            if not isinstance(r, dict) or not r.get("item_status"):
+                return text
+            target = targets.setdefault(run.stage_kind, r["item_status"][0]["item"])
+            for s in r["item_status"]:
+                if s["item"] == target:
+                    s.update(status="blocked", reason=f"{WEBHOOK}.")
+            return json.dumps(r) + text[end:]
+        return real_call(fn, fmt, task, scripted, *a, **k)
+    run.call = call
+    say(run, text)
+    assert set(targets) == set(stages), (run.stages, targets)
+    goals = {a["stage"]: a["goal"] for a in run.stage_archive}
+    items = {k: f"done-when item {n}: {goals[k]['done_when'][n - 1].rstrip('.')}" for k, n in targets.items()}
+    return run, (f"PRD {items['prd']}" if stages == ("prd",) else items)
+
+
+def test_p30_a_blocked_item_in_an_earlier_stage_is_named_when_the_chain_ends(make_run):
+    """Fix d ends the PRD stage at once and the chain moves on, so the run must end "Done with open items" naming it."""
+    run, item = blocked_prd(make_run)
+    assert run.stages == ["prd", "hld", "lld"], run.stages
+    out = str(run.outcome)
+    assert out.startswith("Done with open items"), out
+    assert f"{item} blocked: needs {WEBHOOK}. {NEW_RUN}" in out and FOLLOW_UP not in out, out      # R5-3
+    assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out      # R4-3
+
+
+def test_p30_only_an_earlier_stages_blocked_item_says_start_a_new_run(make_run):
+    """review R5-3: a follow-up continues the last stage only, so an earlier stage's blocked item says start a new run, and
+    the last stage's keeps "Send it as a follow-up to finish."."""
+    run, items = blocked_prd(make_run, stages=("prd", "lld"))
+    out = str(run.outcome)
+    assert out.startswith("Done with open items"), out
+    assert f"PRD {items['prd']} blocked: needs {WEBHOOK}. {NEW_RUN}" in out, out
+    assert f"{items['lld']} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert out.count(NEW_RUN) == 1 and out.count(FOLLOW_UP) == 1 and ".." not in out, out
+
+
+def assert_names_blocked(out, item):
+    assert out.startswith("Done with open items") and not out.startswith("Done:"), out
+    assert f"{item} blocked: needs {WEBHOOK}. {NEW_RUN}" in out and out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
+
+
+def test_p30_a_chain_that_ends_in_a_send_names_an_earlier_stages_blocked_item(make_run, monkeypatch):
+    """review R5-1: the chain's last stage is a send deed, so _deeds_finished writes the outcome."""
+    monkeypatch.setenv("J2_TEST_EMAIL", "me@example.invalid")
+    monkeypatch.delenv("J2_SEND_MODE", raising=False)
+    run, item = blocked_prd(make_run, CAMPUS_DOCS + " When the documents are finished, send a test email to me with a "
+                                                    "short summary of the PRD.")
+    assert run.stages == ["prd", "hld", "lld", "send_email"] and run.deed_log, run.stages
+    assert_names_blocked(str(run.outcome), item)
+    assert run.deed_log[0]["note"] in run.outcome, run.outcome      # what the send did is still said
+
+
+@pytest.mark.parametrize("ending", ["_stages_finished", "_run_tpl_stage_end"])
+def test_p30_every_chain_ending_names_an_earlier_stages_blocked_item(make_run, ending):
+    """review R5-1: the stage gate's "leave out" (_stages_finished) and a run template's partial stage end write the outcome
+    themselves; at the end of the same chain each must still name the PRD's blocked item."""
+    run, item = blocked_prd(make_run)
+    run.outcome, run.turn = None, None
+    if ending == "_run_tpl_stage_end":
+        run.run_tpl = {"name": "Campus", "total": 2, "selected": ["x"]}
+    getattr(run, ending)()
+    assert_names_blocked(str(run.outcome), item)
+
+
+def test_p30_finishing_as_it_is_at_the_stage_gate_names_an_earlier_stages_blocked_item(make_run):
+    """review R6-1: the stage gate's "finish as it is" (_stage_decision, ship) writes its own outcome; after a PRD with a
+    blocked item it must name it, keeping its own "finished as it is ... Not made: ..." words."""
+    run, item = blocked_prd(make_run)
+    run.outcome, run.turn = None, None      # back to the gate after the PRD: the HLD stage not started
+    run.stage_archive = [a for a in run.stage_archive if a["stage"] == "prd"]
+    run.stage_i = 0
+    run.decisions.append({"kind": "stage"})
+    run._read_decision = lambda *a, **k: {"decision": "ship"}
+    run._stage_decision({"answer": "Finish as it is", "choices": ["continue", "drop", "ship"], "stage_i": 1,
+                         "asked": [{"question": "q"}]})
+    out = str(run.outcome)
+    assert out.startswith("Done with open items: finished as it is on the Requester's decision. Not made: "), out
+    # the gate runs before the HLD begins, so the PRD is still the current stage (stage_kind) and keeps the follow-up hint (R5-3)
+    assert f"Still not workable: {item} blocked: needs {WEBHOOK}. {FOLLOW_UP}" in out, out
+    assert out.count(f"needs {WEBHOOK}") == 1 and ".." not in out, out
+
+
+# ---- beta fix, P31 amended (D434): a folder the brief names as ~/x is the same folder as its expanded form ------------------
+@pytest.mark.parametrize("stated", ["~/demo/rename-test", "{home}/demo/rename-test"])
+def test_p31_a_tilde_folder_and_its_expanded_form_both_register(sort_run, tmp_path, monkeypatch, stated):
+    monkeypatch.setenv("HOME", str(tmp_path))      # a made-up home: no real home path in any file
+    (tmp_path / "demo" / "rename-test").mkdir(parents=True)
+    make, _ = sort_run
+    run = make()
+    run.request = "Build sort_files.py with a test, then run it on ~/demo/rename-test"
+    folder = stated.format(home=tmp_path)
+    rr = {**sort_proposals(folder, fix=True)[0]["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+    reg, refused, _ = run._register([{**sort_proposals(folder, fix=True)[0], "real_run": rr}])
+    full = str(tmp_path / "demo" / "rename-test")
+    assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+    assert reg[0]["real_run"]["folder"] == full and reg[0]["real_run"]["command"] == ["python3", "sort_files.py", full]
+
+
+def test_p31_a_folder_the_brief_does_not_name_is_still_refused(sort_run, tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "demo" / "other").mkdir(parents=True)
+    make, _ = sort_run
+    run = make()
+    run.request = "Build sort_files.py with a test, then run it on ~/demo/rename-test"
+    for folder in ("~/demo/other", str(tmp_path / "demo" / "other")):
+        rr = {**sort_proposals(folder, fix=True)[0]["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+        reg, refused, _ = run._register([{**sort_proposals(folder, fix=True)[0], "real_run": rr}])
+        assert reg == [] and len(refused) == 1 and "is not named in the brief" in str(refused[0]), refused
+
+
+# ---- P34 (D437): a build's output holds only what was built; the CLI's .claude folder is removed and never copied ---------------
+
+CLI_FOLDER = {".claude/.cc-writes/.keep": "", ".claude/note.json": "{}"}      # made up: the CLI's staging folder, and a file beside it
+
+
+def test_p34_the_cli_folder_is_removed_after_a_builder_call_and_is_not_a_written_file(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    tools_call(j2, run, inside=CLI_FOLDER)
+    out = Path(run.dir) / "out"
+    assert (out / "build.py").is_file() and not (out / ".claude").exists()
+    assert [f["path"] for f in run.call_log[-1]["tools"]["files_written"]] == ["build.py"]
+    assert not [e for e in run.events if e["type"] == "outside_write"]
+
+
+def test_p34_the_outside_write_check_still_stops_a_call_and_the_cli_folder_is_still_removed(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    with pytest.raises(j2.BuilderToolFault) as e:
+        tools_call(j2, run, extra={"notes.txt": "x"}, inside=CLI_FOLDER)
+    assert e.value.files == ["notes.txt"] and not (Path(run.dir) / "out" / ".claude").exists()
+
+
+def test_p34_no_site_copy_carries_a_claude_folder(j2, make_run):
+    run = make_run()
+    run.post("user", "go")
+    run._apply_output("website")
+    out = Path(run._out_dir())
+    for rel, body in {run._main_file(): "<!doctype html><title>t</title>", "pages/about.html": "<p>a</p>", **CLI_FOLDER,
+                      "pages/.claude/y.json": "{}"}.items():
+        (out / rel).parent.mkdir(parents=True, exist_ok=True)
+        (out / rel).write_text(body)
+    run._publish_out("<!doctype html><title>t</title>")
+    site = Path(run.dir) / "site"
+    assert (site / run._main_file()).is_file() and (site / "pages" / "about.html").is_file()
+    assert not [p for p in site.rglob(".claude")]
+
+
+# ---- P35 (D438): a real run states what it creates, changes and deletes; the dry run must match and leave read-only copies alone
+# SUT-12 (impact.md §9), made up: in/ holds two notes, out/ is empty, and copy.py <input> <output> upper-cases each input file
+# into the output and writes report.txt. Passed the folders swapped, it reads the empty out/ and writes report.txt into in/.
+P35_COPY = ("import os, sys\nsrc, dst = sys.argv[1], sys.argv[2]\nnames = sorted(os.listdir(src))\n"
+            "for n in names:\n    open(os.path.join(dst, n), 'w').write(open(os.path.join(src, n)).read().upper())\n"
+            "open(os.path.join(dst, 'report.txt'), 'w').write(str(len(names)) + ' files\\n')\nprint('processed', len(names))\n")
+P35_ALL = {"created": ["a.txt", "b.txt", "report.txt"], "changed": [], "deleted": []}
+P35_DONE_WHEN = ["copy.py upper-cases each file of a given input folder into a given output folder.",
+                 "copy.py writes report.txt with the number of files it copied.",
+                 "Run on the notes folder, out/ holds A.txt-style upper-case copies and report.txt."]
+
+
+@pytest.fixture
+def p35(j2ft, tmp_path, monkeypatch):
+    """(go, in, out): go(args, expect) makes a run whose W-1 (copy.py, its real run writing out/ and reading in/, checking
+    item 3) is registered and done. The dry run goes through P31's fake srt, which enforces nothing, so a swap is caught
+    only by code's own checks."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P31_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
+    src, dst = tmp_path / "in", tmp_path / "out"
+    src.mkdir()
+    dst.mkdir()
+    (src / "a.txt").write_text("alpha\n")
+    (src / "b.txt").write_text("beta\n")
     counter = itertools.count(1)
 
-    def made(files, status="done", attempts=1, test=None, hosts=None, reaches=()):
-        run = j2rr.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0628{next(counter):02d}-01a2")
+    def go(args=("in", "out"), expect=P35_ALL):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0900{next(counter):02d}-5e12")
         run._apply_output(FT)
-        run.goal, run.budget = {"statement": "read the folder", "done_when": ["the script has been run on the folder"]}, 300
+        run.request = f"Build copy.py, then run it on my notes in {src} and write the results to {dst}"
+        run.goal, run.budget = {"statement": "x", "done_when": list(P35_DONE_WHEN)}, 100
         os.makedirs(run._out_dir(), exist_ok=True)
-        for name, text in files.items():
-            Path(run._out_dir(), name).write_text(text)
-        checks = [{"text": "s.py exists", "type": "file-exists", "target": "s.py", "expect": True}] + (
-            [{"text": "its test passes", "type": "test-passed", "target": test, "expect": True}] if test else [])
-        w = {"id": "W-1", "name": "reader", "purpose": "read", "outputs": [f"{FT}/s.py"], "status": status, "calls_used": attempts,
-             "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [],
-             "real_run": {"command": ["python3", "s.py", str(real), *reaches], "folder": str(real), "why": "read it", "checks": [1],
-                          **({"hosts": hosts} if hosts else {})},
-             "atoms": [{"id": "W-1.a1", "goal": "read", "expected_output": [], "verification": checks}]}
-        if status == "done":
-            w["build_attempts"] = attempts
-        run.workflows = [w]
-        j2rr.add_workflow_agent("W-1")
-        run.sites = ["v1"]
-        run.post("user", "go")
-        return run, w
-    return made, real
+        where = {"in": str(src), "out": str(dst)}
+        rr = {"command": ["python3", "copy.py", *(where[a] for a in args)], "folder": str(dst), "reads": [str(src)],
+              "why": "The brief asks to run it on the Requester's notes.", "checks": [3], "expect": expect}
+        reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr}])
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        (Path(run._out_dir()) / "copy.py").write_text(P35_COPY)
+        run.post("user", "Build it and run it on my notes")
+        return run
+    return go, src, dst
 
 
-def p30_builder(run, *rounds):
-    """The run's builder, scripted: each call writes the next round's files (the last one again after that)."""
-    prompts = []
-
-    def call(fn, fmt, prompt, mock, **kw):
-        prompts.append(prompt)
-        for name, text in rounds[min(len(prompts), len(rounds)) - 1].items():
-            Path(run._out_dir(), name).write_text(text)
-        return {"say": "@Coordination built", "human_output": "I built the reader.", "atom_human_output": "The reader."}
-    run.call = call
-    return prompts
+def p35_again(run):
+    """Adaptation's fix: a workflow that revises W-1 with the same real run; its build passed (P28 sees a pass)."""
+    rr = {k: v for k, v in run.workflows[0]["real_run"].items()}
+    reg, refused, _ = run._register([{**sort_proposals(rr["folder"], fix=True)[0], "real_run": rr, "revises": "W-1"}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    assert run._repeat_build_stop(reg[0]["id"]) is False
+    return reg[0]
 
 
-def p30_reply(run, text, **meta):
-    h = run.paused["handoff"]
-    run.post("user", text, **meta)
-    run.paused = None
-    run._turn_identity({**h, "answer": text})
+def test_p35_swapped_folders_reproduce_and_now_go_back_to_the_build(p35):
+    """The reported bug: before P35 the swapped command's dry run said "0 created" and the Requester was asked to run it."""
+    go, src, dst = p35
+    run = go(("out", "in"), {"created": ["*.txt"], "changed": [], "deleted": []})
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")], "the swapped command reached the Requester"
+    assert w["status"] == "failed" and w["failure"] == [
+        "dry_run", "wrote into a folder it may only read: read folder 1: 1 created, 0 deleted, 0 changed"], w["failure"]
+    assert "W-1" not in run.real_runs_asked and run.paused is None and run.turn == "adaptation"
+    assert run.handoff["kind"] == "propose" and "wrote into a folder it may only read" in run.handoff["why"]
+    r = p31_receipts(run)[-1]
+    assert not r["approved"] and not r["ran"] and r["dry_run"]["reads_changed"] == {
+        "1": {"created": ["report.txt"], "deleted": [], "changed": []}}, r["dry_run"]
+    assert sorted(os.listdir(src)) == ["a.txt", "b.txt"] and os.listdir(dst) == [], "the real folders are untouched"
 
 
-def p30_receipts(run, kind="real_run"):
-    path = Path(run.dir, "receipts.jsonl")
-    return [r for r in map(json.loads, path.read_text().splitlines()) if r.get("type") == kind] if path.exists() else []
+def test_p35_expect_mismatch_missing_and_unexpected(j2ft):
+    em = j2ft.expect_mismatch
+    dry = {"created": ["z.txt", "a.txt", "report.txt"], "changed": [], "deleted": [], "output": "/tmp/.dryrun-x/f0"}
+    assert em(P35_ALL | {"created": ["*.txt"]}, dry) == ""
+    assert em(P35_ALL | {"created": ["a.txt", "report.txt", "z.txt"]}, dry) == ""
+    assert em(P35_ALL | {"created": ["*.csv", "a.txt"]}, dry) == \
+        "created: expected *.csv, got none; created: unexpected report.txt; created: unexpected z.txt"
+    assert em({"created": ["*.txt"], "changed": [], "deleted": []}, {**dry, "deleted": ["old.txt"]}) == "deleted: unexpected old.txt"
+    assert em({"created": ["*.txt"], "changed": ["keep.txt"], "deleted": []}, dry) == "changed: expected keep.txt, got none"
+    assert em(P35_ALL, {"created": [], "changed": [], "deleted": []}) == \
+        "created: expected a.txt, got none; created: expected b.txt, got none; created: expected report.txt, got none"
+    assert ".dryrun-" not in em(P35_ALL, dry)
 
 
-def p30_system(run):
-    return [m["text"] for m in run.chat if m["who"] == "system"]
+def test_p35_a_matching_dry_run_is_asked(p35):
+    go, src, dst = p35
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
+    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "Created (3): a.txt, b.txt, report.txt" in card and run.workflows[0]["status"] == "done"
+    assert run.real_runs_dry["W-1"]["reads_changed"] == {} and os.listdir(dst) == []
 
 
-def test_p30_a_failing_dry_run_is_not_offered_and_goes_back_to_the_builder(j2rr, rr_run):
-    made, real = rr_run
-    run, w = made({"s.py": P30_BAD})
-    assert run._ask_real_run({}) and not run.paused and "W-1" not in run.real_runs_asked
-    assert not any("reply exactly: RUN" in x for x in p30_system(run)), "no code is posted"
-    r = p30_receipts(run)[-1]
-    assert r["offered"] is False and not r["approved"] and not r["ran"] and r["evidence"] == "not offered: its dry run on copies exited 3"
-    assert r["dry_run"]["exit"] == 3 and "boom: the token file is missing" in r["dry_run"]["stderr"]
-    assert run.turn == "W-1" and run.handoff == {"kind": "build", "wid": "W-1"} and w["resume"]["attempt"] == 1
-    prompts = p30_builder(run, {"s.py": P30_GOOD})
-    run._turn_workflow_agent(run.handoff)
-    assert len(prompts) == 1 and "ATTEMPT 2 OF 3" in prompts[0] and "boom: the token file is missing" in prompts[0] and "exited 3" in prompts[0]
-    assert w["status"] == "done" and w["build_attempts"] == 2 and not (real / "out.txt").exists()
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "dry run on a copy: exit 0" in p30_system(run)[-1]
-    run, w = made({"s.py": P30_BAD}, attempts=j2rr.MAX_CHECK_ATTEMPTS)      # never fixed: no attempts left
-    assert run._ask_real_run({}) is False and run.real_runs_done["W-1"] is False and not run.paused
-    run._goal_done({})
-    assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: its dry run on copies exited 3")
+def test_p35_a_file_the_expect_left_out_goes_back(p35):
+    go, _, dst = p35
+    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert not [m for m in run.chat if m.get("real_run")] and run.turn == "adaptation" and "W-1" not in run.real_runs_asked
+    assert w["failure"] == ["dry_run", "not what it said it would do: created: unexpected report.txt"], w["failure"]
+    assert p31_receipts(run)[-1]["dry_run"]["expect_mismatch"] == "created: unexpected report.txt"
+    assert os.listdir(dst) == []
 
 
-def test_p30_a_reply_without_the_code_keeps_the_question_open_and_the_code_in_any_case_runs_it(j2rr, rr_run, monkeypatch):
-    made, real = rr_run
-    monkeypatch.setattr(j2rr.secrets, "token_hex", lambda n=3: "a578a3")
-    run, w = made({"s.py": P30_GOOD})
-    assert run._ask_real_run({}) and run.real_runs_asked["W-1"] == "a578a3"
-    for text in ("Run", "yes", "RUN", "RUN a578a4", "run it"):
-        p30_reply(run, text)
-        assert run.paused and run.paused["kind"] == "real_run" and run.paused["handoff"]["wid"] == "W-1", text
-        assert p30_system(run)[-1] == "Not run. Reply exactly RUN a578a3, or decline.", text
-        assert not p30_receipts(run) and not (real / "out.txt").exists() and "W-1" not in run.real_runs_done, text
-    p30_reply(run, "run a578a3")
-    r = p30_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and (real / "out.txt").read_text() == "done"
-    assert len(p30_receipts(run)) == 1 and run.outcome.startswith("Done:") and not run._real_run_open()
-    for text in ("  RUN   A578A3  ", "Run a578a3."):
-        (real / "out.txt").unlink()
-        run, w = made({"s.py": P30_GOOD})
-        run._ask_real_run({})
-        p30_reply(run, text)
-        assert p30_receipts(run)[-1]["approved"] and (real / "out.txt").exists(), text
-    (real / "out.txt").unlink()
-    run, w = made({"s.py": P30_GOOD})
+def test_p35_two_identical_mismatches_stop_the_cycle(p35, j2ft):
+    go, _, _ = p35
+    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
     run._ask_real_run({})
-    p30_reply(run, "RUN a578a3", auto=True)      # the exact code, but sent by Decide for me: never an approval
-    assert run.paused and not p30_receipts(run) and not (real / "out.txt").exists()
-    p30_reply(run, "Decline")
-    r = p30_receipts(run)[-1]
-    assert r["declined"] and not r["approved"] and not r["ran"] and not run.paused and not (real / "out.txt").exists()
+    w2 = p35_again(run)
+    assert run._ask_real_run({}) is True
+    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
+    assert sig[0] == sig[1] == ("dry_run", "not what it said it would do: created: unexpected report.txt")
+    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
 
 
-def test_p30_a_run_with_a_pending_real_run_does_not_end_ready(j2rr, rr_run):
-    made, real = rr_run
-    closing = lambda run: next(m["text"] for m in reversed(run.chat) if m["who"] == "identity" and m.get("done"))
-    run, w = made({"s.py": P30_GOOD})      # asked, never answered
-    run._ask_real_run({})
-    run.paused = None
-    run._goal_done({})
-    assert run.outcome.startswith("Done with open items: The live step is not done. W-1's real run did not run: it waits for the Requester's approval")
-    assert "not ready" in closing(run) and "ready." not in closing(run).replace("not ready.", "")
-    run, w = made({"s.py": P30_GOOD})      # declined
-    run._ask_real_run({})
-    p30_reply(run, "decline")
-    assert run.outcome.startswith("Done with open items") and "did not run: the Requester declined it" in run.outcome and "not ready" in closing(run)
-    run, w = made({"s.py": P30_GOOD}, status="failed")      # its workflow never finished
-    run._goal_done({})
-    assert run.outcome.startswith("Done with open items") and "W-1's real run did not run: its workflow is failed, not done" in run.outcome
-    run, w = made({"s.py": P30_GOOD})      # shipped as it is
-    out = run._ship_outcome("on the Requester's decision")
-    assert out.startswith("Done with open items: shipped as is") and "The live step is not done" in out and "it was not asked for" in out
-    run, w = made({"s.py": P30_GOOD})      # approved, exit 0: a clean end
-    run._ask_real_run({})
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    assert run.outcome.startswith("Done:") and run._live_step_note() == ""
+@pytest.mark.parametrize("expect", [None, {"created": [], "changed": [], "deleted": []}, "report.txt",
+                                    {"created": ["report.txt"]}, {"created": ["report.txt", ""], "changed": [], "deleted": []},
+                                    {"created": ["/abs/report.txt"], "changed": [], "deleted": []},
+                                    {"created": ["../report.txt"], "changed": [], "deleted": []},
+                                    {"created": ["./report.txt"], "changed": [], "deleted": []},      # review R1-8: never matches a
+                                    {"created": ["pdf/"], "changed": [], "deleted": []}])      # dry-run file path, so refused
+def test_p35_a_real_run_without_expect_is_refused_with_its_own_key(p35, j2ft, expect):
+    go, src, dst = p35
+    run = go()
+    rr = {**run.workflows[0]["real_run"], "expect": expect}
+    if expect is None:
+        rr.pop("expect")
+    run.workflows[0]["status"] = "failed"      # as after a failed dry run: the fix proposes the same real run again
+    reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr, "revises": "W-1"}])
+    assert not reg and len(refused) == 1 and "real_run expect" in refused[0], refused
+    assert run.rejections[-1]["key"] == ["real_run_expect"]
+    assert j2ft.real_run_expect_problems(rr) and j2ft.real_run_expect_problems({**rr, "expect": P35_ALL}) == []
 
 
-def test_p30_receipts_keep_the_exit_code_and_the_output_tails(j2rr, rr_run):
-    made, real = rr_run
-    noisy = ("import sys, os\nsys.stdout.write('o' * 2990 + 'OUT-END')\nsys.stderr.write('e' * 2990 + 'ERR-END')\n"
-             "open(os.path.join(sys.argv[1], 'out.txt'), 'w').write('x')\n")
-    run, w = made({"s.py": noisy})
-    run._ask_real_run({})
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p30_receipts(run)[-1]
-    for x in (r, r["dry_run"]):
-        assert x["exit"] == 0 and len(x["stdout"]) == 2000 and x["stdout"].endswith("OUT-END")
-        assert len(x["stderr"]) == 2000 and x["stderr"].endswith("ERR-END") and "OUT-END" not in x["stderr"]
-        assert x["env"]["python"] and x["env"]["python_version"]
-    run, w = made({"s.py": "import sys\nprint('started')\nsys.stderr.write('E' * 2500 + 'LAST-LINE')\nsys.exit(7)\n"}, attempts=j2rr.MAX_CHECK_ATTEMPTS)
-    run._ask_real_run({})
-    d = p30_receipts(run)[-1]["dry_run"]
-    assert d["exit"] == 7 and d["stdout"] == "started\n" and len(d["stderr"]) == 2000 and d["stderr"].endswith("LAST-LINE")
-    from sutra_app.library.records import _p_receipt
-    assert [k for k, _ in _p_receipt("receipts.jsonl", r)] == ["run_file.object"], "a real-run receipt stays open JSON for the catalogue"
-
-
-@p30_posix
-def test_p30_requirements_get_an_environment_only_after_approval_and_a_cached_one_is_reused(j2rr, rr_run):
-    made, real = rr_run
-    runenv = j2rr.j2_runenv
-    run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p30_builder(run, P30_FILES)
-    run._turn_workflow_agent({"wid": "W-1"})
-    plan, card = runenv.plan(run._out_dir()), p30_system(run)[-1]
-    code = run.env_asked[plan["hash"]]
-    assert run.paused["kind"] == "real_run" and run.paused["handoff"]["kind"] == "env_install" and run._auto_pick() is None
-    assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
-    assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
-    # nothing is installed without approval
-    assert not j2rr.p30_log("venv") and not j2rr.p30_log("pip install") and not os.path.exists(plan["dir"]) and not p30_receipts(run, "env_install")
-    assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
-    p30_reply(run, "yes install")
-    assert run.paused and p30_system(run)[-1] == f"Not installed. Reply exactly RUN {code}, or decline." and not j2rr.p30_log("pip install")
-    p30_reply(run, f"run {code}")
-    assert len(j2rr.p30_log("venv")) == 1 and len(j2rr.p30_log("pip install")) == 1 and not run.paused
-    argv = j2rr.p30_log("pip install")[0]["argv"]
-    assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
-    e = p30_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
-    assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"]
-    from sutra_app.library.records import _p_receipt
-    assert [k for k, _ in _p_receipt("receipts.jsonl", e)] == ["run_file.object"], "the install receipt is open JSON for the catalogue"
-    run._turn_workflow_agent(run.handoff)
-    test = next(x for x in run.receipts if x["check"] == "its test passes")
-    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True
-    assert [r for r in j2rr.p30_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
-        "the test rerun used the environment's python (the system one has no pulsedep)"
-    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
-    ask = p30_system(run)[-1]
-    assert "Packages it runs with" in ask and "pulsedep==1.2.0" in ask and "dry run on a copy: exit 0" in ask
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p30_receipts(run)[-1]
-    want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
-    for x in (r, r["dry_run"]):
-        assert x["exit"] == 0 and {k: x["env"].get(k) for k in want} == want and x["env"]["python_version"]
-    assert (real / "out.txt").read_text() == "1.2.0" and run.outcome.startswith("Done:")
-    # a second run with the same requirements.txt reuses the environment: no question, no install
-    n = len(j2rr.p30_log("pip install"))
-    run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
-    p30_builder(run2, P30_FILES)
-    run2._turn_workflow_agent({"wid": "W-1"})
-    assert not run2.paused and w2["status"] == "done" and not run2.env_asked
-    assert len(j2rr.p30_log("pip install")) == n and len(j2rr.p30_log("venv")) == 1
-    assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
-    # a decline: nothing installed, the test is not rerun with another python, the real run is not offered
-    run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
-    p30_builder(run3, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
-    run3._turn_workflow_agent({"wid": "W-1"})
-    assert run3.paused and "extra-lib==0.3" in p30_system(run3)[-1]
-    p30_reply(run3, "decline")
-    run3._turn_workflow_agent(run3.handoff)
-    t3 = next(x for x in run3.receipts if x["check"] == "its test passes")
-    assert len(j2rr.p30_log("pip install")) == n and t3["pass"] is None and "the Requester declined installing them" in t3["evidence"]
-    assert run3._ask_real_run({}) is False
-    assert "its packages are not installed: the Requester declined installing them" in run3._live_step_note()
-
-
-@p30_posix
-def test_p30_a_failed_install_goes_back_to_the_builder_with_pips_error(j2rr, rr_run, monkeypatch):
-    made, real = rr_run
-    run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p30_builder(run, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P30_FILES)
-    run._turn_workflow_agent({"wid": "W-1"})
-    monkeypatch.setenv("FAKE_PIP_FAIL", "nosuch==9.9")
-    p30_reply(run, f"RUN {next(iter(run.env_asked.values()))}")
-    monkeypatch.delenv("FAKE_PIP_FAIL")
-    e = p30_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
-    run._turn_workflow_agent(run.handoff)
-    assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
-
-
-def test_p30_a_missing_import_blocks_the_offer_and_bad_requirement_lines_are_refused(j2rr, rr_run, monkeypatch, tmp_path):
-    made, real = rr_run
-    run, w = made({"s.py": "import sys\nimport notinstalledmod\nfrom helper import go\n", "helper.py": "def go():\n    pass\n"})
-    assert run._ask_real_run({}) and not run.paused and "W-1" not in run.real_runs_asked and not run.real_runs_dry
-    r = p30_receipts(run)[-1]
-    assert r["offered"] is False and "imports notinstalledmod, which is not installed" in r["evidence"] and "helper" not in r["evidence"]
-    assert run.turn == "W-1" and "notinstalledmod" in w["resume"]["evidence"] and "requirements.txt" in w["resume"]["evidence"]
-    run, w = made({}, status="running", attempts=0)
-    prompts = p30_builder(run, *[{"s.py": P30_GOOD, "requirements.txt": text} for text in
-                                 ("requests>=2\n", "--extra-index-url https://example.invalid/simple\npulsedep==1.2.0\n", "git+https://example.invalid/x.git\n")])
-    n = len(j2rr.p30_log("pip install"))
-    run._turn_workflow_agent({"wid": "W-1"})
-    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.env_asked and len(j2rr.p30_log("pip install")) == n
-    assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
-    monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: not offered, with a plain reason
-    run, w = made({"s.py": P30_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"}, attempts=j2rr.MAX_CHECK_ATTEMPTS)
-    assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is False
-    assert "which is not a Python that runs" in run._live_step_note() and "J2_RUN_PYTHON" in run._live_step_note()
-
-
-@p30_posix
-def test_p30_the_sandbox_opens_the_network_for_the_install_step_only(j2rr, rr_run, monkeypatch):
-    made, real = rr_run
-    monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", j2rr.p30_srt)
-    run, w = made({}, status="running", attempts=0, test="test_s.py")
-    p30_builder(run, {**P30_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
-    before = len(j2rr.p30_log("sandbox"))
-    run._turn_workflow_agent({"wid": "W-1"})
-    p30_reply(run, f"RUN {next(iter(run.env_asked.values()))}")
-    run._turn_workflow_agent(run.handoff)
-    run._ask_real_run({})
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    rows = j2rr.p30_log("sandbox")[before:]
-    installs = [r for r in rows if " -m pip install " in r["command"]]
-    others = [r for r in rows if r not in installs]
-    env_dir = j2rr.j2_runenv.plan(run._out_dir())["dir"]
-    assert len(installs) == 1 and installs[0]["settings"]["network"]["allowedDomains"] == ["pypi.org", "files.pythonhosted.org"]
-    assert installs[0]["settings"]["filesystem"]["allowWrite"] == [env_dir]
-    assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
-    assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
-    assert p30_receipts(run)[-1]["exit"] == 0
-
-
-def test_p30_a_real_runs_hosts_are_data_checked_by_code_and_named_in_the_planning_rules(j2rr, rr_run):
-    made, real = rr_run
-    rr = {"command": ["python3", "s.py", str(real)], "folder": str(real), "why": "x"}
-    problems = lambda hosts: j2rr.real_run_problems({**rr, "hosts": hosts}, j2rr.squash(f"run it on {real}"), ("python3", "{target}"), "/nowhere/run")
-    assert problems(["api.example.com", "auth.example.com"]) == [] and problems([]) == []
-    for bad in (["*.example.com"], ["https://api.example.com"], ["api.example.com:443"], ["10.0.0.1"], ["localhost"], "api.example.com", [7]):
-        assert any("real_run hosts must be a list of the plain host names" in x for x in problems(bad)), bad
-    assert j2rr.real_hosts({"hosts": [" API.Example.com ", "api.example.com", "b.example.com"]}) == ["api.example.com", "b.example.com"]
-    run, w = made({"s.py": P30_GOOD})
-    assert run.ATOM_RULES.endswith(j2rr.REAL_RUN_HOSTS_RULE) and '"hosts"' in j2rr.REAL_RUN_HOSTS_RULE, "the one prompt change of P30"
-
-
-@p30_posix
-def test_p30_with_the_sandbox_on_only_approved_hosts_are_reachable_and_nothing_is_allowed_without_approval(j2rr, rr_run, monkeypatch):
-    made, real = rr_run
-    A, B, C = "api.example.com", "auth.example.com", "other.example.com"
-    monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", j2rr.p30_srt)
-    nets = lambda n: [r["settings"]["network"]["allowedDomains"] for r in j2rr.p30_log("sandbox")[n:]]
-    # no hosts named: no network, so a script that calls a service fails its dry run and is not offered
-    n = len(j2rr.p30_log("sandbox"))
-    run, w = made({"s.py": P30_NET}, attempts=j2rr.MAX_CHECK_ATTEMPTS, reaches=[A])
-    assert run._ask_real_run({}) is False and not run.paused and nets(n) == [[]]
-    d = p30_receipts(run)[-1]["dry_run"]
-    assert d["exit"] == 9 and f"blocked by the sandbox: {A}" in d["stderr"] and d["network"] == {"hosts": [], "enforced": True}
-    # hosts named: asked for before the dry run; nothing is allowed and nothing runs before the approval
-    n = len(j2rr.p30_log("sandbox"))
-    run, w = made({"s.py": P30_NET}, hosts=[A, B], reaches=[A, B])
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and run.paused["handoff"]["kind"] == "real_run_hosts" and run._auto_pick() is None
-    card, code = p30_system(run)[-1], run.hosts_asked["W-1"]
-    assert f"Hosts it would reach, and no others: {A}, {B}" in card and f"RUN {code}" in card and "Nothing is allowed until you approve" in card
-    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok and not run.real_runs_dry and "W-1" not in run.real_runs_asked
-    p30_reply(run, "ok go ahead")
-    assert run.paused["handoff"]["kind"] == "real_run_hosts" and p30_system(run)[-1] == f"Not allowed. Reply exactly RUN {code}, or decline."
-    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok
-    p30_reply(run, f"run {code}")
-    assert run.hosts_ok == {"W-1": [A, B]} and nets(n) == [[A, B]] and run.paused["handoff"]["kind"] == "real_run"
-    ask = p30_system(run)[-1]
-    assert f"Network: it can reach only {A}, {B}. RUN {run.real_runs_asked['W-1']} approves them." in ask and "dry run on a copy: exit 0" in ask
-    assert not (real / "out.txt").exists()
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p30_receipts(run)[-1]
-    assert r["approved"] and r["exit"] == 0 and (real / "out.txt").read_text() == f"reached {A} {B}" and nets(n) == [[A, B], [A, B]]
-    assert r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": True} and r["dry_run"]["network"] == r["network"]
-    (real / "out.txt").unlink()
-    # a host that is not named stays blocked, also after the others were approved
-    run, w = made({"s.py": P30_NET}, attempts=j2rr.MAX_CHECK_ATTEMPTS, hosts=[A], reaches=[A, C])
-    run._ask_real_run({})
-    p30_reply(run, f"RUN {run.hosts_asked['W-1']}")
-    d = p30_receipts(run)[-1]
-    assert d["offered"] is False and d["dry_run"]["exit"] == 9 and f"blocked by the sandbox: {C}" in d["dry_run"]["stderr"]
-    assert d["dry_run"]["network"]["hosts"] == [A] and not run.paused and "its dry run on copies exited 9" in run.outcome
-    # a decline: nothing allowed, no dry run, not offered
-    n = len(j2rr.p30_log("sandbox"))
-    run, w = made({"s.py": P30_NET}, hosts=[A], reaches=[A])
-    run._ask_real_run({})
-    p30_reply(run, "decline")
-    assert len(j2rr.p30_log("sandbox")) == n and not run.hosts_ok and not run.paused and p30_receipts(run)[-1]["offered"] is False
-    assert f"the Requester declined letting it reach {A}" in run.outcome
-
-
-def test_p30_without_the_sandbox_the_hosts_are_shown_and_recorded_and_not_enforced(j2rr, rr_run):
-    made, real = rr_run
-    A, B = "api.example.com", "auth.example.com"
-    run, w = made({"s.py": P30_NET}, hosts=[A, B], reaches=[A, B])
-    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run" and not run.hosts_asked, "no hosts question without a sandbox"
-    assert f"Network: it says it reaches {A}, {B}. No sandbox is on, so this is not enforced." in p30_system(run)[-1]
-    p30_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p30_receipts(run)[-1]
-    assert r["exit"] == 0 and r["hosts"] == [A, B] and r["network"] == {"hosts": [A, B], "enforced": False}
-    assert r["dry_run"]["network"] == {"hosts": [A, B], "enforced": False}
-    run, w = made({"s.py": P30_GOOD})
-    run._ask_real_run({})
-    assert "Network: it names no hosts. No sandbox is on, so the network is not blocked." in p30_system(run)[-1]
-
-
-def test_p30_runenv_is_j2s_module_below_its_docstring():
-    """engine/runenv.py is Sutra's copy of J2's j2_runenv.py: the code is the same, only the module docstring differs. Skipped where
-    the J2 prototype is not checked out beside this project."""
-    theirs = Path(__file__).resolve().parents[3] / "prototypes" / "j2" / "j2_runenv.py"
-    if not theirs.is_file():
-        pytest.skip("prototypes/j2 is not here")
-    code = lambda p: p.read_text(encoding="utf-8").split('"""\nimport ast', 1)[1]
-    assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
+def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES

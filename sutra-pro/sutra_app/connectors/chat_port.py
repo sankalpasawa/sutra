@@ -13,7 +13,7 @@ from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_che
 
 from sutra_app import oslayer
 
-from .attachments import AttachmentStore, deliver
+from .attachments import AttachmentStore, Delivery, FileReceipt, deliver
 from .base import write_private_file
 from .cancel import CancelToken
 from .chat_blocks import BlockAccumulator
@@ -25,7 +25,7 @@ from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, Pic
 from .health import API_KEY_REFUSED
 from .model_catalog import ModelOption, efforts_of, names_of, options_for
 from .router import TRANSCRIPT_LIMIT, Router
-from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
+from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over, same_turn
 from .usage import load_session_state, save_session_state
 
 __all__ = ["ChatPort", "RouterChatPort"]
@@ -41,6 +41,7 @@ class ChatPort(Protocol):
     def default_pick(self, function: str = "") -> Pick: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
+    def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]: ...
     def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]: ...
     def set_system(self, session_id: str, text: str) -> None: ...
     def stop(self, session_id: str) -> bool: ...
@@ -190,7 +191,7 @@ class RouterChatPort:
         """The history a switch caused by `message` carries: the stored transcript without the owner's new line, which is stored before the call and goes as
         the new message (the router drops it the same way, `Router._transcript`)."""
         history = self._history(session_id)
-        return history[:-1] if history and history[-1].role == "user" and history[-1].text == message.text else history
+        return history[:-1] if history and history[-1].role == "user" and same_turn(history[-1].text, message.text) else history
 
     def plan_switch(self, session_id: str, target: str) -> CarryPlan:
         """What a switch to `target` would carry. Reads the stored state and transcript; starts no process and writes nothing."""
@@ -210,14 +211,39 @@ class RouterChatPort:
                          chars=len(text), kept_messages=len(messages) - omitted if full else TAIL_MESSAGES, omitted=omitted)
 
     # ---- a turn ---------------------------------------------------------------------------------------------------------------------
-    def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
+    def _delivery(self, session_id: str, turn: ChatTurnIn) -> Optional[Delivery]:
+        """What the turn's files become for the provider that will take them, or None for a turn with no file. Raises (naming the file) for one that cannot be delivered."""
         if not turn.attachments:
-            return Message(role="user", text=turn.text)
+            return None
         if self.attachments is None:
             raise InvalidRequestError("attachments are not available here", detail={"names": [a.name for a in turn.attachments]})
-        provider = self._chosen(session_id) or self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn))).order[0]
-        d = deliver(self.attachments, turn.attachments, provider)
-        return Message(role="user", text=turn.text + d.text, images=list(d.images))
+        return deliver(self.attachments, turn.attachments, self._provider_for(session_id, turn))
+
+    def _provider_for(self, session_id: str, turn: ChatTurnIn) -> str:
+        """The provider that will run this turn's files: the chat's choice, else the first the router would try FOR THESE FILES (it drops a provider that cannot take a PDF, so a
+        fallback never meets one: D440, FR-11). When the files leave no provider, the refusal names them."""
+        chosen = self._chosen(session_id)
+        if chosen is not None:
+            return chosen
+        paths = [str(p) for p in (self.attachments.path_of(a.id) for a in turn.attachments if a.kind in ("image", "pdf")) if p is not None]       # type: ignore[union-attr]
+        try:
+            return self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn), images=paths)).order[0]
+        except NoProviderError as exc:
+            pdfs = [a.name for a in turn.attachments if a.kind == "pdf"]
+            if not pdfs:
+                raise
+            raise InvalidRequestError(f"{', '.join(pdfs)}: only Claude can read a PDF, and Claude cannot run now. Remove the PDF or sign in to Claude.",
+                                      detail={"names": pdfs, "kind": "pdf"}) from exc
+
+    def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
+        d = self._delivery(session_id, turn)
+        return Message(role="user", text=turn.text) if d is None else Message(role="user", text=turn.text + d.text, images=list(d.images))
+
+    def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]:
+        """Whether the turn's files can be delivered, and what each will become: the SAME code the turn runs (`_delivery`), with no process started and nothing written.
+        A file that cannot go raises here, so the caller refuses the send before it stores the owner's line (D440)."""
+        d = self._delivery(session_id, turn)
+        return () if d is None else d.files
 
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
         update = {"session_id": session_id, "tag": turn.tag}

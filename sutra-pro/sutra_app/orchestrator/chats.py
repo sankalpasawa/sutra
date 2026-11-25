@@ -21,6 +21,7 @@ import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 
+from sutra_app.connectors.attachments import AttachmentStore, carry_block
 from sutra_app.connectors.models import Message
 from sutra_app.library.gate import GATE, Checked
 from sutra_app.library.org_chart import LinkPlan
@@ -56,6 +57,7 @@ _SESSION_COLUMNS = ("id, node_id, kind, title, writable, status, filed_under, co
                     "last_message_id, note, created_at, updated_at, pinned, pinned_model, pinned_effort, run_id")
 _OPEN_TASKS = ("blocked", "queued", "starting", "running", "waiting_user")
 _OPTION_LINE = re.compile(r"^[ \t]*Option[ \t]+[0-9]+:[ \t]*(.+?)[ \t]*$", re.MULTILINE)
+CARRY_FILE_CHARS = 30_000          # D440: the most file text a carry-over repeats in all (newest files first; a file past it is named as omitted)
 _TRANSCRIPT_ROLES = {"user": "user", "agent": "assistant", "system": "system"}
 
 
@@ -126,6 +128,7 @@ def _message_out(row: sqlite3.Row, newest: Mapping[tuple[str, int], int] | None 
         task_id=row["task_id"], state=row["state"], at=iso_z(row["at"]), blocks=_blocks_of(row["meta_json"]),
         turn=_turn_of(row["src_ref"]), passed_on=_passed_on_of(row["session_id"], row["src_ref"]), steer=(row["src_ref"] or "").startswith(STEER_REF),
         ask=_ask_of(row["src_ref"]), client_id=client, attempt=attempt, ordered=_ordered_of(row["meta_json"]), via=_via_of(row["meta_json"]), mode=mode_of(row["meta_json"]),
+        attachments=attachments_of(row["meta_json"]),
         superseded=bool(owner is not None and attempt is not None and newest is not None and newest.get((row["session_id"], owner), 1) > attempt))
 
 
@@ -194,6 +197,17 @@ def mode_of(meta_json: str | None) -> str | None:
         return "ask" if json.loads(meta_json or "{}").get("mode") == "ask" else None
     except ValueError:
         return None
+
+
+def attachments_of(meta_json: str | None) -> list[dict]:
+    """The files recorded with an owner's line (the sibling key `attachments`, D440): the entries that have an id and a name, at most ten; [] for any other message."""
+    try:
+        found = json.loads(meta_json or "{}").get("attachments", [])
+    except ValueError:
+        return []
+    if not isinstance(found, list):
+        return []
+    return [a for a in found if isinstance(a, dict) and isinstance(a.get("id"), str) and isinstance(a.get("name"), str)][:10]
 
 
 def _ordered_of(meta_json: str | None) -> bool:
@@ -352,6 +366,8 @@ class ChatStore:
             meta_json = json.dumps({**json.loads(meta_json), "via": msg.via}, separators=(",", ":"), ensure_ascii=False)
         if msg.mode:
             meta_json = json.dumps({**json.loads(meta_json), "mode": msg.mode}, separators=(",", ":"), ensure_ascii=False)
+        if msg.attachments:                         # D440: the files that went with the owner's line (ids for a later carry-over, the receipt for the page), a sibling key like `mode`
+            meta_json = json.dumps({**json.loads(meta_json), "attachments": msg.attachments}, separators=(",", ":"), ensure_ascii=False)
         cursor = conn.execute(
             "INSERT INTO chat_messages(session_id, role, who, kind, text, card_json, meta_json, pause, answered_by, task_id, src_ref, state, at)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -515,9 +531,22 @@ class ChatTranscripts:
     """The connector router's `TranscriptSource`: the recent conversation of a session, so a new provider session can be
     primed. Only messages of kind text and question with state ok; role `agent` becomes `assistant`."""
 
-    def __init__(self, chats: ChatStore) -> None:
+    def __init__(self, chats: ChatStore, attachments: AttachmentStore | None = None) -> None:
         self._chats = chats
+        self._attachments = attachments          # D440: with a store, an owner's line that carried files is given its files' text again (a new model session is built from this)
 
     def messages(self, session_id: str, limit: int = 20) -> list[Message]:
         found = self._chats.last_messages(session_id, limit, kinds=("text", "question"), ok_only=True, exclude_superseded=True)
-        return [Message(role=_TRANSCRIPT_ROLES[m.role], text=m.text) for m in found]
+        store = self._attachments
+        if store is None or not any(m.attachments for m in found):
+            return [Message(role=_TRANSCRIPT_ROLES[m.role], text=m.text) for m in found]
+        out: list[Message] = []
+        left = CARRY_FILE_CHARS
+        for m in reversed(found):                # newest first: when the budget runs out it is the oldest files that are named and not repeated
+            text = m.text
+            if m.role == "user" and m.attachments:
+                block, left = carry_block(store, [(a["id"], a["name"], str(a.get("kind") or "text")) for a in m.attachments], left)
+                text += block
+            out.append(Message(role=_TRANSCRIPT_ROLES[m.role], text=text))
+        out.reverse()
+        return out

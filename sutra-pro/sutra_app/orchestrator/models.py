@@ -517,6 +517,7 @@ class ChatMessageOut(Value):
     ordered: bool = False                                                  # `blocks` holds the whole turn in order, text included (D212)
     via: JsonObject | None = None                                          # a direct reply: {provider, model} that wrote it, so the header says the same live and after a reload
     mode: Literal["ask"] | None = None                                     # the owner's line of an Ask turn (DV-1, D350): left out of every other message, so a page that does not know Ask sees what it always saw
+    attachments: Annotated[list[JsonObject], Field(max_length=10)] = []    # the owner's line that carried files (D440): what the model received of each (name, kind, sent, chars, cut, total); left out when empty
 
     @model_serializer(mode="wrap")
     def _blocks_only_when_there_are_some(self, handler: Any) -> dict[str, Any]:
@@ -534,6 +535,8 @@ class ChatMessageOut(Value):
             data.pop("ask", None)
         if data.get("mode") is None:
             data.pop("mode", None)
+        if not data.get("attachments"):
+            data.pop("attachments", None)
         if data.get("client_id") is None:
             data.pop("client_id", None)
         if data.get("attempt") is None:

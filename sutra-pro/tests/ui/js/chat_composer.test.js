@@ -48,16 +48,19 @@ test("a file the limits refuse is never read or sent, and the owner is told why"
   const {api, c} = rig({});
   await c.addFiles([file("tool.exe"), file("empty.txt", 0), file("huge.pdf", 30 * 1024 * 1024)]);
   assert.equal(api.calls.length, 0);
-  assert.equal(c.state().files.length, 0);
-  assert.match(c.state().note, /over 20 MB/);
-  assert.match(bar(c.state()), /class="ccnote"/);
+  assert.equal(c.state().files.length, 3);                                              // D440: each refusal is a failed chip that stays, with its reason
+  assert.ok(c.state().files.every(f => f.status === "failed"));
+  assert.match(c.state().files[2].error, /over 20 MB/);
+  assert.match(chips(c.state().files), /huge\.pdf.*not attached: huge\.pdf is over 20 MB/);
 });
 
 test("no more than ten files go with one message", async () => {
   const {c} = rig({[UP]: () => ({id: ID, kind: "text", size: 5})});
   await c.addFiles(Array.from({length: 12}, (_, i) => file("f" + i + ".txt")));
-  assert.equal(c.state().files.length, 10);
-  assert.match(c.state().note, /Up to 10 files/);
+  assert.equal(c.state().files.filter(f => f.status === "ready").length, 10);
+  const over = c.state().files.filter(f => f.status === "failed");
+  assert.equal(over.length, 2);                                                         // D440: the two over the limit are chips that say so, not a lost note
+  assert.match(over[0].error, /Up to 10 files/);
 });
 
 test("a failed upload is a chip that says so and is not sent with the message", async () => {
@@ -65,6 +68,9 @@ test("a failed upload is a chip that says so and is not sent with the message", 
   await c.addFiles([file("a.txt")]);
   assert.equal(c.state().files[0].status, "failed");
   assert.match(chips(c.state().files), /ccfile failed.*not attached: That file kind is not accepted\./);
+  assert.equal((await c.send("hello")).ok, false);                                       // D440: it is not dropped silently; the owner removes it first
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  c.removeFile(c.state().files[0].key);
   await c.send("hello");
   assert.deepEqual(api.calls[api.calls.length - 1].body, {text: "hello"});
 });
@@ -270,8 +276,8 @@ test("a thumbnail's URL is revoked when its chip is removed and when the message
 test("the 11th file of a paste is refused with the same note as the file chooser's", async () => {
   const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5})}, {objectUrl: urlRig().objectUrl});
   await c.take({files: Array.from({length: 11}, (_, i) => image("shot" + i + ".png"))});
-  assert.equal(c.state().files.length, 10);
-  assert.match(c.state().note, /Up to 10 files/);
+  assert.equal(c.state().files.filter(f => f.status === "ready").length, 10);
+  assert.match(c.state().files[10].error, /Up to 10 files/);
 });
 
 test("in team mode a pasted file switches the box to the model, with a one-line note", async () => {
@@ -283,7 +289,7 @@ test("in team mode a pasted file switches the box to the model, with a one-line 
   assert.match(bar(c.state()), /class="ccnote" role="status">Files go only to the model/);
   const refused = rig({}, {mode: "team"});
   await refused.c.take({files: [file("tool.exe")]});
-  assert.match(refused.c.state().note, /can be attached/);                // the refusal is what the owner needs to read
+  assert.match(refused.c.state().files[0].error, /can be attached/);        // the refusal is what the owner needs to read, on the chip
 });
 
 test("Retry sends the same words once, on the model, and a second press while it answers is refused", async () => {
@@ -646,4 +652,66 @@ test("the Attach link carries the limits as its title (a phone shows the note on
   const html = bar({mode: "direct", files: [], note: ""}, {});
   assert.match(html, /data-act="composer-attach" title="Up to 10 files, 20 MB each/);
   assert.match(html, /<small>Up to 10 files, 20 MB each/);
+});
+
+// ---- chat-attachment-context (D440): a file is read by the model or the owner is told why not (L1 to L3) ----------------------------------------------
+
+test("FR-1 FR-2: a refused file is a failed chip that stays, Send is disabled and nothing is posted", async () => {
+  const {api, c} = rig({});
+  await c.addFiles([file("tool.exe")]);
+  assert.equal(c.state().files.length, 1);
+  assert.equal(c.state().files[0].status, "failed");
+  assert.match(chips(c.state().files), /ccfile failed.*tool\.exe.*not attached/);
+  await c.addFiles([file("other.exe")]);                                      // another action: the first chip is still there
+  assert.equal(c.state().files.length, 2);
+  assert.equal(button(c.state(), "hello", {}).disabled, true);
+  const out = await c.send("hello");
+  assert.equal(out.ok, false);
+  assert.match(out.error, /Remove the file that was not attached/);
+  assert.equal(api.calls.length, 0);
+});
+
+test("FR-2: a failed upload is not dropped by a send of the others; the owner removes it first", async () => {
+  const {api, c} = rig({[UP]: body => { if (body.name === "bad.txt") throw new Error("it could not be sent"); return {id: ID, name: body.name, kind: "text", size: 5}; }});
+  await c.addFiles([file("good.txt"), file("bad.txt")]);
+  const out = await c.send("go");
+  assert.equal(out.ok, false);
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  assert.equal(c.state().files.length, 2, "nothing was erased");
+});
+
+test("FR-3: the file bar is drawn in Tell the team too, and a team send with a file is refused with a sentence", async () => {
+  const {api, c} = rig({[UP]: () => ({id: ID, name: "notes.txt", kind: "text", size: 5})});
+  await c.addFiles([file("notes.txt")]);
+  c.setMode("team");
+  assert.match(bar(c.state()), /class="ccfiles"/);
+  const out = await c.send("tell them");
+  assert.equal(out.ok, false);
+  assert.equal(out.error, "Files go only to the model. Remove them, or ask the model.");
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+});
+
+test("FR-3: the panel and the home page refuse a team send while a file is held, with the composer's own sentence (source pin: the pages are not loadable in node)", () => {
+  const fs = require("node:fs");
+  const panel = fs.readFileSync(path.join(JS, "node_panel.js"), "utf8");
+  const home = fs.readFileSync(path.join(JS, "home.js"), "utf8");
+  assert.match(panel, /held\.state\(\)\.files\.length > 0\) \{ st\.banner = root\.ChatComposer\.TEAM_FILES;/);
+  assert.match(home, /held\.state\(\)\.files\.length > 0\) \{ showBanner\(\{text: root\.ChatComposer\.TEAM_FILES\}\)/);
+  assert.equal(ChatComposer.TEAM_FILES, "Files go only to the model. Remove them, or ask the model.");
+});
+
+test("A4: the composer asks the server for the attachment lists once and the check uses them; a failed read leaves the built-in lists", async () => {
+  const gets = [];
+  const CS = require(path.join(JS, "chat_search.js"));
+  globalThis.ChatSearch = CS;
+  const api = {calls: [], post: async () => ({id: ID, kind: "text", size: 5}), get: async p => { gets.push(p); return {text_ext: ["zzz"], text_names: [], binary: [], word: [], office_refused: []}; }};
+  const c = create({api, sid: SID, mode: "direct", readFile: async () => "aGVsbG8=", onChange: () => {}});
+  await new Promise(r => setTimeout(r, 5));
+  assert.deepEqual(gets, ["/api/chats/attachment-limits"]);
+  create({api, sid: SID, mode: "direct", onChange: () => {}});                                 // a second composer on the page does not ask again
+  assert.equal(gets.length, 1);
+  await c.addFiles([file("a.zzz"), file("a.txt")]);
+  assert.deepEqual(c.state().files.map(f => f.status === "failed"), [false, true]);
+  assert.equal(CS.setLimits({}), true);
+  delete globalThis.ChatSearch;
 });

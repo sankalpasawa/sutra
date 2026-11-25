@@ -1145,6 +1145,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
   if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
   else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
     + `<div class="acts"><button type="button" class="ghost" data-later>Answer later</button></div>`;
+  if (kind === "real_run" && live && (s.paused || {}).code) h += `<div class="acts"><button type="button" class="pri" data-run="RUN ${esc(s.paused.code)}">Run</button><button type="button" class="ghost" data-run="Don't run">Don't run</button></div>`;      // E28 (D434)
   if (later) h += `<p class="qnote">Saved for later. The team waits for your answer. <button type="button" class="ghost" data-now>Answer now</button></p>`;
   else h += `<p class="qnote">${(s.paused || {}).auto_waits ? "Decide for me never answers this one: it needs you." : qp ? `${PEOPLE[qp.person].name} waits on this.` : "The team waits for your answer."}</p>`;
   return h + "</div>";
@@ -1161,6 +1162,7 @@ function sRaise(s, kind, live){      // E27 (D423): the raise input, only on a l
   return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }
 function sCardClick(e){
   const b = e.target.closest && e.target.closest("button"), c = b && b.closest(".qcard"); if (!c || b.disabled) return;
+  if (b.dataset.run !== undefined) return sendText(b.dataset.run);      // E28 (D434): Run sends the exact RUN <code>; Don't run declines
   if (b.dataset.approve) return sendText(b.dataset.approve === "yes" ? "Yes, approve it." : "No, not now.");      // only a click sends an approval
   if (b.dataset.later !== undefined){ SLATER.add(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
   if (b.dataset.now !== undefined){ SLATER.delete(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
@@ -4801,6 +4803,7 @@ chatFollow((document.querySelector('.tabs [role=tab][aria-selected="true"]') || 
 // the catalog page has no run to follow. Keep `poll();` as the script's last statement: the flow test hooks in right after it.
 if (!CAT.on) poll();
 </script>
+<script src="/ui/js/avatars.js"></script>
 <script src="/ui/js/sutra_events.js"></script>
 <script src="/ui/js/graph_layout.js"></script>
 <script src="/ui/js/chart_marks.js"></script>
