@@ -3748,6 +3748,36 @@ def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
 
 
+# What srt 0.0.81 adds itself for the script it starts (generateProxyEnvVars, sandbox-utils.js): its own localhost proxy, with a
+# per-process random token (sandbox-manager.js, randomBytes(16)), and the per-tool proxy and trust settings that point at it.
+# None of these comes from the app: srt is started with the base environment only (test_p41_srt_itself_gets_the_base_only).
+SRT_OWN_NAMES = {
+    "SANDBOX_RUNTIME", "TMPDIR", "PWD", "SHLVL", "_",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "GRPC_PROXY", "RSYNC_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "grpc_proxy", "no_proxy",
+    "DOCKER_HTTP_PROXY", "DOCKER_HTTPS_PROXY", "GIT_CONFIG_PARAMETERS", "GIT_SSH_COMMAND", "SRT_SSH_PROXY_COMMAND",
+    "JAVA_TOOL_OPTIONS", "CLOUDSDK_PROXY_TYPE", "CLOUDSDK_PROXY_ADDRESS", "CLOUDSDK_PROXY_PORT",
+    "CLOUDSDK_PROXY_USERNAME", "CLOUDSDK_PROXY_PASSWORD",
+}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_path):
+    """Under the real srt the script sees the base, the plan's settings and srt's own local-proxy names: nothing else."""
+    out, folder, *_ = p41
+    home = tmp_path / "home"      # srt denies reads under ~; a temp HOME keeps this interpreter readable, as the tests below do
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    res = j2ft.real_run(str(out), p41_rr(folder, **P41_ENV), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    d = p41_dump(res)
+    extra = {n for n in d["names"] if not n.startswith("__CF")} - set(j2ft.llm.RUN_PASS_NAMES) - set(P41_ENV["settings"])
+    assert extra <= SRT_OWN_NAMES, sorted(extra - SRT_OWN_NAMES)
+    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["J2_SMTP_PASSWORD"] is None
+
+
 @pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
 def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, monkeypatch, tmp_path):
     """R1-2: the stored path is the real file, so srt's allowRead (and the env and the card) name what the script opens."""
