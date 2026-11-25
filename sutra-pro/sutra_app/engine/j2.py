@@ -4434,7 +4434,8 @@ class J2Run:
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
                 self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
                 self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
-                self.ATOM_RULES += REAL_RUN_RESULT_RULE      # P44 (D449)
+                # P44 (D449): the result field, told right after the real-run rules and before P35's and P41's, which stay last
+                self.ATOM_RULES = self.ATOM_RULES.replace(REAL_RUN_EXPECT_RULE, REAL_RUN_RESULT_RULE + REAL_RUN_EXPECT_RULE)
 
     def _begin_cycle(self, advance=True):
         if advance:

@@ -2,7 +2,7 @@
   "$defs": {
     "ArtifactRow": {
       "additionalProperties": false,
-      "description": "One thing the run made, a deliverable (`kind` type) or a record (j2_artifacts.rows).",
+      "description": "One thing the run made: a deliverable (`kind` type), a record, or what an approved real run produced (`kind` run_output,\nD449: one row per run-output record; j2_artifacts.rows).",
       "properties": {
         "changed_by": {
           "anyOf": [
@@ -51,7 +51,8 @@
         "kind": {
           "enum": [
             "type",
-            "record"
+            "record",
+            "run_output"
           ],
           "title": "Kind",
           "type": "string"
