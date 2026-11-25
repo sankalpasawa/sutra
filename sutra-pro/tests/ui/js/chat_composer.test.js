@@ -48,16 +48,19 @@ test("a file the limits refuse is never read or sent, and the owner is told why"
   const {api, c} = rig({});
   await c.addFiles([file("tool.exe"), file("empty.txt", 0), file("huge.pdf", 30 * 1024 * 1024)]);
   assert.equal(api.calls.length, 0);
-  assert.equal(c.state().files.length, 0);
-  assert.match(c.state().note, /over 20 MB/);
-  assert.match(bar(c.state()), /class="ccnote"/);
+  assert.equal(c.state().files.length, 3);                                              // D440: each refusal is a failed chip that stays, with its reason
+  assert.ok(c.state().files.every(f => f.status === "failed"));
+  assert.match(c.state().files[2].error, /over 20 MB/);
+  assert.match(chips(c.state().files), /huge\.pdf.*not attached: huge\.pdf is over 20 MB/);
 });
 
 test("no more than ten files go with one message", async () => {
   const {c} = rig({[UP]: () => ({id: ID, kind: "text", size: 5})});
   await c.addFiles(Array.from({length: 12}, (_, i) => file("f" + i + ".txt")));
-  assert.equal(c.state().files.length, 10);
-  assert.match(c.state().note, /Up to 10 files/);
+  assert.equal(c.state().files.filter(f => f.status === "ready").length, 10);
+  const over = c.state().files.filter(f => f.status === "failed");
+  assert.equal(over.length, 2);                                                         // D440: the two over the limit are chips that say so, not a lost note
+  assert.match(over[0].error, /Up to 10 files/);
 });
 
 test("a failed upload is a chip that says so and is not sent with the message", async () => {
@@ -65,6 +68,9 @@ test("a failed upload is a chip that says so and is not sent with the message", 
   await c.addFiles([file("a.txt")]);
   assert.equal(c.state().files[0].status, "failed");
   assert.match(chips(c.state().files), /ccfile failed.*not attached: That file kind is not accepted\./);
+  assert.equal((await c.send("hello")).ok, false);                                       // D440: it is not dropped silently; the owner removes it first
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  c.removeFile(c.state().files[0].key);
   await c.send("hello");
   assert.deepEqual(api.calls[api.calls.length - 1].body, {text: "hello"});
 });
@@ -270,8 +276,8 @@ test("a thumbnail's URL is revoked when its chip is removed and when the message
 test("the 11th file of a paste is refused with the same note as the file chooser's", async () => {
   const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5})}, {objectUrl: urlRig().objectUrl});
   await c.take({files: Array.from({length: 11}, (_, i) => image("shot" + i + ".png"))});
-  assert.equal(c.state().files.length, 10);
-  assert.match(c.state().note, /Up to 10 files/);
+  assert.equal(c.state().files.filter(f => f.status === "ready").length, 10);
+  assert.match(c.state().files[10].error, /Up to 10 files/);
 });
 
 test("in team mode a pasted file switches the box to the model, with a one-line note", async () => {
@@ -283,7 +289,7 @@ test("in team mode a pasted file switches the box to the model, with a one-line 
   assert.match(bar(c.state()), /class="ccnote" role="status">Files go only to the model/);
   const refused = rig({}, {mode: "team"});
   await refused.c.take({files: [file("tool.exe")]});
-  assert.match(refused.c.state().note, /can be attached/);                // the refusal is what the owner needs to read
+  assert.match(refused.c.state().files[0].error, /can be attached/);        // the refusal is what the owner needs to read, on the chip
 });
 
 test("Retry sends the same words once, on the model, and a second press while it answers is refused", async () => {
