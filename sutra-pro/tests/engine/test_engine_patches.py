@@ -4359,3 +4359,268 @@ def test_p42_runenv_is_j2s_module_below_its_docstring():
         pytest.skip("prototypes/j2 is not here")
     code = lambda p: p.read_text(encoding="utf-8").split('"""\nimport ast', 1)[1]
     assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
+
+
+# ---- P44 (D449): the programs the engine builds and runs ---------------------------------------------------------------------
+# Modelled on three Pulse runs of the beta: j2-20261123-103238-3429 and j2-20261124-113042-87be (an agent stage with a document's
+# charter, C2 "the test '' is not a file in the folder", a list of files read as one name, "unknown check test-passed") and
+# j2-20261125-045739-52c5 (Decide for me confirmed the folder of the install and the live read; an install card with no packages;
+# C2 never rerun after a declined install). No model call, no network.
+P44_PRINTS = ("import json, os, sys\nprint('read 3 threads')\nsys.stderr.write('1 warning\\n')\n"
+              "json.dump({'threads': 3}, open(os.path.join(sys.argv[1], 'out.json'), 'w'))\n"
+              "open(os.path.join(sys.argv[1], 'mail.txt'), 'w').write('one two')\n"
+              "old = os.path.join(sys.argv[1], 'old.txt')\nos.path.exists(old) and os.remove(old)\n")
+P44_FILES = {"tests/test_x.py": "print('OK')\n", "pulse/run.py": "X = 1\n", "README.md": "# Pulse\n"}
+P44_DOC_CHARTER = {"statement": "An agent for Pulse", "site_name": "Pulse", "business_type": FT, "done_when": ["it runs"]}
+
+
+def p44_check(kind, target):
+    return {"text": f"{kind} {target}", "type": kind, "target": target, "expect": True}
+
+
+def p44_made(env_run, files, checks, goal=None):
+    """env_run's run with these files (folders made) and these checks on its one atom; goal: its charter."""
+    made, real = env_run
+    run, w = made({})
+    for name, text in files.items():
+        path = Path(run._out_dir(), name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    w["atoms"][0]["verification"] = checks
+    if goal:
+        run.goal = dict(goal)
+    return run, w, real
+
+
+def test_p44_an_agent_stage_gets_its_own_intake_and_charter_never_a_documents(j2env, tmp_path):
+    run = j2env.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-113042-87be")
+    run._apply_output("prd")
+    run.request = "Build a script for Pulse, with a PRD first."
+    run.post("user", run.request)
+    base = {"statement": "A PRD for Pulse", "product_name": "Pulse", "site_name": "Pulse", "business_type": "prd",
+            "done_when": ["The Problem section is written for Pulse"]}
+    run.goal, run.docset = base, ["prd"]
+    run.stages, run.stage_i, run.stage_archive = ["prd", FT], 1, [{"stage": "prd", "goal": base, "audits": [], "sections": {}}]
+    run._begin_stage(FT, base)
+    assert run.folder and run.goal is None and run.turn == "identity" and run.handoff.get("kind") == "intake"
+    assert p42_system(run)[-1] == "The documents are done. Now the script, built from them."
+    assert not any("written from the" in x for x in p42_system(run))      # 87be: "Next: the PULSE_AGENT, written from the HLD's agent_output."
+    run._turn_identity(run.handoff)
+    assert run.goal["files"] == ["main.py", "test_main.py", "README.md"] and run.goal["test"] == "test_main.py"
+    assert run.goal["statement"] != f"An {FT.upper()} for Pulse"      # stage_goal's document charter: no files, no test
+
+
+def test_p44_the_browser_check_is_a_pages_and_a_folder_is_never_called_the_site(j2env, env_run, tmp_path):
+    made, _ = env_run
+    run, _ = made({})
+    audit = {"version": 1, "output": FT, "results": [], "rubric": [], "conditions": [], "mechanical": {}}
+    assert "the browser check didn't run" not in run._open_list(audit, [])      # 52c5: listed as failing, for a folder of Python
+    page = j2env.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-000000-page")
+    page._apply_output("website")
+    page.goal, page.sites = {"done_when": []}, ["v1"]
+    assert "the browser check didn't run" in page._open_list({**audit, "output": "website"}, [])
+    assert run._thing() == run.out["noun"] != "site" and page._thing() == "site"
+    src = Path(j2env.__file__).read_text(encoding="utf-8")
+    assert "the {self._thing()} isn't workable, so done-when can't hold" in src and "the site isn't workable" not in src.split("class J2Run", 1)[1]
+
+
+@pytest.mark.parametrize("kind, question, about", [
+    ("question", "Is /Users/x/Documents/Pulse the folder where the agent should be written and where the install and the read "
+                 "of your mail should run?", "installing packages"),      # 52c5, msg 39: answered "Yes, that folder is right"
+    ("info", "May the team install what the script needs?", "installing packages"),
+    ("question", "Should the live read of the mailboxes go ahead now?", "a real run"),
+    ("conflict", "Do you want the real run kept in the plan?", "a real run"),
+    ("question", "Which folder should the script run in?", "the folder a real run uses")])
+def test_p44_decide_for_me_never_answers_about_a_real_run_an_install_or_its_folder(env_run, kind, question, about):
+    made, _ = env_run
+    run, _ = made({"s.py": P42_GOOD})
+    run.auto = True
+    run._ask_user("One thing to confirm.", [{"question": question, "options": ["Yes", "No"]}], kind, handoff={"kind": "x"})
+    n = len(run.chat)
+    assert run._auto_pick() is None and run.paused["kind"] == kind
+    assert p42_system(run)[-1] == f"Decide for me did not answer this question: it is about {about}. It waits for you."
+    run._auto_go()
+    assert run._auto_pick() is None and len(run.chat) == n + 1 and not any(m.get("auto") for m in run.chat)      # said once, nothing answered
+
+
+def test_p44_decide_for_me_leaves_a_pending_real_run_open_drops_no_item_and_still_answers_ordinary_questions(j2env, env_run):
+    made, real = env_run
+    run, w = made({"s.py": P42_GOOD})
+    run.auto = True
+    item = run.goal["done_when"][0]
+    assert {"limit", "real_run", "send_confirm"} <= j2env.AUTO_ASK
+    run._ask_user("A fact.", [{"question": "Did it happen?", "kind": "decision", "item": 1, "options": ["Yes", "No"]}], "fact")
+    assert run._auto_pick() is None      # tagged with the item its real run decides
+    run._ask_user("A choice.", [{"question": "Keep going or leave something out?", "options": ["Keep going", "Leave it out"]}],
+                  "conflict", handoff={"kind": "x", "drop_texts": [item]})
+    assert run._auto_pick() is None      # its leave-out option names a real-run item
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    run._auto_go()
+    assert run.paused["kind"] == "real_run" and not p42_receipts(run) and run.goal["done_when"] == [item] and not run.real_runs_done
+    assert not (real / "out.txt").exists()
+    run._ask_user("One choice is up to you.", [{"question": "Which heading colour?", "options": ["Blue", "Green"]}], "question",
+                  handoff={"kind": "x"})
+    assert run._auto_pick()[:2] == ("Option 1", "Blue")
+
+
+def p44_sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def p44_run_it(env_run, script, result=None):
+    """env_run's run with this script, approved with its code: (run, workflow, real folder, the receipt, the record or None)."""
+    made, real = env_run
+    run, w = made({"s.py": script})
+    if result is not None:
+        w["real_run"]["result"] = result
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p42_receipts(run)[-1]
+    return run, w, real, r, json.loads(Path(run.dir, r["output"]).read_text()) if r.get("id") else None
+
+
+def test_p44_an_approved_real_run_leaves_a_run_output_record_as_the_contract_says(j2env, env_run):
+    _, real = env_run
+    (real / "old.txt").write_text("gone soon")
+    (real / "untouched.txt").write_text("same")
+    lim = j2env.OWN_RUNS["run_output"]["limits"]
+    assert lim == {"stdout_lines": 200, "stderr_lines": 50, "tail_bytes": 65536, "max_files": 500, "text_cap_bytes": 65536}
+    run, w, real, r, rec = p44_run_it(env_run, P44_PRINTS, result="out.json")
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["output"] == "run_output/rr-W-1-1.json"
+    assert r["output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}
+    assert r["result"] == "out.json" and "capture" not in r and "capture" not in w["real_run"]
+    assert r["stdout"].strip() == "read 3 threads" and r["stderr"].strip() == "1 warning"      # P42's tails stay in the receipt
+    assert list(rec) == ["schema", "receipt", "workflow", "command", "folder", "approved", "started_at", "ended_at", "exit", "main_result",
+                         "files", "stdout", "stderr", "limits"]
+    assert rec["schema"] == "run-output/1" and rec["receipt"] == "rr-W-1-1" and rec["workflow"] == "W-1" and rec["folder"] == str(real)
+    assert rec["command"] == ["python3", "s.py", str(real)] and rec["approved"] is True and rec["exit"] == 0 and rec["limits"] == lim
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", rec["started_at"]) and rec["started_at"] <= rec["ended_at"]
+    data = (real / "out.json").read_bytes()
+    assert rec["main_result"] == {"path": "out.json", "exists": True, "size": len(data), "sha256": p44_sha(data), "text": data.decode()}
+    assert rec["files"] == {"created": [{"path": "out.json", "size": len(data), "sha256": p44_sha(data)}],
+                            "changed": [{"path": "mail.txt", "before": {"size": 3, "sha256": p44_sha(b"one")},
+                                         "after": {"size": 7, "sha256": p44_sha(b"one two")}}],
+                            "deleted": [{"path": "old.txt", "size": 9, "sha256": p44_sha(b"gone soon")}]}      # no contents here
+    assert rec["stdout"] == {"tail": "read 3 threads", "lines_total": 1, "truncated": False}
+    assert rec["stderr"] == {"tail": "1 warning", "lines_total": 1, "truncated": False}
+    rows = [x for x in j2env.j2_artifacts.rows(run.dir) if x["kind"] == "run_output"]
+    assert len(rows) == 1 and rows[0]["file"] == "run_output/rr-W-1-1.json" and rows[0]["type"] == "run_output" and rows[0]["name"] == "Run output"
+    assert rows[0]["form"] == "data" and rows[0]["deliverable"] is False
+    assert "run_output" not in {t["name"] for t in j2env.j2_artifacts.load_types()["types"]}      # never a type an agent can choose
+    from sutra_app.library.wire import ArtifactsDoc
+    assert [x.kind for x in ArtifactsDoc.model_validate({"schema": "artifacts/1", "rows": j2env.j2_artifacts.rows(run.dir)}).rows].count("run_output") == 1
+
+
+def test_p44_the_run_output_limits_hold_and_the_main_result_is_null_missing_or_without_text(j2env, env_run):
+    lim = j2env.OWN_RUNS["run_output"]["limits"]
+    big = "x" * (lim["text_cap_bytes"] + 1)
+    loud = ("import os, sys\nfor i in range(300):\n    print('line', i)\n    sys.stderr.write('err %d\\n' % i)\n"
+            f"open(os.path.join(sys.argv[1], 'big.txt'), 'w').write({big!r})\n")
+    *_, rec = p44_run_it(env_run, loud, result="big.txt")
+    assert rec["stdout"]["lines_total"] == 300 and rec["stdout"]["truncated"] and rec["stdout"]["tail"].splitlines() == [f"line {i}" for i in range(100, 300)]
+    assert rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)]
+    assert rec["main_result"]["exists"] and rec["main_result"]["size"] == len(big) and "text" not in rec["main_result"]
+    assert p44_run_it(env_run, P44_PRINTS)[-1]["main_result"] is None      # the plan declares none
+    assert p44_run_it(env_run, P44_PRINTS, result="never.json")[-1]["main_result"] == {"path": "never.json", "exists": False}
+
+
+def test_p44_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_is_checked_by_code(j2env, env_run):
+    made, _ = env_run
+    run, w = made({"s.py": P44_PRINTS})
+    run._ask_real_run({})
+    p42_reply(run, "Don't run")
+    r = p42_receipts(run)[-1]
+    assert "id" not in r and "output_counts" not in r and not Path(run.dir, "run_output").exists() and "capture" not in w["real_run"]
+    for bad in ("/etc/passwd", "../out.json", "a/../../x", "", 7, "out/"):
+        assert j2env.real_run_result_problems({"result": bad}), bad
+    assert j2env.real_run_result_problems({"result": "out/report.json"}) == [] and j2env.real_run_result_problems({}) == []
+    assert j2env.REAL_RUN_RESULT_RULE in run.ATOM_RULES and '"result"' in j2env.REAL_RUN_RESULT_RULE      # prompt-changing (D249)
+
+
+@pytest.mark.parametrize("target", ["tests/test_x.py", f"{FT}/tests/test_x.py", ["tests/test_x.py"]])
+def test_p44_c2_finds_the_test_the_builder_wrote_when_the_charter_names_none(env_run, target):
+    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("test-passed", target)], P44_DOC_CHARTER)
+    c = {"id": "C2", "check": "test-passed"}
+    met, why = run._folder_condition(c)
+    assert met and "tests/test_x.py exited 0" in why and "from_charter" not in c
+
+
+def test_p44_c2_with_no_test_anywhere_stays_unmet_and_the_charters_test_comes_first(env_run):
+    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("file-exists", "README.md")], P44_DOC_CHARTER)
+    c = {"id": "C2", "check": "test-passed"}
+    assert run._folder_condition(c) == (False, "code reran the test itself, on a copy of the folder, not the builder's own run: "
+                                               "the test '' is not a file in the folder") and c["from_charter"] is True      # P29 (D431) holds
+    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("test-passed", "missing.py")], {**P44_DOC_CHARTER, "test": "tests/test_x.py"})
+    assert run._folder_condition({"id": "C2", "check": "test-passed"})[0]
+
+
+def test_p44_list_targets_are_checked_item_by_item_and_a_recheck_keeps_its_folder(j2env, env_run):
+    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("file-exists", ["pulse/run.py", "tests/test_x.py", "README.md"]),
+                                              p44_check("test-passed", ["tests/test_x.py"])], P44_DOC_CHARTER)
+    assert run._run_checks(w, 1, "", folder=run._out_dir()) == []      # 87be: a list was read as one file name, and failed
+    w["atoms"][0]["verification"] = [p44_check("file-exists", ["pulse/run.py", "gone.py"])]
+    failed = run._run_checks(w, 1, "", folder=run._out_dir())
+    assert len(failed) == 1 and "gone.py" in failed[0]["evidence"] and "pulse/run.py" not in failed[0]["evidence"]
+    w["atoms"][0]["verification"] = [p44_check("file-exists", f"{FT}/pulse/run.py"), p44_check("test-passed", f"{FT}/tests/test_x.py")]
+    assert run._run_checks(w, 1, "", folder=run._out_dir()) == []      # 3429: the run-relative form is read in the builder's folder
+    w["atoms"][0]["verification"] = [p44_check("test-passed", "tests/test_x.py"), p44_check("inside-folder", ".")]
+    assert run._run_checks(w, j2env.MAX_CHECK_ATTEMPTS, "", atoms=w["atoms"], recheck="check corrected by Adaptation") == []
+    assert not any("unknown check" in r.get("evidence", "") for r in w["atoms"][0]["results"])      # 87be: "unknown check test-passed"
+
+
+def test_p44_one_path_form_a_mix_is_refused_and_the_folders_name_in_front_is_taken_off(j2env, env_run):
+    mix = {"name": "build", "atoms": [{"verification": [p44_check("file-exists", f"{FT}/pulse/run.py"), p44_check("test-passed", "tests/test_x.py")]}]}
+    probs, n = j2env.path_form_problems(mix, FT)
+    assert len(probs) == 1 and "two forms" in probs[0] and n == 0 and mix["atoms"][0]["verification"][0]["target"] == f"{FT}/pulse/run.py"
+    front = {"name": "build", "atoms": [{"verification": [p44_check("file-exists", [f"{FT}/pulse/run.py", f"{FT}/README.md"]),
+                                                             p44_check("test-passed", f"{FT}/tests/test_x.py")],
+                                         "expected_output": [{"text": "the test", "kind": "file", "target": f"{FT}/tests/test_x.py"}]}]}
+    probs, n = j2env.path_form_problems(front, FT)
+    a = front["atoms"][0]
+    assert (probs, n) == ([], 4) and a["verification"][0]["target"] == ["pulse/run.py", "README.md"]
+    assert a["verification"][1]["target"] == "tests/test_x.py" and a["expected_output"][0]["target"] == "tests/test_x.py"
+    assert j2env.path_form_problems({"atoms": [{"verification": [p44_check("file-exists", "pulse/run.py"),
+                                                                p44_check("file-exists", f"./{FT}/x.py")]}]}, FT) == ([], 0)
+    assert j2env.path_form_problems({"atoms": [{"verification": [p44_check("file-exists", "../x.py")]}]}, FT)[0]
+    # the validator refuses the mix when a workflow is registered (the atom's own fields are complete)
+    run, w, _ = p44_made(env_run, P44_FILES, mix["atoms"][0]["verification"], P44_DOC_CHARTER)
+    assert j2env.atom_missing(w) or any("two forms" in p for p in run._atom_problems(w))
+
+
+@pytest.mark.parametrize("text", ["", "\n", "# nothing to install\n\n"])
+def test_p44_a_requirements_txt_with_no_package_plans_no_environment_and_asks_nothing(j2env, env_run, text):
+    files = {"helper.py": "VALUE = 1\n", "test_ok.py": "import unittest\nimport helper\nassert helper.VALUE == 1\n", "requirements.txt": text}
+    run, w, _ = p44_made(env_run, files, [p44_check("test-passed", "test_ok.py")])
+    assert j2env.j2_runenv.plan(run._out_dir()) is None      # 52c5: "Packages to install, from PyPI only: " and nothing after it
+    n = len(run.chat)
+    assert run._env_ask(w, 1, run._out_dir()) is False and not run.paused and len(run.chat) == n
+    assert run._run_checks(w, 1, "", folder=run._out_dir()) == [] and w["atoms"][0]["results"][0]["pass"] is True
+
+
+def test_p44_packages_not_installed_never_block_a_test_that_needs_only_the_standard_library(j2env, env_run):
+    files = {"helper.py": "VALUE = 1\n", "test_ok.py": "import unittest\nimport helper\nassert helper.VALUE == 1\nprint('OK')\n",
+             "test_needs.py": "import pulsedep\n", "requirements.txt": "pulsedep==9.9.9\n"}      # a hash no other test installs
+    run, w, _ = p44_made(env_run, files, [p44_check("test-passed", "test_ok.py")], {"statement": "x", "done_when": ["it runs"], "test": "test_ok.py"})
+    runenv, out = j2env.j2_runenv, run._out_dir()
+    plan = runenv.plan(out)
+    assert plan and not plan["ready"] and plan["packages"] == ["pulsedep==9.9.9"]
+    assert runenv.beyond_stdlib(os.path.join(out, "test_ok.py"), out) == [] and runenv.beyond_stdlib(os.path.join(out, "test_needs.py"), out) == ["pulsedep"]
+    assert run._run_checks(w, 1, "", folder=out) == [] and "exited 0" in w["atoms"][0]["results"][0]["evidence"]
+    met, why = run._folder_condition({"id": "C2", "check": "test-passed"})      # 52c5: "the test was not rerun", in every audit
+    assert met and "exited 0" in why
+    w["atoms"][0]["verification"] = [p44_check("test-passed", "test_needs.py")]
+    run._run_checks(w, 1, "", folder=out)
+    res = w["atoms"][0]["results"][0]
+    assert res["pass"] is None and res["evidence"].startswith("the test was not rerun: its packages are not installed")
+
+
+def test_p44_the_data_file_is_j2s_own_and_names_the_vocabulary_and_the_sizes():
+    """engine/j2_own_runs.json is a byte copy of J2's (prototypes/j2). Skipped where the prototype is not checked out."""
+    mine = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2_own_runs.json"
+    data = json.loads(mine.read_text(encoding="utf-8"))
+    assert [set(x) for x in data["requester_only"]] == [{"about", "pattern"}] * 3 and all(re.compile(x["pattern"]) for x in data["requester_only"])
+    assert set(data["run_output"]) == {"folder", "name", "kind", "label", "tag", "color", "limits"} and data["run_output"]["kind"] == "run_output"
+    theirs = Path(__file__).resolve().parents[3] / "prototypes" / "j2" / "j2_own_runs.json"
+    if not theirs.is_file():
+        pytest.skip("prototypes/j2 is not here")
+    assert theirs.read_bytes() == mine.read_bytes()

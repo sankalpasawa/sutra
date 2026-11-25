@@ -678,11 +678,12 @@ class ReusedFrom(Value):
 
 
 class ArtifactRow(Value):
-    """One thing the run made, a deliverable (`kind` type) or a record (j2_artifacts.rows)."""
+    """One thing the run made: a deliverable (`kind` type), a record, or what an approved real run produced (`kind` run_output,
+    D449: one row per run-output record; j2_artifacts.rows)."""
 
     name: Line
     type: Id
-    kind: Literal["type", "record"]
+    kind: Literal["type", "record", "run_output"]
     form: Id
     file: Id
     deliverable: bool

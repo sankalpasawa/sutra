@@ -51,6 +51,7 @@ sutra_app = [
     "engine/templates/**/*",
     "engine/seed/**/*",
     "engine/capabilities/data/*",
+    "engine/j2_own_runs.json",
     "orchestrator/agent/templates/*.md",
     "nodes/templates/*.md",
     "library/specs/*.json",

@@ -39,6 +39,18 @@ def load_types(run=None):
     return d
 
 
+def run_output_type():
+    """P44 (D449): the record type of a real run's output (j2_own_runs.json run_output, beside this file): one row of kind
+    "run_output" per record file in a run's artifacts.json. None when the data file is not there."""
+    try:
+        with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as f:
+            c = json.load(f)["run_output"]
+    except (OSError, ValueError, KeyError):
+        return None
+    return {"name": c["name"], "kind": c["kind"], "label": c["label"], "tag": c["tag"], "color": c["color"], "form": "data",
+            "file": c["folder"] + "/*.json", "deliverable": False}
+
+
 def page_types(types=None):
     """The names of the types of the page form (types.json): what the Map and the groups call the site."""
     return {t["name"] for t in (types or load_types())["types"] if t.get("kind") == "type" and t.get("form") == "page"}
@@ -131,6 +143,9 @@ def rows(d, types=None):
     types = types or load_types(d)
     if not d or not os.path.isdir(d):
         return []
+    ro = run_output_type()      # P44 (D449): what approved real runs produced: listed here only, never a type an agent can choose
+    if ro and ro["name"] not in {t["name"] for t in types["types"]}:
+        types = {**types, "types": [*types["types"], ro]}
     atoms, docs, out = _atoms(d), _read(d, "documents.json", {}) or {}, []
     board = _board(d, atoms)
     # page types share the page file: a run that chose one shows that one only
