@@ -2781,7 +2781,8 @@ def real_run(out_dir, rr, timeout):
         rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
 ''', r'''        cmd = [moved(x) for x in rr["command"]]
         rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
-        rr = {**rr, "secret_files": dry_secret_files(rr, tmp)}      # P41 (D446): empty placeholders, never the real paths
+        rr = {**rr, "secret_files": dry_secret_files(rr, tmp),      # P41 (D446): empty placeholders, never the real paths,
+              "deny_read": list((rr.get("secret_files") or {}).values())}      # which srt hides (set by code here only)
 '''),
     Edit("P41", "j2.py", r'''        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
@@ -2795,7 +2796,8 @@ def real_run(out_dir, rr, timeout):
                            env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
 '''),
     Edit("P41", "j2.py", r'''                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
-''', r'''                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads
+''', r'''                       "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
+                                      "allowRead": [out_dir, folder] + reads
                                       + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
                                       "allowWrite": [folder],
 '''),

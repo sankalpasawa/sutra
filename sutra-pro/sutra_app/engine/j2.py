@@ -899,7 +899,8 @@ def real_run(out_dir, rr, timeout):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads
+                       "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
+                                      "allowRead": [out_dir, folder] + reads
                                       + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
                                       "allowWrite": [folder],
                                       "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
@@ -968,7 +969,8 @@ def real_run_dry(out_dir, rr, timeout):
         before, reads_before = _tree(copies[0]), [_tree(c) for c in copies[1:]]      # P35 (D438): the read-only copies too
         cmd = [moved(x) for x in rr["command"]]
         rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
-        rr = {**rr, "secret_files": dry_secret_files(rr, tmp)}      # P41 (D446): empty placeholders, never the real paths
+        rr = {**rr, "secret_files": dry_secret_files(rr, tmp),      # P41 (D446): empty placeholders, never the real paths,
+              "deny_read": list((rr.get("secret_files") or {}).values())}      # which srt hides (set by code here only)
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
         out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))

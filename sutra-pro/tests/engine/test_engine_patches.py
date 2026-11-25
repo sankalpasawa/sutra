@@ -3760,11 +3760,32 @@ def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, mon
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("J2_SANDBOX", "1")
     monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
-    stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})
+    stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})      # as _register stores it
     assert stored == {"secret_files": {"API_CRED_FILE": os.path.realpath(keys / "real.txt")}}
     res = j2ft.real_run(str(out), p41_rr(folder, **stored), 60)
     assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_dry_run_cannot_read_a_secret_file_outside_home(j2ft, p41, monkeypatch, tmp_path):
+    """R1-3: model code that hard-codes a secret file's path outside HOME reads nothing in the dry run; the real run reads it."""
+    out, folder, *_ = p41
+    (tmp_path / "home").mkdir()
+    secret = tmp_path / "elsewhere" / "cred.txt"      # outside HOME, so denyRead ["~"] alone would not cover it
+    secret.parent.mkdir()
+    secret.write_text(P41_CRED)
+    (out / "peek.py").write_text("import sys\ntry:\n    print('READ', open(sys.argv[1]).read())\n"
+                                 "except OSError as e:\n    print('DENIED', type(e).__name__)\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    rr = {"command": [sys.executable, "peek.py", str(secret)], "folder": str(folder),
+          "secret_files": {"API_CRED_FILE": str(secret)}}
+    dry = j2ft.real_run_dry(str(out), rr, 60)
+    assert dry["ran"] is True and "DENIED" in dry["output"] and P41_CRED not in json.dumps(dry), dry
+    res = j2ft.real_run(str(out), rr, 60)
+    assert res["exit"] == 0 and "READ " + P41_CRED in res["output"], res
 
 
 def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
