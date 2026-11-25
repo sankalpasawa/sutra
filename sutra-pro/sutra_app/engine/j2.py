@@ -798,10 +798,10 @@ REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, t
 
 
 def real_run_env_fields(rr):
-    """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out), each only
-    when stated."""
+    """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out and links
+    resolved, so the card, the env and srt's allowRead all name the real file), each only when stated."""
     out = {"settings": dict(rr.get("settings") or {}),
-           "secret_files": {n: os.path.expanduser(p) for n, p in (rr.get("secret_files") or {}).items()}}
+           "secret_files": {n: os.path.realpath(os.path.expanduser(p)) for n, p in (rr.get("secret_files") or {}).items()}}
     return {k: v for k, v in out.items() if v}
 
 

@@ -3748,6 +3748,25 @@ def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
 
 
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, monkeypatch, tmp_path):
+    """R1-2: the stored path is the real file, so srt's allowRead (and the env and the card) name what the script opens."""
+    out, folder, *_ = p41
+    keys = tmp_path / "home" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "real.txt").write_text(P41_CRED)
+    link = tmp_path / "home" / "link.txt"
+    link.symlink_to(keys / "real.txt")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})
+    assert stored == {"secret_files": {"API_CRED_FILE": os.path.realpath(keys / "real.txt")}}
+    res = j2ft.real_run(str(out), p41_rr(folder, **stored), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
 def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
     """T3 (owner Q4): the builder's test rerun gets the clean base only; a made-up app variable never reaches it."""
     _, folder, *_ = p41
