@@ -4791,3 +4791,150 @@ def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
     assert run.paused["kind"] == "hosts" and not [m for m in run.chat if m.get("auto")], "it waits for the Requester"
     assert run.snapshot()["paused"]["auto_waits"] is True
 
+# ---- P44 (D449) T2: the dry run runs the offline command, offline; only the approved real run reaches the named hosts --------
+# Made-up script: offline it writes a made-up title; for real it fetches the URL it was given (through the sandbox's proxy).
+P44_FETCH = ("import os, sys, urllib.request\nf, src = sys.argv[1], sys.argv[2]\n"
+             "body = '<title>made-up</title>' if src == '--offline' else urllib.request.urlopen(src, timeout=5).read().decode()\n"
+             "open(os.path.join(f, 'title.txt'), 'w').write(body)\n")
+# Made-up stand-in for srt (test only, no sandbox): it records the allowedDomains and the -c command it was given, then runs the
+# command (a list, never a shell) with HTTP_PROXY at its own 127.0.0.1 proxy. The proxy serves a made-up page itself for an
+# allowed host (exact, or *.x for a strict subdomain; ports dropped) and answers 403 for any other, as srt does; nothing is forwarded,
+# no name is resolved (urllib sends the absolute URI to the proxy).
+P44_SRT = r'''import http.server, json, os, shlex, subprocess, sys, threading, urllib.parse
+a = sys.argv[1:]
+allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]
+cmd = a[a.index("-c") + 1]
+with open(sys.argv[0] + ".net.jsonl", "a") as f:
+    f.write(json.dumps({"allowedDomains": allowed, "command": cmd}) + "\n")
+def ok(h):
+    for e in allowed:
+        e = e.rsplit(":", 1)[0]
+        if h == e or (e.startswith("*.") and h.endswith(e[1:])):
+            return True
+    return False
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if ok(urllib.parse.urlsplit(self.path).hostname or ""):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"<title>made-up</title>")
+        else:
+            self.do_CONNECT()
+    def do_CONNECT(self):
+        self.send_response(403)      # srt 0.0.81 answers a plain-HTTP GET 403 Forbidden
+        self.end_headers()
+    def log_message(self, *x):
+        pass
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=s.serve_forever, daemon=True).start()
+p = "http://127.0.0.1:%d" % s.server_port
+sys.exit(subprocess.run(shlex.split(cmd), env={**os.environ, "HTTP_PROXY": p, "http_proxy": p}).returncode)
+'''
+
+
+def p44_net(seen):
+    return [json.loads(x) for x in seen.read_text().splitlines()] if seen.exists() else []
+
+
+@pytest.fixture
+def p44(p44_reg, tmp_path, monkeypatch):
+    """go(script, request, **register fields): W-1 (fetch.py, its real run on the made-up folder, item 3) registered with
+    sys.executable as the runner, done, its script written; the dry run and the real run go through the fake srt. Returns
+    (go, the real folder, where the fake srt records what it was given)."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P44_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))      # split back exactly, on any OS
+
+    def go(script=P44_FETCH, request=None, **fields):
+        run = p44_reg.new(request=request, runner=[sys.executable, "{target}"])
+        run, reg, refused = p44_reg.register(run, **fields)
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        os.makedirs(run._out_dir(), exist_ok=True)
+        (Path(run._out_dir()) / "fetch.py").write_text(script)
+        run.post("user", "Build it and run it on my folder")
+        return run
+    return go, p44_reg.dst, Path(str(fake) + ".net.jsonl")
+
+
+def test_p44_the_dry_run_runs_the_offline_command_without_network(p44):
+    go, real, seen = p44
+    run = go()
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    net = p44_net(seen)
+    assert len(net) == 1 and net[0]["allowedDomains"] == [], net
+    assert "--offline" in net[0]["command"] and "api.made-up.invalid" not in net[0]["command"]
+    dry = run.real_runs_dry["W-1"]
+    assert dry["exit"] == 0 and dry["created"] == ["title.txt"], dry
+    assert not (real / "title.txt").exists()
+
+
+@pytest.mark.parametrize("hosts", [["api.made-up.invalid"], ["api.made-up.invalid", "*.cdn.made-up.invalid:8443"]])
+def test_p44_the_real_run_gets_exactly_the_hosts(p44, hosts):
+    go, real, seen = p44
+    run = go(request=f"Build fetch.py and run it on {real}: it reads {P44_URL} and *.cdn.made-up.invalid", hosts=hosts)
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert p44_net(seen)[-1]["allowedDomains"] == hosts
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["hosts"] == hosts and "offline" in r, r
+    assert (real / "title.txt").read_text() == "<title>made-up</title>"
+
+
+def test_p44_a_host_not_named_is_refused_in_the_real_run(p44):
+    """Fails closed: the approved real run reaches only its hosts; any other gets the sandbox's 403."""
+    go, real, seen = p44
+    run = go(P44_FETCH.replace("urlopen(src,", "urlopen('http://other.made-up.invalid/',"))
+    run._ask_real_run({})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert p44_net(seen)[-1]["allowedDomains"] == ["api.made-up.invalid"]
+    assert r["approved"] and r["exit"] != 0 and "403" in r["output"] and not (real / "title.txt").exists(), r
+
+
+def test_p44_a_networked_command_in_the_dry_run_never_gets_hosts(j2ft, p44):
+    """A guard of P32's fence: the dry run of a networked command gets no host even when the run it is given names hosts. It
+    passes before and after P44 (the fence was already there); it pins that Edit C keeps it."""
+    go, real, seen = p44
+    run = go()
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
+    dry = j2ft.real_run_dry(run._out_dir(), rr, 30)
+    assert p44_net(seen)[-1]["allowedDomains"] == [] and dry["exit"] != 0 and "403" in dry["output"], dry
+
+
+def test_p44_rerun_and_install_keep_their_network(j2ft):
+    assert j2ft.sandbox_settings("/x")["network"]["allowedDomains"] == []
+    assert j2ft.j2_runenv.PYPI_HOSTS == ("pypi.org", "files.pythonhosted.org")
+
+
+def p44_real_srt(p44, monkeypatch, tmp_path):
+    """The real srt (no network is reached: srt's proxy refuses a name not on its list with 403, observed as "HTTP Error 403:
+    Forbidden" for a plain-HTTP GET; a .invalid name never resolves), with a temp HOME as P41's real-srt tests have (srt
+    denies reads under ~). The dry-run test passes before P44 too: P32's fence already held."""
+    go, real, _ = p44
+    run = go()
+    home = tmp_path / "srt-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    return run, real
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p44_real_srt_dry_run_refuses_a_named_host(j2ft, p44, monkeypatch, tmp_path):
+    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
+    dry = j2ft.real_run_dry(run._out_dir(), rr, 60)
+    assert dry["ran"] and dry["exit"] != 0 and "HTTP Error 403" in dry["output"], dry      # srt's proxy refused the name
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p44_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p44, monkeypatch, tmp_path):
+    """srt starts with a P44 hosts list (a wildcard with a port) and still refuses a host not on it. The allowed path is not
+    tested with the real srt: it would resolve a name. Passes before Edit C too (an empty list refuses the same host)."""
+    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
+    rr = {**run.workflows[0]["real_run"], "hosts": ["*.made-up.invalid:8443"],
+          "command": [sys.executable, "fetch.py", str(real), "http://other.invalid/"]}
+    res = j2ft.real_run(run._out_dir(), rr, 60)
+    assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res

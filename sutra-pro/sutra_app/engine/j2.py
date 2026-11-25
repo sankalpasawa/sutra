@@ -933,7 +933,8 @@ def real_run(out_dir, rr, timeout):
     t0 = time.time()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+            json.dump({"network": {"allowedDomains": [] if fence else list(rr.get("hosts") or []),      # P44 (D449): only the
+                                   "deniedDomains": []},      # approved real run; fence (P32) always holds in the dry run
                        "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
                                       "allowRead": [out_dir, folder] + reads
                                       + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
@@ -6219,7 +6220,8 @@ class J2Run:
         if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
             return True
         self.real_runs_asked[w["id"]] = code
-        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(      # P44 (D449): a real run with hosts dry-runs its offline command
+            self._out_dir(), {**rr, "command": rr["offline"]["command"]} if rr.get("offline") else rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
         if dry.get("ran") and dry.get("exit") == 0 and not dry.get("real_changed"):      # P35 (D438): after the stop and P31's
