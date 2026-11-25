@@ -42,6 +42,7 @@
     soon: "Your result will appear here when the team finishes.",
     noFiles: "This run produced no files.",
     cantShow: "This file can't be shown here (it may be over 2 MB).",
+    inFolder: "This result is in your folder; it shows here once the run's output is recorded.",
     checking: "Checking the work",
     partDrawer: "The part, in the result.",
     finished: "Finished.",
@@ -283,7 +284,7 @@
     if (isPageRun(s) && !(s.docset || []).length && s.versions > 0) return {site: true};      // a website: its site, live while it builds (Q-2)
     if (!done(s)) return {pane: note(G, WORDS.soon)};
     if (main.kind === "file") return one(main.row, false);
-    if (main.kind === "real-run") return {pane: `<div class="rvhead"><b>${G.esc(main.result)}</b></div>` + note(G, WORDS.cantShow)};      // ponytail: P45's route is not built; show its text once it is
+    if (main.kind === "real-run") return {pane: `<div class="rvhead"><b>${G.esc(main.result)}</b></div>` + note(G, WORDS.inFolder)};      // ponytail: P45's route is not built; show its text once it is
     return {pane: main.kind === "list" ? fileList(G, rows) : note(G, WORDS.noFiles)};
   }
 
@@ -361,7 +362,7 @@
       const go = root.sGo;      // the page's sGo looks for a J2 tab per document; with three tabs only a website's site is one
       root.sGo = function (sec) {
         const s = T.last;
-        if (!s || (isPageRun(s) && !(s.docset || []).length)) return go.apply(this, arguments);
+        if (!s || (isPageRun(s) && !(s.docset || []).length && (s.versions || 0) > 0)) return go.apply(this, arguments);      // the page's site tab exists only then (R1-2)
         return root.sOpenPart(sec);
       };
     }

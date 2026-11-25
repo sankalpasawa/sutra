@@ -72,6 +72,17 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
    Pinned by a unit test on `result_view.css` (both rules use `--s-accent`, no `--s-accentink` left) and by the script-run browser test, which measures the Download link against `#rvpane` in both themes (>= 4.5).
 2. "What the team made" cards. The page titles every card with the row's label, and every row of a type carries the type's label, so each card repeated the project's title. In the `sTeamwork` wrapper (string level), a card whose title is the project's title (`output_label` or the output type's label) is titled by `artTitle`: the plan part(s) whose workflows made the file (same link as `filesOfPart`; one part "A", two parts "A and B"; three or more parts keep the page's own title, owner decision), else the builder's line for its workflows, else the file name. The file name stays the second line. Cards are matched to rows in order. A document set's cards already name their documents ("Product requirements") and are not changed. A website run's card is made by every part (the fixture: four), so it keeps "Website": no visual change there. Goldens unchanged (they do not load modules).
 
+### Review round 1 fixes (review.md, round 1)
+
+| ID | status | what |
+|---|---|---|
+| R1-1 | fixed earlier (3e697d7e, owner decision) | three or more parts keep the page's title |
+| R1-2 | fixed | the `sGo` wrapper calls the page's `sGo` only on a website (page run, no document set) with `versions > 0`, when the page's site tab exists; otherwise it opens the part's record. Before, a website with no version and a non-page row made the page's `sGo` pick an `a:<name>` tab that the three tabs never show, and it re-called itself and `renderSimple` every 600 ms. Unit test: website, `versions: 0`, an image row → the record opens, the page's `sGo` is not called, no timer; with `versions: 1` the page's own runs |
+| R1-3 | declined (known limit) | file names on a card are not keyboard targets; the Files tab is the keyboard path (architecture.md, accessibility) |
+| R1-4 | fixed | a real-run result shows its own line, "This result is in your folder; it shows here once the run's output is recorded." (`WORDS.inFolder`), not the 2 MB reason; unit test |
+
+Tests after the fixes: `node --test tests/ui/js/result_view.test.js` 42 pass; `SUTRA_J2_CHECKOUT=<extraction> node --test tests/ui/js/page_render.test.js` 54 pass, goldens unchanged; `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` exit 0, 363 passed, 5 skipped; `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files or document_set"` 7 passed.
+
 ## Deviations
 
 | what | why |

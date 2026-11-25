@@ -554,6 +554,8 @@ test("finish bar: a real-run result (P45 rows from /api/artifacts/groups) has no
   assert.doesNotMatch(html, /data-share|class="pri"|data-view/);
   q.SV.pick = "result"; q.render(scriptRun());
   assert.match(q.html("rvbody"), /<b>report.txt<\/b>/);
+  assert.match(q.html("rvbody"), /This result is in your folder; it shows here once the run's output is recorded\./, "R1-4: its own reason");
+  assert.doesNotMatch(q.html("rvbody"), /2 MB/);
 });
 
 test("finish bar: a website and a document set keep the page's own sFinish, byte for byte", () => {
@@ -643,4 +645,18 @@ test("links in the panel use the page's link colour token (--s-accent), never th
   assert.match(css, /#sview \.rvdl\{[^}]*color:var\(--s-accent\)/);
   assert.match(css, /#sview \.spart \.rvfile\{[^}]*color:var\(--s-accent\)/);
   assert.doesNotMatch(css, /--s-accentink/);
+});
+
+test("review R1-2: a part click on a website with no version yet opens the part's record, never the page's tab search", () => {
+  const p = page();
+  p.SV.arts = {deliverables: [row("logo.png", {form: "image", workflows: ["W-2"]})]};
+  const s = {...copy(WEB), paused: null, status: "running", outcome: "", versions: 0};
+  p.render(s);
+  p.ctx.sGo("W-2");
+  assert.equal(p.log.part, "W-2");
+  assert.equal(p.log.go, undefined, "the page's sGo (which would look for an a:<name> tab and retry every 600 ms) is not called");
+  assert.equal(p.log.timers.length, 0);
+  p.render({...s, versions: 1});
+  p.ctx.sGo("W-3");
+  assert.equal(p.log.go, "W-3", "with a version the site tab exists: the page's own");
 });
