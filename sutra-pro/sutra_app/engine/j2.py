@@ -5235,7 +5235,7 @@ class J2Run:
         say = to_requester(say, question=not questions, keep=src)
         questions = [{**q, "question": self._requester_noun(requester_words(q["question"], src) or q["question"]),
                       "options": [self._requester_noun(requester_words(o, src) or o) for o in q.get("options") or []]}
-                     for q in questions]
+                     for q in questions] if kind != "hosts" else questions      # P44 (D449): the hosts as written (no "site" -> "document")
         if gaps is not None:
             say += gap_list(gaps, gaps_title)     # the full list, one gap per line; the header's counts add up to it
         if len(questions) > 1:

@@ -4839,6 +4839,24 @@ def test_p44_t1b_the_host_question_loses_no_other_workflow_of_its_batch(p44_reg,
     assert all(w["status"] == "registered" for w in run.workflows), run.workflows
 
 
+def test_p44_t1b_a_document_run_asks_about_the_hosts_as_written(p44_reg, monkeypatch):
+    """R1-1: a document run's "site" -> "document" rewrite never touches the host question; else Allow named a host that
+    isn't the plan's and asked again on every press."""
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+    run.doc = True      # a document run (its form has a template) that asks for no page
+    assert run._requester_noun("sites.made-up.invalid") == "documents.made-up.invalid"      # the rewrite this test guards
+    run._hosts_to_ask("Build sort_files.py", p44_reg.proposal(run, hosts=["sites.made-up.invalid"])[0]["real_run"])
+    a, run.hosts_ask = run.hosts_ask, None      # as _run's loop takes it
+    run._ask_hosts(a)
+    q = run.paused["questions"][0]
+    assert q["options"][0] == "Allow internet access to sites.made-up.invalid" and "sites.made-up.invalid" in q["question"], q
+    monkeypatch.setattr(run, "_dispatch_turn", lambda: setattr(run, "turn", None))
+    run.doc = False      # the folder fixture has no document file for the run's end (summary.json); the pick is already made
+    run.post("user", "Option 1")
+    run._run()
+    assert run.paused is None and run.hosts_asked == {"sites.made-up.invalid": True} and len(p44_asked(run)) == 1, run.paused
+
+
 def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
     run, _, _ = p44_ask()
     assert "hosts" in j2ft.AUTO_ASK
