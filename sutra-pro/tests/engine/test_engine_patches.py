@@ -4020,7 +4020,7 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES
 
 
-P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, language, temp folder)"
+P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)"
 P41_PLACEHOLDERS = "\nThe dry run got the settings and an empty placeholder file for each secret file."
 
 

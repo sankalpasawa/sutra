@@ -889,7 +889,7 @@ def real_run_env_lines(rr):
     and real path only (the app never opens it), then what the dry run got instead."""
     s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
     return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
-                                      or "none beyond the basics (PATH, HOME, language, temp folder)")
+                                      or "none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)")
             + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
                + "\nThe dry run got the settings and an empty placeholder file for each secret file." if f else ""))
 
