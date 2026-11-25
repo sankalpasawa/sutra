@@ -5311,6 +5311,10 @@ class J2Run:
             self.paused = None
             self.cycle_turns = 0       # the answer is new information: without this the turn cap re-asked at once
             d = {"kind": p["kind"], "asked": [q["question"] for q in p["questions"]], "answer": last_user}
+            q1 = p["questions"][0] if len(p["questions"]) == 1 else {}
+            if q1.get("options") and ONLY_PICK.fullmatch(last_user) and (i := option_picked(q1, last_user)) is not None \
+                    and not next(m for m in reversed(self.chat) if m["who"] == "user").get("auto"):
+                d["picked"] = str(q1["options"][i])      # P43 (D448): the Requester's own pick, in full; never Decide for me's
             self.decisions.append(d)
         if p:
             h = dict(p["handoff"])
@@ -5457,7 +5461,8 @@ class J2Run:
         if self.doc:
             return []
         src = squash(" ".join([self.request, str(change or "")] + [x["answer"] for x in self.intake]
-                              + [m["text"] for m in self.chat if m["who"] == "user"]))
+                              + [m["text"] for m in self.chat if m["who"] == "user"]
+                              + [d["picked"] for d in self.decisions if d.get("picked")]))      # P43 (D448)
         return [f for f in goal.get("facts") or [] if not str(f or "").strip() or squash(f) not in src]
 
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
@@ -8873,7 +8878,9 @@ class J2Run:
     def _fact_source(self, goal=None):
         """What a facts-present string must come from: the charter and the Requester's own words, squashed. goal: an
         earlier stage's charter, for a re-check of a document that is already filed."""
-        return squash(" ".join(strings(goal or self.goal or {}) + [self.request] + [m["text"] for m in self.chat
+        return squash(" ".join(strings(goal or self.goal or {}) + [self.request]
+                               + [d["picked"] for d in self.decisions if d.get("picked")]      # P43 (D448)
+                               + [m["text"] for m in self.chat
                                                                                     if m["who"] == "user"]))
 
     def _approved_docs_text(self):

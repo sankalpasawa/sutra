@@ -4404,3 +4404,51 @@ def test_p43_an_answer_still_confirms_an_item_that_is_not_real_run(make_run):
     assert P43_DOC in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
     assert f"Confirmed by the Requester: {P43_DOC} = README.md at the top" in texts
     assert not any(t.startswith("Noted.") for t in texts)
+
+
+@pytest.fixture
+def p43_pick(make_run, tmp_path, monkeypatch):
+    """A run whose brief names no folder pauses on one question whose first option names a made-up folder."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    run = make_run()
+    run.request = "Build a tool that tidies a folder"
+    run.goal = {"statement": "x", "done_when": [P43_DOC]}
+    run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool", "Another folder"],
+                                     "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+    monkeypatch.setattr(run, "_plan_stages", lambda: None)
+    return run, run.paused["questions"][0]["options"][0]
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "auto"])
+def test_p43_a_picked_option_names_its_folder_only_when_the_requester_picked_it(j2, p43_pick, by, form):
+    run, shown = p43_pick
+    if by == "click":
+        run.post("user", "Option 1")
+        run._run()
+    else:
+        run.auto = True
+        run._auto_go()
+        last = [m for m in run.chat if m["who"] == "user"][-1]
+        assert last.get("auto") and last["text"] == "Option 1", "Decide for me picked the same option"
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    rr = {"command": [sys.executable, "tool.py", folder], "folder": folder, "reads": [], "why": "x"}
+    problems = j2.real_run_problems(rr, run._fact_source(), [sys.executable], run.dir)
+    if by == "click":
+        assert run.decisions[-1]["picked"] == shown
+        assert problems == []
+        assert run._fact_problems({"facts": [shown]}) == []
+    else:      # D448: Decide for me never names a folder, a secret file or a charter fact; only the Requester does
+        assert "picked" not in run.decisions[-1]
+        assert any("not named" in p for p in problems)
+        assert run._fact_problems({"facts": [shown]}) == [shown]
+
+
+def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
+    run, _ = p43_pick
+    run.post("user", "use 2 folders")
+    run._run()
+    assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
