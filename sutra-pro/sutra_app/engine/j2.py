@@ -6852,7 +6852,16 @@ class J2Run:
         if said:
             self.post("system", "Not taken from the answer: whether a real run happened is answered by code from "
                                 "receipts.jsonl: " + "; ".join(f"item {a['item']}: {a['receipt']}" for a in
-                                                               map(self._real_run_answer, sorted(said))) + ".")
+                                                               map(self._real_run_answer, sorted(said))) + ". This part is checked when the real run actually "
+                                                                                     "happens, not from an answer.")      # P43 (D448)
+        ic = g.get("item_checks") or {}      # P43 (D448): the charter's real-run items not planned yet: never an answer's either
+        rr2 = {n for n, c in zip(nums, crit) if (ic.get(c) or {}).get("type") == "real-run"} - rr
+        held = any(isinstance(x, dict) and as_int(x.get("item")) in rr2 for k in ("confirmed", "still_to_be_confirmed")
+                   for x in r.get(k) or [])
+        for k in ("confirmed", "still_to_be_confirmed"):
+            r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr2)]
+        if held:
+            self.post("system", "Noted. This part is checked when the real run actually happens, not from an answer.")
         for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
             r[k] = [{**x, "item": at.get(as_int(x.get("item")), 0)} for x in r.get(k) or [] if isinstance(x, dict)]
         decision, add, drops = "continue", None, []

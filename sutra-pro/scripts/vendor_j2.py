@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P42" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P43" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -3057,6 +3057,22 @@ def env_missing(env):
     Edit("P41", "j2.py", r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." if runner else "")
 ''', r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
 '''),
+    # P43 (D448): a real-run item the charter marks (P30's item_checks) is never an answer's, planned or not yet
+    Edit("P43", "j2.py", r'''        for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
+''', r'''        ic = g.get("item_checks") or {}      # P43 (D448): the charter's real-run items not planned yet: never an answer's either
+        rr2 = {n for n, c in zip(nums, crit) if (ic.get(c) or {}).get("type") == "real-run"} - rr
+        held = any(isinstance(x, dict) and as_int(x.get("item")) in rr2 for k in ("confirmed", "still_to_be_confirmed")
+                   for x in r.get(k) or [])
+        for k in ("confirmed", "still_to_be_confirmed"):
+            r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr2)]
+        if held:
+            self.post("system", "Noted. This part is checked when the real run actually happens, not from an answer.")
+        for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
+'''),
+    Edit("P43", "j2.py", r'''map(self._real_run_answer, sorted(said))) + ".")
+''', r'''map(self._real_run_answer, sorted(said))) + ". This part is checked when the real run actually "
+                                                                                     "happens, not from an answer.")      # P43 (D448)
+'''),
 )
 
 OTHER_EDITS = (
@@ -3307,6 +3323,7 @@ PATCH_NOTES = {
     "P17": "`j2_types.py`: the types a run makes (`create`) are kept where the host says (`J2_TYPES_DIR`: `types.local.json` and `templates/<name>/generic.json` below it; unset: J2's own places, so J2's flow test and developer use are unchanged); `_write_local` writes a temp file and `oslayer.replace`s it; `create` runs the original (now `_create`) inside an exclusive lock on `<store>/.lock` (`oslayer.try_lock`, waits `TYPES_LOCK_WAIT_S` = 30 s; a busy lock is a `ValueError`, which `J2Run._deliverables` already turns into the event `new_type_refused`). `promote` (a developer command) is not changed (D163)",
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
+    "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers",
 }
 
 
@@ -3484,7 +3501,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, P25 the raise "
         "question's text, and P30 Identity's intake and every builder's reply format and brief. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. P43 (D448) keeps an answer from confirming a real-run item, planned or not yet. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "
