@@ -54,7 +54,7 @@ from .schema import fits_native, schema_sha, to_json_schema
 from .attachments import PDF_PROVIDERS
 from .budget import carry_chars
 from .discover import explain_missing
-from .transcript import render_carry_over
+from .transcript import render_carry_over, same_turn
 from .independence import NOT_INDEPENDENT, Independence
 from .usage import Attempt, UsageIn, UsageSink, build_usage_row, load_session_state, new_request_id, save_session_state
 from . import tool_audit
@@ -1059,7 +1059,7 @@ class Router:
         if self.transcripts is None:
             return []
         found = list(self.transcripts.messages(session_id, TRANSCRIPT_LIMIT))
-        if found and found[-1].role == "user" and found[-1].text == m.text:
+        if found and found[-1].role == "user" and same_turn(found[-1].text, m.text):
             found = found[:-1]            # the owner's message is stored before the call; it is sent as the new message, not as history
         return found
 

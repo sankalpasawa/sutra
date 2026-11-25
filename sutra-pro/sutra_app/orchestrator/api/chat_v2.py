@@ -132,7 +132,8 @@ def build_router() -> APIRouter:
         found = await run_blocking(lambda: ChatSearch(db).search(q, scope=scope, include_archived=include == "archived", limit=MAX_RESULTS))
         return respond(request, {"results": found})
 
-    @router.get("/chats/attachment-limits", summary="What can be attached to a chat")
+    # not in the published document: `tests/fixtures/openapi/chat_routes_before_ask.json` pins that document byte for byte, and this is the page's own read of one list (D440)
+    @router.get("/chats/attachment-limits", summary="What can be attached to a chat", include_in_schema=False)
     async def attachment_limits(request: Request) -> RedactedJSONResponse:
         return respond(request, attachment_limits_of())
 
@@ -271,7 +272,7 @@ def build_router() -> APIRouter:
         try:
             said = _clean(services, body.text)          # stored and sent without credential shapes: a secret never lands in the chat store
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
-            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None)
+            message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None, _line_files(refs, receipts))
             direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
             await run_blocking(_ground, services, port, sid, asking is not None)
         except BaseException:
@@ -329,14 +330,14 @@ def _kind_of(filename: str) -> str:
 
 
 def _post(services: Any, sid: str, *, role: str, who: str, kind: str, text: str, blocks: list | None = None,
-          src_ref: str | None = None, mode: str | None = None) -> int | None:
+          src_ref: str | None = None, mode: str | None = None, attachments: list | None = None) -> int | None:
     """The stored message's id, or None when a message with this `src_ref` is stored already (`ChatStore.post` refuses a repeated ref: a replayed line is
     not an error, and the caller looks the stored one up)."""
     redact = services.redact
     with services.db.tx() as tx:
         out = services.chats.post(tx, sid, GATE.check("chat_message", ChatMessage(
             kind=kind, session_id=sid, role=role, who=who, text=redact(text)[:200_000], blocks=blocks or [], src_ref=src_ref, at=tx.now(),
-            **({"mode": mode} if mode else {})), ctx=tx.ctx))
+            **({"mode": mode} if mode else {}), **({"attachments": attachments} if attachments else {})), ctx=tx.ctx))
     return None if out is None else out.id
 
 
@@ -362,12 +363,23 @@ def _post_all(services: Any, sid: str, endings: list[Ending], drop_generation: s
     return ids
 
 
-def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None) -> int:
+def _line_files(refs: list, receipts: tuple) -> list[dict]:
+    """What is recorded with the owner's line for each file: the store's id (a later carry-over reads the text again from it) and the receipt the page draws. One receipt per ref,
+    in order; a port that gave none records the ids alone."""
+    out = []
+    for n, ref in enumerate(refs):
+        got = receipts[n].as_dict() if n < len(receipts) else {"name": ref.name, "kind": ref.kind, "sent": "", "chars": 0, "cut": False, "total": 0}
+        out.append({"id": ref.id, **got, "name": ref.name})
+    return out
+
+
+def _store_user_line(services: Any, sid: str, text: str, attached: str = "", client_id: str | None = None, mode: str | None = None,
+                     files: list | None = None) -> int:
     """The owner's line; with files, a last line records what went with it (the model gets the files and `text` itself). Its src_ref marks it as the
     start of a direct turn, so that a start after a crash can find the ones that never got an ending (`chat_v2.recover_interrupted`). The page's
     `client_id` is the tail of the ref when it sent one (D220): a replayed line is found again, never stored twice."""
     ref = DIRECT_ASK + (client_id or uuid.uuid4().hex[:16])
-    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode)
+    stored = _post(services, sid, role="user", who="user", kind="text", text=text + ("\n" + attached if attached else ""), src_ref=ref, mode=mode, attachments=files)
     if stored is None:                                      # the ref was stored already: this is the same line
         found = find_owner_line(services.db.conn(), sid, client_id or "")
         if found is None:
@@ -514,7 +526,7 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     generation = uuid.uuid4().hex
     live: LiveTurn | None = None
     try:
-        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None)
+        message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None, _line_files(refs, receipts))
         direct_running.attach(sid, message_id)
         await run_blocking(_ground, services, port, sid, ask is not None)
         live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)

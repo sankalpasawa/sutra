@@ -25,7 +25,7 @@ from .models import SESSION_ID_PATTERN, AskRequest, ConnectorEvent, Message, Pic
 from .health import API_KEY_REFUSED
 from .model_catalog import ModelOption, efforts_of, names_of, options_for
 from .router import TRANSCRIPT_LIMIT, Router
-from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over
+from .transcript import FULL_CHARS, TAIL_MESSAGES, render_carry_over, same_turn
 from .usage import load_session_state, save_session_state
 
 __all__ = ["ChatPort", "RouterChatPort"]
@@ -191,7 +191,7 @@ class RouterChatPort:
         """The history a switch caused by `message` carries: the stored transcript without the owner's new line, which is stored before the call and goes as
         the new message (the router drops it the same way, `Router._transcript`)."""
         history = self._history(session_id)
-        return history[:-1] if history and history[-1].role == "user" and history[-1].text == message.text else history
+        return history[:-1] if history and history[-1].role == "user" and same_turn(history[-1].text, message.text) else history
 
     def plan_switch(self, session_id: str, target: str) -> CarryPlan:
         """What a switch to `target` would carry. Reads the stored state and transcript; starts no process and writes nothing."""

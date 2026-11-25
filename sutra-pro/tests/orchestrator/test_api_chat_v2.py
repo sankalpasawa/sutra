@@ -36,12 +36,12 @@ def world(db, clock):
 def rig(world, settings, tmp_path):
     chats = ChatStore(world.db)
     bus = EventBus(clock=world.db._clock)
+    attachments = Attachments(settings.data_dir)
     # a private work root: the default is the machine-wide <tempdir>/sutra-app-<uid>/work, where a session.json or system.txt of an earlier
     # run (the session ids are the same every run) would be read back and a test of what the route writes there would pass without the write
     config = ConnectorConfig(data_dir=settings.data_dir, work_root=tmp_path / "work")
-    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats), session_hook=chats.set_provider,
+    router = build_router(settings.model_copy(update={"connector": "stub"}), transcripts=ChatTranscripts(chats, attachments=attachments.store), session_hook=chats.set_provider,
                           config=config)
-    attachments = Attachments(settings.data_dir)
     services = Services(settings=settings, version="t", db=world.db, redact=Redactor(None, environ={}))
     services.chats, services.bus = chats, bus
     services.chat_port, services.attachments = RouterChatPort(router, attachments=attachments.store), attachments
@@ -412,3 +412,21 @@ def test_a_word_file_goes_through_the_routes_and_reaches_the_model_as_text(rig):
     assert wait_for(lambda: bool(seen)) and "WORD-BODY-MARKER" in seen[0].text
     bad = client.post(f"/api/chats/{sid}/attachments", json={"name": "x.docx", "content_b64": base64.b64encode(b"nope").decode()}, headers=H)
     assert error_code(bad, 422) == "validation" and "x.docx could not be read as a Word file" in bad.json()["error"]["message"]
+
+
+def test_the_owners_line_keeps_what_was_attached_so_a_reload_shows_the_same_receipt(rig):
+    """FR-13: the ids and the receipt are stored with the owner's line (meta, like `mode`); a line with no file shows no key at all (NFR-2)."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    ref = _upload(client, sid, "notes.txt", b"twelve chars")
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read", "attachments": [ref], "names": ["notes.txt"]}, headers=H)
+    assert r.status_code == 202
+    assert wait_for(lambda: len(chats.messages(sid)) == 2)
+    line = chats.messages(sid)[0]
+    assert line.attachments == [{"id": ref, "name": "notes.txt", "kind": "text", "sent": "text", "chars": 12, "cut": False, "total": 12}]
+    wire = client.get(f"/api/chats/{sid}/messages", headers=H).json()["messages"]
+    assert wire[0]["attachments"][0]["name"] == "notes.txt" and "attachments" not in wire[1]
+    assert wait_for(lambda: not chat_v2.direct_running.answering(sid))
+    client.post(f"/api/chats/{sid}/direct", json={"text": "no file here"}, headers=H)
+    assert wait_for(lambda: len(chats.messages(sid)) == 4)
+    assert "attachments" not in client.get(f"/api/chats/{sid}/messages", headers=H).json()["messages"][2]
