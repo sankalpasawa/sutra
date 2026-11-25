@@ -609,3 +609,33 @@ test("Copy share link: a script run copies its main file's /view link, a website
   other.render(scriptRun());
   other.els.sfinish.listeners[0].fn(ev2);      // any other button of the bar: the page handles it
 });
+
+// ---- review fixes: readable links, and each made file titled by its part
+const artCards = (s, rows) => `<section class="stw-sec"><h3>What the team made</h3><div class="sarts">` + rows.map(d => `<button type="button" class="sartc" data-art="${d.name}"><span class="sform" aria-hidden="true">◇</span><span><b>${d.label || d.name}</b><small>${d.version ? `version ${d.version} · ` : ""}${d.file.split("/").pop()}</small></span><span class="sgo2" aria-hidden="true">→</span></button>`).join("")
+  + `<button type="button" class="sartc rec" data-records><span class="sform" aria-hidden="true">✓</span><span><b>Proof and records</b><small>2 files</small></span></button></div></section>`;
+const titles = html => [...html.matchAll(/class="sartc[^"]*"[^>]*>[\s\S]*?<b>([^<]*)<\/b><small>([^<]*)<\/small>/g)].map(m => [m[1], m[2]]);
+
+test("made files: each card is titled by the part that made it, never the project's title; the file name stays the second line", () => {
+  assert.deepEqual(titles(RV.team(artCards(SCRIPT, ARTS), SCRIPT, ARTS)),
+    [["Write the report script", "version 1 · report.py"], ["Write the report script", "version 1 · report.txt"], ["Proof and records", "2 files"]]);
+  // no part made it: the builder's line for its workflow; neither: the file name
+  const loose = [row("out/a.csv", {label: "Environment report", workflows: ["W-9"]}), row("out/b.csv", {label: "Environment report", workflows: []})];
+  const s = scriptRun({chat: [{who: "W-9", human_output: "@Coordination I counted the files. Done."}]});
+  assert.deepEqual(titles(RV.team(artCards(s, loose), s, loose)).slice(0, 2), [["I counted the files.", "a.csv"], ["out/b.csv".split("/").pop(), "b.csv"]]);
+  // a card that already names itself (a document set's documents) keeps its title
+  const docs = [row("prd.md", {label: "Product requirements", workflows: ["W-1"]})];
+  assert.deepEqual(titles(RV.team(artCards(SCRIPT, docs), scriptRun({output_label: "Design documents", types: {}}), docs))[0], ["Product requirements", "prd.md"]);
+  // a website's one card repeats the project's title too: it names the parts that built it
+  assert.equal(titles(RV.team(artCards(WEB, WEBARTS), WEB, WEBARTS))[0][0], "Item 1, Item 2 and 2 more");
+  assert.equal(RV.artTitle(SCRIPT, row("x", {workflows: ["W-1", "W-2"]})), "Plan and Write the report script");
+  // escaped
+  const evil = scriptRun({studio: {parts: [{sec: "W-2", name: '<img src=x onerror="y">', workflows: ["W-2"]}]}});
+  assert.match(RV.team(artCards(evil, [ARTS[0]]), evil, [ARTS[0]]), /<b>&lt;img src=x onerror=&quot;y&quot;&gt;<\/b>/);
+});
+
+test("links in the panel use the page's link colour token (--s-accent), never the text-on-accent token", () => {
+  const css = fs.readFileSync(path.join(STATIC, "css/result_view.css"), "utf8");
+  assert.match(css, /#sview \.rvdl\{[^}]*color:var\(--s-accent\)/);
+  assert.match(css, /#sview \.spart \.rvfile\{[^}]*color:var\(--s-accent\)/);
+  assert.doesNotMatch(css, /--s-accentink/);
+});

@@ -15,6 +15,7 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T4 follow-up: document-set browser tests | done | `SUT-27: D450 a document set's toasts and plan cards, checked in the browser` |
 | T5 decision D450 | done | `SUT-27: D450 record the decision` (D450 free after fetch: origin/main max D448, SUT-28 has D449). `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_docs.py tests/test_ownership.py tests/test_traceability.py -q`: exit 0 |
 | T6 | final targeted run, no commit |
+| owner fixes after the beta look | done | `SUT-27: D450 readable Download links, and each made file is titled by its part` |
 
 ### T1
 
@@ -55,6 +56,20 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T4 follow-up (owner): `tests/ui/fixtures/result_view/state-docset.json`, `artifacts-docset.json` (new, hand-built), two browser tests in `tests/ui/test_dept_page.py` | a running document set: when its first document appears the page's own toast reads "The PRD is being written" (no "taking shape", no site/website in `#sstage`); the done part shows its line and file with no bars, the part in progress keeps its drawing lines and no line. A finished document set: both cards show their builder's line ("I wrote the product requirements.", "I wrote the high-level design.") and their file, no bars |
 | T4 follow-up: `label()` | a running document set with `versions > 0` read "live preview" in the address bar although Result shows no site; now "result" (unit case added) |
 
+
+### Owner fixes after the beta look
+
+1. Readable links. `.rvdl` (Download on Result and on the Files list) and `.rvfile` (file names on plan cards) used `--s-accentink`, the page's text-on-accent token (white in the light theme, near-black in the dark one), so they were pale on pale. They now use `--s-accent`, the page's link and accent colour. WCAG contrast (sRGB relative luminance), computed from the token values in j2.css and measured in the browser test from computed styles:
+
+| theme | link (`--s-accent`) | background | ratio | before (`--s-accentink`) |
+|---|---|---|---|---|
+| light (`:root[data-theme=light]`) | #3d5a80 | #faf9f6 (`--s-surface2`, the pane) | 6.71:1 | 1.05:1 |
+| light | #3d5a80 | #ffffff (`--s-surface`, a plan card) | 7.06:1 | |
+| dark (`:root`) | #9db8de | #2a2d2b (`--s-surface2`) | 6.86:1 | 1.26:1 |
+| dark | #9db8de | #232624 (`--s-surface`) | 7.53:1 | |
+
+   Pinned by a unit test on `result_view.css` (both rules use `--s-accent`, no `--s-accentink` left) and by the script-run browser test, which measures the Download link against `#rvpane` in both themes (>= 4.5).
+2. "What the team made" cards. The page titles every card with the row's label, and every row of a type carries the type's label, so each card repeated the project's title. In the `sTeamwork` wrapper (string level), a card whose title is the project's title (`output_label` or the output type's label) is titled by `artTitle`: the plan part(s) whose workflows made the file (same link as `filesOfPart`; two parts "A and B", more "A, B and N more"), else the builder's line for its workflows, else the file name. The file name stays the second line. Cards are matched to rows in order. A document set's cards already name their documents ("Product requirements") and are not changed. Visual change on a website run: its one card, "Website", now reads the parts that built the site (the website fixture: "Item 1, Item 2 and 2 more"). Goldens unchanged (they do not load modules).
 
 ## Deviations
 
@@ -118,6 +133,15 @@ T4:
 | `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files"` | 5 passed (the website finish test at :886-899 unedited) |
 | follow-up: `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files or document_set"` | 7 passed |
 | follow-up: `node --test tests/ui/js/result_view.test.js`; goldens; the pytest set | 39 pass; 54 pass, goldens unchanged; exit 0, 363 passed, 5 skipped |
+
+Owner fixes:
+
+| command | result |
+|---|---|
+| `node --test tests/ui/js/result_view.test.js` | 41 pass |
+| `SUTRA_J2_CHECKOUT=<extraction> node --test tests/ui/js/page_render.test.js` | 54 pass; goldens unchanged |
+| `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` | exit 0; 363 passed, 5 skipped |
+| `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files or document_set"` | 7 passed; measured link contrast 6.71 (light), 6.86 (dark) at both sizes |
 
 Not run (owner rule): `scripts/gate.sh`, `scripts/live_smoke.py`, browser tests, beta install.
 

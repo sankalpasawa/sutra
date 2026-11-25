@@ -159,6 +159,25 @@
   const SL = '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>';
   const unesc = x => x.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
   const escape = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  // A made file's title: the plan part(s) whose workflows made it (the same link as filesOfPart), else its builder's line, else its
+  // file name. Never the project's title, never a guess from the file name.
+  function artTitle(s, row) {
+    const names = ((s && s.studio && s.studio.parts) || []).filter(p => p && filesOfPart(p, [row]).length).map(p => String(p.name || p.sec || ""));
+    if (names.length) return names.length === 1 ? names[0] : names.length === 2 ? names.join(" and ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+    const line = summaryOf(s, {workflows: row.workflows || []});
+    return line !== WORDS.finished ? line : base(row.file);
+  }
+  // "What the team made": the page titles every card of a type with the project's title (each row of a multi-file type has the same
+  // label); a card whose title is that project title is titled by artTitle instead. Cards are the deliverable rows, in order.
+  function titleArts(html, s, rows) {
+    const t = ((s && s.types) || {})[s && s.output] || {}, project = new Set([s && s.output_label, t.label].filter(Boolean).map(escape));
+    let i = 0;
+    return html.replace(/(<button type="button" class="sartc" data-art="[^"]*">[\s\S]*?<b>)([^<]*)(<\/b>)/g, (all, a, title, b) => {
+      const row = rows[i++];
+      return row && project.has(title) ? a + escape(artTitle(s, row)) + b : all;
+    });
+  }
+
   function team(html, s, rows) {
     const parts = ((s && s.studio && s.studio.parts) || []);
     let out = String(html).replace(/(<button type="button" class="spart ([a-z]+)[^"]*" data-part="([^"]*)"[^>]*>)([\s\S]*?)<\/button>/g, (all, open, st, sec, inner) => {
@@ -172,6 +191,7 @@
       }
       return open + inner + "</button>";
     });
+    out = titleArts(out, s, rows);
     if (!isPageRun(s)) out = out.replace(/<button type="button" data-view="site">[\s\S]*?<\/button>/g, "")
       .replace(/<section class="stw-sec"><h3>[^<]*<\/h3><div class="sdocs"><\/div><\/section>/g, "");
     return out;
@@ -381,7 +401,7 @@
   }
 
   const ResultView = {MAX_ROWS, WORDS, isPageRun, done, realRun, named, mainResult, viewerFor, summaryOf, filesOfPart, table, jsonTable, label,
-    team, adopt};
+    team, artTitle, adopt};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ResultView;
   else { root.ResultView = ResultView; adopt(root); }
 })(globalThis);

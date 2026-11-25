@@ -8,7 +8,7 @@
 #sview .sframe.rvbar .sprev{top:44px}
 #sview .rvhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;min-width:0}
 #sview .rvhead b{font-weight:600;min-width:0;overflow-wrap:anywhere}
-#sview .rvdl{margin-left:auto;color:var(--s-accentink);font-weight:600;text-decoration:none;white-space:nowrap}
+#sview .rvdl{margin-left:auto;color:var(--s-accent);font-weight:600;text-decoration:none;white-space:nowrap}
 #sview .rvdl:hover,#sview .rvdl:focus-visible{text-decoration:underline}
 #sview .rvback{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}
 #sview .rvnote{color:var(--s-muted);margin:8px 0}
@@ -27,4 +27,4 @@
 /* a finished plan card: its builder's line (one line) and its files (each opens in Files) */
 #sview .spart .rvsum{display:block;margin-top:8px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--s-muted)}
 #sview .spart .rvfiles{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px;min-width:0}
-#sview .spart .rvfile{color:var(--s-accentink);font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer;overflow-wrap:anywhere}
+#sview .spart .rvfile{color:var(--s-accent);font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer;overflow-wrap:anywhere}

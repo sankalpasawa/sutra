@@ -915,6 +915,21 @@ SCRIPT_PANEL = r"""(() => {
 })()"""
 
 
+LINK_CONTRAST = r"""(() => {
+  const rgb = c => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+  const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return Math.round((x + 0.05) / (y + 0.05) * 100) / 100; };
+  const root = document.documentElement, was = root.getAttribute("data-theme"), out = {};
+  for (const theme of ["light", "dark"]) {
+    root.setAttribute("data-theme", theme);
+    const a = document.querySelector("#rvbody .rvdl");
+    out[theme] = ratio(getComputedStyle(a).color, getComputedStyle(document.getElementById("rvpane")).backgroundColor);
+  }
+  if (was === null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", was);
+  return out;
+})()"""
+
+
 @pytest.fixture()
 def script_team(team, fake_server, monkeypatch) -> Page:
     j2 = fake_server.state.fx.j2
@@ -940,6 +955,14 @@ def test_a_script_run_shows_its_files_and_no_site_words(script_team, width, heig
     assert seen["finish"] == ["All files (2)"], seen                              # no Copy share link without a main file (Q-4); Open full view is the sidebar's
     assert seen["words"] == [] and seen["open"] is False and seen["siteUrls"] == [], seen
     assert seen["scroll"] <= 0, seen
+    # the Download links are readable: WCAG AA (4.5:1) against the pane they sit on, in both themes
+    ratios = team.js(LINK_CONTRAST)
+    assert set(ratios) == {"light", "dark"} and min(ratios.values()) >= 4.5, ratios
+    # "What the team made": each file is titled by the part that made it, not by the project's title
+    team.js("document.querySelector('#sviews [data-view=team]').click()")
+    team.b.wait_for("document.querySelectorAll('#steamwork .sartc:not(.rec)').length === 2")
+    made = team.js("Array.from(document.querySelectorAll('#steamwork .sartc:not(.rec)')).map(c => [c.querySelector('b').textContent, c.querySelector('small').textContent])")
+    assert made == [["Write the report script", "version 1 · report.py"], ["Write the report script", "version 1 · report.txt"]], made
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
