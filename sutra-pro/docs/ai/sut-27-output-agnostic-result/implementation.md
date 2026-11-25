@@ -12,6 +12,7 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T2 tabs, viewers, page line | done | `SUT-27: D450 the page loads result_view.js; every run gets Result, Files, How it was made, and each file opens in its viewer` |
 | T3 plan cards and wording | done | `SUT-27: D450 finished plan cards show the builder's line and their files; wording follows the output` |
 | T4 finish bar and share link | done | `SUT-27: D450 the finish bar downloads the main result on non-page runs, and a copied link says it opens on this computer only` |
+| T4 follow-up: document-set browser tests | done | `SUT-27: D450 a document set's toasts and plan cards, checked in the browser` |
 | T5-T6 | not started | |
 
 ### T1
@@ -50,6 +51,8 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | `sutra_app/ui/static/js/result_view.js` | `sFinish` replaced: a page run (website, document set) gets the page's own, byte for byte; any other run gets the page's phase line, then a Download of the main file (`/api/artifact?name=<file><runQ>`, `download="<basename>"`), or "All files (N)" (`data-view="files"`) when Result is the Files list, or nothing; Copy share link only with a main file (Q-4); Open full view as the page's. The `renderSimple` wrapper redraws `#sfinish` on non-page runs when ready and the bar's HTML changed (`/api/artifacts` arrives after the run turns ready), and clears the hidden `#sopen`'s `/site/latest` href. A capture-phase listener on `#sfinish` handles `[data-share]` on every run: a page run copies `/site/latest` as today, any other run the main file's `/view` link; the button reads "Link copied — opens on this computer only", back to "Copy share link" after 2.5 s; `stopImmediatePropagation` keeps the page's own listener out |
 | `tests/ui/js/result_view.test.js` | 6 tests: one file (Download, share), two files, no files, real-run result (through a stubbed `/api/artifacts/groups`), page runs byte for byte, redraw on arrival and no rewrite on an identical render, failed run left to the page, share URLs and note for a script and a website |
 | `tests/ui/test_dept_page.py` | new browser test `test_a_script_run_shows_its_files_and_no_site_words` (1280x860, 375x812): the fixture laid over J2's captured snapshot and `/api/artifacts` replaced through the fake's cache; tabs, Result selected, two files with their Download links, finish `["All files (2)"]`, no site/page/website in `#sstage`, `#sopen` not drawn, no `/site/` link or frame in `#sview`, no page-wide horizontal scroll, no console error or failed request. Existing tests unedited |
+| T4 follow-up (owner): `tests/ui/fixtures/result_view/state-docset.json`, `artifacts-docset.json` (new, hand-built), two browser tests in `tests/ui/test_dept_page.py` | a running document set: when its first document appears the page's own toast reads "The PRD is being written" (no "taking shape", no site/website in `#sstage`); the done part shows its line and file with no bars, the part in progress keeps its drawing lines and no line. A finished document set: both cards show their builder's line ("I wrote the product requirements.", "I wrote the high-level design.") and their file, no bars |
+| T4 follow-up: `label()` | a running document set with `versions > 0` read "live preview" in the address bar although Result shows no site; now "result" (unit case added) |
 
 
 ## Deviations
@@ -112,6 +115,8 @@ T4:
 | `SUTRA_J2_CHECKOUT=<extraction> node --test tests/ui/js/page_render.test.js` | 54 pass; goldens unchanged (E4 at :292-302 unedited) |
 | `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` | exit 0; 363 passed, 5 skipped (as T2) |
 | `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files"` | 5 passed (the website finish test at :886-899 unedited) |
+| follow-up: `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files or document_set"` | 7 passed |
+| follow-up: `node --test tests/ui/js/result_view.test.js`; goldens; the pytest set | 39 pass; 54 pass, goldens unchanged; exit 0, 363 passed, 5 skipped |
 
 Not run (owner rule): `scripts/gate.sh`, `scripts/live_smoke.py`, browser tests, beta install.
 

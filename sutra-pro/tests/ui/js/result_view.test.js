@@ -170,6 +170,7 @@ test("the address label: team as today, site as today on a page run, the file's 
   const web = {...copy(WEB), paused: null, status: "done", outcome: "Done", goal: {site_name: "Brew Lab!"}};
   assert.equal(RV.label(web, "result", RV.mainResult(web, WEBARTS)), "brewlab · preview");
   assert.equal(RV.label({...web, status: "running", outcome: ""}, "result", {kind: "none"}), "brewlab · live preview");
+  assert.equal(RV.label({...web, status: "running", outcome: "", docset: ["prd", "hld"]}, "result", {kind: "none"}), "result", "a running document set has no site label");
 });
 
 test("the wording of a non-page run never says site, page or website", () => {

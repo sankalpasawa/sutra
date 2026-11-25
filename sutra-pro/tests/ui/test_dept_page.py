@@ -943,6 +943,64 @@ def test_a_script_run_shows_its_files_and_no_site_words(script_team, width, heig
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
+# A document set (two design documents), hand-built in the same way (fixtures/result_view/state-docset.json, artifacts-docset.json): its plan cards and its
+# own toasts, which are the page's ("The PRD is being written"), never a site's.
+DOCSET_CARDS = r"""(() => Array.from(document.querySelectorAll("#steamwork .spart[data-part]")).map(c => ({
+  sec: c.dataset.part, st: c.className.split(" ")[1], bars: !!c.querySelector(".sl"), sketch: !!c.querySelector(".ssk"),
+  summary: (c.querySelector(".rvsum") || {}).textContent || null, files: Array.from(c.querySelectorAll(".rvfile")).map(f => f.textContent)})))()"""
+
+
+def docset_state(j2, **change) -> bytes:
+    snapshot = json.loads(j2.raw("state.json"))
+    snapshot.update(json.loads((RESULT_VIEW_FIXTURES / "state-docset.json").read_text(encoding="utf-8")))
+    snapshot.update(change)
+    return json.dumps(snapshot).encode()
+
+
+def running_docset(snapshot_parts: list, **change) -> dict:
+    return {"status": "running", "outcome": "", "studio": {"schema": 1, "parts": snapshot_parts, "stream": [], "qsec": None, "done": 1, "total": 2}, **change}
+
+
+@browser_only
+def test_a_document_set_says_its_documents_are_being_written_and_its_cards_follow_the_work(team, fake_server, monkeypatch):
+    j2 = fake_server.state.fx.j2
+    parts = json.loads((RESULT_VIEW_FIXTURES / "state-docset.json").read_text(encoding="utf-8"))["studio"]["parts"]
+    parts[1] = {**parts[1], "st": "doing"}
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-docset.json").read_bytes())
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2, **running_docset(parts, versions=0, docset_files=[], doc=True)))
+    team.open("", view="simple")
+    team.b.wait_for("document.querySelectorAll('#steamwork .spart[data-part]').length === 2")
+    # the first document appears while the run goes on: the page's own toast names it
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2, **running_docset(parts, versions=1, docset_files=[
+        {"kind": "prd", "label": "Product requirements", "md": "prd.md", "docx": "prd.docx"}], doc=True)))
+    team.b.wait_for("(document.getElementById('stoast').textContent || '').includes('being written')", timeout=20)
+    toast = team.js("document.getElementById('stoast').textContent")
+    assert toast == "The PRD is being written", toast
+    assert "taking shape" not in toast
+    cards = team.js(DOCSET_CARDS)
+    assert cards[0] == {"sec": "W-1", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the product requirements.", "files": ["prd.md"]}, cards
+    assert cards[1]["st"] == "doing" and cards[1]["sketch"] is True and cards[1]["summary"] is None, cards     # in progress: its lines still draw
+    words = team.js(r"(document.getElementById('sstage').innerText.match(/\b(site|website)\b/gi) || [])")
+    assert words == [], words
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+def test_a_finished_document_set_shows_each_part_with_its_line_and_its_file(team, fake_server, monkeypatch):
+    j2 = fake_server.state.fx.j2
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-docset.json").read_bytes())
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2))
+    team.open("", view="simple")
+    team.b.wait_for("!!document.querySelector('#sviews [data-view=team]')")
+    team.js("document.querySelector('#sviews [data-view=team]').click()")
+    team.b.wait_for("document.querySelectorAll('#steamwork .spart .rvsum').length === 2 && document.querySelectorAll('#steamwork .rvfile').length === 2")
+    cards = team.js(DOCSET_CARDS)
+    assert cards == [
+        {"sec": "W-1", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the product requirements.", "files": ["prd.md"]},
+        {"sec": "W-2", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the high-level design.", "files": ["hld.md"]}], cards
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
 # `.apill` names two things: the attention pill (a link in `.apillhost`) and the status pill of a work atom (a span in `.atomcard`). The atoms' rules used to be the later ones with the
 # same weight, so they drew the attention pill too, as a 21px box with the atoms' 10px corners and a plain border, and the strip's room for it was fitted to that box (0.3.1).
 PILL_LOOKS = r"""(() => {

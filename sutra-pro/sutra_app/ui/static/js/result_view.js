@@ -146,7 +146,7 @@
     if (tab === "team") return done(s) ? "how your project was made" : "your team, live";
     if (tab === "files") return "files";
     if (str(tab).startsWith("file:")) return base(tab.slice(5));
-    if (!done(s)) return isPageRun(s) && s.versions > 0 ? siteLabel(s) : "result";
+    if (!done(s)) return isPageRun(s) && !(s.docset || []).length && s.versions > 0 ? siteLabel(s) : "result";      // a document set shows no site
     const k = (main && main.kind) || "none";
     if (k === "file") return viewerFor(main.row) === "site" ? siteLabel(s) : base(main.row.file);
     if (k === "real-run") return base(main.result);
