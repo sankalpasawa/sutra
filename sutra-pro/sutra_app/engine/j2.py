@@ -765,9 +765,11 @@ def home_tilde(f):
 
 def named_whole(g, source):
     """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
-    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end."""
-    return bool(re.search(r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
-                          + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))", source))
+    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end.
+    source may be a list of texts (_fact_source(pieces=True)): then g is named whole in one of them (review R1-1)."""
+    pat = (r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
+           + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))")
+    return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
 
 
 def real_folders(workflows):
@@ -8880,13 +8882,14 @@ class J2Run:
                                             "covers each item"))
         return out
 
-    def _fact_source(self, goal=None):
+    def _fact_source(self, goal=None, pieces=False):
         """What a facts-present string must come from: the charter and the Requester's own words, squashed. goal: an
-        earlier stage's charter, for a re-check of a document that is already filed."""
-        return squash(" ".join(strings(goal or self.goal or {}) + [self.request]
-                               + [d["picked"] for d in self.decisions if d.get("picked")]      # P43 (D448)
-                               + [m["text"] for m in self.chat
-                                                                                    if m["who"] == "user"]))
+        earlier stage's charter, for a re-check of a document that is already filed. pieces (P43, D448 review R1-1): a list
+        of each text squashed on its own, for named_whole, so a path that ends one text never reads on into the next."""
+        texts = (strings(goal or self.goal or {}) + [self.request]
+                 + [d["picked"] for d in self.decisions if d.get("picked")]      # P43 (D448)
+                 + [m["text"] for m in self.chat if m["who"] == "user"])
+        return [squash(t) for t in texts] if pieces else squash(" ".join(texts))
 
     def _approved_docs_text(self):
         """The approved documents of this run (documents.json: a stage that passed its audit), squashed, for N6's
@@ -9813,7 +9816,8 @@ class J2Run:
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
                 w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
-                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
+                bad = real_run_problems(w["real_run"], self._fact_source(pieces=True),      # P43 (D448, review R1-1)
+                                        self.out.get("test_runner"), self.dir)
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
                     continue
@@ -9837,7 +9841,7 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
-                if bad := real_run_env_problems(w["real_run"], self._fact_source(), self.dir):      # P41 (D446)
+                if bad := real_run_env_problems(w["real_run"], self._fact_source(pieces=True), self.dir):      # P41 (D446; D448)
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
                     continue
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated

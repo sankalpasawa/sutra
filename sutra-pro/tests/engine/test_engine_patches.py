@@ -4454,6 +4454,44 @@ def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
     assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
 
 
+P43_CSV = "CSV/Excel tidier for a folder"      # review R1-1: the brief's first word holds a "/"
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "typed"])
+def test_p43_r1_1_a_folder_the_requester_names_registers_whatever_the_next_text_starts_with(sort_run, tmp_path, monkeypatch, by,
+                                                                                            form):
+    """Review R1-1: the brief, each answer and each pick are read one by one, so a path that ends one of them is never read as
+    going on into the next one's first word ("CSV/Excel")."""
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+    make, _ = sort_run
+    run = make()
+    run.request = P43_CSV
+    run.post("user", P43_CSV)
+    if by == "click":
+        run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool",
+                                                                                                    "Another folder"],
+                                         "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+        monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+        monkeypatch.setattr(run, "_plan_stages", lambda: None)
+        run.post("user", "Option 1")
+        run._run()
+        assert run.decisions[-1]["picked"] == "~/Documents/Made Up/Tool"
+    else:      # typed answers, each followed by a Requester message whose first word holds a "/"
+        for said in ("It runs on ~/Documents/Made Up/Tool", "It reads ~/Documents/Made Up/key.txt"):
+            run.post("user", said)
+            run.post("user", "CSV/Excel files only, please")
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    w = sort_proposals(folder, fix=True)[0]
+    rr = {**w["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+    if by == "typed":
+        rr["secret_files"] = {"API_KEY_FILE": folder.replace("Tool", "key.txt")}
+    reg, refused, _ = run._register([{**w, "real_run": rr}])
+    assert [x["id"] for x in reg] == ["W-1"] and not refused, refused
+
+
 # ---- P31, P41 amended (D448): a folder or secret file is named only whole (named_whole: one rule for both checks)
 D448_WHOLE = [      # (path, what the brief says, named whole?): made-up paths only
     ("~/Documents/Made", "use ~/Documents/Made Up/Tool", False),
