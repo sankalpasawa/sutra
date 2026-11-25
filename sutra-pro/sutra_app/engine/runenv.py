@@ -1,7 +1,7 @@
-"""The environment a built script runs in: code, never the model, makes it (patch P36, D441).
+"""The environment a built script runs in: code, never the model, makes it (patch P42, D447).
 
 Sutra's own module, not a vendored file: J2's `j2_runenv.py` from the branch `fix-real-run-approval` (J2 main is ahead of the
-pinned commit, so the file can't come from the extraction; when a sync moves the pin past it, this copy goes and P36's import
+pinned commit, so the file can't come from the extraction; when a sync moves the pin past it, this copy goes and P42's import
 becomes P1's). Everything below the imports is J2's code unchanged; `tests/engine/test_engine_patches.py` compares the two.
 
 A built folder that holds a requirements.txt gets a virtual environment of its own, and the test rerun, the dry run on
@@ -163,12 +163,13 @@ def facts(p):
             "installed": p.get("installed") or {}}
 
 
-def install(p, timeout, sandbox=None):
+def install(p, timeout, sandbox=None, env=None):
     """Make the environment of a plan and install its packages, from PyPI only (the index is named, pip's own settings
     and environment variables are ignored). sandbox: the sandbox runtime's command (J2_SANDBOX=1), which then runs the
     install step with the network open to PYPI_HOSTS only and writes only in the environment's folder; making the
     empty environment needs no network and runs as a plain process. The record is written only after a clean install,
     so a failed one is never used; its folder is removed.
+    env: the environment variables pip (and a package's own build code) gets; None: this process's own.
     {"ok", "exit", "stdout", "stderr" (tails), "seconds", "command" (the install step), "sandbox" (its settings, or
     None), "evidence", and when ok what facts() gives}."""
     env_dir, base, t0 = p["dir"], p["base"], time.time()
@@ -203,7 +204,7 @@ def install(p, timeout, sandbox=None):
             argv, out["sandbox"] = shlex.split(sandbox) + ["-s", conf, "-c", shlex.join(cmd)], settings
         os.makedirs(tmp, exist_ok=True)
         got = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                             env={**os.environ, "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp})
+                             env={**(os.environ if env is None else env), "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp})
         shutil.rmtree(tmp, ignore_errors=True)
         if got.returncode != 0:
             return failed("installing the packages", got)

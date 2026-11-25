@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P36" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P42" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -2675,15 +2675,163 @@ def real_run_problems(rr, source, runner, run_dir):
     Edit("P35", "j2.py", r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "")
 ''', r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
 '''),
-    # ---- P36 (D441): a build with a requirements.txt gets an environment of its own (Sutra's engine/runenv.py), installed only
-    # after RUN <code>; the test rerun, the dry run and the real run use its python, never another; a real-run receipt keeps the
+    # ---- P41 (D446): a script gets only PATH, HOME, locale and temp folder, plus what its plan states; secrets go by file path
+    Edit("P41", "j2.py", r'''def real_run(out_dir, rr, timeout):
+''', r'''def dry_secret_files(rr, tmp):
+    """P41 (D446): {NAME: placeholder} for the dry run: one empty file per secret file, made in the dry run's own temp folder
+    (tmp/secrets/s<n>, outside the copies, so never diffed; removed with tmp). The real path never reaches the dry run."""
+    out = {n: os.path.join(tmp, "secrets", f"s{i}") for i, n in enumerate(rr.get("secret_files") or {})}
+    for p in out.values():
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "w").close()
+    return out
+
+
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")      # P41 (D446): a variable name a plan may give a script
+REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, the language and the temp folder. When it needs '
+                     'more, the real_run also carries "settings": {"NAME": "value"} (plain values the Requester sees before '
+                     'approving and that the receipt keeps; never a password, key or token; never a name that changes how a '
+                     'program starts, such as LD_*, DYLD_*, NODE_OPTIONS, PYTHONSTARTUP, PYTHONPATH, PERL5OPT, RUBYOPT) and '
+                     '"secret_files": {"NAME": "/absolute/path"} (a file holding a secret that the Requester named in the brief '
+                     'or an answer; the script gets NAME=<path> and reads the file itself; never a sign-in folder of Claude, '
+                     'Codex or gh, nor the app\'s data). In the dry run each secret file name points at an empty placeholder '
+                     'file. If the brief needs a secret and names no file, ask the Requester for one. Leave both out when the '
+                     'script needs nothing.')
+
+
+def real_run_env_fields(rr):
+    """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out and links
+    resolved, so the card, the env and srt's allowRead all name the real file), each only when stated."""
+    out = {"settings": dict(rr.get("settings") or {}),
+           "secret_files": {n: os.path.realpath(os.path.expanduser(p)) for n, p in (rr.get("secret_files") or {}).items()}}
+    return {k: v for k, v in out.items() if v}
+
+
+def _self_and_parents(p):
+    """P41 (D446): p, then each folder above it, up to the root."""
+    while True:
+        yield p
+        if os.path.dirname(p) == p:
+            return
+        p = os.path.dirname(p)
+
+
+def real_run_env_problems(rr, source, run_dir):
+    """P41 (D446): why a planned real run's settings and secret_files are not usable ([] when usable or absent). Structure
+    only: each a {name: string} object; names match ENV_NAME, are no llm.RUN_PASS_NAMES name (upper-case compare), not a
+    llm.RUN_LOADER_NAMES guardrail name (llm.is_loader_name: a fixed list, not a secret detector) and not in both; no NUL,
+    CR or LF in a value (a format check: values are never scanned); a secret file, ~ written out, is absolute, named in the brief or the Requester's
+    answers (real_run_problems' rule), an existing file once resolved, and not in the repo, the run folder or a
+    llm.login_homes() location."""
+    out, maps, base = [], {}, {n.upper() for n in llm.RUN_PASS_NAMES}
+    for key in ("settings", "secret_files"):
+        m = rr.get(key)
+        if m is None:
+            continue
+        if not (isinstance(m, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in m.items())):
+            out.append(f'real_run {key} must be an object of strings, {{"NAME": "..."}}')
+            continue
+        maps[key] = m
+        for n, v in m.items():
+            if not ENV_NAME.match(n):
+                out.append(f"real_run {key} name {n!r} is not a variable name (letters, digits and _, not starting with a digit)")
+            elif n.upper() in base:
+                out.append(f"real_run may not set {n}: the script already gets it")
+            elif llm.is_loader_name(n):
+                out.append(f"real_run may not set {n}: it changes how a program starts (a fixed guardrail list)")
+            if "\0" in v:
+                out.append(f"real_run {key} {n} holds a NUL character")
+            if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own
+                out.append(f"real_run {key} {n} holds a line break")
+    out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
+        {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
+    # by file identity, not by name: a case variant names the same file on a case-insensitive disk (macOS, Windows)
+    locked = [os.stat(x) for x in llm.login_homes() + [_repo_root(), run_dir] if os.path.exists(x)]
+    for n, f in maps.get("secret_files", {}).items():
+        p = os.path.expanduser(f) if f == "~" or f.startswith("~/") else f
+        if "\0" in p:
+            continue
+        if not os.path.isabs(p):
+            out.append(f"real_run secret file {f!r} must be an absolute path")
+            continue
+        # named whole, as real_run_problems names a folder (the path ends there, or at a space or a sentence's end)
+        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
+                   for g in {p, home_tilde(p)}):
+            out.append(f"real_run secret file {f} is not named in the brief or the Requester's answers: ask for it")
+        r = os.path.realpath(p)
+        if not os.path.isfile(r):
+            out.append(f"real_run secret file {f} is not an existing file")
+        elif any(os.path.samestat(os.stat(q), s) for q in _self_and_parents(r) for s in locked):
+            out.append(f"real_run secret file {f} may not be in a sign-in folder of Claude, Codex or gh, the app's data, "
+                       "the repo or the run folder")
+    return out
+
+
+def real_run_env_lines(rr):
+    """P41 (D446): the real-run card's lines, before approval: every setting as NAME=value, and every secret file by name
+    and real path only (the app never opens it), then what the dry run got instead."""
+    s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
+    return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
+                                      or "none beyond the basics (PATH, HOME, language, temp folder)")
+            + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
+               + "\nThe dry run got the settings and an empty placeholder file for each secret file." if f else ""))
+
+
+def real_run(out_dir, rr, timeout):
+'''),
+    Edit("P41", "j2.py", r'''        cmd = [moved(x) for x in rr["command"]]
+        rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
+''', r'''        cmd = [moved(x) for x in rr["command"]]
+        rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
+        rr = {**rr, "secret_files": dry_secret_files(rr, tmp),      # P41 (D446): empty placeholders, never the real paths,
+              "deny_read": list((rr.get("secret_files") or {}).values())}      # which srt hides (set by code here only)
+'''),
+    Edit("P41", "j2.py", r'''        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
+        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
+''', r'''        extra = {**(rr.get("settings") or {}), **(rr.get("secret_files") or {})}      # P41 (D446): only what the plan states
+        wrap = bool(cmd and extra) and os.name != "nt"      # defense in depth: under srt the names reach the script, never srt
+        # ponytail: on Windows under srt the plan's names reach srt itself (no env program); only the loader guardrail list
+        # guards srt there. srt 0.0.81 has a Windows path; it is off by default only because sandbox_on is. Upgrade: a
+        # sys.executable wrapper that sets the names inside the -c command, when the sandbox is turned on on Windows.
+        run = ["env", *(f"{k}={v}" for k, v in extra.items()), *rr["command"]] if wrap else rr["command"]
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
+        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
+                           env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
+'''),
+    Edit("P41", "j2.py", r'''                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
+''', r'''                       "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
+                                      "allowRead": [out_dir, folder] + reads
+                                      + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
+                                      "allowWrite": [folder],
+'''),
+    Edit("P41", "j2.py", r'''        p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout)
+''', r'''        p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout,
+                           env=llm.run_env())      # P41 (D446): the test rerun gets the base only
+'''),
+    Edit("P41", "j2.py", r'''                wf["real_run"]["checks"] = [as_int(i) for i in checks]
+''', r'''                wf["real_run"]["checks"] = [as_int(i) for i in checks]
+                if bad := real_run_env_problems(w["real_run"], self._fact_source(), self.dir):      # P41 (D446)
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
+                    continue
+                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
+'''),
+    Edit("P41", "j2.py", r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
+''', r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
+                self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
+'''),
+    Edit("P41", "j2.py", r'''                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+''', r'''                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
+'''),
+    # ---- P42 (D447): a build with a requirements.txt gets an environment of its own (Sutra's engine/runenv.py), installed only
+    # after RUN <code> (with P41's clean environment, D446); the test rerun, the dry run and the real run use its python, never another; a real-run receipt keeps the
     # end of stdout and of stderr. Every edit sits beside P30 to P35's text and splits none of it: the functions that run a
     # command (real_run, sandbox_rerun) look the environment up themselves from the built folder, so no call line changes.
-    Edit("P36", "j2.py", r'''from . import j2_rules
+    Edit("P42", "j2.py", r'''from . import j2_rules
 ''', r'''from . import j2_rules
-from . import runenv as j2_runenv      # P36 (D441): Sutra's copy of J2's j2_runenv.py, the environment a built script runs in
+from . import runenv as j2_runenv      # P42 (D447): Sutra's copy of J2's j2_runenv.py, the environment a built script runs in
 '''),
-    Edit("P36", "j2.py", r'''def sandbox_settings(folder):
+    Edit("P42", "j2.py", r'''def sandbox_settings(folder):
     """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
     folder, writes only in the folder."""
     return {"network": {"allowedDomains": [], "deniedDomains": []},
@@ -2691,85 +2839,72 @@ from . import runenv as j2_runenv      # P36 (D441): Sutra's copy of J2's j2_run
                            "denyWrite": list(SANDBOX_DENY_WRITE)}}
 ''', r'''def sandbox_settings(folder, reads=()):
     """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
-    folder (and reads, P36: the environment its python comes from), writes only in the folder."""
+    folder (and reads, P42: the environment its python comes from), writes only in the folder."""
     return {"network": {"allowedDomains": [], "deniedDomains": []},
             "filesystem": {"denyRead": ["~"], "allowRead": [folder] + list(reads), "allowWrite": [folder],
                            "denyWrite": list(SANDBOX_DENY_WRITE)}}
 
 
 def run_command(command, env):
-    """P36 (D441): a command as code runs it: with an environment (j2_runenv.plan, ready), its python in place of the
+    """P42 (D447): a command as code runs it: with an environment (j2_runenv.plan, ready), its python in place of the
     form's python; without one, as written."""
     return [env["python"]] + list(command[1:]) if env and j2_runenv.is_python(command[0]) else list(command)
 
 
 def env_missing(env):
-    """P36 (D441): why a built folder's commands can't run yet ("" when they can): it has a requirements.txt whose
+    """P42 (D447): why a built folder's commands can't run yet ("" when they can): it has a requirements.txt whose
     environment is not installed. Code never runs them with another python."""
     if not env or env["ready"]:
         return ""
     return "its packages are not installed (" + (env["problem"] or "the Requester has not approved them") + ")"
 '''),
-    Edit("P36", "j2.py", r'''    fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
-    t0 = time.time()
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
-                                      "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
-''', r'''    env = j2_runenv.plan(out_dir)      # P36 (D441): the built folder's environment (its requirements.txt), when it has one
+    Edit("P42", "j2.py", r'''    fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
+''', r'''    env = j2_runenv.plan(out_dir)      # P42 (D447): the built folder's environment (its requirements.txt), when it has one
     if env_missing(env):      # never with another python
         return {"ran": False, "exit": None, "sha256": shas, "evidence": "not run: " + env_missing(env)}
-    command = run_command(rr["command"], env)
+    if env:      # its python runs the command, and the sandbox may read it (P41's lines below take both from here)
+        rr, reads = {**rr, "command": run_command(rr["command"], env)}, reads + list(env.get("reads") or [])
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
-    t0 = time.time()
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
-                                      "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
 '''),
-    Edit("P36", "j2.py", r'''        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
+    Edit("P42", "j2.py", r'''        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
-''', r'''        return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),      # P36 (D441): the end
+''', r'''        return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),      # P42 (D447): the end
                 "stderr": j2_runenv.tail(p.stderr), **({"env": j2_runenv.facts(env)} if env else {}),      # of each, and its python
                 "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
 '''),
-    Edit("P36", "j2.py", r'''    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+    Edit("P42", "j2.py", r'''    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
 ''', r'''    argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
-    env = j2_runenv.plan(folder)      # P36 (D441): the folder's environment (its requirements.txt), when it has one
+    env = j2_runenv.plan(folder)      # P42 (D447): the folder's environment (its requirements.txt), when it has one
     if env_missing(env):      # never with another python
         return {"pass": None, "exit": None, "sha256": sha, "evidence": "the test was not rerun: " + env_missing(env)}
     as_run = run_command(argv, env)
 '''),
-    Edit("P36", "j2.py", r'''            json.dump(sandbox_settings(copy), f)
+    Edit("P42", "j2.py", r'''            json.dump(sandbox_settings(copy), f)
         run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
 ''', r'''            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
         run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
 '''),
-    Edit("P36", "j2.py", r'''        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
+    Edit("P42", "j2.py", r'''        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
 ''', r'''        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
-        self.env_why = {}            # P36 (D441): requirements.txt hash -> why its environment was not made (declined, the install failed)
+        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
 '''),
-    Edit("P36", "j2.py", r'''                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
+    Edit("P42", "j2.py", r'''                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
 ''', r'''                "real_run": self._identity_real_run,
-                "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)      # P36 (D441)
+                "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)      # P42 (D447)
 '''),
-    Edit("P36", "j2.py", r'''        rr, code = w["real_run"], secrets.token_hex(3)
+    Edit("P42", "j2.py", r'''        rr, code = w["real_run"], secrets.token_hex(3)
         self.real_runs_asked[w["id"]] = code
 ''', r'''        rr, code = w["real_run"], secrets.token_hex(3)
-        if self._env_stops_real_run(w, rr):      # P36 (D441): its packages or an import are missing: back to the build
+        if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
             return True
         self.real_runs_asked[w["id"]] = code
 '''),
-    Edit("P36", "j2.py", r'''
+    Edit("P42", "j2.py", r'''
     def _real_run_note(self):
 ''', r'''
     def _run_env(self):
-        """P36 (D441): the environment the built folder's commands run in. (None, "") without a requirements.txt: the
+        """P42 (D447): the environment the built folder's commands run in. (None, "") without a requirements.txt: the
         form's own python runs them. (the environment, "") once it is installed. (None, why) while it is not: nothing of
         the build is run."""
         p = j2_runenv.plan(self._out_dir())
@@ -2779,7 +2914,7 @@ def env_missing(env):
                                                             or "the Requester has not approved them")
 
     def _env_stops_real_run(self, w, rr):
-        """P36 (D441): before the dry run. A real run whose packages are not installed, or whose script imports a module
+        """P42 (D447): before the dry run. A real run whose packages are not installed, or whose script imports a module
         that does not resolve in the python that runs it (only looked up, nothing is run), is a build failure like a
         failed dry run (D434's _dry_run_failed: never a question): True. Else False; with an environment, one info line
         names its packages."""
@@ -2799,7 +2934,7 @@ def env_missing(env):
         return False
 
     def _env_ask(self, w, attempt, cwd, reply=None):
-        """P36 (D441): a build whose requirements.txt has no installed environment yet: code posts the packages and
+        """P42 (D447): a build whose requirements.txt has no installed environment yet: code posts the packages and
         versions, where they go and a one-time code, and the run pauses before the build's checks (pause kind real_run:
         Decide for me never answers, and the card has D434's Run and Don't run buttons; the code is kept in
         real_runs_asked under "env:<hash>", where the snapshot reads it). Nothing is installed without RUN <code>.
@@ -2828,7 +2963,7 @@ def env_missing(env):
         return True
 
     def _identity_env_install(self, h):
-        """P36 (D441): code, not an agent, reads the reply to _env_ask, as D434 reads a real run's: exactly RUN <code>
+        """P42 (D447): code, not an agent, reads the reply to _env_ask, as D434 reads a real run's: exactly RUN <code>
         installs (j2_runenv.install: PyPI only; with J2_SANDBOX=1 the network is open to PyPI for this step alone); the
         whole reply "Don't run" declines; any other reply asks again and the run stays paused. An env_install receipt
         (the interpreter, the requirements hash, the installed versions, the exit code and the end of the output) goes
@@ -2847,7 +2982,8 @@ def env_missing(env):
                                   handoff={k: h.get(k) for k in ("kind", "wid", "build", "hash")})
         self.real_runs_asked.pop(key, None)
         if ok and not p["ready"]:
-            res = j2_runenv.install(p, max(builder_timeout(), 600), agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None)
+            res = j2_runenv.install(p, max(builder_timeout(), 600), agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None,
+                                    env=llm.run_env())      # D446: pip and a package's own build code get the clean base only
         elif ok:      # installed since the question was asked (another run with the same requirements.txt)
             res = {"ok": True, "exit": 0, **j2_runenv.facts(p), "evidence": f"already installed in {p['dir']}"}
         else:
@@ -2876,32 +3012,32 @@ def env_missing(env):
 
     def _real_run_note(self):
 '''),
-    Edit("P36", "j2.py", r'''        reused = self._reuse_folder(w, cwd)
-''', r'''        unmet = ""      # P36 (D441): a requirements.txt code will not install as written (j2_runenv.bad_lines)
-        resume = w.pop("resume", None) or {}      # P36: its files waited for their packages, or a failed install sent it back
+    Edit("P42", "j2.py", r'''        reused = self._reuse_folder(w, cwd)
+''', r'''        unmet = ""      # P42 (D447): a requirements.txt code will not install as written (j2_runenv.bad_lines)
+        resume = w.pop("resume", None) or {}      # P42: its files waited for their packages, or a failed install sent it back
         reused = None if resume else self._reuse_folder(w, cwd)
 '''),
-    Edit("P36", "j2.py", r'''            reused, evidence = None, leak
+    Edit("P42", "j2.py", r'''            reused, evidence = None, leak
 ''', r'''            reused, evidence = None, leak
-        if reused and self._env_ask(w, None, cwd):      # P36 (D441): the reused files need packages: asked before their checks
+        if reused and self._env_ask(w, None, cwd):      # P42 (D447): the reused files need packages: asked before their checks
             return
 '''),
-    Edit("P36", "j2.py", r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+    Edit("P42", "j2.py", r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
 ''', r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
-        if resume:      # P36 (D441): the attempt count goes on, with the builder's reply from before the question
+        if resume:      # P42 (D447): the attempt count goes on, with the builder's reply from before the question
             attempt, evidence, r = as_int(resume.get("attempt")), str(resume.get("evidence") or ""), resume.get("reply") or {}
         if resume.get("built"):      # its files waited for their packages: checked now, with no builder call first
             text = self._out_text()
             self._publish_out(text)
             failed = self._run_checks(w, attempt, text, folder=cwd)
             evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): "
-                                 f"{x['evidence']}" for x in failed)      # P36
+                                 f"{x['evidence']}" for x in failed)      # P42
             reused = "its own files"
 '''),
-    Edit("P36", "j2.py", r'''                    continue
+    Edit("P42", "j2.py", r'''                    continue
                 text = self._out_text()
 ''', r'''                    continue
-                unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))      # P36 (D441)
+                unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))      # P42 (D447)
                 if unmet:      # refused before its checks, like a leak
                     evidence = unmet
                     continue
@@ -2909,9 +3045,9 @@ def env_missing(env):
                     return
                 text = self._out_text()
 '''),
-    Edit("P36", "j2.py", r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
+    Edit("P42", "j2.py", r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
 ''', r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
-        if unmet and not stop:      # P36 (D441)
+        if unmet and not stop:      # P42 (D447)
             stop = "its requirements.txt still can't be installed as written: " + unmet.removeprefix("- ")
 '''),
 )
@@ -3150,8 +3286,9 @@ PATCH_NOTES = {
     "P31": "(D434) a real run's dry run on copies that ran and did not exit 0 (a timeout too) is a build failure, never a question: `_dry_run_failed(w, dry, detail)` sets the workflow `failed` with the code-made `failure` `[\"dry_run\", \"exit <n>: <last output line>\"]` (`real_run_dry` returns its output's end with the temp root written `<copy>`, so P28's signature is the same across temp folders, and every real-run receipt keeps it in `dry_run.output`), keeps the output on the workflow (`dry_run_output`, shown as `dry_run_failure` to the builder of the next workflow whose real run checks one of its items, by item number, because a folder run drops `revises`), writes a not-run receipt, forgets its code (`real_runs_asked`), posts a system note (not to the Requester), and hands Adaptation a `propose` unless `_repeat_build_stop` stops the cycle (a passing build between two dry-run failures keeps P28's memory); a planned real run's item is no longer pending once any real run that checks it has a receipt (a replacement after a failed dry run); `_identity_real_run` takes exactly `RUN <code>` (runs) or the whole reply `REAL_RUN_DECLINE` (\"Don't run\", any case: the not-run receipt, then `_goal_done`), and any other reply, or one Decide for me sent, is asked again with the same code (\"Not run. Press Run or type RUN <code>.\": no receipt, the run stays paused); the snapshot's `paused.code` gives the card's Run button its code (port edit E28); no word of a reply is read; a real-run folder written `~/x` is the folder it names (beta fix, run 8b10: refused as not absolute, then, written out, as not named in the brief): `home_expanded` writes `~` out in its folder, reads and command arguments, `real_run_problems` judges that form and accepts the folder when the brief names it either way (`home_tilde`), and `_register` stores it written out, so the dry run and the approved run get absolute paths",
     "P32": "(D435) the dry run on copies always runs inside the sandbox runtime (`J2_SANDBOX_CMD`, network `allowedDomains: []`), whatever `J2_SANDBOX` says: `real_run_dry` passes `fence` in the run it hands `real_run` (code sets it there only; a stored `real_run` keeps `command`, `folder`, `reads`, `why`), and `real_run` with `fence` and no sandbox runtime (the program not on PATH, as on Windows, or an offline run without `J2_SANDBOX`) returns `ran` false (\"no sandbox runtime here: ...\") and runs nothing; both dry-run results carry `fenced` (it ran, so fenced); the real-run card says \"The dry run had no network access: results may differ.\" after a fenced dry run, else \"No dry run: this computer has no sandbox, so it wasn't tested first\", and the Requester is still asked; the approved real run is unchanged (it follows `J2_SANDBOX`); the environment is not scrubbed (a follow-up)",
     "P33": "(D436, prompt-changing per D249: a new Audit prompt after an approved real run; no golden scenario reaches it) after an approved real run that ran and exited 0, `_identity_real_run` makes one Audit call (`_judge_real_run`, a plain `self.call`, so calls.jsonl, budget and dollar accounting count it; its format has no `next`, and code reads no route from it) with the Requester's brief, the items the run decides (its `real_run.checks`), the command, the dry run's created/changed/deleted lists and the real run's output end; an item passes only when Audit filed PASS with evidence for it (no finding, or empty evidence, does not; no word of the output is read by code); the receipt gains `audit` `{item: {verdict, evidence}}`, the audit row's note gives the receipt evidence and Audit's, a judged failure is `NEEDS_REVISION`, and `real_runs_done` is true only when Audit passed every item the run decides (so P30's `real-run` item check requires it too); a run not approved, not run, or not exit 0 makes no Audit call and its items fail as before; without the real run the items stay pending (SUT-18: exit 0 alone passed the item)",
-    "P36": "(D441; no model prompt changes: the install card, the re-ask and the info lines are code's own words) a build with a `requirements.txt` gets an environment of its own, made by Sutra's `engine/runenv.py` (a copy of J2's `j2_runenv.py` from the branch `fix-real-run-approval`). `_run_tools` refuses lines that are not `name==version` back to the builder (`runenv.bad_lines`), then pauses before the checks (`_env_ask`: pause kind `real_run`, handoff `env_install`, the one-time code kept in `real_runs_asked` under `env:<hash>` so D434's Run and Don't run buttons work unchanged) with the packages listed; the builder's reply waits on the workflow (`resume`), so its `item_status` (P30) is kept. `_identity_env_install` reads the reply as D434 reads a real run's: exactly `RUN <code>` installs (`runenv.install`: a virtual environment kept by the hash of `requirements.txt` under `J2_DATA_DIR`/envs, `pip install --isolated --index-url https://pypi.org/simple`; with the sandbox on, the network is open to pypi.org and files.pythonhosted.org for that step alone), the whole reply `Don't run` declines, any other reply asks again; an `env_install` receipt records the interpreter, the hash and the installed versions, and a failed install goes back to the builder with pip's error. `real_run` and `sandbox_rerun` look the environment up from the built folder (`runenv.plan`): its python runs the command (`run_command`), the sandbox may read it, and without an installed one nothing is run (`env_missing`), so the test rerun, the dry run (still fenced, D435) and the real run never use another python. Before the dry run `_env_stops_real_run` sends a real run whose packages are not installed, or whose script has a top-level import that does not resolve (`runenv.missing_imports`), through D434's `_dry_run_failed`. A real-run receipt gains `stdout` and `stderr` (the last 2,000 characters of each) and, with an environment, `env`. A build without a `requirements.txt` runs as before",
     "P35": "(D438, prompt-changing per D249: the real-run rule asks for expect; it joins `ATOM_RULES` only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run carries `expect` `{\"created\": [glob], \"changed\": [glob], \"deleted\": [glob]}` relative to its folder, set by whoever proposes the real run (Adaptation, next to `command`; `REAL_RUN_EXPECT_RULE` follows `artifacts/real_run.md` in the proposal rules); `_register` refuses a missing or malformed one (`real_run_expect_problems`: exactly the three lists, non-empty relative paths or globs, not all empty) with the P22 key `(\"real_run_expect\",)` (no `key_rules` entry: that list follows the reason chain only) and stores it; `real_run_dry` also diffs every read-only copy (`reads_changed` `{n: diff}`); `_ask_real_run`, after the real-folder stop and P31's exit check, sends a dry run that changed a read-only copy, or whose created/changed/deleted paths differ from `expect` (`expect_mismatch`: `fnmatchcase`, sorted, a glob that matched nothing or a path no glob matched; no word read; kept as `dry_run.expect_mismatch`), through P31's `_dry_run_failed` (back to the build, P28, never to the Requester); a real run registered before P35 (no `expect`) skips only the expect comparison; with no sandbox runtime (P32) there is no dry run, so nothing is compared (SUT-12: `copy.py <input> <output>` called with the folders swapped wrote into the read-only copy and was shown \"0 created\")",
+    "P42": "(D447; no model prompt changes: the install card, the re-ask and the info lines are code's own words) a build with a `requirements.txt` gets an environment of its own, made by Sutra's `engine/runenv.py` (a copy of J2's `j2_runenv.py` from the branch `fix-real-run-approval`). `_run_tools` refuses lines that are not `name==version` back to the builder (`runenv.bad_lines`), then pauses before the checks (`_env_ask`: pause kind `real_run`, handoff `env_install`, the one-time code kept in `real_runs_asked` under `env:<hash>` so D434's Run and Don't run buttons work unchanged) with the packages listed; the builder's reply waits on the workflow (`resume`), so its `item_status` (P30) is kept. `_identity_env_install` reads the reply as D434 reads a real run's: exactly `RUN <code>` installs (`runenv.install`: a virtual environment kept by the hash of `requirements.txt` under `J2_DATA_DIR`/envs, `pip install --isolated --index-url https://pypi.org/simple`; with the sandbox on, the network is open to pypi.org and files.pythonhosted.org for that step alone), the whole reply `Don't run` declines, any other reply asks again; an `env_install` receipt records the interpreter, the hash and the installed versions, and a failed install goes back to the builder with pip's error. `real_run` and `sandbox_rerun` look the environment up from the built folder (`runenv.plan`): its python runs the command (`run_command`), the sandbox may read it, and without an installed one nothing is run (`env_missing`), so the test rerun, the dry run (still fenced, D435) and the real run never use another python. Before the dry run `_env_stops_real_run` sends a real run whose packages are not installed, or whose script has a top-level import that does not resolve (`runenv.missing_imports`), through D434's `_dry_run_failed`. A real-run receipt gains `stdout` and `stderr` (the last 2,000 characters of each) and, with an environment, `env`. A build without a `requirements.txt` runs as before",
+    "P41": "(D446, prompt-changing per D249: `REAL_RUN_ENV_RULE` joins `ATOM_RULES` right after P35's rule, only with builder tools on and a form with a `test_runner`, which no golden scenario has) a script the engine runs gets a clean environment from an allowlist, never the engine's own: `real_run` (the approved run and, through it, the dry run) passes `env=llm.run_env(...)`, the `llm.RUN_PASS_NAMES` found (PATH, HOME, LANG, LC_ALL, LC_CTYPE, TMPDIR and the Windows start-up names) plus what the stored real run states: `settings` (`{NAME: value}`) and `secret_files` (`{NAME: absolute path}`, the script reads the file itself; the app never opens it); with no such keys only the base; the builder's test rerun (`sandbox_rerun`) passes `env=llm.run_env()`, the base only, nothing from the plan; `_register` checks the two fields by structure after P35's checks (`real_run_env_problems`, refused with the key `(\"real_run_env\",)`: each an object of strings; names match `ENV_NAME`, are not a base name, not a `llm.RUN_LOADER_NAMES` guardrail name and not in both; no NUL; values are never scanned; a secret file, `~` written out, is absolute, named in the brief or the Requester's answers as `real_run_problems` names a folder, an existing file once resolved, and not in the repo, the run folder or a `llm.login_homes()` location) and stores them on the real run only when stated (`real_run_env_fields`), so the receipts keep settings values and secret files by name and path; the real-run card lists them before approval (`real_run_env_lines`, after its `Reads only` line: `Settings it gets: NAME=value, ...` or `none beyond the basics (PATH, HOME, language, temp folder)`, and with secret files `Secret files it may read (the app never opens them): NAME = <real path>` and that the dry run got the settings and an empty placeholder file for each); Adaptation is told the rule (`REAL_RUN_ENV_RULE`); in the dry run each secret name points at an empty placeholder file (`dry_secret_files`: `<.dryrun-*>/secrets/s<n>`, outside the copies, so never diffed, removed with the temp folder; the real path never reaches the dry run); `allowRead` of the sandbox settings also lists every secret path the run gets (the placeholders, or the real paths), so `denyRead: [\"~\"]` hides neither; defense in depth, on top of the fixed loader guardrail list (`llm.RUN_LOADER_NAMES`, a fixed safety guardrail, not a secret detector): under the sandbox runtime on macOS and Linux srt itself is started with the base only and the plan's names reach the script inside its `-c` command as `env NAME=value ... <command>`, so a name the guardrail list does not know never acts on srt; without srt, and on Windows (no `env` program), they are passed with `env=` (SUT-22: `J2_SMTP_PASSWORD`, proxy URLs, CLI-login pointers, `SUTRA_*` and `PYTHONPATH` reached every real run, dry run and test rerun)",
     "P34": "(D437) `_tool_record` first removes `<builder folder>/.claude` entirely (`shutil.rmtree`, errors ignored), whatever it holds: the Claude CLI makes it in its cwd (the output folder), with an empty `.cc-writes` staging folder inside; it runs after every tools call (a failed or stopped one too) and before `file_states`, so the files-written list, the P21/P28 outside-write check and the folder limits never see it; `_publish_out` copies the output folder into `site/` without `.claude` (`shutil.ignore_patterns`) (SUT-12: `.claude/.cc-writes` showed in output and `site/` folders)",
     "P30": "(D433, prompt-changing per D249: Identity's intake format and rule, every builder's reply format and brief) every done-when item has a runnable check and a status its builder sets, both by item text: Identity returns `item_checks` (one per item, the type one of the form's `check_types` or `real-run`; `_item_checks_from` keeps `type`, `target`, `expect`), code stores them in `goal[\"item_checks\"]` (a change request keeps those of kept items; `GATE_TEXT` gets code's `render-check`; `stage_goal`'s items `section-not-empty` on their section) and `_stamp_check` refuses an item without one; the intake prompt adds `BEHAVIOUR_RULE` (every required behaviour is its own item); a builder's brief lists its items (`_owned_items`: covered, and the items of the findings it fixes) with check and status, every builder reply format asks for `item_status` (`ITEM_STATUS_FMT`; the closed artifact reply schema takes `ITEM_STATUS_SCHEMA`), and `_store_item_status` keeps it on the workflow (missing or unknown: `not_built`; `blocked` without a reason: `not_built`; no word of the reply is read; the mock builders, and a section the content door serves unchanged, set every owned item built, `_built_status`; in mock mode a reply without `item_checks` gets `mock_item_check` per item; the scripted Identity reply carries one per item only when a scripted port serves a run outside mock mode; code fills none in a live run); a charter refused a second time while an item has no check never starts work: the run stops and Identity asks the Requester, naming the items; at every audit `_item_check_gate` runs each passed item's check (`_run_item_check`: the real run's receipt, the render check, the folder test rerun, or `run_check`) and makes a PASS whose check did not pass, did not run or does not exist BLOCKED_BY_EVIDENCE with code's evidence; `_goal_done` and `_ship_outcome` end \"Done with open items\" while an item's latest done owner did not set it built (`_open_items`; the no-errors gate, code's own `render-check`, needs no builder); an item its latest done owner set `blocked` (always with a reason, `_blocked_items`; never an item a planned real run decides, which only its receipt and Audit decide, review R3-1) does not hold back the planned real run: J2.h asks for it once everything else is workable, and `_goal_done` ends \"Done with open items\" naming the item once, with its reason, not \"the real run did not pass\" (beta fix, run 8b10); an item the latest audit marks TO_BE_CONFIRMED because the charter's `to_be_confirmed` (Identity's field) names it is blocked too, its reason that entry's `fact` (`_tbc_blocked`, never a real-run item; beta fix b), and `_ship_outcome` lists a blocked item once; `ITEM_STATUS_FMT` tells every builder that an item whose action was prepared but not performed (a message written but never sent, for lack of access or credentials) is `blocked` with that reason, never `built`, and that a blocked reason is the fact or access it needs (beta fix c, prompt-changing per D249; code reads no word of the reason); `not_built` still holds it back. With no real run left to ask, J2.h ends the run at once when every other item is built and passes and only blocked items are left: `_goal_done` with no Identity, Adaptation or Audit call (beta fix d); the outcome names each blocked item as \"<item> blocked: needs <reason or fact>. Send it as a follow-up to finish.\" (the reason an agent's field, the hint code's text); a follow-up to a charter with a `to_be_confirmed` entry goes through Identity's change-request intake (the J2_FIXES path) with the current charter, whose prompt then says a fact the follow-up gives leaves its entry, so Identity can drop it and the item is built again (the trigger is the entry, never the message's words; without one a follow-up goes to Adaptation as before); a design-document stage left with blocked items keeps their lines in its `stage_archive` entry (`blocked`, only when there are some), and the run's outcome names them by stage (`_stage_blocked`, in `_goal_done` and `_ship_outcome`; review R4-1); a reason's trailing \".\" is dropped before the hint, so no \"..\" (R4-3); the endings that write their own outcome (`_deeds_finished`, `_stages_finished`, `_run_tpl_stage_end`) name every stage's blocked lines too (`_chain_done`: \"Done with open items\", never \"Done:\", while one is left; review R5-1); a change intake whose charter leaves out only brief items the charter before it already left out does not ask the drop question again (review R5-2), and one whose charter has no `to_be_confirmed` key keeps the old entries of items still in it (an explicit list, even empty, replaces them; review R5-5); an earlier stage's blocked line ends \"Start a new run with it to finish.\" (a follow-up continues the last stage only), while the last stage's and a single output's keep \"Send it as a follow-up to finish.\" (review R5-3, owner's option i); the stage gate's \"finish as it is\" answer names the earlier stages' blocked lines after its \"Not made\" (review R6-1). A charter without `item_checks` behaves as before (SUT-18, run 01a2: scheduling had no item, and an item described as not yet built passed Audit)",
     "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
@@ -3340,7 +3477,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, P25 the raise "
         "question's text, and P30 Identity's intake and every builder's reply format and brief. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P36 (D441) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

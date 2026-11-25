@@ -2135,8 +2135,13 @@
   "anchor": "band:EXPERIENCE"
  },
  {
-  "id": "D441",
-  "label": "a built script's packages: their own environment, installed only after RUN <code> (P36)",
+  "id": "D446",
+  "label": "scripts get an allowlisted env + only the plan's settings; secrets by path (P41)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D447",
+  "label": "a built script's packages: their own environment, installed only after RUN <code> (P42)",
   "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

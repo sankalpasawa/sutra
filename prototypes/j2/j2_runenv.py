@@ -157,12 +157,13 @@ def facts(p):
             "installed": p.get("installed") or {}}
 
 
-def install(p, timeout, sandbox=None):
+def install(p, timeout, sandbox=None, env=None):
     """Make the environment of a plan and install its packages, from PyPI only (the index is named, pip's own settings
     and environment variables are ignored). sandbox: the sandbox runtime's command (J2_SANDBOX=1), which then runs the
     install step with the network open to PYPI_HOSTS only and writes only in the environment's folder; making the
     empty environment needs no network and runs as a plain process. The record is written only after a clean install,
     so a failed one is never used; its folder is removed.
+    env: the environment variables pip (and a package's own build code) gets; None: this process's own.
     {"ok", "exit", "stdout", "stderr" (tails), "seconds", "command" (the install step), "sandbox" (its settings, or
     None), "evidence", and when ok what facts() gives}."""
     env_dir, base, t0 = p["dir"], p["base"], time.time()
@@ -197,7 +198,7 @@ def install(p, timeout, sandbox=None):
             argv, out["sandbox"] = shlex.split(sandbox) + ["-s", conf, "-c", shlex.join(cmd)], settings
         os.makedirs(tmp, exist_ok=True)
         got = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                             env={**os.environ, "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp})
+                             env={**(os.environ if env is None else env), "TMPDIR": tmp, "TEMP": tmp, "TMP": tmp})
         shutil.rmtree(tmp, ignore_errors=True)
         if got.returncode != 0:
             return failed("installing the packages", got)

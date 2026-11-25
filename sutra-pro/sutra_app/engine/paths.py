@@ -159,7 +159,7 @@ class DataPaths:
 
     def j2_env(self) -> dict[str, str]:
         """The variables the host exports before it imports J2 and that no setting can change: where this department's runs and memory are, the
-        global library, the user's local types folder (P17, D163), the data folder itself (P36, D441: `engine/runenv.py` keeps the environments
+        global library, the user's local types folder (P17, D163), the data folder itself (P42, D447: `engine/runenv.py` keeps the environments
         of built scripts in its `envs/`, outside every run folder), the role-file override folder when it exists, and two fixed values (D177).
         `J2_PUSH_RUNS=0`: Sutra never pushes a run folder (J2 would run git add, commit, pull and push with the owner's credentials).
         `J2_RUN_BY=sutra-pro`: the name in the first line of `chat.jsonl`, so neither the operating system's nor git's user name goes into run
@@ -168,7 +168,7 @@ class DataPaths:
         env = {"J2_RUNS_DIR": str(self.runs_dir), "J2_MEMORY_FILE": str(self.lessons_file),
                "J2_PLAYBOOK_FILE": str(self.playbooks_file), "J2_LIBRARY_DIR": str(self.library_dir),
                "J2_TYPES_DIR": str(self.types_dir), "J2_PUSH_RUNS": FIXED_PUSH_RUNS, "J2_RUN_BY": FIXED_RUN_BY,
-               "J2_DATA_DIR": str(self.data_dir)}      # P36 (D441): `envs/` below it holds the environments built scripts run in
+               "J2_DATA_DIR": str(self.data_dir)}      # P42 (D447): `envs/` below it holds the environments built scripts run in
         if self.agents_dir.is_dir():
             env["J2_AGENTS_DIR"] = str(self.agents_dir)
         return env

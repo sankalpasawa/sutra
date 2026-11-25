@@ -12,6 +12,8 @@ import math
 import json
 import os
 import re
+import shlex
+import shutil
 import sys
 import threading
 import time
@@ -2825,7 +2827,7 @@ def test_p32_without_a_sandbox_runtime_the_dry_run_is_not_run_and_the_card_says_
     real_run = subprocess.run
 
     def boom(argv, *a, **k):
-        if argv[1:2] == ["-c"] and "find_spec" in argv[2]:      # P36 (D441): the import lookup before the dry run, which
+        if argv[1:2] == ["-c"] and "find_spec" in argv[2]:      # P42 (D447): the import lookup before the dry run, which
             return real_run(argv, *a, **k)                       # imports and runs nothing of the build
         raise AssertionError("the dry run must never run without the sandbox runtime")
     monkeypatch.setattr(subprocess, "run", boom)
@@ -3610,24 +3612,410 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    # P41 (D446) appends its environment rule right after this one, so the expect rule now sits just before it
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES
 
 
-# ---- P36 (D441): a build with a requirements.txt gets an environment of its own, installed only after RUN <code>; its test, its dry
+# ---- P41 (D446): a script gets only PATH, HOME, locale and temp folder, plus what its plan states; secrets go by file path ---
+# Made-up script: it reports its environment's names, a few values and the secret file's size, never the file's content;
+# printed, and written to argv[2] when given (the dry run's copies are gone once it returns).
+P41_DUMP = ("import json, os, sys\nf = os.environ.get('API_CRED_FILE')\nok = bool(f) and os.path.isfile(f)\n"
+            "r = json.dumps({'names': sorted(os.environ), 'vals': {k: os.environ.get(k) for k in ('SUT22_LEAK', "
+            "'FAKE_SERVICE_TOKEN', 'PLAN_LEVEL', 'API_CRED_FILE', 'J2_SMTP_PASSWORD', 'PYTHONPATH')}, "
+            "'cred': {'exists': ok, 'size': os.path.getsize(f) if ok else None}}, separators=(',', ':'))\n"
+            "print(r)\nif len(sys.argv) > 2:\n    open(sys.argv[2], 'w').write(r)\n")
+# Made-up stand-in for srt: it records its own environment and the allowRead it was given, then runs the -c command as a
+# list (never a shell; no sandbox: test only).
+P41_SRT = ("import json, os, shlex, subprocess, sys\na = sys.argv[1:]\nconf = json.load(open(a[a.index('-s') + 1]))\n"
+           "json.dump({'env': sorted(os.environ), 'allowRead': conf['filesystem']['allowRead']}, open(sys.argv[0] + '.seen', 'w'))\n"
+           "sys.exit(subprocess.run(shlex.split(a[a.index('-c') + 1])).returncode)\n")
+P41_CRED = "made-up-cred"
+
+
+@pytest.fixture
+def p41(tmp_path, monkeypatch):
+    """(out, folder, cred, fake srt, report): a built folder holding the dump, the stated folder, a made-up secret file, the
+    fake srt and where the dump writes its report; the app's environment holds made-up leaks."""
+    out, folder = tmp_path / "out", tmp_path / "folder"
+    out.mkdir()
+    folder.mkdir()
+    (out / "dump.py").write_text(P41_DUMP)
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P41_SRT)
+    monkeypatch.setenv("SUT22_LEAK", "x")
+    monkeypatch.setenv("FAKE_SERVICE_TOKEN", "x")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "made-up-path"))
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    return out, folder, cred, fake, tmp_path / "report.json"
+
+
+def p41_rr(folder, report=None, **extra):
+    return {"command": [sys.executable, "dump.py", str(folder)] + ([str(report)] if report else []), "folder": str(folder), **extra}
+
+
+def p41_dump(res):
+    assert res["ran"] and res["exit"] == 0, res
+    return json.loads(res["output"].strip().splitlines()[-1])
+
+
+def p41_fake_srt(monkeypatch, fake):
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))      # shlex.join: split back exactly, on any OS
+    return Path(str(fake) + ".seen")
+
+
+P41_ENV = {"settings": {"PLAN_LEVEL": "basic"}}
+
+
+def test_p41_real_run_env_is_clean_without_a_sandbox(j2ft, p41):
+    out, folder, *_ = p41
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder), 30))
+    assert d["vals"] == dict.fromkeys(d["vals"]), d["vals"]      # no leak, no PYTHONPATH, no SMTP password
+    # __CF*: macOS adds __CF_USER_TEXT_ENCODING to every process it starts
+    assert {n for n in d["names"] if not n.startswith("__CF")} - set(j2ft.llm.RUN_PASS_NAMES) == set(), d["names"]
+
+
+def test_p41_real_run_gets_settings_and_secret_paths(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, _ = p41
+    rr = p41_rr(folder, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)})
+    res = j2ft.real_run(str(out), rr, 30)
+    d = p41_dump(res)
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred) and d["vals"]["SUT22_LEAK"] is None
+    assert d["cred"] == {"exists": True, "size": len(P41_CRED)} and P41_CRED not in json.dumps(res)
+    seen = p41_fake_srt(monkeypatch, fake)
+    res = j2ft.real_run(str(out), rr, 30)
+    d = p41_dump(res)
+    assert "in the sandbox" in res["evidence"], res["evidence"]
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred) and d["vals"]["SUT22_LEAK"] is None
+    assert str(cred) in json.loads(seen.read_text())["allowRead"] and P41_CRED not in json.dumps(res)
+
+
+def test_p41_dry_run_gets_placeholders_never_real_paths(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, report = p41
+    seen = p41_fake_srt(monkeypatch, fake)
+    monkeypatch.setenv("J2_SANDBOX", "0")      # the dry run is fenced whatever the switch says (P32)
+    dry = j2ft.real_run_dry(str(out), p41_rr(folder, report, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)}), 30)
+    assert dry["ran"] is True and dry["exit"] == 0, dry
+    d = json.loads(report.read_text())
+    ph = d["vals"]["API_CRED_FILE"]
+    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["PLAN_LEVEL"] == "basic" and ph != str(cred)
+    area = os.path.dirname(ph)
+    assert os.path.basename(area) == "secrets" and os.path.basename(os.path.dirname(area)).startswith(".dryrun-")
+    assert os.path.dirname(os.path.dirname(area)) == os.path.dirname(os.path.realpath(out)), ph      # outside every copy (f<n>)
+    assert d["cred"] == {"exists": True, "size": 0}, "a real, empty placeholder file"
+    allow = json.loads(seen.read_text())["allowRead"]
+    assert ph in allow and str(cred) not in allow
+    assert not os.path.exists(ph), "removed with the dry run's temp folder"
+    assert not any("secrets" in p for k in ("created", "changed", "deleted") for p in dry[k]), dry
+    assert P41_CRED not in json.dumps(dry)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="on Windows the names are passed to srt with env=; there is no env program to wrap with")
+def test_p41_srt_itself_gets_the_base_only(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, _ = p41
+    seen = p41_fake_srt(monkeypatch, fake)
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)}), 30))
+    srt_env = json.loads(seen.read_text())["env"]
+    assert not {"PLAN_LEVEL", "API_CRED_FILE", "SUT22_LEAK"} & set(srt_env), srt_env
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred)
+
+
+def test_p41_smtp_password_from_env_file_never_reaches_a_script(j2ft, p41, monkeypatch, tmp_path):
+    from sutra_app.engine import paths
+    out, folder, *_ = p41
+    monkeypatch.setenv("J2_SMTP_PASSWORD", "")
+    (tmp_path / ".env").write_text("J2_SMTP_PASSWORD=made-up-pass\n")
+    assert paths.load_env_file(tmp_path / ".env") == ("J2_SMTP_PASSWORD",)
+    assert os.environ["J2_SMTP_PASSWORD"] == "made-up-pass"
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder), 30))
+    assert "J2_SMTP_PASSWORD" not in d["names"] and d["vals"]["J2_SMTP_PASSWORD"] is None
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp_path):
+    out, folder, *_ = p41
+    home = tmp_path / "home"
+    home.mkdir()
+    cred = home / "cred.txt"
+    cred.write_text(P41_CRED)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    res = j2ft.real_run(str(out), p41_rr(folder, secret_files={"API_CRED_FILE": str(cred)}), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+# What srt 0.0.81 adds itself for the script it starts (generateProxyEnvVars, sandbox-utils.js): its own localhost proxy, with a
+# per-process random token (sandbox-manager.js, randomBytes(16)), and the per-tool proxy and trust settings that point at it.
+# None of these comes from the app: srt is started with the base environment only (test_p41_srt_itself_gets_the_base_only).
+SRT_OWN_NAMES = {
+    "SANDBOX_RUNTIME", "TMPDIR", "PWD", "SHLVL", "_",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "GRPC_PROXY", "RSYNC_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "grpc_proxy", "no_proxy",
+    "DOCKER_HTTP_PROXY", "DOCKER_HTTPS_PROXY", "GIT_CONFIG_PARAMETERS", "GIT_SSH_COMMAND", "SRT_SSH_PROXY_COMMAND",
+    "JAVA_TOOL_OPTIONS", "CLOUDSDK_PROXY_TYPE", "CLOUDSDK_PROXY_ADDRESS", "CLOUDSDK_PROXY_PORT",
+    "CLOUDSDK_PROXY_USERNAME", "CLOUDSDK_PROXY_PASSWORD",
+}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_path):
+    """Under the real srt the script sees the base, the plan's settings and srt's own local-proxy names: nothing else."""
+    out, folder, *_ = p41
+    home = tmp_path / "home"      # srt denies reads under ~; a temp HOME keeps this interpreter readable, as the tests below do
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    res = j2ft.real_run(str(out), p41_rr(folder, **P41_ENV), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    d = p41_dump(res)
+    extra = {n for n in d["names"] if not n.startswith("__CF")} - set(j2ft.llm.RUN_PASS_NAMES) - set(P41_ENV["settings"])
+    assert extra <= SRT_OWN_NAMES, sorted(extra - SRT_OWN_NAMES)
+    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["J2_SMTP_PASSWORD"] is None
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, monkeypatch, tmp_path):
+    """R1-2: the stored path is the real file, so srt's allowRead (and the env and the card) name what the script opens."""
+    out, folder, *_ = p41
+    keys = tmp_path / "home" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "real.txt").write_text(P41_CRED)
+    link = tmp_path / "home" / "link.txt"
+    link.symlink_to(keys / "real.txt")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})      # as _register stores it
+    assert stored == {"secret_files": {"API_CRED_FILE": os.path.realpath(keys / "real.txt")}}
+    res = j2ft.real_run(str(out), p41_rr(folder, **stored), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_dry_run_cannot_read_a_secret_file_outside_home(j2ft, p41, monkeypatch, tmp_path):
+    """R1-3: model code that hard-codes a secret file's path outside HOME reads nothing in the dry run; the real run reads it."""
+    out, folder, *_ = p41
+    (tmp_path / "home").mkdir()
+    secret = tmp_path / "elsewhere" / "cred.txt"      # outside HOME, so denyRead ["~"] alone would not cover it
+    secret.parent.mkdir()
+    secret.write_text(P41_CRED)
+    (out / "peek.py").write_text("import sys\ntry:\n    print('READ', open(sys.argv[1]).read())\n"
+                                 "except OSError as e:\n    print('DENIED', type(e).__name__)\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    rr = {"command": [sys.executable, "peek.py", str(secret)], "folder": str(folder),
+          "secret_files": {"API_CRED_FILE": str(secret)}}
+    dry = j2ft.real_run_dry(str(out), rr, 60)
+    assert dry["ran"] is True and "DENIED" in dry["output"] and P41_CRED not in json.dumps(dry), dry
+    res = j2ft.real_run(str(out), rr, 60)
+    assert res["exit"] == 0 and "READ " + P41_CRED in res["output"], res
+
+
+def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
+    """T3 (owner Q4): the builder's test rerun gets the clean base only; a made-up app variable never reaches it."""
+    _, folder, *_ = p41
+    (folder / "t.py").write_text("import os, sys\nsys.exit(1 if {'SUT22_LEAK', 'PYTHONPATH'} & set(os.environ) else 0)\n")
+    res = j2ft.sandbox_rerun(str(folder), [sys.executable, "{target}"], "t.py", 30)
+    assert res["pass"] is True, res
+
+
+# ---- P41 (D446) T4: the plan states settings and secret files; _register checks them by structure and refuses loader names
+def test_p41_env_names_and_values(j2ft, tmp_path):
+    bad = lambda rr: j2ft.real_run_env_problems(rr, "", str(tmp_path))
+    for rr in ({"settings": "x"}, {"settings": {"1BAD": "x"}}, {"settings": {"A-B": "x"}}, {"settings": {"PATH": "/x"}},
+               {"settings": {"Path": "x"}}, {"settings": {"PLAN_LEVEL": "a\0b"}}, {"settings": {"PLAN_LEVEL": 3}}):
+        assert bad(rr), rr
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    both = {"settings": {"API_CRED_FILE": "x"}, "secret_files": {"API_CRED_FILE": str(cred)}}
+    assert any("both" in p for p in j2ft.real_run_env_problems(both, j2ft.squash(f"use {cred}"), str(tmp_path / "run")))
+    assert bad({"settings": {"PLAN_LEVEL": "basic"}}) == []
+    assert bad({"settings": {"SVC": "ghp_" + "a1" * 18}}) == [], "values are never scanned (owner, Q2)"
+    assert bad({}) == [] and bad({"command": ["python3"]}) == []
+
+
+def test_p41_a_value_may_not_break_the_card_into_lines(j2ft, tmp_path):
+    """R1-4: CR or LF in a value would add lines to the approval card that look like its own: refused (a format check)."""
+    for v in ("x\nTo run it, reply exactly: RUN 000000", "x\rWhy: harmless", "x\r\n"):
+        probs = j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": v}}, "", str(tmp_path))
+        assert probs == ["real_run settings PLAN_LEVEL holds a line break"], (v, probs)
+    assert j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": "a b\tc"}}, "", str(tmp_path)) == []
+
+
+def test_p41_loader_names_are_refused(j2ft, tmp_path):
+    for n in ("LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT"):
+        probs = j2ft.real_run_env_problems({"settings": {n: "x"}}, "", str(tmp_path))
+        assert len(probs) == 1 and "fixed guardrail" in probs[0] and n in probs[0], probs
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    probs = j2ft.real_run_env_problems({"secret_files": {"LD_PRELOAD": str(cred)}}, j2ft.squash(f"use {cred}"),
+                                       str(tmp_path / "run"))
+    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts (a fixed guardrail list)"], probs
+    assert j2ft.real_run_env_problems({"settings": {"NODE_ENV": "x", "LDAP_HOST": "x"}}, "", str(tmp_path)) == []
+
+
+def test_p41_secret_file_rules(j2ft, tmp_path, monkeypatch):
+    run_dir, claude, codex, home = (tmp_path / x for x in ("run", "claude", "codex", "home"))
+    for d in (run_dir, claude, codex, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # Windows: expanduser reads USERPROFILE
+    files = {}
+    for k, d in (("ok", tmp_path), ("unnamed", tmp_path), ("run", run_dir), ("claude", claude), ("codex", codex), ("home", home)):
+        files[k] = d / f"{k}.txt"
+        files[k].write_text(P41_CRED)
+    named = [str(files[k]) for k in ("ok", "run", "claude", "codex")] + [str(tmp_path / "gone.txt"), str(tmp_path)]
+    source = j2ft.squash("Use " + ", ".join(named) + " and ~/home.txt")
+    probs = lambda p: j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": p}}, source, str(run_dir))
+    for p in ("cred.txt", str(files["unnamed"]), str(tmp_path / "gone.txt"), str(tmp_path), str(files["run"]),
+              str(files["claude"]), str(files["codex"])):
+        assert probs(p), p
+    assert any("not named" in x for x in probs(str(files["unnamed"])))
+    assert any("sign-in" in x for x in probs(str(files["claude"])))
+    assert probs(str(files["ok"])) == [] and probs("~/home.txt") == []
+    assert j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/home.txt"}, "command": ["x"]}) == {
+        "secret_files": {"API_CRED_FILE": os.path.expanduser("~/home.txt")}}
+
+
+def test_p41_case_variant_of_a_sign_in_file_is_refused(j2ft, tmp_path, monkeypatch):
+    """R1-1: on a case-insensitive disk (macOS, Windows default) an upper-cased path names the same sign-in file: refused."""
+    claude = tmp_path / "claudecfg"
+    claude.mkdir()
+    (claude / "creds.json").write_text(P41_CRED)
+    if not (tmp_path / "CLAUDECFG").exists():
+        pytest.skip("the temp folder's file system is case-sensitive: a case variant is another file there")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    variant = str(tmp_path / "CLAUDECFG" / "creds.json")
+    probs = j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": variant}}, j2ft.squash(f"use {variant}"),
+                                       str(tmp_path / "run"))
+    assert any("sign-in" in x for x in probs), probs
+
+
+@pytest.fixture
+def p41_reg(j2ft, tmp_path, monkeypatch):
+    """register(**fields): a fresh p35-style run (copy.py reading in/, writing out/) whose request names the made-up secret
+    file and a fake Claude sign-in folder's file; it registers W-1 with fields on its real run: (run, registered, refused)."""
+    src, dst, claude, home = (tmp_path / x for x in ("in", "out", "claude", "home"))
+    for d in (src, dst, claude, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "cred.txt").write_text(P41_CRED)
+    (claude / "cred.txt").write_text(P41_CRED)
+    counter = itertools.count(1)
+
+    def register(**fields):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0900{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        run.request = (f"Build copy.py, then run it on my notes in {src} and write the results to {dst}; "
+                       f"the key is in ~/cred.txt (or {claude / 'cred.txt'})")
+        run.goal, run.budget = {"statement": "x", "done_when": list(P35_DONE_WHEN)}, 100
+        rr = {"command": ["python3", "copy.py", str(src), str(dst)], "folder": str(dst), "reads": [str(src)],
+              "why": "The brief asks to run it on the Requester's notes.", "checks": [3], "expect": P35_ALL, **fields}
+        reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr}])
+        return run, reg, refused
+    return register, home, claude
+
+
+def test_p41_register_stores_and_refuses_with_its_key(p41_reg):
+    register, home, claude = p41_reg
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["settings"] == {"PLAN_LEVEL": "basic"}
+    assert reg[0]["real_run"]["secret_files"] == {"API_CRED_FILE": os.path.expanduser("~/cred.txt")}      # written out
+    run, reg, refused = register(secret_files={"API_CRED_FILE": str(claude / "cred.txt")})
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register(settings={"NODE_OPTIONS": "--x"})
+    assert not reg and "fixed guardrail" in refused[0] and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register()
+    assert len(reg) == 1 and not {"settings", "secret_files"} & set(reg[0]["real_run"]), reg[0]["real_run"]
+
+
+def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE)
+    rule = j2ft.REAL_RUN_ENV_RULE
+    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES
+
+
+P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, language, temp folder)"
+P41_PLACEHOLDERS = "\nThe dry run got the settings and an empty placeholder file for each secret file."
+
+
+def test_p41_card_lines(j2ft, tmp_path):
+    lines = j2ft.real_run_env_lines
+    assert lines({"command": ["x"]}) == P41_NONE
+    assert lines({"settings": {}, "secret_files": {}}) == P41_NONE
+    assert lines({"settings": {"PLAN_LEVEL": "basic", "REGION": "eu"}}) == "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu"
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    card = lines({"settings": {"PLAN_LEVEL": "basic"}, "secret_files": {"API_CRED_FILE": str(cred)}})
+    assert card == ("\nSettings it gets: PLAN_LEVEL=basic"
+                    f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}" + P41_PLACEHOLDERS)
+    assert P41_CRED not in card
+    card = lines({"secret_files": {"API_CRED_FILE": str(cred)}})      # a secret file alone: no setting, still every line
+    assert card.startswith(P41_NONE + "\nSecret files it may read") and card.endswith(P41_PLACEHOLDERS)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the FT form's runner is python3, which a Windows runner may not have")
+def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch, tmp_path):
+    register, home, _ = p41_reg
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P41_SRT)
+    p41_fake_srt(monkeypatch, fake)
+    cred = os.path.expanduser("~/cred.txt")
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic", "REGION": "eu"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    run.workflows[0]["status"] = "done"
+    os.makedirs(run._out_dir(), exist_ok=True)
+    (Path(run._out_dir()) / "copy.py").write_text(P35_COPY)
+    (tmp_path / "in" / "a.txt").write_text("alpha\n")
+    (tmp_path / "in" / "b.txt").write_text("beta\n")
+    run.post("user", "Build it and run it on my notes")
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu\n" in card, card
+    assert f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}\n" in card, card
+    assert P41_PLACEHOLDERS in card and card.index("Settings it gets") < card.index("To run it, reply exactly")
+    assert P41_CRED not in card
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0, r
+    assert r["settings"] == {"PLAN_LEVEL": "basic", "REGION": "eu"} and r["secret_files"] == {"API_CRED_FILE": cred}
+    assert P41_CRED not in json.dumps(r) and P41_CRED not in json.dumps(run.chat)
+
+
+# ---- P42 (D447): a build with a requirements.txt gets an environment of its own, installed only after RUN <code>; its test, its dry
 # run and its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
-# sandbox runtime records its settings ---------------------------------------------------------------------------------------------
+# sandbox runtime records its settings. The fakes hold their log's path: D446's clean environment passes them no variable ---------------------------------------------------------------------------------------------
 # TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
 # "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
-P36_FAKE_PYTHON = """#!{exe}
+P42_FAKE_PYTHON = """#!{exe}
 import json, os, shutil, subprocess, sys
 me, a = os.path.abspath(sys.argv[0]), sys.argv[1:]
 site = os.path.join(os.path.dirname(os.path.dirname(me)), "site")
 def note(kind):
-    with open(os.environ["FAKE_LOG"], "a") as f:
+    with open({log!r}, "a") as f:
         f.write(json.dumps({{"kind": kind, "argv": a, "python": me}}) + "\\n")
 if a[:2] == ["-m", "venv"]:
     note("venv")
@@ -3637,8 +4025,8 @@ if a[:2] == ["-m", "venv"]:
     sys.exit(0)
 if a[:3] == ["-m", "pip", "install"]:
     note("pip install")
-    if os.environ.get("FAKE_PIP_FAIL"):
-        sys.stderr.write("ERROR: No matching distribution found for " + os.environ["FAKE_PIP_FAIL"] + "\\n")
+    if os.path.exists({log!r} + ".pipfail"):
+        sys.stderr.write("ERROR: No matching distribution found for " + open({log!r} + ".pipfail").read() + "\\n")
         sys.exit(1)
     for line in open(a[a.index("-r") + 1]):
         name, _, version = line.strip().partition("==")
@@ -3656,36 +4044,36 @@ if os.path.isdir(site):
 sys.exit(subprocess.run([{exe!r}] + a, env=env).returncode)
 """
 # TEST ONLY stand-in for the sandbox runtime (srt -s <settings> -c <command>): records the settings, runs the command WITHOUT a sandbox
-P36_FAKE_SANDBOX = """import json, os, subprocess, sys
+P42_FAKE_SANDBOX = """import json, os, subprocess, sys
+LOG = __LOG__
 a = sys.argv[1:]
-with open(os.environ["FAKE_LOG"], "a") as f:
+with open(LOG, "a") as f:
     f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
 sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
 """
-P36_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
-P36_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
+P42_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
+P42_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
 # the fake interpreter is a `#!` script: Windows can't run one, so the tests that install with it run on macOS and Linux only
-p36_posix = pytest.mark.skipif(os.name == "nt", reason="the fake interpreter is a #! script, which Windows can't run")
-P36_FILES = {"s.py": P36_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
+p42_posix = pytest.mark.skipif(os.name == "nt", reason="the fake interpreter is a #! script, which Windows can't run")
+P42_FILES = {"s.py": P42_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
 
 
 @pytest.fixture(scope="module")
 def j2env(tmp_path_factory):
     """J2 with the folder type FT, builder tools on (the general path), its data folder and the fake interpreter."""
-    base = tmp_path_factory.mktemp("j2-p36")
+    base = tmp_path_factory.mktemp("j2-p42")
     fake, srt = base / "python3.12", base / "fake_srt.py"
-    fake.write_text(P36_FAKE_PYTHON.format(exe=sys.executable), encoding="utf-8")
+    fake.write_text(P42_FAKE_PYTHON.format(exe=sys.executable, log=str(base / "fake.log")), encoding="utf-8")
     fake.chmod(0o755)
-    srt.write_text(P36_FAKE_SANDBOX, encoding="utf-8")
+    srt.write_text(P42_FAKE_SANDBOX.replace("__LOG__", repr(str(base / "fake.log"))), encoding="utf-8")
     with fresh_j2(base, J2_TYPES_DIR=base / "types", J2_AGENT_TOOLS="1", J2_DATA_DIR=base / "data", J2_RUN_PYTHON=fake) as mod:
-        with pytest.MonkeyPatch.context() as mp:
-            mp.setenv("FAKE_LOG", str(base / "fake.log"))
-            mod.j2_types.create(FT, "Script", None, form="agent")
-            mod._data_type.cache_clear()
-            mod.p36_log = lambda kind: [r for r in map(json.loads, (base / "fake.log").read_text().splitlines())
-                                        if r["kind"] == kind] if (base / "fake.log").exists() else []
-            mod.p36_srt = f"{sys.executable} {srt}"
-            yield mod
+        mod.j2_types.create(FT, "Script", None, form="agent")
+        mod._data_type.cache_clear()
+        mod.p42_log = lambda kind: [r for r in map(json.loads, (base / "fake.log").read_text().splitlines())
+                                    if r["kind"] == kind] if (base / "fake.log").exists() else []
+        mod.p42_srt = f"{sys.executable} {srt}"
+        mod.p42_pip_fail = base / "fake.log.pipfail"      # while this file exists the fake pip fails, naming its text
+        yield mod
 
 
 @pytest.fixture
@@ -3717,7 +4105,7 @@ def env_run(j2env, tmp_path):
     return made, real
 
 
-def p36_builder(run, *rounds):
+def p42_builder(run, *rounds):
     """The run's builder, scripted: each call writes the next round's files (the last one again after that)."""
     prompts = []
 
@@ -3730,23 +4118,23 @@ def p36_builder(run, *rounds):
     return prompts
 
 
-def p36_reply(run, text, **meta):
+def p42_reply(run, text, **meta):
     h = run.paused["handoff"]
     run.post("user", text, **meta)
     run.paused = None
     run._turn_identity({**h, "answer": text})
 
 
-def p36_receipts(run, kind="real_run"):
+def p42_receipts(run, kind="real_run"):
     path = Path(run.dir, "receipts.jsonl")
     return [r for r in map(json.loads, path.read_text().splitlines()) if r.get("type") == kind] if path.exists() else []
 
 
-def p36_system(run):
+def p42_system(run):
     return [m["text"] for m in run.chat if m["who"] == "system"]
 
 
-def p36_code(run):
+def p42_code(run):
     """The one-time code of the open install question: kept under "env:<hash>", where the snapshot reads it for the Run button."""
     key = run.paused["handoff"]["wid"]
     assert key.startswith("env:") and run.paused["handoff"]["kind"] == "env_install" and run.paused["kind"] == "real_run"
@@ -3754,31 +4142,31 @@ def p36_code(run):
     return run.real_runs_asked[key]
 
 
-@p36_posix
-def test_p36_requirements_get_an_environment_only_after_run_code_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+@p42_posix
+def test_p42_requirements_get_an_environment_only_after_run_code_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
     made, real = env_run
     runenv = j2env.j2_runenv
     run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p36_builder(run, P36_FILES)
+    prompts = p42_builder(run, P42_FILES)
     run._turn_workflow_agent({"wid": "W-1"})
-    plan, card, code = runenv.plan(run._out_dir()), p36_system(run)[-1], p36_code(run)
+    plan, card, code = runenv.plan(run._out_dir()), p42_system(run)[-1], p42_code(run)
     assert run._auto_pick() is None and run.paused["handoff"]["build"] == "W-1" and run.paused["handoff"]["hash"] == plan["hash"]
     assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
     assert "Or press Run. To decline, press Don't run." in card
     assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
     # nothing is installed without approval
-    assert not j2env.p36_log("venv") and not j2env.p36_log("pip install") and not os.path.exists(plan["dir"]) and not p36_receipts(run, "env_install")
+    assert not j2env.p42_log("venv") and not j2env.p42_log("pip install") and not os.path.exists(plan["dir"]) and not p42_receipts(run, "env_install")
     assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
     for text, meta in (("yes install", {}), (f"run {code}", {}), (f"RUN {code}", {"auto": True})):      # as D434: only the exact code
-        p36_reply(run, text, **meta)
+        p42_reply(run, text, **meta)
         assert run.paused and run.chat[-1]["who"] == "identity" and f"Not installed. Press Run or type RUN {code}." in run.chat[-1]["text"]
-        assert p36_code(run) == code and not j2env.p36_log("pip install") and not p36_receipts(run, "env_install")
-    p36_reply(run, f"RUN {code}")
-    assert len(j2env.p36_log("venv")) == 1 and len(j2env.p36_log("pip install")) == 1 and not run.paused
+        assert p42_code(run) == code and not j2env.p42_log("pip install") and not p42_receipts(run, "env_install")
+    p42_reply(run, f"RUN {code}")
+    assert len(j2env.p42_log("venv")) == 1 and len(j2env.p42_log("pip install")) == 1 and not run.paused
     assert not [k for k in run.real_runs_asked if k.startswith("env:")], "the code is forgotten once it is answered"
-    argv = j2env.p36_log("pip install")[0]["argv"]
+    argv = j2env.p42_log("pip install")[0]["argv"]
     assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
-    e = p36_receipts(run, "env_install")[-1]
+    e = p42_receipts(run, "env_install")[-1]
     assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
     assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"] and e["workflow"] == "W-1"
     from sutra_app.library.records import _p_receipt
@@ -3787,96 +4175,98 @@ def test_p36_requirements_get_an_environment_only_after_run_code_and_a_cached_on
     test = next(x for x in run.receipts if x["check"] == "its test passes")
     assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True and "resume" not in w
     assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat), "the builder's reply from before the question is kept"
-    assert [r for r in j2env.p36_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
+    assert [r for r in j2env.p42_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
         "the test rerun used the environment's python (the system one has no pulsedep)"
     # the dry run (fenced, D435) and the approved real run use the environment's python too
     monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p36_srt)
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p42_srt)
     assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
-    assert any("uses packages installed in an environment of its own" in x and "pulsedep==1.2.0" in x for x in p36_system(run))
-    assert "dry run on a copy: exit 0" in p36_system(run)[-1] and run.real_runs_dry["W-1"]["fenced"] is True
-    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p36_receipts(run)[-1]
+    assert any("uses packages installed in an environment of its own" in x and "pulsedep==1.2.0" in x for x in p42_system(run))
+    assert "dry run on a copy: exit 0" in p42_system(run)[-1] and run.real_runs_dry["W-1"]["fenced"] is True
+    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p42_receipts(run)[-1]
     want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
     assert r["approved"] and r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
     assert (real / "out.txt").read_text() == "1.2.0"
     monkeypatch.delenv("J2_SANDBOX")
     # a second run with the same requirements.txt reuses the environment: no question, no install
-    n = len(j2env.p36_log("pip install"))
+    n = len(j2env.p42_log("pip install"))
     run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
-    p36_builder(run2, P36_FILES)
+    p42_builder(run2, P42_FILES)
     run2._turn_workflow_agent({"wid": "W-1"})
     assert not run2.paused and w2["status"] == "done" and not run2.real_runs_asked
-    assert len(j2env.p36_log("pip install")) == n and len(j2env.p36_log("venv")) == 1
+    assert len(j2env.p42_log("pip install")) == n and len(j2env.p42_log("venv")) == 1
     assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
     # Don't run: nothing installed, the test is not rerun with another python, and the real run goes back to the build (D434)
     run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
-    p36_builder(run3, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
+    p42_builder(run3, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
     run3._turn_workflow_agent({"wid": "W-1"})
-    assert run3.paused and "extra-lib==0.3" in p36_system(run3)[-1]
-    p36_reply(run3, "don't run")
-    d = p36_receipts(run3, "env_install")[-1]
+    assert run3.paused and "extra-lib==0.3" in p42_system(run3)[-1]
+    p42_reply(run3, "don't run")
+    d = p42_receipts(run3, "env_install")[-1]
     assert d["declined"] and not d["approved"] and d["evidence"] == "not installed: the Requester chose Don't run"
     run3._turn_workflow_agent(run3.handoff)
     t3 = [x for x in run3.receipts if x["check"] == "its test passes"][-1]
-    assert len(j2env.p36_log("pip install")) == n and t3["pass"] is None and "its packages are not installed" in t3["evidence"]
+    assert len(j2env.p42_log("pip install")) == n and t3["pass"] is None and "its packages are not installed" in t3["evidence"]
     assert not run3.paused, "a declined requirements.txt is not asked about again in the run"
     w3["status"] = "done"
     assert run3._ask_real_run({}) is True and not run3.paused and "W-1" not in run3.real_runs_asked and not run3.real_runs_dry
     assert w3["status"] == "failed" and w3["failure"] == ["dry_run", "its packages are not installed: the Requester chose not to install them"]
-    assert run3.turn == "adaptation" and p36_receipts(run3)[-1]["ran"] is False
+    assert run3.turn == "adaptation" and p42_receipts(run3)[-1]["ran"] is False
 
 
-@p36_posix
-def test_p36_a_failed_install_goes_back_to_the_builder_with_pips_error(j2env, env_run, monkeypatch):
+@p42_posix
+def test_p42_a_failed_install_goes_back_to_the_builder_with_pips_error(j2env, env_run, monkeypatch):
     made, real = env_run
     run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p36_builder(run, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P36_FILES)
+    prompts = p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P42_FILES)
     run._turn_workflow_agent({"wid": "W-1"})
-    monkeypatch.setenv("FAKE_PIP_FAIL", "nosuch==9.9")
-    p36_reply(run, f"RUN {p36_code(run)}")
-    monkeypatch.delenv("FAKE_PIP_FAIL")
-    e = p36_receipts(run, "env_install")[-1]
+    j2env.p42_pip_fail.write_text("nosuch==9.9")
+    try:
+        p42_reply(run, f"RUN {p42_code(run)}")
+    finally:
+        j2env.p42_pip_fail.unlink()
+    e = p42_receipts(run, "env_install")[-1]
     assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
     run._turn_workflow_agent(run.handoff)
     assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
 
 
-def test_p36_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_are_refused(j2env, env_run, monkeypatch, tmp_path):
+def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_are_refused(j2env, env_run, monkeypatch, tmp_path):
     made, real = env_run
     run, w = made({"s.py": "import sys\nimport notinstalledmod\nfrom helper import go\n", "helper.py": "def go():\n    pass\n"})
     assert run._ask_real_run({}) is True and not run.paused and "W-1" not in run.real_runs_asked and not run.real_runs_dry
     assert w["status"] == "failed" and w["failure"][0] == "dry_run" and run.turn == "adaptation"
     assert "s.py imports notinstalledmod, not installed" in w["failure"][1] and "requirements.txt" in w["failure"][1] and "helper" not in w["failure"][1]
-    assert "notinstalledmod" in run.handoff["why"] and not p36_receipts(run)[-1]["ran"]
+    assert "notinstalledmod" in run.handoff["why"] and not p42_receipts(run)[-1]["ran"]
     run, w = made({}, status="running", attempts=0)
-    prompts = p36_builder(run, *[{"s.py": P36_GOOD, "requirements.txt": text} for text in
+    prompts = p42_builder(run, *[{"s.py": P42_GOOD, "requirements.txt": text} for text in
                                  ("requests>=2\n", "--extra-index-url https://example.invalid/simple\npulsedep==1.2.0\n", "git+https://example.invalid/x.git\n")])
-    n = len(j2env.p36_log("pip install"))
+    n = len(j2env.p42_log("pip install"))
     run._turn_workflow_agent({"wid": "W-1"})
-    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.real_runs_asked and len(j2env.p36_log("pip install")) == n
+    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.real_runs_asked and len(j2env.p42_log("pip install")) == n
     assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
     monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: nothing is asked, nothing is run
-    run, w = made({"s.py": P36_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"})
+    run, w = made({"s.py": P42_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"})
     assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is True and not run.paused
     assert "which is not a Python that runs" in w["failure"][1] and "J2_RUN_PYTHON" in w["failure"][1]
     assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
 
 
-@p36_posix
-def test_p36_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
+@p42_posix
+def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
     made, real = env_run
     monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p36_srt)
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p42_srt)
     run, w = made({}, status="running", attempts=0, test="test_s.py")
-    p36_builder(run, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
-    before = len(j2env.p36_log("sandbox"))
+    p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
+    before = len(j2env.p42_log("sandbox"))
     run._turn_workflow_agent({"wid": "W-1"})
-    p36_reply(run, f"RUN {p36_code(run)}")
+    p42_reply(run, f"RUN {p42_code(run)}")
     run._turn_workflow_agent(run.handoff)
     run._ask_real_run({})
-    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    rows = j2env.p36_log("sandbox")[before:]
+    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    rows = j2env.p42_log("sandbox")[before:]
     installs = [r for r in rows if " -m pip install " in r["command"]]
     others = [r for r in rows if r not in installs]
     env_dir = j2env.j2_runenv.plan(run._out_dir())["dir"]
@@ -3884,22 +4274,22 @@ def test_p36_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_
     assert installs[0]["settings"]["filesystem"]["allowWrite"] == [env_dir]
     assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
     assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
-    assert p36_receipts(run)[-1]["exit"] == 0
+    assert p42_receipts(run)[-1]["exit"] == 0
 
 
-def test_p36_a_real_run_receipt_keeps_the_end_of_stdout_and_of_stderr(j2env, env_run):
+def test_p42_a_real_run_receipt_keeps_the_end_of_stdout_and_of_stderr(j2env, env_run):
     made, real = env_run
     run, w = made({"s.py": "import sys\nprint('started')\nsys.stderr.write('x' * 3000 + 'LAST-LINE')\n"})
     assert run._ask_real_run({}) and run.paused["kind"] == "real_run"      # no sandbox here: no dry run (D435), still asked
-    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p36_receipts(run)[-1]
+    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p42_receipts(run)[-1]
     assert r["exit"] == 0 and r["stdout"] == "started\n" and len(r["stderr"]) == 2000 and r["stderr"].endswith("LAST-LINE")
     assert "env" not in r, "a build without a requirements.txt has no environment"
     from sutra_app.library.records import _p_receipt
     assert [k for k, _ in _p_receipt("receipts.jsonl", r)] == ["run_file.object"], "a real-run receipt stays open JSON for the catalogue"
 
 
-def test_p36_runenv_is_j2s_module_below_its_docstring():
+def test_p42_runenv_is_j2s_module_below_its_docstring():
     """engine/runenv.py is Sutra's copy of J2's j2_runenv.py: the code is the same, only the module docstring differs. Skipped where
     the J2 prototype is not checked out beside this project."""
     theirs = Path(__file__).resolve().parents[3] / "prototypes" / "j2" / "j2_runenv.py"
