@@ -188,14 +188,16 @@ def login_homes(environ: Optional[Mapping[str, str]] = None) -> list[str]:
     """Where the sign-ins the app relies on live, and the app's own data: a plan may never hand a script a file there (D446).
     Claude ($CLAUDE_CONFIG_DIR, ~/.claude, ~/.claude.json), Codex ($CODEX_HOME, ~/.codex), gh ($GH_CONFIG_DIR,
     ${XDG_CONFIG_HOME:-~/.config}/gh, %APPDATA%/GitHub CLI), the app ($SUTRA_DATA_DIR, $SUTRA_ENV_FILE,
-    paths.default_data_dir(), paths.default_env_file()). Unset ones left out; duplicates dropped."""
+    paths.default_data_dir(), paths.default_env_file(), and both channels' data folders, desktop/src/channels.json
+    dataDirName, whichever channel runs). Unset ones left out; duplicates dropped."""
     from . import paths      # lazily: paths is the host's module
     env = os.environ if environ is None else environ
     xdg = env.get("XDG_CONFIG_HOME") or "~/.config"
     appdata = env.get("APPDATA")
     found = [env.get("CLAUDE_CONFIG_DIR"), "~/.claude", "~/.claude.json", env.get("CODEX_HOME"), "~/.codex", env.get("GH_CONFIG_DIR"),
              os.path.join(xdg, "gh"), appdata and os.path.join(appdata, "GitHub CLI"), env.get("SUTRA_DATA_DIR"),
-             env.get("SUTRA_ENV_FILE"), str(paths.default_data_dir(env)), str(paths.default_env_file(env))]
+             env.get("SUTRA_ENV_FILE"), str(paths.default_data_dir(env)), str(paths.default_env_file(env)),
+             "~/.sutra-pro", "~/.sutra-pro-beta"]      # the stable and the beta app's data (channels.json), locked by both
     return list(dict.fromkeys(os.path.expanduser(p) for p in found if p))
 
 

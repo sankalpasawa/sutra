@@ -760,3 +760,13 @@ def test_login_homes_overrides_and_defaults(tmp_path):
     bare = llm.login_homes({})
     assert not any(str(tmp_path) in h for h in bare), "an unset variable is absent"
     assert os.path.join(os.path.expanduser("~/.config"), "gh") in bare
+
+
+def test_login_homes_lock_every_app_channels_data(tmp_path):
+    """R1-5: whichever channel runs (its own SUTRA_DATA_DIR), every channel's data folder (channels.json) is locked: the
+    stable app's .env holds J2_SMTP_PASSWORD, and the beta must not hand it to a script."""
+    import json
+    channels = json.loads((Path(__file__).parents[2] / "desktop" / "src" / "channels.json").read_text(encoding="utf-8"))
+    homes = llm.login_homes({"SUTRA_DATA_DIR": str(tmp_path / "made-up-channel")})
+    for c in channels.values():
+        assert os.path.expanduser("~/" + c["dataDirName"]) in homes, c["id"]
