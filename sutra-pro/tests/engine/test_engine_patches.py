@@ -4361,24 +4361,236 @@ def test_p42_runenv_is_j2s_module_below_its_docstring():
     assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
 
 
-# ---- P44 (D449): the programs the engine builds and runs ---------------------------------------------------------------------
+# ---- P43 (D448): an answer never confirms a real-run item; a picked option counts with its full text, the Requester's only
+P43_RR, P43_DOC = "The tool tidies the made-up folder for real", "A README explains how to run it"
+P43_ANSWER = "It runs on ~/Documents/Made Up/Tool"
+P43_LATER = "This part is checked when the real run actually happens, not from an answer."
+
+
+def p43_answer(make_run, confirmed, planned=False, still=()):
+    """Identity hears an answer to a fact question while the charter marks item 1 real-run (P30's item_checks)."""
+    run = make_run()
+    run.goal = {"statement": "x", "done_when": [P43_RR, P43_DOC],
+                "item_checks": {P43_RR: {"type": "real-run"}, P43_DOC: {"type": "file-exists", "target": "README.md", "expect": True}},
+                "to_be_confirmed": [{"criterion": P43_RR, "fact": "which folder it runs on"}]}
+    run.workflows = [{"id": "W-1", "real_run": {"checks": [1]}}] if planned else []
+    run.post("user", P43_ANSWER)
+    run.call = lambda role, fmt, prompt, *a, **k: {"say": "ok", "to_requester": "Thanks.", "clause": "done_when", "confirmed": confirmed,
+                                                   "still_to_be_confirmed": list(still), "next": "Adaptation"}
+    run._identity_hears_requester({"asked": [{"question": "Which folder?"}], "answer": P43_ANSWER})
+    return run
+
+
+@pytest.mark.parametrize("planned", [False, True], ids=["unplanned", "planned"])
+def test_p43_an_answer_never_confirms_a_real_run_item(make_run, planned):
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned)
+    texts = [m["text"] for m in run.chat]
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert not any(t.startswith("Confirmed by the Requester") for t in texts)
+    # review R1-2 (owner, option 1): an item not planned yet leaves to_be_confirmed, the fact is known; a planned one is J2's
+    assert (P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}) is planned
+    assert P43_ANSWER in run.handoff["why"], "the answer still reaches Adaptation"
+    assert "~/documents/made up/tool" in run._fact_source()
+    noted = [t for t in texts if t == "Noted. " + P43_LATER]
+    planned_note = [t for t in texts if t.startswith("Not taken from the answer: whether a real run happened")]
+    if planned:
+        assert not noted and len(planned_note) == 1 and planned_note[0].endswith(". " + P43_LATER)
+    else:
+        assert len(noted) == 1 and not planned_note
+
+
+def test_p43_an_answer_still_confirms_an_item_that_is_not_real_run(make_run):
+    run = p43_answer(make_run, [{"item": 2, "fact": "README.md at the top"}])
+    texts = [m["text"] for m in run.chat]
+    assert P43_DOC in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert f"Confirmed by the Requester: {P43_DOC} = README.md at the top" in texts
+    assert not any(t.startswith("Noted.") for t in texts)
+
+
+@pytest.fixture
+def p43_pick(make_run, tmp_path, monkeypatch):
+    """A run whose brief names no folder pauses on one question whose first option names a made-up folder."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    run = make_run()
+    run.request = "Build a tool that tidies a folder"
+    run.goal = {"statement": "x", "done_when": [P43_DOC]}
+    run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool", "Another folder"],
+                                     "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+    monkeypatch.setattr(run, "_plan_stages", lambda: None)
+    return run, run.paused["questions"][0]["options"][0]
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "auto"])
+def test_p43_a_picked_option_names_its_folder_only_when_the_requester_picked_it(j2, p43_pick, by, form, monkeypatch):
+    run, shown = p43_pick
+    if by == "click":
+        run.post("user", "Option 1")
+        run._run()
+    else:
+        run.auto = True
+        # P45 (D451): Decide for me no longer answers a question about the folder a real run uses; it waits for the Requester.
+        # D448's own guard (a pick it did make never names a folder) is still checked below, with that subject rule set aside.
+        assert run._auto_pick() is None and not any(m.get("auto") for m in run.chat)
+        monkeypatch.setattr(run, "_requester_only", lambda p: None)
+        run._auto_go()
+        last = [m for m in run.chat if m["who"] == "user"][-1]
+        assert last.get("auto") and last["text"] == "Option 1", "Decide for me picked the same option"
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    rr = {"command": [sys.executable, "tool.py", folder], "folder": folder, "reads": [], "why": "x"}
+    problems = j2.real_run_problems(rr, run._fact_source(), [sys.executable], run.dir)
+    if by == "click":
+        assert run.decisions[-1]["picked"] == shown
+        assert problems == []
+        assert run._fact_problems({"facts": [shown]}) == []
+    else:      # D448: Decide for me never names a folder, a secret file or a charter fact; only the Requester does
+        assert "picked" not in run.decisions[-1]
+        assert any("not named" in p for p in problems)
+        assert run._fact_problems({"facts": [shown]}) == [shown]
+
+
+def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
+    run, _ = p43_pick
+    run.post("user", "use 2 folders")
+    run._run()
+    assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
+
+
+def test_p43_r1_2_a_held_answer_clears_its_to_be_confirmed_entry_and_the_item_still_needs_a_receipt(make_run):
+    """Review R1-2 (owner, option 1): the held answer gives the fact, so the item is no longer waiting on the Requester (never
+    blocked, never asked again as a follow-up); it is still not confirmed and passes only on a real run's receipt."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
+    assert P43_RR not in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    run.audits = [{"results": [{"id": "F-1", "item": 1, "criterion": P43_RR, "verdict": "TO_BE_CONFIRMED", "pass": False},
+                               {"id": "F-2", "item": 2, "criterion": P43_DOC, "verdict": "PASS", "pass": True}]}]
+    assert run._blocked_items() == [] and run._tbc_blocked() == {}
+    assert not any("Send it as a follow-up" in x for x in run._open_items())
+    assert run._chain_done("Done.") == "Done.", "the run does not end asking for the fact it was given"
+    assert run._run_item_check(P43_RR, {"type": "real-run"}, "", {})["pass"] is False, "no receipt: it does not pass"
+
+
+def test_p43_r1_2_an_answer_that_cannot_give_the_fact_yet_keeps_the_entry(make_run):
+    run = p43_answer(make_run, [], still=[{"item": 1, "fact": "which folder it runs on"}])
+    assert P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+
+
+P43_CSV = "CSV/Excel tidier for a folder"      # review R1-1: the brief's first word holds a "/"
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "typed"])
+def test_p43_r1_1_a_folder_the_requester_names_registers_whatever_the_next_text_starts_with(sort_run, tmp_path, monkeypatch, by,
+                                                                                            form):
+    """Review R1-1: the brief, each answer and each pick are read one by one, so a path that ends one of them is never read as
+    going on into the next one's first word ("CSV/Excel")."""
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+    make, _ = sort_run
+    run = make()
+    run.request = P43_CSV
+    run.post("user", P43_CSV)
+    if by == "click":
+        run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool",
+                                                                                                    "Another folder"],
+                                         "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+        monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+        monkeypatch.setattr(run, "_plan_stages", lambda: None)
+        run.post("user", "Option 1")
+        run._run()
+        assert run.decisions[-1]["picked"] == "~/Documents/Made Up/Tool"
+    else:      # typed answers, each followed by a Requester message whose first word holds a "/"
+        for said in ("It runs on ~/Documents/Made Up/Tool", "It reads ~/Documents/Made Up/key.txt"):
+            run.post("user", said)
+            run.post("user", "CSV/Excel files only, please")
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    w = sort_proposals(folder, fix=True)[0]
+    rr = {**w["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+    if by == "typed":
+        rr["secret_files"] = {"API_KEY_FILE": folder.replace("Tool", "key.txt")}
+    reg, refused, _ = run._register([{**w, "real_run": rr}])
+    assert [x["id"] for x in reg] == ["W-1"] and not refused, refused
+
+
+# ---- P31, P41 amended (D448): a folder or secret file is named only whole (named_whole: one rule for both checks)
+D448_WHOLE = [      # (path, what the brief says, named whole?): made-up paths only
+    ("~/Documents/Made", "use ~/Documents/Made Up/Tool", False),
+    ("~/Documents/Made Up/Tool", "use ~/Documents/Made Up/Tool", True),
+    ("~/Documents/Made Up/Tool", "is it ~/Documents/Made Up/Tool?", True),
+    ("~/Documents/Made Up/Tool", "yes ~/Documents/Made Up/Tool! now", True),
+    ("~/Documents/Made Up/Tool", "the folder `~/Documents/Made Up/Tool` please", True),
+    ("~/Documents/Made Up/Tool", "~/Documents/Made Up/Tool/ and more", True),
+    ("~/demo/rename-test", "run it on ~/demo/rename-test", True),
+    ("~/demo/x", "run on ~/demo/x and ~/demo/y", True),
+    ("~/demo/x", "run on ~/demo/x, then stop.", True),
+    ("~/demo/x", "run on ~/demo/x. then stop", True),
+    ("~/demo/x", "run on ~/demo/xy", False),
+    ("/projects/x", "use /data/projects/x now", False),      # inside a longer path
+    ("~/demo/x", "folder=~/demo/x", True),
+    ("~/demo/x", "(~/demo/x)", True),
+    ("~/demo/x", "'~/demo/x'", True),
+    ("~/demo/x", "use ~/demo/x w/ care", False),      # known limit: a next word holding "/" reads as the path going on (fails safe)
+]
+
+
+def d448_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))      # Windows: expanduser reads USERPROFILE
+
+
+def test_p31_d448_a_folder_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    for d in (("Documents", "Made"), ("Documents", "Made Up", "Tool"), ("projects", "x")):
+        tmp_path.joinpath(*d).mkdir(parents=True)
+
+    def not_named(folder, said):
+        rr = {"command": [sys.executable, "tool.py"], "folder": folder, "reads": [], "why": "x"}
+        return any("is not named" in p for p in j2.real_run_problems(rr, j2.squash(said), [sys.executable], str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "use ~/Documents/Made Up/Tool"), "a parent of the named folder is not named"
+    for said in ("is it ~/Documents/Made Up/Tool?", "yes ~/Documents/Made Up/Tool! now", "the folder `~/Documents/Made Up/Tool` please"):
+        assert not not_named("~/Documents/Made Up/Tool", said), said
+    inner = str(tmp_path / "projects" / "x")
+    assert not_named(inner, f"use /data{inner} now"), "a path inside a longer one is not named"
+    for g, said, want in D448_WHOLE:
+        assert j2.named_whole(g, j2.squash(said)) is want, (g, said)
+
+
+def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made").write_text("x")
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+
+    def not_named(f, said):
+        return any("is not named" in p for p in j2.real_run_env_problems({"secret_files": {"API_KEY_FILE": f}}, j2.squash(said),
+                                                                          str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "read ~/Documents/Made Up/key.txt"), "a shorter file is not named"
+    for said in ("read `~/Documents/Made Up/key.txt`?", "is it ~/Documents/Made Up/key.txt?", "yes ~/Documents/Made Up/key.txt! now"):
+        assert not not_named("~/Documents/Made Up/key.txt", said), said
+
+
+# ---- P45 (D451): the programs the engine builds and runs ---------------------------------------------------------------------
 # Modelled on three Pulse runs of the beta: j2-20261123-103238-3429 and j2-20261124-113042-87be (an agent stage with a document's
 # charter, C2 "the test '' is not a file in the folder", a list of files read as one name, "unknown check test-passed") and
 # j2-20261125-045739-52c5 (Decide for me confirmed the folder of the install and the live read; an install card with no packages;
 # C2 never rerun after a declined install). No model call, no network.
-P44_PRINTS = ("import json, os, sys\nprint('read 3 threads')\nsys.stderr.write('1 warning\\n')\n"
+P45_PRINTS = ("import json, os, sys\nprint('read 3 threads')\nsys.stderr.write('1 warning\\n')\n"
               "json.dump({'threads': 3}, open(os.path.join(sys.argv[1], 'out.json'), 'w'))\n"
               "open(os.path.join(sys.argv[1], 'mail.txt'), 'w').write('one two')\n"
               "old = os.path.join(sys.argv[1], 'old.txt')\nos.path.exists(old) and os.remove(old)\n")
-P44_FILES = {"tests/test_x.py": "print('OK')\n", "pulse/run.py": "X = 1\n", "README.md": "# Pulse\n"}
-P44_DOC_CHARTER = {"statement": "An agent for Pulse", "site_name": "Pulse", "business_type": FT, "done_when": ["it runs"]}
+P45_FILES = {"tests/test_x.py": "print('OK')\n", "pulse/run.py": "X = 1\n", "README.md": "# Pulse\n"}
+P45_DOC_CHARTER = {"statement": "An agent for Pulse", "site_name": "Pulse", "business_type": FT, "done_when": ["it runs"]}
 
 
-def p44_check(kind, target):
+def p45_check(kind, target):
     return {"text": f"{kind} {target}", "type": kind, "target": target, "expect": True}
 
 
-def p44_made(env_run, files, checks, goal=None):
+def p45_made(env_run, files, checks, goal=None):
     """env_run's run with these files (folders made) and these checks on its one atom; goal: its charter."""
     made, real = env_run
     run, w = made({})
@@ -4392,7 +4604,7 @@ def p44_made(env_run, files, checks, goal=None):
     return run, w, real
 
 
-def test_p44_an_agent_stage_gets_its_own_intake_and_charter_never_a_documents(j2env, tmp_path):
+def test_p45_an_agent_stage_gets_its_own_intake_and_charter_never_a_documents(j2env, tmp_path):
     run = j2env.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-113042-87be")
     run._apply_output("prd")
     run.request = "Build a script for Pulse, with a PRD first."
@@ -4410,7 +4622,7 @@ def test_p44_an_agent_stage_gets_its_own_intake_and_charter_never_a_documents(j2
     assert run.goal["statement"] != f"An {FT.upper()} for Pulse"      # stage_goal's document charter: no files, no test
 
 
-def test_p44_the_browser_check_is_a_pages_and_a_folder_is_never_called_the_site(j2env, env_run, tmp_path):
+def test_p45_the_browser_check_is_a_pages_and_a_folder_is_never_called_the_site(j2env, env_run, tmp_path):
     made, _ = env_run
     run, _ = made({})
     audit = {"version": 1, "output": FT, "results": [], "rubric": [], "conditions": [], "mechanical": {}}
@@ -4431,7 +4643,7 @@ def test_p44_the_browser_check_is_a_pages_and_a_folder_is_never_called_the_site(
     ("question", "Should the live read of the mailboxes go ahead now?", "a real run"),
     ("conflict", "Do you want the real run kept in the plan?", "a real run"),
     ("question", "Which folder should the script run in?", "the folder a real run uses")])
-def test_p44_decide_for_me_never_answers_about_a_real_run_an_install_or_its_folder(env_run, kind, question, about):
+def test_p45_decide_for_me_never_answers_about_a_real_run_an_install_or_its_folder(env_run, kind, question, about):
     made, _ = env_run
     run, _ = made({"s.py": P42_GOOD})
     run.auto = True
@@ -4443,7 +4655,7 @@ def test_p44_decide_for_me_never_answers_about_a_real_run_an_install_or_its_fold
     assert run._auto_pick() is None and len(run.chat) == n + 1 and not any(m.get("auto") for m in run.chat)      # said once, nothing answered
 
 
-def test_p44_decide_for_me_leaves_a_pending_real_run_open_drops_no_item_and_still_answers_ordinary_questions(j2env, env_run):
+def test_p45_decide_for_me_leaves_a_pending_real_run_open_drops_no_item_and_still_answers_ordinary_questions(j2env, env_run):
     made, real = env_run
     run, w = made({"s.py": P42_GOOD})
     run.auto = True
@@ -4463,11 +4675,11 @@ def test_p44_decide_for_me_leaves_a_pending_real_run_open_drops_no_item_and_stil
     assert run._auto_pick()[:2] == ("Option 1", "Blue")
 
 
-def p44_sha(data):
+def p45_sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def p44_run_it(env_run, script, result=None):
+def p45_run_it(env_run, script, result=None):
     """env_run's run with this script, approved with its code: (run, workflow, real folder, the receipt, the record or None)."""
     made, real = env_run
     run, w = made({"s.py": script})
@@ -4479,13 +4691,13 @@ def p44_run_it(env_run, script, result=None):
     return run, w, real, r, json.loads(Path(run.dir, r["output"]).read_text()) if r.get("id") else None
 
 
-def test_p44_an_approved_real_run_leaves_a_run_output_record_as_the_contract_says(j2env, env_run):
+def test_p45_an_approved_real_run_leaves_a_run_output_record_as_the_contract_says(j2env, env_run):
     _, real = env_run
     (real / "old.txt").write_text("gone soon")
     (real / "untouched.txt").write_text("same")
     lim = j2env.OWN_RUNS["run_output"]["limits"]
     assert lim == {"stdout_lines": 200, "stderr_lines": 50, "tail_bytes": 65536, "max_files": 500, "text_cap_bytes": 65536}
-    run, w, real, r, rec = p44_run_it(env_run, P44_PRINTS, result="out.json")
+    run, w, real, r, rec = p45_run_it(env_run, P45_PRINTS, result="out.json")
     assert r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["output"] == "run_output/rr-W-1-1.json"
     assert r["output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}
     assert r["result"] == "out.json" and "capture" not in r and "capture" not in w["real_run"]
@@ -4496,11 +4708,11 @@ def test_p44_an_approved_real_run_leaves_a_run_output_record_as_the_contract_say
     assert rec["command"] == ["python3", "s.py", str(real)] and rec["approved"] is True and rec["exit"] == 0 and rec["limits"] == lim
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", rec["started_at"]) and rec["started_at"] <= rec["ended_at"]
     data = (real / "out.json").read_bytes()
-    assert rec["main_result"] == {"path": "out.json", "exists": True, "size": len(data), "sha256": p44_sha(data), "text": data.decode()}
-    assert rec["files"] == {"created": [{"path": "out.json", "size": len(data), "sha256": p44_sha(data)}],
-                            "changed": [{"path": "mail.txt", "before": {"size": 3, "sha256": p44_sha(b"one")},
-                                         "after": {"size": 7, "sha256": p44_sha(b"one two")}}],
-                            "deleted": [{"path": "old.txt", "size": 9, "sha256": p44_sha(b"gone soon")}]}      # no contents here
+    assert rec["main_result"] == {"path": "out.json", "exists": True, "size": len(data), "sha256": p45_sha(data), "text": data.decode()}
+    assert rec["files"] == {"created": [{"path": "out.json", "size": len(data), "sha256": p45_sha(data)}],
+                            "changed": [{"path": "mail.txt", "before": {"size": 3, "sha256": p45_sha(b"one")},
+                                         "after": {"size": 7, "sha256": p45_sha(b"one two")}}],
+                            "deleted": [{"path": "old.txt", "size": 9, "sha256": p45_sha(b"gone soon")}]}      # no contents here
     assert rec["stdout"] == {"tail": "read 3 threads", "lines_total": 1, "truncated": False}
     assert rec["stderr"] == {"tail": "1 warning", "lines_total": 1, "truncated": False}
     rows = [x for x in j2env.j2_artifacts.rows(run.dir) if x["kind"] == "run_output"]
@@ -4511,22 +4723,22 @@ def test_p44_an_approved_real_run_leaves_a_run_output_record_as_the_contract_say
     assert [x.kind for x in ArtifactsDoc.model_validate({"schema": "artifacts/1", "rows": j2env.j2_artifacts.rows(run.dir)}).rows].count("run_output") == 1
 
 
-def test_p44_the_run_output_limits_hold_and_the_main_result_is_null_missing_or_without_text(j2env, env_run):
+def test_p45_the_run_output_limits_hold_and_the_main_result_is_null_missing_or_without_text(j2env, env_run):
     lim = j2env.OWN_RUNS["run_output"]["limits"]
     big = "x" * (lim["text_cap_bytes"] + 1)
     loud = ("import os, sys\nfor i in range(300):\n    print('line', i)\n    sys.stderr.write('err %d\\n' % i)\n"
             f"open(os.path.join(sys.argv[1], 'big.txt'), 'w').write({big!r})\n")
-    *_, rec = p44_run_it(env_run, loud, result="big.txt")
+    *_, rec = p45_run_it(env_run, loud, result="big.txt")
     assert rec["stdout"]["lines_total"] == 300 and rec["stdout"]["truncated"] and rec["stdout"]["tail"].splitlines() == [f"line {i}" for i in range(100, 300)]
     assert rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)]
     assert rec["main_result"]["exists"] and rec["main_result"]["size"] == len(big) and "text" not in rec["main_result"]
-    assert p44_run_it(env_run, P44_PRINTS)[-1]["main_result"] is None      # the plan declares none
-    assert p44_run_it(env_run, P44_PRINTS, result="never.json")[-1]["main_result"] == {"path": "never.json", "exists": False}
+    assert p45_run_it(env_run, P45_PRINTS)[-1]["main_result"] is None      # the plan declares none
+    assert p45_run_it(env_run, P45_PRINTS, result="never.json")[-1]["main_result"] == {"path": "never.json", "exists": False}
 
 
-def test_p44_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_is_checked_by_code(j2env, env_run):
+def test_p45_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_is_checked_by_code(j2env, env_run):
     made, _ = env_run
-    run, w = made({"s.py": P44_PRINTS})
+    run, w = made({"s.py": P45_PRINTS})
     run._ask_real_run({})
     p42_reply(run, "Don't run")
     r = p42_receipts(run)[-1]
@@ -4538,69 +4750,69 @@ def test_p44_a_run_that_was_not_approved_leaves_no_record_and_the_plans_result_i
 
 
 @pytest.mark.parametrize("target", ["tests/test_x.py", f"{FT}/tests/test_x.py", ["tests/test_x.py"]])
-def test_p44_c2_finds_the_test_the_builder_wrote_when_the_charter_names_none(env_run, target):
-    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("test-passed", target)], P44_DOC_CHARTER)
+def test_p45_c2_finds_the_test_the_builder_wrote_when_the_charter_names_none(env_run, target):
+    run, w, _ = p45_made(env_run, P45_FILES, [p45_check("test-passed", target)], P45_DOC_CHARTER)
     c = {"id": "C2", "check": "test-passed"}
     met, why = run._folder_condition(c)
     assert met and "tests/test_x.py exited 0" in why and "from_charter" not in c
 
 
-def test_p44_c2_with_no_test_anywhere_stays_unmet_and_the_charters_test_comes_first(env_run):
-    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("file-exists", "README.md")], P44_DOC_CHARTER)
+def test_p45_c2_with_no_test_anywhere_stays_unmet_and_the_charters_test_comes_first(env_run):
+    run, w, _ = p45_made(env_run, P45_FILES, [p45_check("file-exists", "README.md")], P45_DOC_CHARTER)
     c = {"id": "C2", "check": "test-passed"}
     assert run._folder_condition(c) == (False, "code reran the test itself, on a copy of the folder, not the builder's own run: "
                                                "the test '' is not a file in the folder") and c["from_charter"] is True      # P29 (D431) holds
-    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("test-passed", "missing.py")], {**P44_DOC_CHARTER, "test": "tests/test_x.py"})
+    run, w, _ = p45_made(env_run, P45_FILES, [p45_check("test-passed", "missing.py")], {**P45_DOC_CHARTER, "test": "tests/test_x.py"})
     assert run._folder_condition({"id": "C2", "check": "test-passed"})[0]
 
 
-def test_p44_list_targets_are_checked_item_by_item_and_a_recheck_keeps_its_folder(j2env, env_run):
-    run, w, _ = p44_made(env_run, P44_FILES, [p44_check("file-exists", ["pulse/run.py", "tests/test_x.py", "README.md"]),
-                                              p44_check("test-passed", ["tests/test_x.py"])], P44_DOC_CHARTER)
+def test_p45_list_targets_are_checked_item_by_item_and_a_recheck_keeps_its_folder(j2env, env_run):
+    run, w, _ = p45_made(env_run, P45_FILES, [p45_check("file-exists", ["pulse/run.py", "tests/test_x.py", "README.md"]),
+                                              p45_check("test-passed", ["tests/test_x.py"])], P45_DOC_CHARTER)
     assert run._run_checks(w, 1, "", folder=run._out_dir()) == []      # 87be: a list was read as one file name, and failed
-    w["atoms"][0]["verification"] = [p44_check("file-exists", ["pulse/run.py", "gone.py"])]
+    w["atoms"][0]["verification"] = [p45_check("file-exists", ["pulse/run.py", "gone.py"])]
     failed = run._run_checks(w, 1, "", folder=run._out_dir())
     assert len(failed) == 1 and "gone.py" in failed[0]["evidence"] and "pulse/run.py" not in failed[0]["evidence"]
-    w["atoms"][0]["verification"] = [p44_check("file-exists", f"{FT}/pulse/run.py"), p44_check("test-passed", f"{FT}/tests/test_x.py")]
+    w["atoms"][0]["verification"] = [p45_check("file-exists", f"{FT}/pulse/run.py"), p45_check("test-passed", f"{FT}/tests/test_x.py")]
     assert run._run_checks(w, 1, "", folder=run._out_dir()) == []      # 3429: the run-relative form is read in the builder's folder
-    w["atoms"][0]["verification"] = [p44_check("test-passed", "tests/test_x.py"), p44_check("inside-folder", ".")]
+    w["atoms"][0]["verification"] = [p45_check("test-passed", "tests/test_x.py"), p45_check("inside-folder", ".")]
     assert run._run_checks(w, j2env.MAX_CHECK_ATTEMPTS, "", atoms=w["atoms"], recheck="check corrected by Adaptation") == []
     assert not any("unknown check" in r.get("evidence", "") for r in w["atoms"][0]["results"])      # 87be: "unknown check test-passed"
 
 
-def test_p44_one_path_form_a_mix_is_refused_and_the_folders_name_in_front_is_taken_off(j2env, env_run):
-    mix = {"name": "build", "atoms": [{"verification": [p44_check("file-exists", f"{FT}/pulse/run.py"), p44_check("test-passed", "tests/test_x.py")]}]}
+def test_p45_one_path_form_a_mix_is_refused_and_the_folders_name_in_front_is_taken_off(j2env, env_run):
+    mix = {"name": "build", "atoms": [{"verification": [p45_check("file-exists", f"{FT}/pulse/run.py"), p45_check("test-passed", "tests/test_x.py")]}]}
     probs, n = j2env.path_form_problems(mix, FT)
     assert len(probs) == 1 and "two forms" in probs[0] and n == 0 and mix["atoms"][0]["verification"][0]["target"] == f"{FT}/pulse/run.py"
-    front = {"name": "build", "atoms": [{"verification": [p44_check("file-exists", [f"{FT}/pulse/run.py", f"{FT}/README.md"]),
-                                                             p44_check("test-passed", f"{FT}/tests/test_x.py")],
+    front = {"name": "build", "atoms": [{"verification": [p45_check("file-exists", [f"{FT}/pulse/run.py", f"{FT}/README.md"]),
+                                                             p45_check("test-passed", f"{FT}/tests/test_x.py")],
                                          "expected_output": [{"text": "the test", "kind": "file", "target": f"{FT}/tests/test_x.py"}]}]}
     probs, n = j2env.path_form_problems(front, FT)
     a = front["atoms"][0]
     assert (probs, n) == ([], 4) and a["verification"][0]["target"] == ["pulse/run.py", "README.md"]
     assert a["verification"][1]["target"] == "tests/test_x.py" and a["expected_output"][0]["target"] == "tests/test_x.py"
-    assert j2env.path_form_problems({"atoms": [{"verification": [p44_check("file-exists", "pulse/run.py"),
-                                                                p44_check("file-exists", f"./{FT}/x.py")]}]}, FT) == ([], 0)
-    assert j2env.path_form_problems({"atoms": [{"verification": [p44_check("file-exists", "../x.py")]}]}, FT)[0]
+    assert j2env.path_form_problems({"atoms": [{"verification": [p45_check("file-exists", "pulse/run.py"),
+                                                                p45_check("file-exists", f"./{FT}/x.py")]}]}, FT) == ([], 0)
+    assert j2env.path_form_problems({"atoms": [{"verification": [p45_check("file-exists", "../x.py")]}]}, FT)[0]
     # the validator refuses the mix when a workflow is registered (the atom's own fields are complete)
-    run, w, _ = p44_made(env_run, P44_FILES, mix["atoms"][0]["verification"], P44_DOC_CHARTER)
+    run, w, _ = p45_made(env_run, P45_FILES, mix["atoms"][0]["verification"], P45_DOC_CHARTER)
     assert j2env.atom_missing(w) or any("two forms" in p for p in run._atom_problems(w))
 
 
 @pytest.mark.parametrize("text", ["", "\n", "# nothing to install\n\n"])
-def test_p44_a_requirements_txt_with_no_package_plans_no_environment_and_asks_nothing(j2env, env_run, text):
+def test_p45_a_requirements_txt_with_no_package_plans_no_environment_and_asks_nothing(j2env, env_run, text):
     files = {"helper.py": "VALUE = 1\n", "test_ok.py": "import unittest\nimport helper\nassert helper.VALUE == 1\n", "requirements.txt": text}
-    run, w, _ = p44_made(env_run, files, [p44_check("test-passed", "test_ok.py")])
+    run, w, _ = p45_made(env_run, files, [p45_check("test-passed", "test_ok.py")])
     assert j2env.j2_runenv.plan(run._out_dir()) is None      # 52c5: "Packages to install, from PyPI only: " and nothing after it
     n = len(run.chat)
     assert run._env_ask(w, 1, run._out_dir()) is False and not run.paused and len(run.chat) == n
     assert run._run_checks(w, 1, "", folder=run._out_dir()) == [] and w["atoms"][0]["results"][0]["pass"] is True
 
 
-def test_p44_packages_not_installed_never_block_a_test_that_needs_only_the_standard_library(j2env, env_run):
+def test_p45_packages_not_installed_never_block_a_test_that_needs_only_the_standard_library(j2env, env_run):
     files = {"helper.py": "VALUE = 1\n", "test_ok.py": "import unittest\nimport helper\nassert helper.VALUE == 1\nprint('OK')\n",
              "test_needs.py": "import pulsedep\n", "requirements.txt": "pulsedep==9.9.9\n"}      # a hash no other test installs
-    run, w, _ = p44_made(env_run, files, [p44_check("test-passed", "test_ok.py")], {"statement": "x", "done_when": ["it runs"], "test": "test_ok.py"})
+    run, w, _ = p45_made(env_run, files, [p45_check("test-passed", "test_ok.py")], {"statement": "x", "done_when": ["it runs"], "test": "test_ok.py"})
     runenv, out = j2env.j2_runenv, run._out_dir()
     plan = runenv.plan(out)
     assert plan and not plan["ready"] and plan["packages"] == ["pulsedep==9.9.9"]
@@ -4608,13 +4820,13 @@ def test_p44_packages_not_installed_never_block_a_test_that_needs_only_the_stand
     assert run._run_checks(w, 1, "", folder=out) == [] and "exited 0" in w["atoms"][0]["results"][0]["evidence"]
     met, why = run._folder_condition({"id": "C2", "check": "test-passed"})      # 52c5: "the test was not rerun", in every audit
     assert met and "exited 0" in why
-    w["atoms"][0]["verification"] = [p44_check("test-passed", "test_needs.py")]
+    w["atoms"][0]["verification"] = [p45_check("test-passed", "test_needs.py")]
     run._run_checks(w, 1, "", folder=out)
     res = w["atoms"][0]["results"][0]
     assert res["pass"] is None and res["evidence"].startswith("the test was not rerun: its packages are not installed")
 
 
-def test_p44_the_data_file_is_j2s_own_and_names_the_vocabulary_and_the_sizes():
+def test_p45_the_data_file_is_j2s_own_and_names_the_vocabulary_and_the_sizes():
     """engine/j2_own_runs.json is a byte copy of J2's (prototypes/j2). Skipped where the prototype is not checked out."""
     mine = Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "j2_own_runs.json"
     data = json.loads(mine.read_text(encoding="utf-8"))

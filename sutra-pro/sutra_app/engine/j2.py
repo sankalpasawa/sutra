@@ -718,8 +718,7 @@ def real_run_problems(rr, source, runner, run_dir):
             continue
         p = os.path.realpath(f)
         # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {f, home_tilde(f)}):      # P31 (D434, beta fix): the brief may write it ~/x
+        if not any(named_whole(g, source) for g in {f, home_tilde(f)}):      # P31 (D434, beta fix; D448: named whole): ~/x too
             out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
         if not os.path.isdir(p):
             out.append(f"real_run folder {f} is not an existing folder")
@@ -762,6 +761,15 @@ def home_tilde(f):
     """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
     h = os.path.expanduser("~").rstrip("/")
     return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
+
+
+def named_whole(g, source):
+    """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
+    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end.
+    source may be a list of texts (_fact_source(pieces=True)): then g is named whole in one of them (review R1-1)."""
+    pat = (r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
+           + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))")
+    return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
 
 
 def real_folders(workflows):
@@ -871,9 +879,8 @@ def real_run_env_problems(rr, source, run_dir):
         if not os.path.isabs(p):
             out.append(f"real_run secret file {f!r} must be an absolute path")
             continue
-        # named whole, as real_run_problems names a folder (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {p, home_tilde(p)}):
+        # named whole, as real_run_problems names a folder (named_whole, D448)
+        if not any(named_whole(g, source) for g in {p, home_tilde(p)}):
             out.append(f"real_run secret file {f} is not named in the brief or the Requester's answers: ask for it")
         r = os.path.realpath(p)
         if not os.path.isfile(r):
@@ -939,7 +946,7 @@ def real_run(out_dir, rr, timeout):
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
                            env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
-        if isinstance(rr.get("capture"), dict):      # P44 (D449): the caller's own record of what it printed (run_output_record)
+        if isinstance(rr.get("capture"), dict):      # P45 (D451): the caller's own record of what it printed (run_output_record)
             rr["capture"].update(stdout=p.stdout or "", stderr=p.stderr or "")
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
@@ -958,11 +965,11 @@ def real_run(out_dir, rr, timeout):
 
 REAL_RUN_RESULT_RULE = ('\nREAL RUN RESULT: the real_run may also carry "result": the one file the run leaves as its main result, as a path '
                         "inside the folder it writes (e.g. out.json); leave it out when there is none. Code keeps a record of what the "
-                        "run printed and which files it created, changed or deleted; the result file's contents are kept with it.")      # P44 (D449)
+                        "run printed and which files it created, changed or deleted; the result file's contents are kept with it.")      # P45 (D451)
 
 
 def real_run_result_problems(rr):
-    """P44 (D449): why a planned real run's "result" is not usable ([] when it is, or when none is stated): the one file the run
+    """P45 (D451): why a planned real run's "result" is not usable ([] when it is, or when none is stated): the one file the run
     leaves as its main result, a path inside the folder it writes: text, relative, never climbing out (..)."""
     r = rr.get("result") if isinstance(rr, dict) else None
     if r is None:
@@ -999,7 +1006,7 @@ def output_tail(text, lines, max_bytes):
 
 
 def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at):
-    """P44 (D449): what an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
+    """P45 (D451): what an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
     folder and the limits are data, OWN_RUNS.run_output): its receipt, workflow, command and folder, when it started and
     ended, its exit code, its main result (the plan's "result" path in the folder it writes: path, exists, size, sha256,
     and its text when it is text no larger than text_cap_bytes; None when the plan names none), the files it created,
@@ -1129,7 +1136,7 @@ def sandbox_rerun(folder, runner, target, timeout):
         sha = hashlib.sha256(f.read()).hexdigest()
     argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
     env = j2_runenv.plan(folder)      # P42 (D447): the folder's environment (its requirements.txt), when it has one
-    if env_missing(env) and j2_runenv.beyond_stdlib(path, folder) == []:      # P42 amended (D449): a test that needs only the standard
+    if env_missing(env) and j2_runenv.beyond_stdlib(path, folder) == []:      # P42 amended (D451): a test that needs only the standard
         env = None                                                             # library and the folder's own modules is rerun all the same
     if env_missing(env):      # never with another python
         return {"pass": None, "exit": None, "sha256": sha, "evidence": "the test was not rerun: " + env_missing(env)}
@@ -1593,10 +1600,10 @@ def with_base(page, folder):
     return page[:m.end()] + tag + page[m.end():] if m else tag + (page or "")
 
 
-with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as _f:      # P44 (D449): vocabulary and sizes are data, never code
+with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as _f:      # P45 (D451): vocabulary and sizes are data, never code
     OWN_RUNS = json.load(_f)
 REQUESTER_ONLY = tuple((re.compile(x["pattern"], re.I), x["about"]) for x in OWN_RUNS["requester_only"])
-FILE_CHECKS = ("file-exists", "test-passed")      # P44 (D449): the folder checks whose target names files
+FILE_CHECKS = ("file-exists", "test-passed")      # P45 (D451): the folder checks whose target names files
 
 
 def target_list(target):
@@ -4434,7 +4441,7 @@ class J2Run:
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
                 self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
                 self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
-                # P44 (D449): the result field, told right after the real-run rules and before P35's and P41's, which stay last
+                # P45 (D451): the result field, told right after the real-run rules and before P35's and P41's, which stay last
                 self.ATOM_RULES = self.ATOM_RULES.replace(REAL_RUN_EXPECT_RULE, REAL_RUN_RESULT_RULE + REAL_RUN_EXPECT_RULE)
 
     def _begin_cycle(self, advance=True):
@@ -5401,7 +5408,7 @@ class J2Run:
         if (p.get("handoff") or {}).get("usd"):
             return None      # P26 (D422): only the Requester answers the dollar question
         about = self._requester_only(p)
-        if about:      # P44 (D449): by subject, whatever the kind: a real run, an install, the folder a real run uses
+        if about:      # P45 (D451): by subject, whatever the kind: a real run, an install, the folder a real run uses
             if not p.get("auto_waits"):      # said once per question
                 p["auto_waits"] = about
                 self._event("requester", "auto_waits", f"{p['kind']}: {about}")
@@ -5419,7 +5426,7 @@ class J2Run:
         return pick
 
     def _requester_only(self, p):
-        """P44 (D449): what an open question is about when only the Requester may answer it (None: Decide for me may): a done-when
+        """P45 (D451): what an open question is about when only the Requester may answer it (None: Decide for me may): a done-when
         item a planned real run decides (the question's item tag, or the items its leave-out option names), or the
         words of the question, its options and Identity's message (REQUESTER_ONLY, data)."""
         qs, ho = p.get("questions") or [], p.get("handoff") or {}
@@ -5496,6 +5503,10 @@ class J2Run:
             self.paused = None
             self.cycle_turns = 0       # the answer is new information: without this the turn cap re-asked at once
             d = {"kind": p["kind"], "asked": [q["question"] for q in p["questions"]], "answer": last_user}
+            q1 = p["questions"][0] if len(p["questions"]) == 1 else {}
+            if q1.get("options") and ONLY_PICK.fullmatch(last_user) and (i := option_picked(q1, last_user)) is not None \
+                    and not next(m for m in reversed(self.chat) if m["who"] == "user").get("auto"):
+                d["picked"] = str(q1["options"][i])      # P43 (D448): the Requester's own pick, in full; never Decide for me's
             self.decisions.append(d)
         if p:
             h = dict(p["handoff"])
@@ -5642,7 +5653,8 @@ class J2Run:
         if self.doc:
             return []
         src = squash(" ".join([self.request, str(change or "")] + [x["answer"] for x in self.intake]
-                              + [m["text"] for m in self.chat if m["who"] == "user"]))
+                              + [m["text"] for m in self.chat if m["who"] == "user"]
+                              + [d["picked"] for d in self.decisions if d.get("picked")]))      # P43 (D448)
         return [f for f in goal.get("facts") or [] if not str(f or "").strip() or squash(f) not in src]
 
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
@@ -5810,7 +5822,7 @@ class J2Run:
         return j2_types.info(k)["label"].lower() if k else None
 
     def _thing(self):
-        """P44 (D449): what code calls the output in its own workable messages: a folder's own noun (types.json), else "site"."""
+        """P45 (D451): what code calls the output in its own workable messages: a folder's own noun (types.json), else "site"."""
         return self.out["noun"] if self.folder and self.out else "site"
 
     def _page_ready(self):
@@ -6000,7 +6012,7 @@ class J2Run:
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
-        if self.folder:      # P44 (D449): a folder of files a builder writes and runs (a program): its own charter, with its files
+        if self.folder:      # P45 (D451): a folder of files a builder writes and runs (a program): its own charter, with its files
             # and its test, from its own intake (the form's charter format), never a document's section charter (stage_goal)
             self.post("system", f"The documents are done. Now {self._sw(kind)}, built from them.")
             return self._handoff("identity", kind="intake")
@@ -6335,7 +6347,7 @@ class J2Run:
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
         last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
         before, started = {}, time.strftime("%Y-%m-%dT%H:%M:%S")
-        if w and code and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}":      # P44 (D449): approved
+        if w and code and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}":      # P45 (D451): approved
             before = folder_files(w["real_run"]["folder"])      # (the test of `ok` below): what its folder held before it ran
             w["real_run"]["capture"] = {}      # real_run puts what it printed here; taken out again before the receipt
         ans = str(h.get("answer") or "").strip()
@@ -6349,7 +6361,7 @@ class J2Run:
             {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
              "not run: the reply was not exactly RUN " + str(code)}
         receipt_extra = {}
-        if ok:      # P44 (D449): what it printed and the files it made, changed or deleted: a record of its own (run-output/1),
+        if ok:      # P45 (D451): what it printed and the files it made, changed or deleted: a record of its own (run-output/1),
             capture = w["real_run"].pop("capture", {})      # named in the receipt: its id, "output" (the record's path) and the counts
             if res.get("ran"):
                 rid = run_output_receipt(self.dir, w["id"])
@@ -6364,7 +6376,7 @@ class J2Run:
                                 "approved": ok, "answer_msg": last.get("id"), **res,
                                 **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
                                               for t, v in judged.items()}} if judged else {}),      # P33 (D436)
-                                **receipt_extra,      # P44 (D449): after the result, so "output" is the record's path in the receipt
+                                **receipt_extra,      # P45 (D451): after the result, so "output" is the record's path in the receipt
                                 "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
@@ -7058,7 +7070,21 @@ class J2Run:
         if said:
             self.post("system", "Not taken from the answer: whether a real run happened is answered by code from "
                                 "receipts.jsonl: " + "; ".join(f"item {a['item']}: {a['receipt']}" for a in
-                                                               map(self._real_run_answer, sorted(said))) + ".")
+                                                               map(self._real_run_answer, sorted(said))) + ". This part is checked when the real run actually "
+                                                                                     "happens, not from an answer.")      # P43 (D448)
+        ic = g.get("item_checks") or {}      # P43 (D448): the charter's real-run items not planned yet: never an answer's either
+        rr2 = {n for n, c in zip(nums, crit) if (ic.get(c) or {}).get("type") == "real-run"} - rr
+        held = any(isinstance(x, dict) and as_int(x.get("item")) in rr2 for k in ("confirmed", "still_to_be_confirmed")
+                   for x in r.get(k) or [])
+        # review R1-2 (owner): a fact given for such an item is known, so it no longer waits on the Requester; it is never a
+        # confirmed fact, and the item passes only on its real run's receipt (_run_item_check, _real_run_pending)
+        known = {dict(zip(nums, crit))[n] for x in r.get("confirmed") or []
+                 if isinstance(x, dict) and (n := as_int(x.get("item"))) in rr2}
+        tbc = [t for t in tbc if t["criterion"] not in known]
+        for k in ("confirmed", "still_to_be_confirmed"):
+            r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr2)]
+        if held:
+            self.post("system", "Noted. This part is checked when the real run actually happens, not from an answer.")
         for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
             r[k] = [{**x, "item": at.get(as_int(x.get("item")), 0)} for x in r.get(k) or [] if isinstance(x, dict)]
         decision, add, drops = "continue", None, []
@@ -7543,7 +7569,7 @@ class J2Run:
                 out.setdefault(("rubric", r["id"]), r["criterion"])
         mech = (last or {}).get("mechanical") or {}
         for p in (j2_check.problems(mech) if mech.get("available") else ["the browser check didn't run"]) \
-                if last and not self.doc and not self.folder else []:      # P44 (D449): a browser check is a page's, never a folder's
+                if last and not self.doc and not self.folder else []:      # P45 (D451): a browser check is a page's, never a folder's
             out.setdefault(("check", p), p)
         for c in (last or {}).get("conditions") or [] if not self.doc else []:   # by their text (the Requester reads it)
             if blocks(c) and not (not self.doc and c.get("check") in RENDER_CONDITIONS):
@@ -9067,11 +9093,14 @@ class J2Run:
                                             "covers each item"))
         return out
 
-    def _fact_source(self, goal=None):
+    def _fact_source(self, goal=None, pieces=False):
         """What a facts-present string must come from: the charter and the Requester's own words, squashed. goal: an
-        earlier stage's charter, for a re-check of a document that is already filed."""
-        return squash(" ".join(strings(goal or self.goal or {}) + [self.request] + [m["text"] for m in self.chat
-                                                                                    if m["who"] == "user"]))
+        earlier stage's charter, for a re-check of a document that is already filed. pieces (P43, D448 review R1-1): a list
+        of each text squashed on its own, for named_whole, so a path that ends one text never reads on into the next."""
+        texts = (strings(goal or self.goal or {}) + [self.request]
+                 + [d["picked"] for d in self.decisions if d.get("picked")]      # P43 (D448)
+                 + [m["text"] for m in self.chat if m["who"] == "user"])
+        return [squash(t) for t in texts] if pieces else squash(" ".join(texts))
 
     def _approved_docs_text(self):
         """The approved documents of this run (documents.json: a stage that passed its audit), squashed, for N6's
@@ -9109,7 +9138,7 @@ class J2Run:
                 facts_to_headings(a, src)
         self._fix_atoms(w, src, types, up, real)
         form, stripped = path_form_problems(w, os.path.basename(self._out_dir())) if self.folder else ([], 0)
-        if form:      # P44 (D449): one path form for every file a folder's checks name; a mix is refused
+        if form:      # P45 (D451): one path form for every file a folder's checks name; a mix is refused
             return form
         if stripped:
             self._autofix(w.get("name") or "?", "path_form", f"{stripped} check target(s) named with the folder in front: "
@@ -10004,7 +10033,8 @@ class J2Run:
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
                 w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
-                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
+                bad = real_run_problems(w["real_run"], self._fact_source(pieces=True),      # P43 (D448, review R1-1)
+                                        self.out.get("test_runner"), self.dir)
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
                     continue
@@ -10028,14 +10058,14 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
-                if bad := real_run_env_problems(w["real_run"], self._fact_source(), self.dir):      # P41 (D446)
+                if bad := real_run_env_problems(w["real_run"], self._fact_source(pieces=True), self.dir):      # P41 (D446; D448)
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
                     continue
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
-                if bad := real_run_result_problems(w["real_run"]):      # P44 (D449): the file it leaves as its main result
+                if bad := real_run_result_problems(w["real_run"]):      # P45 (D451): the file it leaves as its main result
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_result",)))
                     continue
-                if w["real_run"].get("result"):      # P44 (D449): stored only when stated; kept in its run-output record
+                if w["real_run"].get("result"):      # P45 (D451): stored only when stated; kept in its run-output record
                     wf["real_run"]["result"] = str(w["real_run"]["result"]).strip()
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
@@ -13035,7 +13065,7 @@ class J2Run:
         for an artifact workflow); each result is a receipt and the atom keeps its latest ones. Returns the failed
         receipts."""
         doc = self.doc if doc is None else doc
-        if folder is None and self.folder and not doc:      # P44 (D449): a recheck (a corrected check, an answer on the board) of
+        if folder is None and self.folder and not doc:      # P45 (D451): a recheck (a corrected check, an answer on the board) of
             folder = self._out_dir()                        # a folder's atom runs where its build's checks ran
         site_dir, failed = folder or os.path.join(self.dir, "site"), []
         advisory = set((self.out or {}).get("advisory_checks") or ()) if folder else set()
@@ -13053,7 +13083,7 @@ class J2Run:
             if folder and c.get("type") in ("file-exists", "test-passed", "inside-folder"):
                 if c["type"] == "inside-folder":      # a change outside the folder stops the build before any check
                     return {"actual": True, "pass": True, "evidence": "nothing changed outside the folder"}
-                targets = [in_folder(x, folder) for x in target_list(c.get("target"))] or [""]      # P44 (D449): each file, one path form
+                targets = [in_folder(x, folder) for x in target_list(c.get("target"))] or [""]      # P45 (D451): each file, one path form
                 if c["type"] == "test-passed":
                     if not self.out.get("test_runner"):
                         return {"actual": None, "pass": None, "evidence": "this output's form names no test runner"}
@@ -13430,7 +13460,7 @@ class J2Run:
         return r, mech, shot, measured, conds
 
     def _wf_test(self):
-        """P44 (D449): the test file the latest workflow with a test-passed check names (its first target), "" when none does."""
+        """P45 (D451): the test file the latest workflow with a test-passed check names (its first target), "" when none does."""
         for w in reversed(self.workflows):
             if w.get("status") == "superseded":
                 continue
@@ -13461,7 +13491,7 @@ class J2Run:
             t = (charter_list(g, cond.get("charter_field")) or [""])[0]
             if not t:      # P29 (D431): the charter names no test: building can't change it
                 c["from_charter"] = True
-            if not t and self._wf_test():      # P44 (D449): a charter that names no test: the test the latest workflow's check names
+            if not t and self._wf_test():      # P45 (D451): a charter that names no test: the test the latest workflow's check names
                 t = self._wf_test()
                 c.pop("from_charter", None)
             t = in_folder(t, folder)
