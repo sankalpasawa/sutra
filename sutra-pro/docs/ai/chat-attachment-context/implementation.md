@@ -49,5 +49,5 @@ The new tests were run against the code of the base commit (aa2922a9, extracted 
 | release | 658 passed, 8 skipped, 1 failed (`test_workflows_yaml::test_ci_is_named_ci...`: the CI workflow is manual-dispatch only since 0.8.2; same on the base commit) |
 | top-level `tests/test_*.py` | 172 passed, 1 skipped |
 | ui | 986 passed, 323 skipped, 2 failed (`test_fake_backend::test_the_pages_come_from...` and `test_shared_css::test_each_page_links...`: both name the avatars style added by D439; same on the base commit) |
-Node: all 69 files under `tests/ui/js` pass (chat_composer 50, chat_view 78, chat_search 8, chat_composer_live 19, chat_view_workdir 5).
+Node: all 76 files under `tests/ui/js` pass (chat_composer 50, chat_view 78, chat_search 8, chat_composer_live 19, chat_view_workdir 5).
 Run in one process in the order orchestrator then library, `test_lib_records::test_all_does_not_freeze_the_registry` failed (the orchestrator tests freeze the registry); the gate's order runs library first and each directory passes alone.
