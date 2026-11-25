@@ -93,7 +93,7 @@ Not in scope:
 | :1736 part drawer | The part, on the page. | The part, in the result. |
 
 - **FR-18** No visible text on the panel of a non-page run uses "site", "page" or "website" for the result. Checked by a string scan of the script-run fixture.
-- **FR-19** On every run, after "Copy share link" copies, the button reads "Link copied — opens on this computer only" for 2.5 s. The server listens on loopback only (main.py:20), so this is true. The copied URL is the main file's `/view` link instead of `/site/latest` (owner, Q-3). A page run whose main file is the site keeps `/site/latest` (FR-16); a run with no main file (Files list, no files, or a real-run result, which has no `/view` route) keeps today's URL (T4 detail; see Q-4).
+- **FR-19** On every run, after "Copy share link" copies, the button reads "Link copied — opens on this computer only" for 2.5 s. The server listens on loopback only (main.py:20), so this is true. Page runs (websites, docsets) keep today's button and URL, `/site/latest` (FR-16). On any other run the copied URL is the main file's `/view` link (owner, Q-3), and the button is hidden when there is no main file (Files-list fallback or no outputs) or the main result is a real-run result (a file in the user's folder, no `/view` route) (owner, Q-4).
 
 ### Edge cases
 - **FR-20** `output == null` (D165): not a page run; noun "result"; three tabs; no console error.
@@ -131,7 +131,7 @@ A new hand-built fixture for a script (folder-form `agent`) run is needed (impac
 | AC-11 | a done part whose last `W-n` message is "@Coordination Wrote the script. It prints env vars." | the card reads "Wrote the script.", has no `.sl` bars, lists its files | FR-13, FR-14 |
 | AC-12 | a done part with no `W-n` message; parts in each status | "Finished."; bars only on `doing`, `fix` and placeholder cards | FR-13, FR-15 |
 | AC-13 | the done script fixture | no visible "site/page/website"; `#sopen` hidden; Download `href` is `/api/artifact?name=<main>...` with `download="<basename>"`; no `href` starts with `/site/` | FR-17, FR-18, FR-21 |
-| AC-14 | any done run; Copy share link clicked | the button reads "Link copied — opens on this computer only", then "Copy share link" after 2.5 s | FR-19 |
+| AC-14 | any done run that shows Copy share link; it is clicked | the button reads "Link copied — opens on this computer only", then "Copy share link" after 2.5 s | FR-19 |
 | AC-15 | state with `output: null` | three tabs, noun "result", no throw | FR-20 |
 | AC-16 | the change set | the NFR commands pass | NFR-1..7 |
 
@@ -167,7 +167,7 @@ When a route is absent nothing is drawn (no empty heading).
 | Q-1 | Planned names: `workflows[].real_run.result` for the main result and `types[output].entry_file` as fallback; is `result` a path relative to the run folder (so it can equal a row's `file`)? | Kaivan (SUT-23) | answered: names confirmed; `result` is a path in the user's folder, not the run folder, so it is never matched against outputs; its text comes from `run_output/<receipt-id>.json` (P45, not built), linked as the receipt row's `run_output` (FR-10 step 1) |
 | Q-2 | Should a page run's Result keep the live site preview while running (FR-4 exception)? | owner | answered yes (plan review, 2026-11-25) |
 | Q-3 | On a non-page run "Copy share link" still copies `/site/latest`, which answers "No site in this run." Copy the main file's `/view` URL instead? | owner | answered yes (plan review, 2026-11-25): the main file's `/view` link (FR-19) |
-| Q-4 | What does "Copy share link" copy on a run with no main file (Files list, no files) or a real-run result (no `/view` route)? | owner | today's URL; revisit at T4 |
+| Q-4 | What does "Copy share link" copy on a run with no main file (Files list, no files) or a real-run result (no `/view` route)? | owner | answered (2026-11-25): nothing, the button is hidden in those cases (FR-19); website runs keep today's behaviour |
 | Q-5 | P45's keys on the real_run receipt row | Kaivan | confirmed: `run_output` (`run_output/<receipt-id>.json`), `result` (from the proposal, else the entry_file fallback, resolved by the engine), and the real run's own `created` / `changed` / `deleted` / `files_truncated` in the `dry_run.*` format; `output` stays the 1,500-char tail (pending Kaivan's final key list once built). The UI reads only these names |
 
 Answered: builder summary (owner, item 3 of 2026-11-25), per-file download with no zip, `engine/views.py` untouched with CSV/JSON parsed in the page, keep the name "Copy share link", How it was made as the default before done, the site preview for a website run, the "opens on this computer only" note.
@@ -195,3 +195,4 @@ D450, one decision for the whole change. SUT-28 is expected to take D449; re-che
 | 2026-11-25 developer (T1) | Owner decisions at plan review: Q-1 answered (FR-10 step 1 rebuilt: `real_run.result` is a path in the user's folder, never matched against outputs; the real-run result shows only when the workflow's last receipt row's `output` is a `run_output/<id>.json` link, P45; skipped today). Q-2 yes (FR-4). Q-3 yes: Copy share link copies the main file's `/view` link (FR-19). AC-10 cases updated; Q-4, Q-5 added; Later row for a folder file points at P45. |
 | 2026-11-25 developer (T1) | Owner update: the P45 link key is `run_output` on the receipt row (pending Kaivan's OK); `output` stays the stdout+stderr tail and is never read as a link. FR-10 step 1, AC-10, Later, Q-1, Q-5 updated. |
 | 2026-11-25 developer (T1, second commit) | P45 confirmed: FR-10 step 1 reads the receipt row's own `result` and `run_output` (each workflow's last row, the last in plan order), no longer `workflows[].real_run.result`; Later folder changes read the row's top-level `created`/`changed`/`deleted`/`files_truncated`; AC-10 and Q-5 updated. |
+| 2026-11-25 developer (T1, docs) | Q-4 answered by the owner: Copy share link is hidden with no main file or a real-run result; otherwise it copies the main file's `/view` link; website runs as today. FR-19, AC-14 updated. |

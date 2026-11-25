@@ -60,13 +60,13 @@ Untouched: everything in impact.md §6, `engine/views.py`, `engine/api/*`, `j2.c
 |---|---|---|
 | `sViews(s, M, ready)` | replaced | three tabs, default tab, pick, address label, viewer dispatch, no page toast on non-page runs |
 | `sTabs(s)` | left; no longer called (only `sViews` called it) | nothing to change |
-| `sFinish(s)` | replaced: page runs (incl. docset) call the original; others get the module's bar | Download of the main file or "All files (N)" |
+| `sFinish(s)` | replaced: page runs (incl. docset) call the original; others get the module's bar | Download of the main file or "All files (N)"; Copy share link only with a main file that is not a real-run result (Q-4) |
 | `renderSimple(s)` | wrapped (after the original, in `try`) | card decoration, "What you got" site line, `#sopen`, finish refresh when the main result changes |
 | `sPhase(s, open)` | wrapped | "Checking it on a phone and a laptop" → "Checking the work" on non-page runs |
 | `sOpenPart(sec)` | wrapped (await, then swap one text node in `#sdbody`) | "The part, on the page." → "The part, in the result." |
 | `sTeamwork(s, M)` | left; its painted DOM is decorated | avatars pattern; no copied J2 render |
 | `sTop` | left; `#sopen` hidden in the `renderSimple` wrapper on non-page runs | one place for post-render fixes |
-| share click | a capture-phase listener on `#sfinish` for `[data-share]` that copies the main file's `/view` URL (page site or no main file: today's URL) and calls `stopImmediatePropagation` | the page's listener is anonymous and cannot be replaced |
+| share click | a capture-phase listener on `#sfinish` for `[data-share]` that copies the main file's `/view` URL and calls `stopImmediatePropagation`; on non-page runs the module's `sFinish` leaves the button out when there is no main file or the main result is a real-run result (Q-4); page runs keep the page's button and URL | the page's listener is anonymous and cannot be replaced |
 
 Every wrapper falls back to the original if the module throws (NFR-7). `adopt()` runs once; if any required global is missing it returns false and the page stays as J2 drew it.
 
@@ -187,7 +187,8 @@ sequenceDiagram
   participant P as page listener
   U->>F: click Copy share link
   F->>RV: capture phase
-  RV->>RV: clipboard.writeText(main file /view URL; page site or no main file: today's URL)
+  Note over F: non-page run with no main file or a real-run result: no data-share button (Q-4)
+  RV->>RV: clipboard.writeText(main file /view URL; page run: today's /site/latest)
   RV->>F: stopImmediatePropagation; text "Link copied — opens on this computer only"; reset after 2.5 s
   Note over P: never runs for data-share
 ```
@@ -296,7 +297,7 @@ Ships with the next release, nothing to migrate. Rollback: remove `"result_view"
 - Why: scripts and reports showed an empty Page tab, grey bars and a Download of an empty page, and the file the run made was nowhere. One rule for every output keeps one screen to learn and to test, and a hook leaves the main result to the plan once SUT-23 records it.
 - Rejected: port edits to `sTabs`, `sViews`, `sFinish` and `sTeamwork` (D439: the goldens pin the render, and every J2 sync re-anchors them); a screen per project type (D241); picking the main file by name (`report.txt`, `index.html`); a server route that picks the file or parses CSV (`engine/views.py` stays closed for this change); private-data detection and a "Turn sharing on" switch (the owner dropped it); a zip download.
 - Rollback: drop `result_view` from `MODULES` (and its mirror in `tests/ui/test_port_edits.py`) and port again; the page is J2's again.
-- Follow-ups: P45 (`run_output/<id>.json` and its route; the `real_runs` projection to carry `result`, `run_output`, `created`/`changed`/`deleted`/`files_truncated`) turns on the real-run result; "What changed in your folder" and "What the script printed" when SUT-28 / SUT-23 add a route; the share URL of a run with no main file (spec Q-4).
+- Follow-ups: P45 (`run_output/<id>.json` and its route; the `real_runs` projection to carry `result`, `run_output`, `created`/`changed`/`deleted`/`files_truncated`) turns on the real-run result; "What changed in your folder" and "What the script printed" when SUT-28 / SUT-23 add a route. Share link: hidden with no main file or a real-run result (spec Q-4, answered).
 - Diagram: label "centre panel: Result / Files / How it was made for every output; main result by rule, never by name", pill on band:EXPERIENCE.
 ```
 
@@ -314,7 +315,7 @@ decisions.json entry (appended after D448, or after D449 when SUT-28 lands first
 | `SV.arts` lags `renderSimple` by one fetch, so Result briefly shows the placeholder or list | high, harmless | the wrapper re-evaluates on the re-render `sArts` triggers (j2_ui.html:1740) |
 | `#sfinish` drawn before the main result is known | high | finish refresh keyed on the main file in the wrapper |
 | File names on a card are not keyboard targets (inside a `<button>`) | certain | Files tab is the keyboard path; noted in D450 follow-ups if the owner wants more |
-| Share link of a run with no main file opens "No site in this run." | certain while Q-4 stays at its default | spec Q-4 |
+| A user looks for Copy share link on a run with no main file or a real-run result | certain | hidden by the owner's choice (spec Q-4); Download or All files stays in the finish bar |
 | P45's built key list differs from the confirmed one | low (confirmed by Kaivan; final list pending once built) | only `realRun` changes; unit cases pin that `output`, `dry_run.*`, `expect` and the plan's `real_run.result` are not read |
 | D450 collides with a parallel branch | moderate | re-check the highest number after `git fetch` before the decision commit |
 | `j2_ui.html` regeneration needs a J2 extraction at the port's pin | moderate | the change is exactly the E12 line; `test_port_edits.py` and the opt-in `SUTRA_J2_CHECKOUT` check confirm it |
@@ -327,3 +328,4 @@ decisions.json entry (appended after D448, or after D449 when SUT-28 lands first
 | 2026-11-25 developer (T1) | Owner decisions at plan review: main-result step 1 is the real-run result hook (`realRun`, P45 link on the workflow's last receipt row; `result` never matched against outputs); `mainResult` takes `runs`; `/api/artifacts/groups` `real_runs` now read; share URL is the main file's `/view` link (Q-3); Q-2 confirmed (no design change) |
 | 2026-11-25 developer (T1) | Owner update: `realRun` reads the receipt row's `run_output` key only; `output` (stdout tail) is never a link |
 | 2026-11-25 developer (T1, second commit) | P45 confirmed: `realRun` reads the receipt row's own `result` and `run_output` (each workflow's last row, last in plan order); Later folder changes from the row's top-level `created`/`changed`/`deleted`/`files_truncated`. No reader built for them yet (Later) |
+| 2026-11-25 developer (T1, docs) | Q-4 answered: Copy share link hidden on non-page runs with no main file or a real-run result; share flow and risk rows updated |

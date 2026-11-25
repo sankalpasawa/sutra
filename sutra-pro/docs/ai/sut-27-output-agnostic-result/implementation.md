@@ -8,6 +8,7 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 |---|---|---|
 | T1 pure core and fixtures | done | `SUT-27: D450 the pure core of result_view.js and a script-run fixture, not loaded by the page yet` |
 | T1 follow-up | done | `SUT-27: D450 the real-run result is read from the receipt row's own result and run_output keys` |
+| Q-4 docs | done | `SUT-27: D450 Copy share link is hidden with no main file or a real-run result (Q-4, docs)` |
 | T2-T6 | not started | |
 
 ### T1
@@ -48,4 +49,4 @@ Not run (owner rule): `scripts/gate.sh`, `scripts/live_smoke.py`, browser tests,
 ## Known gaps
 
 - `realRun` never hits today: the `/api/artifacts/groups` `real_runs` projection (j2_artifacts.py:774-793) carries none of the P45 keys, and P45 lands after SUT-28. Hook only; how the text is fetched from `run_output/<id>.json` is decided when P45 lands.
-- The share URL for a run with no main file or a real-run result (spec Q-4) is left as today's; decide at T4.
+- Q-4 answered by the owner (docs commit): Copy share link is hidden with no main file or a real-run result; built in T4.
