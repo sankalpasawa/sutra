@@ -19,16 +19,11 @@
 name: sutra-pro-ci
 
 # Only changes to this product (or to this file) run it: the old product shares the repository and has its own workflows.
+# TESTS PAUSED (founder, 2026-11-25): they slowed the release. Push and pull_request triggers are off; run the suite by hand
+# (Actions -> sutra-pro-ci -> Run workflow) or locally with scripts/gate.sh. Restore the two blocks below to turn them back on:
+#   push:         branches: ["**"], paths: ["sutra-pro/**", ".github/workflows/sutra-pro-ci.yml"]
+#   pull_request: paths: ["sutra-pro/**", ".github/workflows/sutra-pro-ci.yml"]
 on:
-  push:
-    branches: ["**"]
-    paths:
-      - "sutra-pro/**"
-      - ".github/workflows/sutra-pro-ci.yml"
-  pull_request:
-    paths:
-      - "sutra-pro/**"
-      - ".github/workflows/sutra-pro-ci.yml"
   workflow_dispatch:
     inputs:
       slow:
