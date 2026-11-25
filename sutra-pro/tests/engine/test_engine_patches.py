@@ -4367,7 +4367,7 @@ P43_ANSWER = "It runs on ~/Documents/Made Up/Tool"
 P43_LATER = "This part is checked when the real run actually happens, not from an answer."
 
 
-def p43_answer(make_run, confirmed, planned=False):
+def p43_answer(make_run, confirmed, planned=False, still=()):
     """Identity hears an answer to a fact question while the charter marks item 1 real-run (P30's item_checks)."""
     run = make_run()
     run.goal = {"statement": "x", "done_when": [P43_RR, P43_DOC],
@@ -4376,7 +4376,7 @@ def p43_answer(make_run, confirmed, planned=False):
     run.workflows = [{"id": "W-1", "real_run": {"checks": [1]}}] if planned else []
     run.post("user", P43_ANSWER)
     run.call = lambda role, fmt, prompt, *a, **k: {"say": "ok", "to_requester": "Thanks.", "clause": "done_when", "confirmed": confirmed,
-                                                   "still_to_be_confirmed": [], "next": "Adaptation"}
+                                                   "still_to_be_confirmed": list(still), "next": "Adaptation"}
     run._identity_hears_requester({"asked": [{"question": "Which folder?"}], "answer": P43_ANSWER})
     return run
 
@@ -4387,7 +4387,8 @@ def test_p43_an_answer_never_confirms_a_real_run_item(make_run, planned):
     texts = [m["text"] for m in run.chat]
     assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
     assert not any(t.startswith("Confirmed by the Requester") for t in texts)
-    assert P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+    # review R1-2 (owner, option 1): an item not planned yet leaves to_be_confirmed, the fact is known; a planned one is J2's
+    assert (P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}) is planned
     assert P43_ANSWER in run.handoff["why"], "the answer still reaches Adaptation"
     assert "~/documents/made up/tool" in run._fact_source()
     noted = [t for t in texts if t == "Noted. " + P43_LATER]
@@ -4452,6 +4453,25 @@ def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
     run.post("user", "use 2 folders")
     run._run()
     assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
+
+
+def test_p43_r1_2_a_held_answer_clears_its_to_be_confirmed_entry_and_the_item_still_needs_a_receipt(make_run):
+    """Review R1-2 (owner, option 1): the held answer gives the fact, so the item is no longer waiting on the Requester (never
+    blocked, never asked again as a follow-up); it is still not confirmed and passes only on a real run's receipt."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
+    assert P43_RR not in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    run.audits = [{"results": [{"id": "F-1", "item": 1, "criterion": P43_RR, "verdict": "TO_BE_CONFIRMED", "pass": False},
+                               {"id": "F-2", "item": 2, "criterion": P43_DOC, "verdict": "PASS", "pass": True}]}]
+    assert run._blocked_items() == [] and run._tbc_blocked() == {}
+    assert not any("Send it as a follow-up" in x for x in run._open_items())
+    assert run._chain_done("Done.") == "Done.", "the run does not end asking for the fact it was given"
+    assert run._run_item_check(P43_RR, {"type": "real-run"}, "", {})["pass"] is False, "no receipt: it does not pass"
+
+
+def test_p43_r1_2_an_answer_that_cannot_give_the_fact_yet_keeps_the_entry(make_run):
+    run = p43_answer(make_run, [], still=[{"item": 1, "fact": "which folder it runs on"}])
+    assert P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}
 
 
 P43_CSV = "CSV/Excel tidier for a folder"      # review R1-1: the brief's first word holds a "/"

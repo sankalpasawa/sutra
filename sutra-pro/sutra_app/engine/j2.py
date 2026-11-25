@@ -6870,6 +6870,11 @@ class J2Run:
         rr2 = {n for n, c in zip(nums, crit) if (ic.get(c) or {}).get("type") == "real-run"} - rr
         held = any(isinstance(x, dict) and as_int(x.get("item")) in rr2 for k in ("confirmed", "still_to_be_confirmed")
                    for x in r.get(k) or [])
+        # review R1-2 (owner): a fact given for such an item is known, so it no longer waits on the Requester; it is never a
+        # confirmed fact, and the item passes only on its real run's receipt (_run_item_check, _real_run_pending)
+        known = {dict(zip(nums, crit))[n] for x in r.get("confirmed") or []
+                 if isinstance(x, dict) and (n := as_int(x.get("item"))) in rr2}
+        tbc = [t for t in tbc if t["criterion"] not in known]
         for k in ("confirmed", "still_to_be_confirmed"):
             r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr2)]
         if held:
