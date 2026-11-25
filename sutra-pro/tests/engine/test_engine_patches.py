@@ -3745,3 +3745,11 @@ def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp
     res = j2ft.real_run(str(out), p41_rr(folder, secret_files={"API_CRED_FILE": str(cred)}), 60)
     assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
+    """T3 (owner Q4): the builder's test rerun gets the clean base only; a made-up app variable never reaches it."""
+    _, folder, *_ = p41
+    (folder / "t.py").write_text("import os, sys\nsys.exit(1 if {'SUT22_LEAK', 'PYTHONPATH'} & set(os.environ) else 0)\n")
+    res = j2ft.sandbox_rerun(str(folder), [sys.executable, "{target}"], "t.py", 30)
+    assert res["pass"] is True, res

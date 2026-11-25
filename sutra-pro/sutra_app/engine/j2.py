@@ -920,7 +920,8 @@ def sandbox_rerun(folder, runner, target, timeout):
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(sandbox_settings(copy), f)
         run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
-        p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout,
+                           env=llm.run_env())      # P41 (D446): the test rerun gets the base only
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = "in the sandbox" if cmd else "on a copy, without a sandbox"
