@@ -1140,6 +1140,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
   qs.forEach((q, i) => {
     h += q.q ? sQText(q.q) : "";
     if (ok) h += q.opts.length ? `<p class="qnote">${esc(q.opts.map(plain).join(" · "))}</p>` : "";
+    else if (kind === "hosts" && live) h += `<div class="acts"><button type="button" class="pri" data-run="Option 1">Allow</button><button type="button" class="ghost" data-run="Don't allow">Don't allow</button></div>`;      // E29 (D449)
     else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
   if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
