@@ -166,7 +166,7 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p42_without_p6_p13_p20_and_sut19s_p36_to_p40():
+def test_the_patch_table_has_p1_to_p43_without_p6_p13_p20_and_sut19s_p36_to_p40():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
     Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422); P27 lists only files for a type's pattern (main c9d4e662); P28 stops the cycle on the same build failure twice in a
@@ -176,10 +176,11 @@ def test_the_patch_table_has_p1_to_p42_without_p6_p13_p20_and_sut19s_p36_to_p40(
     run's output against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and sends a dry run that
     differs, or writes into a read-only folder, back to the build (D438); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
     the engine runs a clean environment from an allowlist plus what its plan states, with secrets by file path (D446); P42 gives a build with a requirements.txt an
-    environment of its own, installed only after RUN <code> (D447)."""
+    environment of its own, installed only after RUN <code> (D447); P43 keeps an answer from confirming a real-run item and
+    counts a picked option's text (D448)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 43) if n not in (6, 13, 20, 36, 37, 38, 39, 40)]
+    assert ids == [f"P{n}" for n in range(1, 44) if n not in (6, 13, 20, 36, 37, 38, 39, 40)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)

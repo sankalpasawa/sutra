@@ -718,8 +718,7 @@ def real_run_problems(rr, source, runner, run_dir):
             continue
         p = os.path.realpath(f)
         # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {f, home_tilde(f)}):      # P31 (D434, beta fix): the brief may write it ~/x
+        if not any(named_whole(g, source) for g in {f, home_tilde(f)}):      # P31 (D434, beta fix; D448: named whole): ~/x too
             out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
         if not os.path.isdir(p):
             out.append(f"real_run folder {f} is not an existing folder")
@@ -762,6 +761,15 @@ def home_tilde(f):
     """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
     h = os.path.expanduser("~").rstrip("/")
     return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
+
+
+def named_whole(g, source):
+    """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
+    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end.
+    source may be a list of texts (_fact_source(pieces=True)): then g is named whole in one of them (review R1-1)."""
+    pat = (r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
+           + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))")
+    return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
 
 
 def real_folders(workflows):
@@ -871,9 +879,8 @@ def real_run_env_problems(rr, source, run_dir):
         if not os.path.isabs(p):
             out.append(f"real_run secret file {f!r} must be an absolute path")
             continue
-        # named whole, as real_run_problems names a folder (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {p, home_tilde(p)}):
+        # named whole, as real_run_problems names a folder (named_whole, D448)
+        if not any(named_whole(g, source) for g in {p, home_tilde(p)}):
             out.append(f"real_run secret file {f} is not named in the brief or the Requester's answers: ask for it")
         r = os.path.realpath(p)
         if not os.path.isfile(r):
@@ -5311,6 +5318,10 @@ class J2Run:
             self.paused = None
             self.cycle_turns = 0       # the answer is new information: without this the turn cap re-asked at once
             d = {"kind": p["kind"], "asked": [q["question"] for q in p["questions"]], "answer": last_user}
+            q1 = p["questions"][0] if len(p["questions"]) == 1 else {}
+            if q1.get("options") and ONLY_PICK.fullmatch(last_user) and (i := option_picked(q1, last_user)) is not None \
+                    and not next(m for m in reversed(self.chat) if m["who"] == "user").get("auto"):
+                d["picked"] = str(q1["options"][i])      # P43 (D448): the Requester's own pick, in full; never Decide for me's
             self.decisions.append(d)
         if p:
             h = dict(p["handoff"])
@@ -5457,7 +5468,8 @@ class J2Run:
         if self.doc:
             return []
         src = squash(" ".join([self.request, str(change or "")] + [x["answer"] for x in self.intake]
-                              + [m["text"] for m in self.chat if m["who"] == "user"]))
+                              + [m["text"] for m in self.chat if m["who"] == "user"]
+                              + [d["picked"] for d in self.decisions if d.get("picked")]))      # P43 (D448)
         return [f for f in goal.get("facts") or [] if not str(f or "").strip() or squash(f) not in src]
 
     # ---- design documents: stages. PRD, HLD and LLD run one after another through the same flow (each its own output
@@ -6852,7 +6864,21 @@ class J2Run:
         if said:
             self.post("system", "Not taken from the answer: whether a real run happened is answered by code from "
                                 "receipts.jsonl: " + "; ".join(f"item {a['item']}: {a['receipt']}" for a in
-                                                               map(self._real_run_answer, sorted(said))) + ".")
+                                                               map(self._real_run_answer, sorted(said))) + ". This part is checked when the real run actually "
+                                                                                     "happens, not from an answer.")      # P43 (D448)
+        ic = g.get("item_checks") or {}      # P43 (D448): the charter's real-run items not planned yet: never an answer's either
+        rr2 = {n for n, c in zip(nums, crit) if (ic.get(c) or {}).get("type") == "real-run"} - rr
+        held = any(isinstance(x, dict) and as_int(x.get("item")) in rr2 for k in ("confirmed", "still_to_be_confirmed")
+                   for x in r.get(k) or [])
+        # review R1-2 (owner): a fact given for such an item is known, so it no longer waits on the Requester; it is never a
+        # confirmed fact, and the item passes only on its real run's receipt (_run_item_check, _real_run_pending)
+        known = {dict(zip(nums, crit))[n] for x in r.get("confirmed") or []
+                 if isinstance(x, dict) and (n := as_int(x.get("item"))) in rr2}
+        tbc = [t for t in tbc if t["criterion"] not in known]
+        for k in ("confirmed", "still_to_be_confirmed"):
+            r[k] = [x for x in r.get(k) or [] if not (isinstance(x, dict) and as_int(x.get("item")) in rr2)]
+        if held:
+            self.post("system", "Noted. This part is checked when the real run actually happens, not from an answer.")
         for k in ("confirmed", "still_to_be_confirmed"):          # item numbers -> current positions
             r[k] = [{**x, "item": at.get(as_int(x.get("item")), 0)} for x in r.get(k) or [] if isinstance(x, dict)]
         decision, add, drops = "continue", None, []
@@ -8861,11 +8887,14 @@ class J2Run:
                                             "covers each item"))
         return out
 
-    def _fact_source(self, goal=None):
+    def _fact_source(self, goal=None, pieces=False):
         """What a facts-present string must come from: the charter and the Requester's own words, squashed. goal: an
-        earlier stage's charter, for a re-check of a document that is already filed."""
-        return squash(" ".join(strings(goal or self.goal or {}) + [self.request] + [m["text"] for m in self.chat
-                                                                                    if m["who"] == "user"]))
+        earlier stage's charter, for a re-check of a document that is already filed. pieces (P43, D448 review R1-1): a list
+        of each text squashed on its own, for named_whole, so a path that ends one text never reads on into the next."""
+        texts = (strings(goal or self.goal or {}) + [self.request]
+                 + [d["picked"] for d in self.decisions if d.get("picked")]      # P43 (D448)
+                 + [m["text"] for m in self.chat if m["who"] == "user"])
+        return [squash(t) for t in texts] if pieces else squash(" ".join(texts))
 
     def _approved_docs_text(self):
         """The approved documents of this run (documents.json: a stage that passed its audit), squashed, for N6's
@@ -9792,7 +9821,8 @@ class J2Run:
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
                 w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
-                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
+                bad = real_run_problems(w["real_run"], self._fact_source(pieces=True),      # P43 (D448, review R1-1)
+                                        self.out.get("test_runner"), self.dir)
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run",)))      # key: P22 (D431)
                     continue
@@ -9816,7 +9846,7 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
-                if bad := real_run_env_problems(w["real_run"], self._fact_source(), self.dir):      # P41 (D446)
+                if bad := real_run_env_problems(w["real_run"], self._fact_source(pieces=True), self.dir):      # P41 (D446; D448)
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
                     continue
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated

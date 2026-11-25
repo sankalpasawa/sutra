@@ -4359,3 +4359,211 @@ def test_p42_runenv_is_j2s_module_below_its_docstring():
         pytest.skip("prototypes/j2 is not here")
     code = lambda p: p.read_text(encoding="utf-8").split('"""\nimport ast', 1)[1]
     assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
+
+
+# ---- P43 (D448): an answer never confirms a real-run item; a picked option counts with its full text, the Requester's only
+P43_RR, P43_DOC = "The tool tidies the made-up folder for real", "A README explains how to run it"
+P43_ANSWER = "It runs on ~/Documents/Made Up/Tool"
+P43_LATER = "This part is checked when the real run actually happens, not from an answer."
+
+
+def p43_answer(make_run, confirmed, planned=False, still=()):
+    """Identity hears an answer to a fact question while the charter marks item 1 real-run (P30's item_checks)."""
+    run = make_run()
+    run.goal = {"statement": "x", "done_when": [P43_RR, P43_DOC],
+                "item_checks": {P43_RR: {"type": "real-run"}, P43_DOC: {"type": "file-exists", "target": "README.md", "expect": True}},
+                "to_be_confirmed": [{"criterion": P43_RR, "fact": "which folder it runs on"}]}
+    run.workflows = [{"id": "W-1", "real_run": {"checks": [1]}}] if planned else []
+    run.post("user", P43_ANSWER)
+    run.call = lambda role, fmt, prompt, *a, **k: {"say": "ok", "to_requester": "Thanks.", "clause": "done_when", "confirmed": confirmed,
+                                                   "still_to_be_confirmed": list(still), "next": "Adaptation"}
+    run._identity_hears_requester({"asked": [{"question": "Which folder?"}], "answer": P43_ANSWER})
+    return run
+
+
+@pytest.mark.parametrize("planned", [False, True], ids=["unplanned", "planned"])
+def test_p43_an_answer_never_confirms_a_real_run_item(make_run, planned):
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned)
+    texts = [m["text"] for m in run.chat]
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert not any(t.startswith("Confirmed by the Requester") for t in texts)
+    # review R1-2 (owner, option 1): an item not planned yet leaves to_be_confirmed, the fact is known; a planned one is J2's
+    assert (P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}) is planned
+    assert P43_ANSWER in run.handoff["why"], "the answer still reaches Adaptation"
+    assert "~/documents/made up/tool" in run._fact_source()
+    noted = [t for t in texts if t == "Noted. " + P43_LATER]
+    planned_note = [t for t in texts if t.startswith("Not taken from the answer: whether a real run happened")]
+    if planned:
+        assert not noted and len(planned_note) == 1 and planned_note[0].endswith(". " + P43_LATER)
+    else:
+        assert len(noted) == 1 and not planned_note
+
+
+def test_p43_an_answer_still_confirms_an_item_that_is_not_real_run(make_run):
+    run = p43_answer(make_run, [{"item": 2, "fact": "README.md at the top"}])
+    texts = [m["text"] for m in run.chat]
+    assert P43_DOC in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert f"Confirmed by the Requester: {P43_DOC} = README.md at the top" in texts
+    assert not any(t.startswith("Noted.") for t in texts)
+
+
+@pytest.fixture
+def p43_pick(make_run, tmp_path, monkeypatch):
+    """A run whose brief names no folder pauses on one question whose first option names a made-up folder."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    run = make_run()
+    run.request = "Build a tool that tidies a folder"
+    run.goal = {"statement": "x", "done_when": [P43_DOC]}
+    run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool", "Another folder"],
+                                     "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+    monkeypatch.setattr(run, "_plan_stages", lambda: None)
+    return run, run.paused["questions"][0]["options"][0]
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "auto"])
+def test_p43_a_picked_option_names_its_folder_only_when_the_requester_picked_it(j2, p43_pick, by, form):
+    run, shown = p43_pick
+    if by == "click":
+        run.post("user", "Option 1")
+        run._run()
+    else:
+        run.auto = True
+        run._auto_go()
+        last = [m for m in run.chat if m["who"] == "user"][-1]
+        assert last.get("auto") and last["text"] == "Option 1", "Decide for me picked the same option"
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    rr = {"command": [sys.executable, "tool.py", folder], "folder": folder, "reads": [], "why": "x"}
+    problems = j2.real_run_problems(rr, run._fact_source(), [sys.executable], run.dir)
+    if by == "click":
+        assert run.decisions[-1]["picked"] == shown
+        assert problems == []
+        assert run._fact_problems({"facts": [shown]}) == []
+    else:      # D448: Decide for me never names a folder, a secret file or a charter fact; only the Requester does
+        assert "picked" not in run.decisions[-1]
+        assert any("not named" in p for p in problems)
+        assert run._fact_problems({"facts": [shown]}) == [shown]
+
+
+def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
+    run, _ = p43_pick
+    run.post("user", "use 2 folders")
+    run._run()
+    assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
+
+
+def test_p43_r1_2_a_held_answer_clears_its_to_be_confirmed_entry_and_the_item_still_needs_a_receipt(make_run):
+    """Review R1-2 (owner, option 1): the held answer gives the fact, so the item is no longer waiting on the Requester (never
+    blocked, never asked again as a follow-up); it is still not confirmed and passes only on a real run's receipt."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
+    assert P43_RR not in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    run.audits = [{"results": [{"id": "F-1", "item": 1, "criterion": P43_RR, "verdict": "TO_BE_CONFIRMED", "pass": False},
+                               {"id": "F-2", "item": 2, "criterion": P43_DOC, "verdict": "PASS", "pass": True}]}]
+    assert run._blocked_items() == [] and run._tbc_blocked() == {}
+    assert not any("Send it as a follow-up" in x for x in run._open_items())
+    assert run._chain_done("Done.") == "Done.", "the run does not end asking for the fact it was given"
+    assert run._run_item_check(P43_RR, {"type": "real-run"}, "", {})["pass"] is False, "no receipt: it does not pass"
+
+
+def test_p43_r1_2_an_answer_that_cannot_give_the_fact_yet_keeps_the_entry(make_run):
+    run = p43_answer(make_run, [], still=[{"item": 1, "fact": "which folder it runs on"}])
+    assert P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}
+
+
+P43_CSV = "CSV/Excel tidier for a folder"      # review R1-1: the brief's first word holds a "/"
+
+
+@pytest.mark.parametrize("form", ["tilde", "written"])
+@pytest.mark.parametrize("by", ["click", "typed"])
+def test_p43_r1_1_a_folder_the_requester_names_registers_whatever_the_next_text_starts_with(sort_run, tmp_path, monkeypatch, by,
+                                                                                            form):
+    """Review R1-1: the brief, each answer and each pick are read one by one, so a path that ends one of them is never read as
+    going on into the next one's first word ("CSV/Excel")."""
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up" / "Tool").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+    make, _ = sort_run
+    run = make()
+    run.request = P43_CSV
+    run.post("user", P43_CSV)
+    if by == "click":
+        run._ask_user("Which folder?", [{"question": "Which folder should it run on?", "options": ["~/Documents/Made Up/Tool",
+                                                                                                    "Another folder"],
+                                         "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+        monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+        monkeypatch.setattr(run, "_plan_stages", lambda: None)
+        run.post("user", "Option 1")
+        run._run()
+        assert run.decisions[-1]["picked"] == "~/Documents/Made Up/Tool"
+    else:      # typed answers, each followed by a Requester message whose first word holds a "/"
+        for said in ("It runs on ~/Documents/Made Up/Tool", "It reads ~/Documents/Made Up/key.txt"):
+            run.post("user", said)
+            run.post("user", "CSV/Excel files only, please")
+    folder = "~/Documents/Made Up/Tool" if form == "tilde" else os.path.expanduser("~/Documents/Made Up/Tool")
+    w = sort_proposals(folder, fix=True)[0]
+    rr = {**w["real_run"], "command": ["python3", "sort_files.py", folder], "folder": folder}
+    if by == "typed":
+        rr["secret_files"] = {"API_KEY_FILE": folder.replace("Tool", "key.txt")}
+    reg, refused, _ = run._register([{**w, "real_run": rr}])
+    assert [x["id"] for x in reg] == ["W-1"] and not refused, refused
+
+
+# ---- P31, P41 amended (D448): a folder or secret file is named only whole (named_whole: one rule for both checks)
+D448_WHOLE = [      # (path, what the brief says, named whole?): made-up paths only
+    ("~/Documents/Made", "use ~/Documents/Made Up/Tool", False),
+    ("~/Documents/Made Up/Tool", "use ~/Documents/Made Up/Tool", True),
+    ("~/Documents/Made Up/Tool", "is it ~/Documents/Made Up/Tool?", True),
+    ("~/Documents/Made Up/Tool", "yes ~/Documents/Made Up/Tool! now", True),
+    ("~/Documents/Made Up/Tool", "the folder `~/Documents/Made Up/Tool` please", True),
+    ("~/Documents/Made Up/Tool", "~/Documents/Made Up/Tool/ and more", True),
+    ("~/demo/rename-test", "run it on ~/demo/rename-test", True),
+    ("~/demo/x", "run on ~/demo/x and ~/demo/y", True),
+    ("~/demo/x", "run on ~/demo/x, then stop.", True),
+    ("~/demo/x", "run on ~/demo/x. then stop", True),
+    ("~/demo/x", "run on ~/demo/xy", False),
+    ("/projects/x", "use /data/projects/x now", False),      # inside a longer path
+    ("~/demo/x", "folder=~/demo/x", True),
+    ("~/demo/x", "(~/demo/x)", True),
+    ("~/demo/x", "'~/demo/x'", True),
+    ("~/demo/x", "use ~/demo/x w/ care", False),      # known limit: a next word holding "/" reads as the path going on (fails safe)
+]
+
+
+def d448_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))      # Windows: expanduser reads USERPROFILE
+
+
+def test_p31_d448_a_folder_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    for d in (("Documents", "Made"), ("Documents", "Made Up", "Tool"), ("projects", "x")):
+        tmp_path.joinpath(*d).mkdir(parents=True)
+
+    def not_named(folder, said):
+        rr = {"command": [sys.executable, "tool.py"], "folder": folder, "reads": [], "why": "x"}
+        return any("is not named" in p for p in j2.real_run_problems(rr, j2.squash(said), [sys.executable], str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "use ~/Documents/Made Up/Tool"), "a parent of the named folder is not named"
+    for said in ("is it ~/Documents/Made Up/Tool?", "yes ~/Documents/Made Up/Tool! now", "the folder `~/Documents/Made Up/Tool` please"):
+        assert not not_named("~/Documents/Made Up/Tool", said), said
+    inner = str(tmp_path / "projects" / "x")
+    assert not_named(inner, f"use /data{inner} now"), "a path inside a longer one is not named"
+    for g, said, want in D448_WHOLE:
+        assert j2.named_whole(g, j2.squash(said)) is want, (g, said)
+
+
+def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made").write_text("x")
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+
+    def not_named(f, said):
+        return any("is not named" in p for p in j2.real_run_env_problems({"secret_files": {"API_KEY_FILE": f}}, j2.squash(said),
+                                                                          str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "read ~/Documents/Made Up/key.txt"), "a shorter file is not named"
+    for said in ("read `~/Documents/Made Up/key.txt`?", "is it ~/Documents/Made Up/key.txt?", "yes ~/Documents/Made Up/key.txt! now"):
+        assert not not_named("~/Documents/Made Up/key.txt", said), said
