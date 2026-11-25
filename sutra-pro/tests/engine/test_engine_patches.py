@@ -4997,3 +4997,25 @@ def test_p44_same_files_false_skips_expect_with_the_card_line(p44):
     assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
     assert "expect_mismatch" not in run.real_runs_dry["W-1"] and run.workflows[0].get("failure") is None
     assert "\nFile changes couldn't be checked first." in p32_card(run)
+
+# ---- P44 (D449) T5: a failed dry run never makes built work "not built" (P30 amended); run 458e's shape, made-up data ---------
+def test_p44_a_dry_run_failure_keeps_the_builders_built_items(p44):
+    go, real, _ = p44
+    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src == '--offline' else None\nbody = "))      # offline: exit 1
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "fetch.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_fetch.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}, crit[1]: {"status": "built", "reason": ""}}
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert w["status"] == "failed" and w["failure"][0] == "dry_run", w.get("failure")
+    assert run._open_items() == [], run._open_items()      # never "(not built: no workflow built it)"
+    assert run._item_states()[crit[0]]["wid"] == "W-1"
+    assert any("done-when item 3" in x for x in run._real_run_pending()), "the real run's item stays open"
+    reg, refused, _ = run._register([{**sort_proposals(str(real), fix=True)[0], "real_run": None, "revises": "W-1"}])
+    assert len(reg) == 1 and not refused, refused
+    w2 = reg[0]      # a later done revision's own statuses win
+    w2["status"] = "done"
+    w2["item_status"] = {crit[0]: {"status": "not_built", "reason": "x"}}
+    assert run._item_states()[crit[0]]["status"] == "not_built" and run._item_states()[crit[0]]["wid"] == w2["id"]

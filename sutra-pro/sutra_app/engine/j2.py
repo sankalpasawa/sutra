@@ -11235,10 +11235,11 @@ class J2Run:
             w["item_status"][t] = {"status": s, "reason": why}
 
     def _item_states(self):
-        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins."""
+        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins. Amended in D449:
+        a workflow that failed only its dry run (failure[0] "dry_run", P31) counts too: its builder's statuses stand."""
         out = {}
         for w in self.workflows:
-            if w.get("status") == "done":
+            if w.get("status") == "done" or (w.get("status") == "failed" and (w.get("failure") or [None])[0] == "dry_run"):
                 out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
         return out
 
