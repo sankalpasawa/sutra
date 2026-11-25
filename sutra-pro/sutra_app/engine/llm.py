@@ -165,7 +165,9 @@ def sandbox_on() -> bool:
 
 
 # D446: the whole environment of a script the engine runs (real run, dry run, test rerun) is an allowlist, never a blocklist.
-RUN_PASS_NAMES: tuple[str, ...] = ("PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR") + WINDOWS_PASS_NAMES
+# Common, never secret; Windows' own (USERNAME, USERPROFILE, TEMP, ...) come from WINDOWS_PASS_NAMES. Proxies stay out: a plan names them.
+RUN_PASS_NAMES: tuple[str, ...] = ("PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
+                                   "TMPDIR") + WINDOWS_PASS_NAMES
 # D446: a fixed safety guardrail, not a secret detector: names that change how a runtime or the dynamic loader starts a
 # program. Entries ending "_" are prefixes. Never extended by pattern.
 RUN_LOADER_NAMES: tuple[str, ...] = ("LD_", "DYLD_", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT")

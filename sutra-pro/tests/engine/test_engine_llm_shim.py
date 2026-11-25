@@ -732,7 +732,10 @@ def test_run_env_keeps_only_the_allowlist():
     assert set(llm.run_env(environ=environ)) == {"PATH", "HOME", "LANG", "TMPDIR", "SYSTEMROOT"}
     assert llm.run_env({"PLAN_LEVEL": "basic"}, environ=environ) == {
         "PATH": "x", "HOME": "x", "LANG": "x", "TMPDIR": "x", "SYSTEMROOT": "x", "PLAN_LEVEL": "basic"}
-    assert set(llm.RUN_PASS_NAMES) >= {"PATH", "HOME", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "SYSTEMROOT", "APPDATA"}
+    assert set(llm.RUN_PASS_NAMES) >= {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "TZ", "TERM", "LANG", "LC_ALL", "LC_CTYPE",
+                                       "TMPDIR", "SYSTEMROOT", "APPDATA", "USERNAME"}
+    assert len(llm.RUN_PASS_NAMES) == len(set(llm.RUN_PASS_NAMES)), "no name twice"
+    assert not {n for n in llm.RUN_PASS_NAMES if "PROXY" in n.upper()}, "proxies are named by the plan (D446)"
 
 
 def test_is_loader_name_fixed_list():
