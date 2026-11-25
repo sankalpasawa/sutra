@@ -647,3 +647,40 @@ test("the Attach link carries the limits as its title (a phone shows the note on
   assert.match(html, /data-act="composer-attach" title="Up to 10 files, 20 MB each/);
   assert.match(html, /<small>Up to 10 files, 20 MB each/);
 });
+
+// ---- chat-attachment-context (D440): a file is read by the model or the owner is told why not (L1 to L3) ----------------------------------------------
+
+test("FR-1 FR-2: a refused file is a failed chip that stays, Send is disabled and nothing is posted", async () => {
+  const {api, c} = rig({});
+  await c.addFiles([file("tool.exe")]);
+  assert.equal(c.state().files.length, 1);
+  assert.equal(c.state().files[0].status, "failed");
+  assert.match(chips(c.state().files), /ccfile failed.*tool\.exe.*not attached/);
+  await c.addFiles([file("other.exe")]);                                      // another action: the first chip is still there
+  assert.equal(c.state().files.length, 2);
+  assert.equal(button(c.state(), "hello", {}).disabled, true);
+  const out = await c.send("hello");
+  assert.equal(out.ok, false);
+  assert.match(out.error, /Remove the file that was not attached/);
+  assert.equal(api.calls.length, 0);
+});
+
+test("FR-2: a failed upload is not dropped by a send of the others; the owner removes it first", async () => {
+  const {api, c} = rig({[UP]: body => { if (body.name === "bad.txt") throw new Error("it could not be sent"); return {id: ID, name: body.name, kind: "text", size: 5}; }});
+  await c.addFiles([file("good.txt"), file("bad.txt")]);
+  const out = await c.send("go");
+  assert.equal(out.ok, false);
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  assert.equal(c.state().files.length, 2, "nothing was erased");
+});
+
+test("FR-3: the file bar is drawn in Tell the team too, and a team send with a file is refused with a sentence", async () => {
+  const {api, c} = rig({[UP]: () => ({id: ID, name: "notes.txt", kind: "text", size: 5})});
+  await c.addFiles([file("notes.txt")]);
+  c.setMode("team");
+  assert.match(bar(c.state()), /class="ccfiles"/);
+  const out = await c.send("tell them");
+  assert.equal(out.ok, false);
+  assert.equal(out.error, "Files go only to the model. Remove them, or ask the model.");
+  assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+});

@@ -162,6 +162,51 @@ def test_an_upload_stores_the_file_once_and_refuses_what_is_not_a_kind_we_take(r
     assert error_code(client.post(f"/api/chats/{sid}/attachments", json={"name": "a.txt", "content_b64": blob}), 401) == "bad_token"
 
 
+def _upload(client, sid, name, blob):
+    r = client.post(f"/api/chats/{sid}/attachments", json={"name": name, "content_b64": base64.b64encode(blob).decode()}, headers=H)
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def _spy_on_model_input(services):
+    seen = []
+    router = services.chat_port.router
+    real = router.chat_stream
+
+    def spy(session_id, message, ctx, **kw):
+        seen.append(message)
+        return real(session_id, message, ctx, **kw)
+    router.chat_stream = spy
+    return seen
+
+
+def test_a_long_text_file_reaches_the_model_cut_and_the_receipt_says_so(rig):
+    """FR-4: the 202 says what the model received. 50,000 characters: the first 40,000 go, `cut` is true."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    seen = _spy_on_model_input(services)
+    ref = _upload(client, sid, "big.txt", ("SECRET-HEAD " + "x" * 49_988).encode())
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "summarise", "attachments": [ref], "names": ["big.txt"]}, headers=H)
+    assert r.status_code == 202, r.text
+    receipt = r.json()["files"][0]
+    assert (receipt["name"], receipt["kind"], receipt["sent"], receipt["chars"], receipt["cut"]) == ("big.txt", "text", "text", 40_000, True)
+    assert wait_for(lambda: bool(seen))
+    assert "SECRET-HEAD" in seen[0].text and "x" * 39_000 in seen[0].text and "x" * 40_000 not in seen[0].text
+
+
+def test_a_pdf_for_codex_is_refused_naming_the_file_and_nothing_is_stored(rig):
+    """FR-10: a file that cannot be delivered refuses the whole send BEFORE the owner's line is stored."""
+    client, world, chats, bus, services = rig
+    sid = world.session_of["web"]
+    services.chat_port._chosen = lambda session_id: "codex"
+    ref = _upload(client, sid, "plan.pdf", b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n")
+    before = len(chats.messages(sid))
+    r = client.post(f"/api/chats/{sid}/direct", json={"text": "read it", "attachments": [ref], "names": ["plan.pdf"]}, headers=H)
+    assert error_code(r, 422) == "validation"
+    assert "plan.pdf" in r.json()["error"]["message"]
+    assert len(chats.messages(sid)) == before          # no owner line, no reply
+
+
 # ---- the direct chat ---------------------------------------------------------------------------------------------------------------
 
 def test_a_direct_turn_stores_the_user_line_then_one_reply_and_streams_partials_that_are_not_replayed(rig):
