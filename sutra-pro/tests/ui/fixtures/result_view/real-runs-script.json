@@ -1,9 +1,9 @@
 {
-  "_note": "A real_run receipt row for W-2 in two shapes: today's (`output` is the stdout+stderr tail, no `run_output`) and P45's (planned, not built: the same plus `run_output`, the link to run_output/<id>.json). The /api/artifacts/groups projection carries neither `output` nor `run_output` today.",
+  "_note": "A real_run receipt row for W-2 in two shapes: today's (`output` is the stdout+stderr tail, no `run_output`) and P45's (confirmed by Kaivan, lands after SUT-28; final key list pending once built): the same plus top-level `run_output`, `result` (engine-resolved) and the real run's own created/changed/deleted/files_truncated in the dry_run format. The /api/artifacts/groups projection carries none of these today.",
   "today": [
     {"workflow": "W-2", "command": ["python3", "report.py"], "approved": true, "ran": true, "exit": 0, "output": "PATH set\nSHELL set\nreport written to report.txt\n", "evidence": "python3 report.py exited 0 without a sandbox (report written to report.txt)", "t": "2026-11-25T10:00:06"}
   ],
   "p45": [
-    {"workflow": "W-2", "command": ["python3", "report.py"], "approved": true, "ran": true, "exit": 0, "output": "PATH set\nSHELL set\nreport written to report.txt\n", "run_output": "run_output/R-1.json", "evidence": "python3 report.py exited 0 without a sandbox (report written to report.txt)", "t": "2026-11-25T10:00:06"}
+    {"workflow": "W-2", "command": ["python3", "report.py"], "approved": true, "ran": true, "exit": 0, "output": "PATH set\nSHELL set\nreport written to report.txt\n", "run_output": "run_output/R-1.json", "result": "report.txt", "created": ["report.txt"], "changed": [], "deleted": [], "files_truncated": false, "dry_run": {"ran": true, "exit": 0, "created": ["report.txt"], "changed": [], "deleted": []}, "evidence": "python3 report.py exited 0 without a sandbox (report written to report.txt)", "t": "2026-11-25T10:00:06"}
   ]
 }

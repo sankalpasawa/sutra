@@ -40,8 +40,8 @@ test("main result, AC-10: one output, two outputs, real-run result only with a P
   const noEntry = extra => st({types: {env_report: {form: "agent"}}, workflows: [], ...extra});
   assert.deepEqual(RV.mainResult(noEntry(), [row("out.txt")]), {kind: "file", row: row("out.txt")});
   assert.deepEqual(RV.mainResult(noEntry(), two), {kind: "list"});
-  // real_run.result names report.txt: it is a path in the user's folder, never matched against the outputs
-  const rr = noEntry({workflows: [{id: "W-2", real_run: {result: "report.txt"}}]});
+  // the P45 row's result names report.txt: a path in the user's folder, never matched against the outputs
+  const rr = noEntry({workflows: [{id: "W-2"}]});
   assert.deepEqual(RV.mainResult(rr, two, RUNS.today), {kind: "list"}, "today's row has only the stdout tail in output: step skipped");
   assert.deepEqual(RV.mainResult(rr, two, RUNS.p45), {kind: "real-run", workflow: "W-2", result: "report.txt", link: "run_output/R-1.json"});
   assert.deepEqual(RV.mainResult(rr, two), {kind: "list"}, "no receipt rows: skipped");
@@ -63,19 +63,29 @@ test("main result, AC-10: one output, two outputs, real-run result only with a P
   assert.deepEqual(RV.mainResult(st({output: null}), [row("out.txt")]).kind, "file");
 });
 
-test("the real-run step reads the last workflow naming a result and that workflow's last receipt row, strict link form only", () => {
-  const wfs = [{id: "W-1", real_run: {result: "a.txt"}}, {id: "W-2", real_run: {result: "b.txt"}}, {id: "W-3", real_run: {command: ["x"]}}];
-  const s = st({workflows: wfs});
-  assert.deepEqual(RV.realRun(s, [{workflow: "W-1", run_output: "run_output/R-1.json"}]), null, "W-1 is not the last naming a result");
-  assert.deepEqual(RV.realRun(s, [{workflow: "W-2", run_output: "run_output/R-2.json"}, {workflow: "W-2", output: "tail"}]), null, "last row wins");
-  assert.deepEqual(RV.realRun(s, [{workflow: "W-2", output: "tail"}, {workflow: "W-2", output: "tail", run_output: "run_output/R-3.json"}]),
-    {workflow: "W-2", result: "b.txt", link: "run_output/R-3.json"});
+test("the real-run step reads only the receipt row's own result and run_output: each workflow's last row, the last in plan order", () => {
+  const s = st({workflows: [{id: "W-1"}, {id: "W-2"}, {id: "W-3"}]});
+  const ok = (wf, id, result) => ({workflow: wf, run_output: `run_output/${id}.json`, result: result || "out.txt"});
+  assert.deepEqual(RV.realRun(s, [ok("W-2", "R-2", "b.txt"), ok("W-1", "R-1", "a.txt")]), {workflow: "W-2", result: "b.txt", link: "run_output/R-2.json"},
+    "plan order, not row order");
+  assert.equal(RV.realRun(s, [ok("W-2", "R-2"), {workflow: "W-2", output: "tail"}]), null, "a workflow's last row decides");
+  assert.deepEqual(RV.realRun(s, [ok("W-1", "R-1", "a.txt"), {workflow: "W-2", output: "tail"}]), {workflow: "W-1", result: "a.txt", link: "run_output/R-1.json"},
+    "a later workflow without a link does not hide an earlier one");
+  assert.equal(RV.realRun(s, [ok("W-9", "R-9")]), null, "a row for a workflow not in the plan is not read");
+  assert.equal(RV.realRun(s, [{workflow: "W-2", run_output: "run_output/R-1.json"}]), null, "run_output without result: skipped");
+  assert.equal(RV.realRun(s, [{workflow: "W-2", run_output: "run_output/R-1.json", result: ""}]), null);
+  assert.equal(RV.realRun(st({workflows: [{id: "W-2", real_run: {result: "b.txt"}}]}), [{workflow: "W-2", run_output: "run_output/R-1.json"}]), null,
+    "the plan's real_run.result is not read");
   for (const bad of ["run_output/../x.json", "run_output/a/b.json", "x/run_output/R.json", "run_output/R.json\nmore", "run_output/.json",
     "run_output/R.txt", " run_output/R.json", "...run_output/R-1.json", 7, null]) {
-    assert.equal(RV.realRun(s, [{workflow: "W-2", run_output: bad}]), null, String(bad));
+    assert.equal(RV.realRun(s, [{workflow: "W-2", run_output: bad, result: "b.txt"}]), null, String(bad));
   }
-  assert.equal(RV.realRun(s, [{workflow: "W-2", output: "run_output/R-4.json"}]), null, "`output` is never read as a link");
-  assert.equal(RV.realRun(st({workflows: [{id: "W-2", real_run: {result: ""}}]}), RUNS.p45), null);
+  assert.equal(RV.realRun(s, [{workflow: "W-2", output: "run_output/R-4.json", result: "b.txt"}]), null, "`output` is never read as a link");
+  assert.equal(RV.realRun(s, [{workflow: "W-2", run_output: "run_output/R-1.json", dry_run: {result: "b.txt"}, expect: {result: "b.txt"}}]), null,
+    "dry_run and expect are not read");
+  assert.deepEqual(RV.realRun(s, RUNS.p45), {workflow: "W-2", result: "report.txt", link: "run_output/R-1.json"},
+    "only workflow, result and run_output come back: no folder changes are read");
+  assert.equal(RV.realRun(s, RUNS.today), null);
   assert.equal(RV.realRun({}, RUNS.p45), null);
 });
 

@@ -81,7 +81,7 @@ No schema or migration. Data the module reads:
 | `/api/artifact?name=` | raw text of text/code/CSV/JSON files; Download links | module `fetch`, cached by `file + sha256` |
 | `/view?name=` | md, html, images in the sandboxed frame | `sLoad(url)` |
 | `/site/v<N>` | the site preview | `sLoad(url)` |
-| `/api/artifacts/groups` | `groups[].rows[].real_runs[].workflow/run_output` for the real-run result hook (FR-10 step 1; `output`, the stdout tail, is never read as a link). Today no row has `run_output` and the projection (j2_artifacts.py:774-793) would drop it, so the hook is always skipped until P45 | fetched by the module (T2), flattened to one `runs` array |
+| `/api/artifacts/groups` | `groups[].rows[].real_runs[].workflow/result/run_output` for the real-run result hook (FR-10 step 1); later `created/changed/deleted/files_truncated`. Never `output` (the stdout tail), `dry_run.*` or `expect`. Today no row has these keys and the projection (j2_artifacts.py:774-793) would drop them, so the hook is always skipped until P45 | fetched by the module (T2), flattened to one `runs` array |
 | `run_output/<receipt-id>.json` (P45, not built) | the real-run result text, up to 64 KB | route decided when P45 lands; the module only keeps the link |
 
 Script-run fixture (`tests/ui/fixtures/result_view/`), hand-built from the shape of `fixtures/j2/state.json` and `artifacts.json`, with only the keys the module and the page read. No real run, no path, no name:
@@ -117,10 +117,10 @@ ResultView.adopt(root)                        // installs the wrappers; true whe
 ```js
 const str = x => typeof x === "string" && x ? x : "";
 const LINK = /^run_output\/\w[\w.-]*\.json$/;          // P45's link, the row's `run_output` key; `output` (stdout tail) is never read
-function realRun(s, runs) {                           // step 1: `result` is in the user's folder, never matched against outputs
-  const wf = (s.workflows || []).filter(w => w && w.real_run && str(w.real_run.result)).pop();
-  const row = wf && (runs || []).filter(r => r && r.workflow === wf.id).pop();
-  return row && LINK.test(str(row.run_output)) ? {workflow: wf.id, result: wf.real_run.result, link: row.run_output} : null;
+function realRun(s, runs) {                           // step 1: each workflow's last receipt row, in plan order; the row's own keys
+  const last = (s.workflows || []).map(w => w && (runs || []).filter(r => r && r.workflow === w.id).pop())
+    .filter(r => r && LINK.test(str(r.run_output)) && str(r.result)).pop();
+  return last ? {workflow: last.workflow, result: last.result, link: last.run_output} : null;
 }
 function named(s) {                                   // step 2: an absent field or a glob gives ""
   const t = ((s.types || {})[s.output]) || {}, entry = str(t.entry_file) || str(t.file);
@@ -134,7 +134,7 @@ function mainResult(s, rows, runs) {
 }
 ```
 
-Order: real-run result (only with a P45 `run_output/<id>.json` link on the workflow's last receipt row) → a concrete type entry file (a glob such as `<name>/*` means no single main) → the single output → the Files list. An entry file not among the output rows is skipped. No other name or extension is read (FR-11). `realRun` and `named` are the only places SUT-23 / P45 touch.
+Order: real-run result (a receipt row's own `result` plus a P45 `run_output/<id>.json` link; the engine already applied the entry_file fallback to `result`, so the UI adds none) → a concrete type entry file (a glob such as `<name>/*` means no single main) → the single output → the Files list. An entry file not among the output rows is skipped. No other name or extension is read (FR-11). `realRun` and `named` are the only places SUT-23 / P45 touch.
 
 Viewer by extension (FR-5):
 
@@ -210,9 +210,9 @@ sequenceDiagram
 
 | Later item | engine field (planned) | route | where the module draws it |
 |---|---|---|---|
-| a file in the user's folder as the main result | `workflows[].real_run.result` plus the receipt row's `run_output` = `run_output/<receipt-id>.json` (P45) | P45's route (not built) | `mainResult` already returns `{kind: "real-run"}` (hook, T1); T2 shows the text once the route exists, until then the step never hits |
+| a file in the user's folder as the main result | the receipt row's `result` and `run_output` = `run_output/<receipt-id>.json` (P45) | P45's route (not built) | `mainResult` already returns `{kind: "real-run"}` (hook, T1); T2 shows the text once the route exists, until then the step never hits |
 | "What the script printed" | receipt row `stdout`, `stderr` tails, `exit` | `/api/artifacts/groups` `real_runs[]` (today without stdout: j2_artifacts.py:774-793, an engine-side gap) | a folded `<details>` under the Result viewer, shown with the text viewer, last line as the summary |
-| "What changed in your folder" | receipt row `created`, `changed`, `deleted` | the same `real_runs[]` rows | a folded `<details>` under the Result viewer, "1 file created" style summary |
+| "What changed in your folder" | receipt row's own top-level `created`, `changed`, `deleted`, `files_truncated` (P45, `dry_run.*` format: sorted folder-relative path lists; never `dry_run.*`) | the same `real_runs[]` rows | a folded `<details>` under the Result viewer, "1 file created" style summary |
 
 The Result pane has one slot below the viewer (`#rvlater`, empty today). A future `later(s, groups)` pure function fills it; when the fields are absent it returns "" and nothing is drawn.
 
@@ -280,7 +280,7 @@ Ships with the next release, nothing to migrate. Rollback: remove `"result_view"
 - Consequences: goldens untouched; the module depends on page global names, so a J2 sync that renames one turns the module off (adopt returns false), and the glue test catches it.
 
 ### D-2 Main result by a fixed order, built on the planned engine names
-- Decision: the real-run result (a workflow's `real_run.result`, shown from the `run_output/<id>.json` link in its last receipt row's `run_output`, P45), else a concrete `types[output].entry_file` (`file` today), else the single output, else the Files list. Names confirmed by Kaivan; `result` is never matched against outputs.
+- Decision: the real-run result (the receipt row's own `result`, shown from its `run_output` link `run_output/<id>.json`, P45), else a concrete `types[output].entry_file` (`file` today), else the single output, else the Files list. Names confirmed by Kaivan; `result` is never matched against outputs.
 - Consequences: no file-name guessing; a website run gets its site through the entry file even when it has other outputs; a folder run (`<name>/*`) with several files shows the list until its plan names a result.
 
 ### D-3 Viewers by extension, HTML only in the sandboxed frame
@@ -292,11 +292,11 @@ Ships with the next release, nothing to migrate. Rollback: remove `"result_view"
 ```
 ## D450 — The centre panel shows any output: Result, Files, How it was made for every run; the main result by a fixed rule, never by file name (SUT-27)
 - Sources: request.md of SUT-27 (approved by the owner, 2026-11-25) and the owner's answers of the same day; the before and after mock-ups; `j2_ui.html` (`sTabs`, `sViews`, `sFinish`, `sTeamwork`, `sPhase`, `sOpenPart`, the share listener); `engine/views.py` (`view_page`, `artifact`); `j2_artifacts.py` (`rows`, `served`); D439 (a Sutra module wraps the page).
-- Decided: (a) Every run shows three tabs: Result, Files, How it was made. Result opens by default when the run is done; How it was made before. (b) A file is shown by a viewer chosen from its form and extension: the site preview for a page, the sandboxed frame for HTML, markdown and images (`/view`), text, numbered code, and tables for CSV and JSON (parsed in the page from `/api/artifact`), a Download link for anything else. (c) Result shows the main result, first match: the real-run result the plan names (`workflows[].real_run.result`, a path in the user's folder, shown from the `run_output/<id>.json` file its receipt row links as `run_output`), the output type's entry file when it is one concrete file (not a folder glob) among the run's outputs, the run's only output, else the Files list. No other file name or extension decides it. (d) A finished part card shows its builder's one-line summary (the last message's `human_output`, a leading @name removed, first sentence) and its files; grey bars only while a part is in progress. (e) Wording follows the output: no site, page or "Open the site" unless the run makes a web page; Download saves the main file. (f) "Copy share link" copies the main file's `/view` link, and after copying says "Link copied — opens on this computer only". All of it is `ui/static/js/result_view.js`, a module in the port's list, with `result_view.css`.
+- Decided: (a) Every run shows three tabs: Result, Files, How it was made. Result opens by default when the run is done; How it was made before. (b) A file is shown by a viewer chosen from its form and extension: the site preview for a page, the sandboxed frame for HTML, markdown and images (`/view`), text, numbered code, and tables for CSV and JSON (parsed in the page from `/api/artifact`), a Download link for anything else. (c) Result shows the main result, first match: the real-run result its receipt row names (`result`, a path in the user's folder resolved by the engine, shown from the `run_output/<id>.json` file the row links as `run_output`), the output type's entry file when it is one concrete file (not a folder glob) among the run's outputs, the run's only output, else the Files list. No other file name or extension decides it. (d) A finished part card shows its builder's one-line summary (the last message's `human_output`, a leading @name removed, first sentence) and its files; grey bars only while a part is in progress. (e) Wording follows the output: no site, page or "Open the site" unless the run makes a web page; Download saves the main file. (f) "Copy share link" copies the main file's `/view` link, and after copying says "Link copied — opens on this computer only". All of it is `ui/static/js/result_view.js`, a module in the port's list, with `result_view.css`.
 - Why: scripts and reports showed an empty Page tab, grey bars and a Download of an empty page, and the file the run made was nowhere. One rule for every output keeps one screen to learn and to test, and a hook leaves the main result to the plan once SUT-23 records it.
 - Rejected: port edits to `sTabs`, `sViews`, `sFinish` and `sTeamwork` (D439: the goldens pin the render, and every J2 sync re-anchors them); a screen per project type (D241); picking the main file by name (`report.txt`, `index.html`); a server route that picks the file or parses CSV (`engine/views.py` stays closed for this change); private-data detection and a "Turn sharing on" switch (the owner dropped it); a zip download.
 - Rollback: drop `result_view` from `MODULES` (and its mirror in `tests/ui/test_port_edits.py`) and port again; the page is J2's again.
-- Follow-ups: P45 (`run_output/<id>.json` and its route; the `real_runs` projection to carry `run_output`) turns on the real-run result; "What changed in your folder" and "What the script printed" when SUT-28 / SUT-23 add a route; the share URL of a run with no main file (spec Q-4).
+- Follow-ups: P45 (`run_output/<id>.json` and its route; the `real_runs` projection to carry `result`, `run_output`, `created`/`changed`/`deleted`/`files_truncated`) turns on the real-run result; "What changed in your folder" and "What the script printed" when SUT-28 / SUT-23 add a route; the share URL of a run with no main file (spec Q-4).
 - Diagram: label "centre panel: Result / Files / How it was made for every output; main result by rule, never by name", pill on band:EXPERIENCE.
 ```
 
@@ -315,7 +315,7 @@ decisions.json entry (appended after D448, or after D449 when SUT-28 lands first
 | `#sfinish` drawn before the main result is known | high | finish refresh keyed on the main file in the wrapper |
 | File names on a card are not keyboard targets (inside a `<button>`) | certain | Files tab is the keyboard path; noted in D450 follow-ups if the owner wants more |
 | Share link of a run with no main file opens "No site in this run." | certain while Q-4 stays at its default | spec Q-4 |
-| P45 picks a key other than `run_output` | low (owner named it, pending Kaivan) | only `realRun` changes; `output` is never read as a link (spec Q-5), a unit case pins it |
+| P45's built key list differs from the confirmed one | low (confirmed by Kaivan; final list pending once built) | only `realRun` changes; unit cases pin that `output`, `dry_run.*`, `expect` and the plan's `real_run.result` are not read |
 | D450 collides with a parallel branch | moderate | re-check the highest number after `git fetch` before the decision commit |
 | `j2_ui.html` regeneration needs a J2 extraction at the port's pin | moderate | the change is exactly the E12 line; `test_port_edits.py` and the opt-in `SUTRA_J2_CHECKOUT` check confirm it |
 
@@ -326,3 +326,4 @@ decisions.json entry (appended after D448, or after D449 when SUT-28 lands first
 | 2026-11-25 solution-architect | First version |
 | 2026-11-25 developer (T1) | Owner decisions at plan review: main-result step 1 is the real-run result hook (`realRun`, P45 link on the workflow's last receipt row; `result` never matched against outputs); `mainResult` takes `runs`; `/api/artifacts/groups` `real_runs` now read; share URL is the main file's `/view` link (Q-3); Q-2 confirmed (no design change) |
 | 2026-11-25 developer (T1) | Owner update: `realRun` reads the receipt row's `run_output` key only; `output` (stdout tail) is never a link |
+| 2026-11-25 developer (T1, second commit) | P45 confirmed: `realRun` reads the receipt row's own `result` and `run_output` (each workflow's last row, last in plan order); Later folder changes from the row's top-level `created`/`changed`/`deleted`/`files_truncated`. No reader built for them yet (Later) |

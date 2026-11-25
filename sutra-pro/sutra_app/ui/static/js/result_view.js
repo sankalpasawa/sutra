@@ -4,10 +4,11 @@
 
      ResultView.isPageRun(s)             a docset run, or one whose output type has form "page": the page's own wording and finish bar stay
      ResultView.done(s)                  the page's isReady (Done, not paused, not running), or a saved run
-     ResultView.realRun(s, runs)         main-result step 1: the last workflow whose real_run names a `result` (a path in the user's folder,
-                                         never one of the run's outputs) and that workflow's last real_run receipt row (/api/artifacts/groups
-                                         `real_runs`). Only when the row's `run_output` is a `run_output/<id>.json` link (P45, not built yet):
-                                         {workflow, result, link}; else null. `output` (today's stdout+stderr tail) is never read.
+     ResultView.realRun(s, runs)         main-result step 1, from the real_run receipt rows (/api/artifacts/groups `real_runs`): each
+                                         workflow's last row, in plan order; the last of them with a `run_output` link (`run_output/<id>.json`)
+                                         and a non-empty `result` (a path in the user's folder, resolved by the engine, never one of the run's
+                                         outputs) gives {workflow, result, link}; else null. P45, not built yet. Only those two keys of the row
+                                         are read: never `output` (the stdout+stderr tail), `dry_run.*` or `expect`.
      ResultView.named(s)                 main-result step 2: the output type's entry file (`entry_file`, else `file`) when it is one concrete
                                          file, not a glob such as `<name>/*`; else ""
      ResultView.mainResult(s, rows, runs)  {kind: "real-run", workflow, result, link} | {kind: "file", row} | {kind: "list"} | {kind: "none"}.
@@ -54,9 +55,9 @@
   const done = s => !!s && ((/^Done/.test(s.outcome || "") && !s.paused && s.status !== "running") || !!s.saved);
 
   function realRun(s, runs) {
-    const wf = ((s && s.workflows) || []).filter(w => w && w.real_run && str(w.real_run.result)).pop();
-    const row = wf && (runs || []).filter(r => r && r.workflow === wf.id).pop();
-    return row && LINK.test(str(row.run_output)) ? {workflow: wf.id, result: wf.real_run.result, link: row.run_output} : null;
+    const last = ((s && s.workflows) || []).map(w => w && (runs || []).filter(r => r && r.workflow === w.id).pop())
+      .filter(r => r && LINK.test(str(r.run_output)) && str(r.result)).pop();
+    return last ? {workflow: last.workflow, result: last.result, link: last.run_output} : null;
   }
 
   function named(s) {
