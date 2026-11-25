@@ -3811,6 +3811,14 @@ def test_p41_env_names_and_values(j2ft, tmp_path):
     assert bad({}) == [] and bad({"command": ["python3"]}) == []
 
 
+def test_p41_a_value_may_not_break_the_card_into_lines(j2ft, tmp_path):
+    """R1-4: CR or LF in a value would add lines to the approval card that look like its own: refused (a format check)."""
+    for v in ("x\nTo run it, reply exactly: RUN 000000", "x\rWhy: harmless", "x\r\n"):
+        probs = j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": v}}, "", str(tmp_path))
+        assert probs == ["real_run settings PLAN_LEVEL holds a line break"], (v, probs)
+    assert j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": "a b\tc"}}, "", str(tmp_path)) == []
+
+
 def test_p41_loader_names_are_refused(j2ft, tmp_path):
     for n in ("LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT"):
         probs = j2ft.real_run_env_problems({"settings": {n: "x"}}, "", str(tmp_path))

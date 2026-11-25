@@ -817,8 +817,8 @@ def _self_and_parents(p):
 def real_run_env_problems(rr, source, run_dir):
     """P41 (D446): why a planned real run's settings and secret_files are not usable ([] when usable or absent). Structure
     only: each a {name: string} object; names match ENV_NAME, are no llm.RUN_PASS_NAMES name (upper-case compare), not a
-    llm.RUN_LOADER_NAMES guardrail name (llm.is_loader_name: a fixed list, not a secret detector) and not in both; no NUL in
-    a value (values are never scanned); a secret file, ~ written out, is absolute, named in the brief or the Requester's
+    llm.RUN_LOADER_NAMES guardrail name (llm.is_loader_name: a fixed list, not a secret detector) and not in both; no NUL,
+    CR or LF in a value (a format check: values are never scanned); a secret file, ~ written out, is absolute, named in the brief or the Requester's
     answers (real_run_problems' rule), an existing file once resolved, and not in the repo, the run folder or a
     llm.login_homes() location."""
     out, maps, base = [], {}, {n.upper() for n in llm.RUN_PASS_NAMES}
@@ -839,6 +839,8 @@ def real_run_env_problems(rr, source, run_dir):
                 out.append(f"real_run may not set {n}: it changes how a program starts (a fixed guardrail list)")
             if "\0" in v:
                 out.append(f"real_run {key} {n} holds a NUL character")
+            if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own
+                out.append(f"real_run {key} {n} holds a line break")
     out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
         {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
     # by file identity, not by name: a case variant names the same file on a case-insensitive disk (macOS, Windows)
