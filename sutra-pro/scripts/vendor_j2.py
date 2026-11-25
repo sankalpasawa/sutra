@@ -3125,6 +3125,9 @@ def real_hosts(rr):
     return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
 
 
+HOSTS_DECLINE = "Don't allow it: leave the real run out"      # P44 (D449): the host question's second option
+
+
 def host_entry_ok(h):
     """P44 (D449): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
     return bool(HOST_ENTRY.fullmatch(h)) and not (":" in h and int(h.rpartition(":")[2]) > 65535)
@@ -3195,12 +3198,105 @@ def _tree(root):
 ''', r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
                 if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
+                    self._hosts_to_ask(name, w["real_run"])      # P44 (D449): the Requester is asked once (T1b)
                     continue
                 if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
                                                     self.out.get("test_runner"), self.dir):
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_offline",)))
                     continue
                 wf["real_run"].update(real_run_net_fields(w["real_run"]))      # P44 (D449): stored only with hosts
+'''),
+    # ---- P44 (D449) T1b (owner): a plan's hosts the Requester has not named are asked once, as a pickable option, after the
+    # validator's turn; the Requester's own click names them (P43's picked), a decline leaves the real run out; never Decide for me
+    Edit("P44", "j2.py", r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+''', r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+AUTO_ASK.add("hosts")      # P44 (D449): only the Requester allows a real run's internet hosts
+'''),
+    Edit("P44", "j2.py", r'''          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
+''', r'''          "real_run": "may a built script run for real on the Requester's folder (exact reply only)",
+          "hosts": "may a real run reach the internet hosts its plan names (P44, D449)"}
+'''),
+    Edit("P44", "j2.py", r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
+''', r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
+        self.hosts_ask = None        # P44 (D449): the host question _register left for after this turn (_ask_hosts)
+        self.hosts_asked = {}        # P44 (D449): the asked hosts (sorted, space-joined) -> allowed (True/False), None while open
+'''),
+    Edit("P44", "j2.py", r'''                    self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
+''', r'''                    self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
+            if self.hosts_ask and not self.paused and self.turn != "identity":      # P44 (D449): after the validator's turn,
+                a, self.hosts_ask = self.hosts_ask, None      # hosts only the Requester can allow; Identity's own turn first
+                self._ask_hosts(a)
+'''),
+    Edit("P44", "j2.py", r'''        if p:
+            h = dict(p["handoff"])
+''', r'''        if p and p["kind"] == "hosts":      # P44 (D449): code reads the answer to the host question
+            self._hosts_answered(p)
+        if p:
+            h = dict(p["handoff"])
+'''),
+    Edit("P44", "j2.py", r'''    def _ask_real_run(self, r):
+''', r'''    def _hosts_to_ask(self, name, rr):
+        """P44 (D449): _register refused rr because its hosts are not all named by the Requester. Unless that set of hosts
+        was asked about before (hosts_asked: once per set, never a loop) or a question already waits, Identity asks after
+        this turn (_run's loop, _ask_hosts). A badly formed host is the plan's to fix, never asked."""
+        hosts = real_hosts(rr)
+        if not all(isinstance(x, str) and host_entry_ok(x.strip().lower()) for x in rr.get("hosts") or []) \
+                or " ".join(sorted(hosts)) in self.hosts_asked or self.hosts_ask:
+            return
+        at, crit, what = self._item_at(), (self.goal or {}).get("done_when") or [], rr.get("reaches")
+        self.hosts_ask = {"name": name, "hosts": hosts, "items": [crit[at[as_int(i)] - 1] for i in rr.get("checks") or []
+                                                                  if as_int(i) in at],
+                          # a short plain name of what the hosts are, shown as written, never read: one line, 80 characters
+                          "reaches": what.strip() if isinstance(what, str) and 0 < len(what.strip()) <= 80
+                          and not re.search(r"[\r\n\0]", what) else ""}
+
+    def _ask_hosts(self, a):
+        """P44 (D449): Identity's one question about a plan's hosts, built by code from the plan's fields. Its first option
+        carries every host exactly, so the Requester's own click names them (P43's picked, host_pieces) and the plan then
+        registers; the second leaves the real run out (_hosts_answered). Decide for me never answers it (AUTO_ASK)."""
+        hosts = ", ".join(a["hosts"])
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = None
+        self._ask_user("A workflow's real run needs to reach the internet, and only you can allow that.",
+                       [{"question": f"This script needs to reach {a['reaches'] + ' (' + hosts + ')' if a['reaches'] else hosts}. "
+                                     "Allow it?", "options": [f"Allow internet access to {hosts}", HOSTS_DECLINE]}],
+                       "hosts", to="adaptation", handoff={"kind": "propose", "hosts_ask": a})
+
+    def _hosts_answered(self, p):
+        """P44 (D449): code reads the answer to _ask_hosts. Allowed when every host is now named (the Requester's own pick of
+        the first option, whose text carries them, or their own typed words): Adaptation proposes the plan again and it
+        registers. Anything else leaves the real run out: the done-when items it checks are dropped with the reason (also
+        in the run's outcome, _goal_done), and Adaptation proposes the workflow without it."""
+        a, g = p["handoff"]["hosts_ask"], self.goal or {}
+        ok = not [h for h in a["hosts"] if not host_named(h, host_pieces(self.request, self.decisions, self.chat))]
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = ok
+        if ok:
+            p["handoff"] = {"kind": "propose", "why": f"The Requester allowed internet access to {', '.join(a['hosts'])}. "
+                                                      f"Propose {a['name']} again with the same real_run."}
+            return
+        why, gone = f"The Requester did not allow internet access to {', '.join(a['hosts'])}", \
+            [c for c in a["items"] if c in (g.get("done_when") or [])]
+        nums = [self._no(c) for c in gone]
+        if gone:      # left out as a Requester's "Leave out" is (D431): off the checklist, with the reason
+            g["done_when"] = [c for c in g["done_when"] if c not in gone]
+            g["dropped_by_requester"] = (g.get("dropped_by_requester") or []) + gone
+            g["dropped_reasons"] = (g.get("dropped_reasons") or []) + [{"criterion": c, "reason": why, "hosts": a["hosts"]}
+                                                                       for c in gone]
+            g["to_be_confirmed"] = [t for t in g.get("to_be_confirmed") or [] if t["criterion"] not in gone]
+            self.save("goal.json", g)
+        self.post("system", f"Left out on the Requester's decision: {a['name']}'s real run"
+                  + (f" (done-when item {and_list(map(str, nums))})" if nums else "") + f". {why}.")
+        p["handoff"] = {"kind": "propose", "why": f"{why}, so {a['name']}'s real run is left out"
+                        + (f" and done-when item {and_list(map(str, nums))} is off the checklist" if nums else "")
+                        + f". Propose {a['name']} again without its real_run."}
+
+    def _ask_real_run(self, r):
+'''),
+    Edit("P44", "j2.py", r'''        self.turn = None
+        if self.memory and not self.docset:
+''', r'''        if off := [x for x in (self.goal or {}).get("dropped_reasons") or [] if x.get("hosts")]:      # P44 (D449): a declined
+            self.outcome += " Left out: " + "; ".join(f"{x['criterion']}: {x['reason']}" for x in off) + "."      # host question
+        self.turn = None
+        if self.memory and not self.docset:
 '''),
 )
 
@@ -3453,7 +3549,7 @@ PATCH_NOTES = {
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
     "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. When the answer gives such an item's fact (Identity's `confirmed`), its `to_be_confirmed` entry is dropped too (review R1-2): the item no longer waits on the Requester, so it is never blocked on that fact or asked for it again, is still never a confirmed fact, and passes only on its real run's receipt; an item Identity puts in `still_to_be_confirmed` keeps its entry. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers. When the paused question is one question with options and the Requester's own reply is a bare pick (`ONLY_PICK`, resolved by `option_picked`), `_run` records the option's full text as `picked` on the decision record; a pick Decide for me sent (its chat message is flagged `auto`) records nothing, so it never names a folder, a secret file or a charter fact. `_fact_source` (the source of `real_run_problems`, `real_run_env_problems`, `check_problems` and `requester_words`) and `_fact_problems` add every `picked` text; `real_run_problems` and `real_run_env_problems` get `_fact_source(pieces=True)`, each text squashed on its own, and `named_whole` accepts a path named whole in any one of them, so a path that ends one text is never read as going on into the next text's first word (review R1-1: a brief starting `CSV/Excel`). A typed bare option number or `Option n` from the Requester is their pick too (it is what a card click sends, and its message is not flagged `auto`); any other typed answer is never read as a pick",
-    "P44": "(D449; no model prompt changes in this part) a planned real run may name `hosts`, a list of srt allowedDomains entries of a narrow form (`HOST_ENTRY`: Kaivan's `HOST` from the J2 prototype 780f1eb9, with an optional `*.` and `:port` 1-65535; no scheme, path, address, localhost, `*` or `*.com`), each named whole (`host_named`: its port left out, a wildcard only as written, never after `@`) in one text of `host_pieces`: the brief, the Requester's own picks (P43) and their typed messages, never the charter and never Decide for me; a plan with hosts also states `offline` `{command, same_files}`, checked as the real command is (`real_run_problems`) and not the same command; `_register` refuses with the P22 keys `(\"real_run_hosts\",)` and `(\"real_run_offline\",)` and stores `hosts` (Kaivan's `real_hosts`: lower case, each once) and `offline` (~ written out) only with hosts",
+    "P44": "(D449; no model prompt changes in this part) a planned real run may name `hosts`, a list of srt allowedDomains entries of a narrow form (`HOST_ENTRY`: Kaivan's `HOST` from the J2 prototype 780f1eb9, with an optional `*.` and `:port` 1-65535; no scheme, path, address, localhost, `*` or `*.com`), each named whole (`host_named`: its port left out, a wildcard only as written, never after `@`) in one text of `host_pieces`: the brief, the Requester's own picks (P43) and their typed messages, never the charter and never Decide for me; a plan with hosts also states `offline` `{command, same_files}`, checked as the real command is (`real_run_problems`) and not the same command; `_register` refuses with the P22 keys `(\"real_run_hosts\",)` and `(\"real_run_offline\",)` and stores `hosts` (Kaivan's `real_hosts`: lower case, each once) and `offline` (~ written out) only with hosts. The host question (owner, T1b; code's own words): a plan refused only because its well-formed hosts are not all named leaves one question (`_hosts_to_ask`), which `_run`'s loop asks after the turn once no question is open and the next turn is not Identity's (`_ask_hosts`, pause kind `hosts`, in `AUTO_ASK`, so Decide for me never answers it): \"This script needs to reach <reaches> (<hosts>). Allow it?\" from the plan's optional `reaches` (one line, at most 80 characters, shown, never read); option 1 carries every host, so the Requester's own click (P43's `picked`) names them and the plan, proposed again, registers; option 2 (`HOSTS_DECLINE`) or any answer that names them not all leaves the real run out (`_hosts_answered`: its items dropped with the reason in `dropped_reasons`, a system line, and `_goal_done` adds \"Left out: <item>: <reason>.\" to the outcome); a set of hosts is asked at most once per run (`hosts_asked`)",
 }
 
 

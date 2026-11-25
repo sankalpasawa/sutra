@@ -204,7 +204,8 @@ PAUSES = {"info": "J2.a: not enough information to work yet",
           "fact": "J2.g: a fact only the Requester knows",
           "limit": "a safety limit was hit: add budget, drop the failing items or ship as is",
           "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
-          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
+          "real_run": "may a built script run for real on the Requester's folder (exact reply only)",
+          "hosts": "may a real run reach the internet hosts its plan names (P44, D449)"}
 TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 
 # P8: the J2 step (STEPS) each turn sets before its first model call, told to the hooks when the turn starts.
@@ -233,6 +234,7 @@ def _ask(tag, *args, **kw):
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
 AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+AUTO_ASK.add("hosts")      # P44 (D449): only the Requester allows a real run's internet hosts
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 REAL_RUN_DECLINE = "Don't run"      # P31 (D434): the real-run card's decline, compared whole (stripped, any case)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
@@ -969,6 +971,9 @@ HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?") 
 def real_hosts(rr):
     """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
     return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
+
+
+HOSTS_DECLINE = "Don't allow it: leave the real run out"      # P44 (D449): the host question's second option
 
 
 def host_entry_ok(h):
@@ -3936,6 +3941,8 @@ class J2Run:
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
+        self.hosts_ask = None        # P44 (D449): the host question _register left for after this turn (_ask_hosts)
+        self.hosts_asked = {}        # P44 (D449): the asked hosts (sorted, space-joined) -> allowed (True/False), None while open
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
@@ -5397,6 +5404,8 @@ class J2Run:
                     and not next(m for m in reversed(self.chat) if m["who"] == "user").get("auto"):
                 d["picked"] = str(q1["options"][i])      # P43 (D448): the Requester's own pick, in full; never Decide for me's
             self.decisions.append(d)
+        if p and p["kind"] == "hosts":      # P44 (D449): code reads the answer to the host question
+            self._hosts_answered(p)
         if p:
             h = dict(p["handoff"])
             if h.get("why"):
@@ -5478,6 +5487,9 @@ class J2Run:
                 if self.turn != "identity":
                     resume = {"to": self.turn, "handoff": self.handoff} if self.turn else None
                     self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
+            if self.hosts_ask and not self.paused and self.turn != "identity":      # P44 (D449): after the validator's turn,
+                a, self.hosts_ask = self.hosts_ask, None      # hosts only the Requester can allow; Identity's own turn first
+                self._ask_hosts(a)
         self.turn, self.done = None, True
         self._board_tally()      # board/1 part C: what each document change reached, now that nothing is left to build
         if not self.paused:
@@ -6141,6 +6153,60 @@ class J2Run:
                 "run is not a failure, needs no workflow (none to record a receipt), and is no question for the "
                 "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
                 f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
+
+    def _hosts_to_ask(self, name, rr):
+        """P44 (D449): _register refused rr because its hosts are not all named by the Requester. Unless that set of hosts
+        was asked about before (hosts_asked: once per set, never a loop) or a question already waits, Identity asks after
+        this turn (_run's loop, _ask_hosts). A badly formed host is the plan's to fix, never asked."""
+        hosts = real_hosts(rr)
+        if not all(isinstance(x, str) and host_entry_ok(x.strip().lower()) for x in rr.get("hosts") or []) \
+                or " ".join(sorted(hosts)) in self.hosts_asked or self.hosts_ask:
+            return
+        at, crit, what = self._item_at(), (self.goal or {}).get("done_when") or [], rr.get("reaches")
+        self.hosts_ask = {"name": name, "hosts": hosts, "items": [crit[at[as_int(i)] - 1] for i in rr.get("checks") or []
+                                                                  if as_int(i) in at],
+                          # a short plain name of what the hosts are, shown as written, never read: one line, 80 characters
+                          "reaches": what.strip() if isinstance(what, str) and 0 < len(what.strip()) <= 80
+                          and not re.search(r"[\r\n\0]", what) else ""}
+
+    def _ask_hosts(self, a):
+        """P44 (D449): Identity's one question about a plan's hosts, built by code from the plan's fields. Its first option
+        carries every host exactly, so the Requester's own click names them (P43's picked, host_pieces) and the plan then
+        registers; the second leaves the real run out (_hosts_answered). Decide for me never answers it (AUTO_ASK)."""
+        hosts = ", ".join(a["hosts"])
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = None
+        self._ask_user("A workflow's real run needs to reach the internet, and only you can allow that.",
+                       [{"question": f"This script needs to reach {a['reaches'] + ' (' + hosts + ')' if a['reaches'] else hosts}. "
+                                     "Allow it?", "options": [f"Allow internet access to {hosts}", HOSTS_DECLINE]}],
+                       "hosts", to="adaptation", handoff={"kind": "propose", "hosts_ask": a})
+
+    def _hosts_answered(self, p):
+        """P44 (D449): code reads the answer to _ask_hosts. Allowed when every host is now named (the Requester's own pick of
+        the first option, whose text carries them, or their own typed words): Adaptation proposes the plan again and it
+        registers. Anything else leaves the real run out: the done-when items it checks are dropped with the reason (also
+        in the run's outcome, _goal_done), and Adaptation proposes the workflow without it."""
+        a, g = p["handoff"]["hosts_ask"], self.goal or {}
+        ok = not [h for h in a["hosts"] if not host_named(h, host_pieces(self.request, self.decisions, self.chat))]
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = ok
+        if ok:
+            p["handoff"] = {"kind": "propose", "why": f"The Requester allowed internet access to {', '.join(a['hosts'])}. "
+                                                      f"Propose {a['name']} again with the same real_run."}
+            return
+        why, gone = f"The Requester did not allow internet access to {', '.join(a['hosts'])}", \
+            [c for c in a["items"] if c in (g.get("done_when") or [])]
+        nums = [self._no(c) for c in gone]
+        if gone:      # left out as a Requester's "Leave out" is (D431): off the checklist, with the reason
+            g["done_when"] = [c for c in g["done_when"] if c not in gone]
+            g["dropped_by_requester"] = (g.get("dropped_by_requester") or []) + gone
+            g["dropped_reasons"] = (g.get("dropped_reasons") or []) + [{"criterion": c, "reason": why, "hosts": a["hosts"]}
+                                                                       for c in gone]
+            g["to_be_confirmed"] = [t for t in g.get("to_be_confirmed") or [] if t["criterion"] not in gone]
+            self.save("goal.json", g)
+        self.post("system", f"Left out on the Requester's decision: {a['name']}'s real run"
+                  + (f" (done-when item {and_list(map(str, nums))})" if nums else "") + f". {why}.")
+        p["handoff"] = {"kind": "propose", "why": f"{why}, so {a['name']}'s real run is left out"
+                        + (f" and done-when item {and_list(map(str, nums))} is off the checklist" if nums else "")
+                        + f". Propose {a['name']} again without its real_run."}
 
     def _ask_real_run(self, r):
         """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
@@ -7235,6 +7301,8 @@ class J2Run:
             self.outcome = ("Done with open items: "
                             + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
                                "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
+        if off := [x for x in (self.goal or {}).get("dropped_reasons") or [] if x.get("hosts")]:      # P44 (D449): a declined
+            self.outcome += " Left out: " + "; ".join(f"{x['criterion']}: {x['reason']}" for x in off) + "."      # host question
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -9926,6 +9994,7 @@ class J2Run:
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
                 if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
+                    self._hosts_to_ask(name, w["real_run"])      # P44 (D449): the Requester is asked once (T1b)
                     continue
                 if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
                                                     self.out.get("test_runner"), self.dir):

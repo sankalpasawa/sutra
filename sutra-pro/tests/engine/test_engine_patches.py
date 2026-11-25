@@ -4597,18 +4597,20 @@ def p44_reg(j2ft, tmp_path, monkeypatch):
         run.goal, run.budget = goal or {"statement": "x", "done_when": list(P44_DONE_WHEN)}, 100
         return run
 
-    def register(run=None, hosts=DEFAULT, offline=DEFAULT, folder=None, **fields):
-        run = run or new()
+    def proposal(run, hosts=DEFAULT, offline=DEFAULT, folder=None, **fields):
         x, f = run.out["test_runner"][0], folder or str(dst)
         rr = {"command": [x, "fetch.py", f, P44_URL], "folder": f, "reads": [], "why": "x", "checks": [3],
               "expect": {"created": ["title.txt"], "changed": [], "deleted": []},
               "hosts": ["api.made-up.invalid"] if hosts is DEFAULT else hosts,
               "offline": {"command": [x, "fetch.py", f, "--offline"], "same_files": True} if offline is DEFAULT else offline,
               **fields}
-        rr = {k: v for k, v in rr.items() if v is not MISSING}
-        reg, refused, _ = run._register([{**sort_proposals(f, fix=True)[0], "real_run": rr}])
+        return [{**sort_proposals(f, fix=True)[0], "real_run": {k: v for k, v in rr.items() if v is not MISSING}}]
+
+    def register(run=None, **kw):
+        run = run or new()
+        reg, refused, _ = run._register(proposal(run, **kw))
         return run, reg, refused
-    return SimpleNamespace(new=new, register=register, dst=dst, home=home)
+    return SimpleNamespace(new=new, proposal=proposal, register=register, dst=dst, home=home)
 
 
 def test_p44_a_good_plan_registers_hosts_and_offline(p44_reg):
@@ -4710,3 +4712,82 @@ def test_p44_host_in_a_requester_click_registers(p44_reg, monkeypatch):
     run.post("user", "it calls api.made-up.invalid")
     run, reg, refused = p44_reg.register(run)
     assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
+
+
+# ---- P44 (D449) T1b (owner): hosts the Requester has not named are asked once, in a pickable option; never Decide for me
+def p44_flow(run, monkeypatch, *proposals):
+    """Adaptation's proposals, one per Adaptation turn, registered by the validator's own _agree; any other turn (building)
+    ends the run here."""
+    it = iter(proposals)
+
+    def turn():
+        if run.turn == "adaptation":
+            run._agree(next(it))
+        else:
+            run.turn = None
+    monkeypatch.setattr(run, "_dispatch_turn", turn)
+
+
+def p44_asked(run):
+    return [m for m in run.chat if m.get("pause") == "hosts"]
+
+
+@pytest.fixture
+def p44_ask(p44_reg, monkeypatch):
+    """A run whose brief names the folder but no host; Adaptation's plan names the made-up host: the validator refuses it and
+    Identity asks the host question. Returns (run, the question, proposal(**fields) for later turns)."""
+    def go(*later, **fields):
+        run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+        plan = p44_reg.proposal(run, **fields)
+        p44_flow(run, monkeypatch, plan, *[x if x is not None else plan for x in later])
+        run.post("user", "Build it, please")
+        run._run()
+        assert not run.workflows and run.rejections[-1]["key"] == ["real_run_hosts"], run.rejections
+        assert len(p44_asked(run)) == 1 and run.paused["kind"] == "hosts", [m["text"] for m in run.chat]
+        return run, run.paused["questions"][0], plan
+    return go
+
+
+def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers_them(p44_ask):
+    run, q, _ = p44_ask(None, reaches="the made-up API")
+    assert q["question"] == "This script needs to reach the made-up API (api.made-up.invalid). Allow it?", q
+    assert q["options"] == ["Allow internet access to api.made-up.invalid", "Don't allow it: leave the real run out"], q
+    run.post("user", "Option 1")      # what a card click sends
+    run._run()
+    assert run.decisions[-1]["picked"] == "Allow internet access to api.made-up.invalid"
+    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
+    assert len(p44_asked(run)) == 1 and run.paused is None, "no second question"
+    assert run.hosts_asked == {"api.made-up.invalid": True} and run.hosts_ask is None
+
+
+def test_p44_t1b_without_reaches_the_question_names_the_hosts_alone(p44_ask):
+    _, q, _ = p44_ask(hosts=["api.made-up.invalid", "*.cdn.made-up.invalid:8443"], reaches="two\nlines")
+    assert q["question"] == "This script needs to reach api.made-up.invalid, *.cdn.made-up.invalid:8443. Allow it?", q
+    assert q["options"][0] == "Allow internet access to api.made-up.invalid, *.cdn.made-up.invalid:8443"
+
+
+def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_asks_again(p44_ask):
+    without = [{**sort_proposals("x", fix=True)[0], "real_run": None}]      # Adaptation's plan without the real run
+    run, q, plan = p44_ask(None, without)      # it first proposes the same hosts again: refused, not asked again
+    run.post("user", "Option 2")
+    run._run()
+    why = "The Requester did not allow internet access to api.made-up.invalid"
+    assert "picked" in run.decisions[-1] and len(p44_asked(run)) == 1 and run.paused is None
+    assert run.goal["done_when"] == P44_DONE_WHEN[:2]
+    assert run.goal["dropped_reasons"] == [{"criterion": P44_DONE_WHEN[2], "reason": why, "hosts": ["api.made-up.invalid"]}]
+    assert any(m["text"].startswith("Left out on the Requester's decision") and why.lower() in m["text"].lower() for m in run.chat)
+    assert [w.get("real_run") for w in run.workflows] == [None], run.rejections      # registered without its real run
+    run._goal_done({})
+    assert f"Left out: {P44_DONE_WHEN[2]}: {why}." in run.outcome, run.outcome
+    run._hosts_to_ask("Build sort_files.py", plan[0]["real_run"])      # the same hosts in a later plan: never asked again
+    assert run.hosts_ask is None and run.hosts_asked == {"api.made-up.invalid": False}
+
+
+def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
+    run, _, _ = p44_ask()
+    assert "hosts" in j2ft.AUTO_ASK
+    run.auto = True
+    run._auto_go()
+    assert run.paused["kind"] == "hosts" and not [m for m in run.chat if m.get("auto")], "it waits for the Requester"
+    assert run.snapshot()["paused"]["auto_waits"] is True
+
