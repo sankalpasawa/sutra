@@ -1,0 +1,26 @@
+/* result_view.css - the centre panel's Result and Files panes on a team page (result_view.js, SUT-27, D450). The page's --s-* tokens; no font. */
+#sview .rvpane{position:absolute;inset:0;overflow:auto;padding:18px clamp(12px,3vw,28px) 32px;background:var(--s-surface2);color:var(--s-ink);font:14px/1.5 var(--s-body)}
+#sview .rvpane[hidden]{display:none}
+#sview .sframe.rvpane .sprev{visibility:hidden}
+/* a page, markdown, HTML or an image keeps the sandboxed frame: the pane is a bar above it with the file's name and Download */
+#sview .rvpane.rvbar{bottom:auto;height:44px;padding:0 clamp(12px,3vw,28px);overflow:hidden;display:flex;align-items:center;border-bottom:1px solid var(--s-line)}
+#sview .rvpane.rvbar .rvhead{margin:0;width:100%}
+#sview .sframe.rvbar .sprev{top:44px}
+#sview .rvhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;min-width:0}
+#sview .rvhead b{font-weight:600;min-width:0;overflow-wrap:anywhere}
+#sview .rvdl{margin-left:auto;color:var(--s-accentink);font-weight:600;text-decoration:none;white-space:nowrap}
+#sview .rvdl:hover,#sview .rvdl:focus-visible{text-decoration:underline}
+#sview .rvback{border:1px solid var(--s-line);background:var(--s-surface);color:var(--s-ink);border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}
+#sview .rvnote{color:var(--s-muted);margin:8px 0}
+#sview .rvfiles{list-style:none;margin:0;padding:0;border-top:1px solid var(--s-line)}
+#sview .rvfiles li{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--s-line);min-width:0}
+#sview .rvfiles .slink{min-width:0;overflow-wrap:anywhere;text-align:left}
+#sview .rvtext,#sview .rvcode{margin:0;font:12.5px/1.55 var(--s-mono);background:var(--s-surface);border:1px solid var(--s-line);border-radius:8px;padding:12px;overflow:auto;max-width:100%}
+#sview .rvtext{white-space:pre-wrap;overflow-wrap:anywhere}
+#sview .rvcode{counter-reset:rvln;white-space:pre}
+#sview .rvcode code{display:block;font:inherit;counter-increment:rvln;min-height:1.55em}
+#sview .rvcode code::before{content:counter(rvln);display:inline-block;width:3.5em;margin-right:12px;text-align:right;color:var(--s-muted);user-select:none}
+#sview .rvtable{overflow:auto;max-width:100%;max-height:70vh;border:1px solid var(--s-line);border-radius:8px;background:var(--s-surface)}
+#sview .rvtable table{border-collapse:collapse;font-size:13px;width:max-content;min-width:100%}
+#sview .rvtable th,#sview .rvtable td{padding:6px 10px;border-bottom:1px solid var(--s-line);text-align:left;vertical-align:top;white-space:pre-wrap;max-width:32em}
+#sview .rvtable th{position:sticky;top:0;background:var(--s-surface2);font-weight:600}

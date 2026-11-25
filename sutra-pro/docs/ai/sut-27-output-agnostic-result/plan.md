@@ -33,7 +33,7 @@ Inputs: spec.md (Refined), architecture.md. Commands run from `sutra-pro/`.
   - Done when: `node --test tests/ui/js/result_view.test.js` and `scripts/py -m pytest tests/ui/test_node_suite.py tests/test_ownership.py -q` pass
   - Covers: FR-5, FR-7 (parse), FR-8, FR-10, FR-11, FR-13 (text), FR-14 (data), FR-20, NFR-5
 
-- [ ] T2: The page loads `result_view.js`; every run gets Result, Files, How it was made, and each file opens in its viewer
+- [x] T2: The page loads `result_view.js`; every run gets Result, Files, How it was made, and each file opens in its viewer
   - Files: `scripts/port_j2_ui.py` (`MODULES`: `"result_view"` between `"budget_chip"` and `"dept_ext"`), `tests/ui/test_port_edits.py` (its `MODULES` mirror, same place), `sutra_app/ui/pages/j2_ui.html` (one line), `sutra_app/ui/static/js/result_view.js`, `sutra_app/ui/static/css/result_view.css` (new), `tests/ui/js/result_view.test.js`
   - Change:
     1. The page line: extract J2 at the engine's pin (`sutra_app/engine/VENDORED.md` line 3) into a fresh temp folder and run `scripts/py scripts/port_j2_ui.py --j2 "$J2SRC" --commit <pin> --check` on the base first. If it exits 0, run the port without `--check` after the `MODULES` edit. If it does not, add exactly the line E12 writes, `<script src="/ui/js/result_view.js"></script>`, before the `dept_ext.js` tag (what commit fd7bc2f6 did for avatars) and say so in the commit body.

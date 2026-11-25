@@ -9,7 +9,8 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T1 pure core and fixtures | done | `SUT-27: D450 the pure core of result_view.js and a script-run fixture, not loaded by the page yet` |
 | T1 follow-up | done | `SUT-27: D450 the real-run result is read from the receipt row's own result and run_output keys` |
 | Q-4 docs | done | `SUT-27: D450 Copy share link is hidden with no main file or a real-run result (Q-4, docs)` |
-| T2-T6 | not started | |
+| T2 tabs, viewers, page line | done | `SUT-27: D450 the page loads result_view.js; every run gets Result, Files, How it was made, and each file opens in its viewer` |
+| T3-T6 | not started | |
 
 ### T1
 
@@ -22,7 +23,15 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | `tests/ui/fixtures/result_view/real-runs-script.json` (new) | W-2 real_run receipt row in two shapes: `today` (stdout tail in `output`, no `run_output`) and `p45` (the same plus top-level `run_output`, `result`, `created`/`changed`/`deleted`/`files_truncated` and a `dry_run`) |
 | `docs/ai/...` | analysis.md and the task folder added; spec.md, architecture.md, plan.md amended for the plan-review decisions (change-log lines in spec and architecture) |
 
-## Deviations
+### T2
+
+| file | what |
+|---|---|
+| `scripts/port_j2_ui.py`, `tests/ui/test_port_edits.py` | `MODULES`: `"result_view"` between `"budget_chip"` and `"dept_ext"` |
+| `sutra_app/ui/pages/j2_ui.html` | +1 line, `<script src="/ui/js/result_view.js"></script>` before `dept_ext.js`, written by the port. J2 extracted at the engine's pin (`git archive ee659fb5 prototypes/j2`); `port_j2_ui.py --check` on the base exited 0 ("54 anchors ... 7 committed files equal a fresh port"), then the port ran without `--check`; only j2_ui.html changed |
+| `sutra_app/ui/static/js/result_view.js` | `adopt(root)`: checks the page functions (`renderSimple`, `sViews`, `sLoad`, `paint`, `sTeamwork`, `sSkTime`, `sDecorate`) and the page consts (`SV`, `esc`, `runQ`, `isReady`, `sNoun`); adds `#rvpane` (`#rvbody`, empty `#rvlater`) in `#sout` and the stylesheet link; replaces `sViews` (try, else the page's own) and `sGo` (below). Tabs Result / Files / How it was made, default by `done`, pick kept, `file:<path>` with an "All files" back button, unknown picks map to Result. Viewers: site and frame through `sLoad` (the page's sandboxed frames, unchanged); text, code, CSV/TSV, JSON painted escaped into `#rvbody` from `/api/artifact`, cached per `file + sha256`; a failed fetch shows the FR-7 line |
+| `sutra_app/ui/static/css/result_view.css` (new) | pane, header bar above a framed file, `<pre>`, numbered code (CSS counters), table with sticky header and its own scroll, `.sframe.rvpane .sprev{visibility:hidden}`; page `--s-*` tokens only |
+| `tests/ui/js/result_view.test.js` | 12 glue tests on a vm stub of the page (the module loads after it, as on the page) |
 
 | what | why |
 |---|---|
@@ -36,6 +45,13 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | `WORDS.showing(n, total)` is a function | the row counts are part of the string |
 | request.md: "Approved by <name>" → "Approved by the owner" | no owner names in committed files |
 | plan.md T4 text: share URL is now the main file's `/view` link | Q-3 answered at plan review; plan said "unchanged" |
+| T2: `sGo` wrapped (not in the plan's list) | the page's `sGo` looks for a J2 tab per document (`sTabs`); with the three tabs an unknown tab key never becomes the view, so `sGo` would re-call itself every 600 ms forever. On a run that is not a website it now opens the part's record (`sOpenPart`); a website keeps the page's own (the module sets `SV.view = "site"` while the site shows, so `sGo` and `sDecorate` work as today) |
+| T2: a website run (page run, no docset, `versions > 0`) always shows its site in Result | same as the main-result rule's answer for a website (entry file `site/index.html`), without waiting for `/api/artifacts`; avoids a flicker to "no files" before the rows arrive |
+| T2: a real-run result shows its name and the FR-7 line | P45's route does not exist; marked `ponytail:` in the code |
+| T2: `/api/artifacts/groups` fetched only when the run is done and its plan has a real run, once per `SV.akey` | the hook costs no request on other runs |
+| T2: docset toasts ("The X is being written") dropped; the site toast kept | docset runs now follow the general rule (spec change log); only a website's live site is a stage that "takes shape" |
+| T2: two short strings with no spec text: "Opening…" (fetch in flight) and "No preview for this kind of file." (download viewer) | needed a body; no site/page word |
+| Owner, during T2: the "Link copied" note shows on website runs too (FR-19 stands) | recorded here; spec/implementation marked resolved at T4 |
 
 ## Tests
 
@@ -43,6 +59,16 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 |---|---|
 | `node --test tests/ui/js/result_view.test.js` | 13 tests, 13 pass, 0 fail |
 | `scripts/py -m pytest tests/test_ownership.py tests/ui/test_node_suite.py -q` | 10 passed (the node suite runs every `tests/ui/js/*.test.js`, the new file included) |
+
+T2:
+
+| command | result |
+|---|---|
+| `node --test tests/ui/js/result_view.test.js` | 25 tests, 25 pass |
+| `node --test tests/ui/js/page_render.test.js` | 54 tests, 53 pass, 1 skipped (needs `SUTRA_J2_CHECKOUT`); with `SUTRA_J2_CHECKOUT=<the extraction>`: 54 pass. Goldens and `tests/ui/fixtures/j2/` unchanged |
+| `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` | exit 0; 363 passed, 5 skipped (1 needs `SUTRA_J2_CHECKOUT`, 4 need `SUTRA_BROWSER=1`) |
+| `SUTRA_J2_CHECKOUT=<extraction> scripts/py -m pytest tests/ui/test_port_edits.py -k fresh_port_of_the_real_j2` | 1 passed |
+| `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -k "one_way_to_each_thing or opens_its_record"` | 3 passed (website finish bar and part record unchanged; plan names no new browser test for T2) |
 
 Not run (owner rule): `scripts/gate.sh`, `scripts/live_smoke.py`, browser tests, beta install.
 

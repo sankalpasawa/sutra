@@ -22,7 +22,10 @@
      ResultView.jsonTable(text)          the same for a JSON array of objects; null otherwise
      ResultView.label(s, tab, main)      the address bar text for a tab ("result", "files", "team", "file:<path>")
      ResultView.WORDS                    the wording of a non-page run (no site, page or website)
-     ResultView.adopt(root)              installs the page wrappers (T2); a stub returning false for now
+     ResultView.adopt(root)              on a team page: replaces the page's sViews (tabs Result, Files, How it was made; each file in the viewer
+                                         for its type; #rvpane in #sout for text, code, tables and lists, the page's sandboxed frame for pages,
+                                         markdown, HTML and images) and its sGo for runs that are not a website. False, and nothing changed,
+                                         when a page global it needs is missing. Every replacement falls back to the page's own on a throw.
 
    A classic script with ONE global, ResultView; in node it is module.exports. */
 (function (root) {
@@ -149,10 +152,149 @@
     return k === "list" ? "files" : "no files";
   }
 
-  const adopt = () => false;      // T2 installs the page wrappers
+  // ---- the page glue (T2). Runs only on a team page: J2's page globals are read by bare name, typeof guarded.
+  const T = {adopted: false, last: null, files: new Map(), runs: [], gkey: ""};
+  const NEEDS = ["renderSimple", "sViews", "sLoad", "paint", "sTeamwork", "sSkTime", "sDecorate"];
+  const TABS = [["result", "Result"], ["files", "Files"], ["team", "How it was made"]];
+  const enc = encodeURIComponent;
+
+  function pageGlobals() {      // the page's own `const`s (not on window): visible by bare name from this classic script
+    try {
+      return typeof SV === "object" && typeof esc === "function" && typeof runQ === "function" && typeof isReady === "function"
+        && typeof sNoun === "function" ? {SV, esc, runQ} : null;
+    } catch (e) { return null; }
+  }
+
+  // The file's text from /api/artifact, fetched once per file + sha256; the page is painted again when it arrives.
+  function fileText(root, G, row) {
+    const k = row.file + "|" + (row.sha256 || ""), hit = T.files.get(k);
+    if (hit) return hit;
+    const entry = {loading: true};
+    T.files.set(k, entry);
+    root.fetch(`/api/artifact?name=${enc(row.file)}${G.runQ()}`, {cache: "no-store"})
+      .then(r => r.ok ? r.text() : Promise.reject(r.status))
+      .then(text => { entry.text = text; }, () => { entry.failed = true; })
+      .then(() => { entry.loading = false; if (T.last) root.renderSimple(T.last); });
+    return entry;
+  }
+
+  // /api/artifacts/groups `real_runs` (main-result step 1), fetched only for a done run whose plan has a real run (P45 hook)
+  function realRuns(root, G, s) {
+    const k = G.SV.akey || "";
+    if (k === T.gkey || !done(s) || !(s.workflows || []).some(w => w && w.real_run)) return T.runs;
+    T.gkey = k;
+    root.fetch(`/api/artifacts/groups?x=1${G.runQ()}`, {cache: "no-store"}).then(r => r.ok ? r.json() : null).then(g => {
+      const runs = ((g && g.groups) || []).flatMap(x => (x.rows || []).flatMap(r => r.real_runs || []));
+      if (runs.length) { T.runs = runs; if (T.last) root.renderSimple(T.last); }
+    }, () => {});
+    return T.runs;
+  }
+
+  function dl(G, row) {
+    return `<a class="rvdl" href="/api/artifact?name=${enc(row.file)}${G.runQ()}" download="${G.esc(base(row.file))}">${WORDS.download}</a>`;
+  }
+
+  function fileList(G, rows) {
+    return `<ul class="rvfiles">${rows.map(r => `<li><button type="button" class="slink" data-view="file:${G.esc(r.file)}">${G.esc(r.file)}</button>${dl(G, r)}</li>`).join("")}</ul>`;
+  }
+
+  const note = (G, t) => `<p class="rvnote">${G.esc(t)}</p>`;
+  const numbered = (G, text) => `<div class="rvcode">${String(text).replace(/\r?\n$/, "").split(/\r?\n/).map(l => `<code>${G.esc(l)}</code>`).join("")}</div>`;
+  function tableHTML(G, t) {
+    const tr = (cells, tag) => `<tr>${cells.map(c => `<${tag}>${G.esc(c)}</${tag}>`).join("")}</tr>`;
+    return `<div class="rvtable"><table><thead>${tr(t.head, "th")}</thead><tbody>${t.rows.map(r => tr(r, "td")).join("")}</tbody></table></div>`
+      + (t.total > t.rows.length ? note(G, WORDS.showing(t.rows.length, t.total)) : "");
+  }
+
+  // The body of one file in #rvbody (text, code, table, json, download); frame viewers go to the page's sandboxed frame instead.
+  function bodyOf(root, G, row, kind) {
+    if (kind === "download") return "";
+    const f = fileText(root, G, row);
+    if (f.loading) return note(G, "Opening…");
+    if (f.failed) return note(G, WORDS.cantShow);
+    if (kind === "text") return `<pre class="rvtext">${G.esc(f.text)}</pre>`;
+    if (kind === "table") { const t = table(f.text, /\.tsv$/i.test(row.file) ? "\t" : ","); return t ? tableHTML(G, t) : numbered(G, f.text); }
+    if (kind === "json") {
+      const t = jsonTable(f.text); if (t) return tableHTML(G, t);
+      try { return numbered(G, JSON.stringify(JSON.parse(f.text), null, 2)); } catch (e) { return numbered(G, f.text); }
+    }
+    return numbered(G, f.text);
+  }
+
+  // What the stage shows for a view: {site}, {frame: url, head}, or {pane: html}. Never a /site/ URL on a non-page run (FR-21).
+  function stage(root, G, s, v, rows, main) {
+    const head = (row, back) => `<div class="rvhead">${back ? `<button type="button" class="rvback" data-view="files">${WORDS.allFiles}</button>` : ""}<b>${G.esc(row.file)}</b>${dl(G, row)}</div>`;
+    const one = (row, back) => {
+      const kind = viewerFor(row);
+      if (kind === "site") return isPageRun(s) && s.versions > 0 ? {site: true} : {pane: head(row, back) + note(G, WORDS.cantShow)};
+      if (kind === "frame") return {frame: `/view?name=${enc(row.file)}${G.runQ()}`, head: head(row, back)};
+      return {pane: head(row, back) + (kind === "download" ? note(G, "No preview for this kind of file.") : bodyOf(root, G, row, kind))};
+    };
+    if (v.startsWith("file:")) return one(rows.find(r => "file:" + r.file === v), true);
+    if (v === "files") return {pane: rows.length ? fileList(G, rows) : note(G, WORDS.noFiles)};
+    if (isPageRun(s) && !(s.docset || []).length && s.versions > 0) return {site: true};      // a website: its site, live while it builds (Q-2)
+    if (!done(s)) return {pane: note(G, WORDS.soon)};
+    if (main.kind === "file") return one(main.row, false);
+    if (main.kind === "real-run") return {pane: `<div class="rvhead"><b>${G.esc(main.result)}</b></div>` + note(G, WORDS.cantShow)};      // ponytail: P45's route is not built; show its text once it is
+    return {pane: main.kind === "list" ? fileList(G, rows) : note(G, WORDS.noFiles)};
+  }
+
+  function views(root, G, s, M) {
+    const d = root.document, $ = id => d.getElementById(id), SV = G.SV;
+    T.last = s;
+    const rows = (SV.arts && SV.arts.deliverables) || [], main = mainResult(s, rows, realRuns(root, G, s));
+    const pick = SV.pick || "", known = ["result", "files", "team"].includes(pick) || (pick.startsWith("file:") && rows.some(r => "file:" + r.file === pick));
+    const v = !pick ? (done(s) ? "result" : "team") : known ? pick : "result";
+    const tabOf = v.startsWith("file:") ? "files" : v, running = s.status === "running", web = isPageRun(s) && !(s.docset || []).length && s.versions > 0;
+    const pip = k => running && (k === "result" ? web : k === "team" && !web) ? '<span class="pip" aria-hidden="true"></span>' : "";
+    root.paint($("sviews"), TABS.map(([k, l]) => `<button type="button" role="tab" data-view="${k}" aria-selected="${k === tabOf}">${l}${pip(k)}</button>`).join(""));
+    if (web && running && SV.lastOut !== "site" && SV.view && !SV.pick && typeof root.sToast === "function")
+      root.sToast(`The ${typeof TYL === "function" ? TYL("site", "page").toLowerCase() : "page"} is taking shape`);      // a page run's own toast; none otherwise
+    SV.lastOut = web ? "site" : "";
+    const team = v === "team", show = team ? {} : stage(root, G, s, v, rows, main), box = $("sframebox").classList, pane = $("rvpane");
+    SV.view = team ? "team" : show.site ? "site" : v;      // "site" keeps the page's sGo and sDecorate working on a website
+    box.toggle("team", team); box.toggle("site", !!show.site); box.toggle("live", running);
+    box.toggle("rvpane", !!show.pane); box.toggle("rvbar", !!show.frame);
+    $("steamwork").hidden = !team;
+    pane.hidden = !(show.pane || show.frame); pane.classList.toggle("rvbar", !!show.frame);
+    root.paint($("rvbody"), show.pane || show.head || "");
+    const url = label(s, v, main);
+    if ($("surl").__t !== url) { $("surl").__t = url; $("surl").innerHTML = `<span>${G.esc(url)}</span>`; }
+    if (team) { root.paint($("steamwork"), root.sTeamwork(s, M)); root.sSkTime($("steamwork")); }
+    else if (show.site) root.sLoad(`/site/v${s.versions}?x=1${G.runQ()}`);
+    else if (show.frame) root.sLoad(show.frame);
+    root.sDecorate();
+  }
+
+  function adopt(root) {
+    const d = root && root.document, G = pageGlobals();
+    if (T.adopted || !d || !G || NEEDS.some(n => typeof root[n] !== "function")) return false;
+    const out = d.getElementById("sout");
+    if (!out) return false;
+    const pane = d.createElement("div"), body = d.createElement("div"), later = d.createElement("div");
+    pane.id = "rvpane"; pane.className = "rvpane"; pane.hidden = true; body.id = "rvbody"; later.id = "rvlater";      // #rvlater: the Later items' slot
+    pane.appendChild(body); pane.appendChild(later); out.appendChild(pane);
+    if (d.head && !d.querySelector('link[href$="/ui/css/result_view.css"]')) {
+      const link = d.createElement("link"); link.rel = "stylesheet"; link.href = "/ui/css/result_view.css"; d.head.appendChild(link);
+    }
+    const orig = root.sViews;
+    root.sViews = function (s, M, ready) {
+      try { return views(root, G, s, M); } catch (e) { return orig.apply(this, arguments); }      // NFR-7: the page's own on a throw
+    };
+    if (typeof root.sGo === "function" && typeof root.sOpenPart === "function") {
+      const go = root.sGo;      // the page's sGo looks for a J2 tab per document; with three tabs only a website's site is one
+      root.sGo = function (sec) {
+        const s = T.last;
+        if (!s || (isPageRun(s) && !(s.docset || []).length)) return go.apply(this, arguments);
+        return root.sOpenPart(sec);
+      };
+    }
+    T.adopted = true;
+    return true;
+  }
 
   const ResultView = {MAX_ROWS, WORDS, isPageRun, done, realRun, named, mainResult, viewerFor, summaryOf, filesOfPart, table, jsonTable, label,
     adopt};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ResultView;
-  else root.ResultView = ResultView;
+  else { root.ResultView = ResultView; adopt(root); }
 })(globalThis);

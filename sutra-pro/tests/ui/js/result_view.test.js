@@ -191,3 +191,216 @@ test("adopt is a stub until T2: it changes nothing", () => {
   assert.equal(RV.adopt(root), false);
   assert.equal(root.sViews, before);
 });
+
+// ---- the page glue (T2): the module loaded after a stub of J2's page, as the page loads it (a classic script, page globals by bare name)
+const vm = require("node:vm");
+const SRC = fs.readFileSync(path.join(STATIC, "js/result_view.js"), "utf8");
+
+function fakeEl(id) {
+  const cls = new Set();
+  return {id, innerHTML: "", hidden: false, children: [], className: "",
+    classList: {toggle: (c, on) => (on ? cls.add(c) : cls.delete(c), on), contains: c => cls.has(c), add: c => cls.add(c), remove: c => cls.delete(c)},
+    appendChild(c) { this.children.push(c); return c; }, querySelectorAll: () => []};
+}
+
+// files: {file name: text | null (404)}; omit: page globals left out of the stub
+function page({files = {}, omit = []} = {}) {
+  const els = {}, el = id => (els[id] = els[id] || fakeEl(id));
+  ["sframebox", "sviews", "surl", "steamwork", "sout"].forEach(el);
+  const head = fakeEl("head");
+  const document = {
+    head,
+    getElementById: id => els[id] || null,
+    createElement: () => { const e = fakeEl(""); return new Proxy(e, {set(t, k, v) { t[k] = v; if (k === "id" && v) els[v] = t; return true; }}); },
+    querySelector: sel => head.children.find(c => sel.includes(c.href)) || null,
+  };
+  const log = {load: [], fetch: [], toast: [], orig: 0};
+  const fetch = async url => {
+    log.fetch.push(url);
+    const name = decodeURIComponent((/[?&]name=([^&]*)/.exec(url) || [])[1] || "");
+    if (!url.startsWith("/api/artifact?") || files[name] === undefined || files[name] === null) return {ok: false, status: 404};
+    return {ok: true, text: async () => files[name]};
+  };
+  const ctx = vm.createContext({document, fetch, log, console});
+  const decl = {
+    SV: 'const SV = {arts: {}, akey: "", view: "", pick: "", lastOut: ""};',
+    esc: 'const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c]));',
+    runQ: 'const runQ = () => "&run=r1";',
+    isReady: 'const isReady = s => /^Done/.test(s.outcome || "") && !s.paused && s.status !== "running";',
+    sNoun: 'const sNoun = s => "result";',
+    sLoad: "function sLoad(u){ log.load.push(u); }",
+    paint: "function paint(el, html){ if (el.__html === html) return; el.innerHTML = html; el.__html = html; }",
+    sTeamwork: 'function sTeamwork(){ return "<div>the team</div>"; }',
+    sSkTime: "function sSkTime(){}",
+    sDecorate: "function sDecorate(){}",
+    sViews: "function sViews(){ log.orig++; }",
+  };
+  const stub = Object.entries(decl).filter(([k]) => !omit.includes(k)).map(([, v]) => v).join("\n")
+    + "\nconst TYL = (k, d) => d;\nfunction sToast(t){ log.toast.push(t); }\nfunction renderSimple(s){ sViews(s, {}, isReady(s)); }"
+    + "\nfunction sGo(sec){ log.go = sec; }\nfunction sOpenPart(sec){ log.part = sec; }";
+  vm.runInContext(stub, ctx);
+  vm.runInContext(SRC, ctx, {filename: "result_view.js"});
+  const SV = omit.includes("SV") ? null : vm.runInContext("SV", ctx);
+  return {ctx, els, log, SV, render: s => ctx.renderSimple(s), html: id => els[id].innerHTML};
+}
+const tick = () => new Promise(r => setTimeout(r, 0));
+const tabs = p => [...p.html("sviews").matchAll(/data-view="(\w+)" aria-selected="(true|false)">([^<]+)/g)].map(m => [m[3], m[2] === "true"]);
+const webDone = () => ({...copy(WEB), paused: null, status: "done", outcome: "Done: the site is ready."});
+const scriptRun = extra => ({...copy(SCRIPT), ...extra});
+
+test("glue: adopt replaces sViews and adds #rvpane with its #rvlater slot and the stylesheet", () => {
+  const p = page();
+  assert.equal(p.ctx.ResultView.adopt(p.ctx), false, "adopts once");
+  const pane = p.els.rvpane;
+  assert.ok(pane && pane.hidden);
+  assert.deepEqual(pane.children.map(c => c.id), ["rvbody", "rvlater"]);
+  assert.equal(p.els.sout.children[0].id, "rvpane");
+  assert.equal(p.ctx.document.head.children[0].href, "/ui/css/result_view.css");
+  p.render(scriptRun());
+  assert.equal(p.log.orig, 0);
+});
+
+test("glue: a missing page global leaves the page as J2 drew it", () => {
+  for (const omit of [["SV"], ["esc"], ["sLoad"], ["sTeamwork"], ["isReady"]]) {
+    const p = page({omit});
+    assert.equal(p.els.rvpane, undefined, omit[0]);
+    if (omit[0] !== "isReady") { p.render(scriptRun()); assert.equal(p.log.orig, 1, omit[0]); }
+  }
+});
+
+test("glue: a done website shows three tabs, Result selected, and the site in the sandboxed frame", () => {
+  const p = page();
+  p.SV.arts = {deliverables: WEBARTS};
+  p.render(webDone());
+  assert.deepEqual(tabs(p), [["Result", true], ["Files", false], ["How it was made", false]]);
+  assert.deepEqual(p.log.load, ["/site/v5?x=1&run=r1"]);
+  assert.equal(p.SV.view, "site");
+  assert.ok(p.els.rvpane.hidden);
+  assert.ok(p.els.sframebox.classList.contains("site"));
+  assert.equal(p.html("surl"), "<span>brewlab · preview</span>", "the page's own label");
+});
+
+test("glue: a running website opens How it was made; Result picked shows the live site; its toast is today's", () => {
+  const p = page();
+  const s = {...copy(WEB), paused: null, status: "running", outcome: ""};
+  p.render({...s, versions: 0});
+  assert.deepEqual(p.log.toast, []);
+  p.render(s);
+  assert.deepEqual(tabs(p).find(t => t[1])[0], "How it was made");
+  assert.match(p.html("steamwork"), /the team/);
+  assert.equal(p.els.steamwork.hidden, false);
+  assert.deepEqual(p.log.load, []);
+  p.render(s);
+  assert.deepEqual(p.log.toast, ["The page is taking shape"], "once, when the site first appears");
+  p.SV.pick = "result";
+  p.render(s);
+  assert.deepEqual(p.log.load, ["/site/v5?x=1&run=r1"]);
+  assert.match(p.html("sviews"), /data-view="result" aria-selected="true">Result<span class="pip"/);
+});
+
+test("glue: a running script shows the placeholder in Result and no toast", () => {
+  const p = page();
+  const s = scriptRun({status: "running", outcome: ""});
+  p.render(s); p.render(s);
+  assert.deepEqual(p.log.toast, []);
+  p.SV.pick = "result";
+  p.render(s);
+  assert.match(p.html("rvbody"), /Your result will appear here when the team finishes\./);
+  assert.equal(p.els.rvpane.hidden, false);
+  assert.ok(p.els.sframebox.classList.contains("rvpane"));
+  assert.equal(p.html("surl"), "<span>result</span>");
+});
+
+test("glue: a done script with two files shows the Files list in Result, and Files lists both with Download", () => {
+  const p = page();
+  p.SV.arts = {deliverables: ARTS};
+  p.render(scriptRun());
+  assert.deepEqual(tabs(p), [["Result", true], ["Files", false], ["How it was made", false]]);
+  const list = p.html("rvbody");
+  assert.equal((list.match(/<li>/g) || []).length, 2);
+  assert.match(list, /data-view="file:env_report\/report.py"/);
+  assert.match(list, /href="\/api\/artifact\?name=env_report%2Freport.txt&run=r1" download="report.txt">Download</);
+  p.SV.pick = "files";
+  p.render(scriptRun()); p.render(scriptRun());
+  assert.equal(tabs(p).find(t => t[1])[0], "Files", "the pick is kept across renders");
+  assert.equal((p.html("rvbody").match(/>Download</g) || []).length, 2);
+  assert.equal(p.html("surl"), "<span>files</span>");
+});
+
+test("glue: one text file is the result: fetched once over two renders, escaped, with its name and Download", async () => {
+  const p = page({files: {"env_report/report.txt": "<b>x</b>\nline 2"}});
+  p.SV.arts = {deliverables: [ARTS[1]]};
+  p.render(scriptRun());
+  assert.match(p.html("rvbody"), /Opening/);
+  await tick();
+  p.render(scriptRun());
+  assert.deepEqual(p.log.fetch, ["/api/artifact?name=env_report%2Freport.txt&run=r1"]);
+  const body = p.html("rvbody");
+  assert.match(body, /<pre class="rvtext">&lt;b&gt;x&lt;\/b&gt;\nline 2<\/pre>/);
+  assert.doesNotMatch(body, /<b>x<\/b>/);
+  assert.match(body, /<b>env_report\/report.txt<\/b><a class="rvdl" href="\/api\/artifact\?name=env_report%2Freport.txt&run=r1" download="report.txt">/);
+  assert.equal(p.html("surl"), "<span>report.txt</span>");
+});
+
+test("glue: each viewer: code numbered, CSV and JSON tables, bad CSV as numbered text, markdown in the frame, a 404 line", async () => {
+  const files = {"a.py": "print(1)\nprint(2)\n", "d.csv": "h1,h2\n1,2", "e.json": '[{"k":"<v>"}]', "bad.csv": 'a,"b', "gone.txt": null};
+  const p = page({files});
+  p.SV.arts = {deliverables: Object.keys(files).concat(["n.md", "x.docx"]).map(f => row(f))};
+  const show = async f => { p.SV.pick = "file:" + f; p.render(scriptRun()); await tick(); p.render(scriptRun()); return p.html("rvbody"); };
+  assert.match(await show("a.py"), /<div class="rvcode"><code>print\(1\)<\/code><code>print\(2\)<\/code><\/div>/);
+  assert.match(await show("d.csv"), /<thead><tr><th>h1<\/th><th>h2<\/th><\/tr><\/thead><tbody><tr><td>1<\/td><td>2<\/td><\/tr>/);
+  assert.match(await show("e.json"), /<th>k<\/th>.*<td>&lt;v&gt;<\/td>/);
+  assert.match(await show("bad.csv"), /<div class="rvcode"><code>a,&quot;b<\/code>/);
+  assert.match(await show("gone.txt"), /This file can't be shown here \(it may be over 2 MB\)\./);
+  const docx = await show("x.docx");
+  assert.match(docx, /download="x.docx"/);
+  assert.match(docx, /data-view="files">All files</, "a file opened from Files has the way back");
+  await show("n.md");
+  assert.equal(p.log.load.pop(), "/view?name=n.md&run=r1");
+  assert.ok(p.els.rvpane.classList.contains("rvbar") && p.els.sframebox.classList.contains("rvbar"));
+  assert.ok(!p.els.sframebox.classList.contains("rvpane"));
+  assert.ok(p.log.fetch.every(u => !u.includes("n.md") && !u.includes("x.docx")), "frame and download viewers fetch nothing");
+});
+
+test("glue: a saved script run never asks for a /site/ URL; output null and an old pick do not throw", async () => {
+  const p = page({files: {"env_report/report.txt": "ok"}});
+  p.SV.arts = {deliverables: [ARTS[1]]};
+  const saved = scriptRun({status: "saved", outcome: "", saved: {id: "r1"}});
+  for (const pick of ["", "site", "a:Environment report", "result", "files", "file:env_report/report.txt", "file:missing"]) {
+    p.SV.pick = pick; p.render(saved);
+  }
+  await tick();
+  p.render(scriptRun({output: null, types: {}}));
+  p.SV.pick = "";
+  p.render(scriptRun({output: null, types: {}, status: "running", outcome: ""}));
+  assert.ok(p.log.load.concat(p.log.fetch).every(u => !u.startsWith("/site/")), p.log.load.concat(p.log.fetch).join(" "));
+  assert.equal(p.log.orig, 0);
+  assert.equal(tabs(p).length, 3);
+});
+
+test("glue: zero outputs reads 'This run produced no files.' in Result and Files", () => {
+  const p = page();
+  p.SV.arts = {deliverables: []};
+  p.render(scriptRun());
+  assert.match(p.html("rvbody"), /This run produced no files\./);
+  p.SV.pick = "files"; p.render(scriptRun());
+  assert.match(p.html("rvbody"), /This run produced no files\./);
+});
+
+test("glue: a throw inside the module falls back to the page's own sViews", () => {
+  const p = page();
+  p.render(new Proxy(scriptRun(), {get(t, k) {      // only the module reads `workflows`: it throws there, the page's sViews draws
+     if (k === "workflows") throw new Error("boom"); return t[k]; }}));
+  assert.equal(p.log.orig, 1);
+});
+
+test("glue: sGo opens the part's record on a run that is not a website, the page's own on a website", () => {
+  const p = page();
+  p.render(scriptRun());
+  p.ctx.sGo("W-2");
+  assert.equal(p.log.part, "W-2");
+  assert.equal(p.log.go, undefined);
+  p.render(webDone());
+  p.ctx.sGo("W-3");
+  assert.equal(p.log.go, "W-3");
+});
