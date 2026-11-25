@@ -1,5 +1,5 @@
 {
-  "_note": "Data for the programs J2 builds and runs (read by j2.py, beside it). requester_only: what Decide for me never answers, whatever the kind of the question: each row is a pattern (whole words, any case) looked for in the open question, its options and Identity's message, and `about`, the plain words the chat line gives as the reason. Code adds two checks that read no words: a question tagged with a done-when item a planned real run decides, and a decision whose leave-out option names such an item. run_output: the record code writes after an approved real run (folder: where, in the run folder; label, name, tag and color: its row in artifacts.json; output_chars: the end of stdout and of stderr kept; text_bytes: the largest text file whose contents are kept; files: the most files listed).",
+  "_note": "Data for the programs J2 builds and runs (read by j2.py, beside it). requester_only: what Decide for me never answers, whatever the kind of the question: each row is a pattern (whole words, any case) looked for in the open question, its options and Identity's message, and `about`, the plain words the chat line gives as the reason. Code adds two checks that read no words: a question tagged with a done-when item a planned real run decides, and a decision whose leave-out option names such an item. run_output: the record code writes after an approved real run (schema run-output/1). folder: where, in the run folder; name, kind, label, tag and color: its row in artifacts.json; limits: stdout_lines and stderr_lines (the last lines kept of each), tail_bytes (the most bytes of either tail), max_files (the most files listed, over created, changed and deleted), text_cap_bytes (the largest main result whose text is copied).",
   "requester_only": [
     {"about": "a real run", "pattern": "\\breal[- ]runs?\\b|\\bruns? (?:it |them |this |that )?for real\\b|\\blive (?:read|run|step|send|write)s?\\b|\\bRUN (?:approval|code|card)s?\\b"},
     {"about": "installing packages", "pattern": "\\b(?:re|un)?install(?:s|ed|ing|ation)?\\b|\\brequirements\\.txt\\b|\\bPyPI\\b|\\bpip\\b"},
@@ -8,11 +8,16 @@
   "run_output": {
     "folder": "run_output",
     "name": "run_output",
+    "kind": "run_output",
     "label": "Run output",
     "tag": "Other",
     "color": "--other",
-    "output_chars": 20000,
-    "text_bytes": 20000,
-    "files": 200
+    "limits": {
+      "stdout_lines": 200,
+      "stderr_lines": 50,
+      "tail_bytes": 65536,
+      "max_files": 500,
+      "text_cap_bytes": 65536
+    }
   }
 }

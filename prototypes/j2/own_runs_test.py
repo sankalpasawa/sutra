@@ -11,9 +11,11 @@ Each is modelled on a run of the Pulse agent that went wrong (the engineering ru
     was answered "Yes, that folder is right"), and code says so once; a question tagged with a real-run item, and a
     decision whose leave-out option names one, wait too; a limit question and a pending real-run question wait; an
     ordinary question is still answered and nothing is dropped;
-(C) an approved real run that prints and writes out.json leaves a run-output record: the exit code, the end of its
-    output, out.json (created, its size, hash and text) and the file it changed; the receipt names the record, and
-    artifacts.json lists it; a declined run leaves none;
+(C) an approved real run that prints and writes out.json leaves a run-output record, run_output/<receipt id>.json
+    (run-output/1): its receipt, workflow, command, folder, times and exit code; the main result the plan declared
+    ("result"), with its text when small; the files created, changed (before and after) and deleted, without their
+    contents; the last 200 lines of stdout and 50 of stderr; the limits. The receipt has its id, "output" (the path)
+    and the counts, and artifacts.json has one row of kind run_output. A declined run leaves none;
 (D) C2 finds the test the builder wrote: a charter that names no test falls back to the workflow's test check
     (87be: "the test '' is not a file in the folder"), for a builder writing tests/test_x.py with checks naming
     tests/test_x.py, and for the run-relative form (3429: copy_script/tests/test_x.py); a list target is checked
@@ -45,7 +47,8 @@ TMP = tempfile.mkdtemp(prefix="j2-own-runs-")
 KEYS = ("J2_AGENT_TOOLS", "J2_DATA_DIR", "J2_RUN_PYTHON", "J2_SANDBOX", "J2_SANDBOX_CMD")
 PRINTS = ("import json, os, sys\nprint('read 3 threads')\nsys.stderr.write('1 warning\\n')\n"
           "json.dump({'threads': 3}, open(os.path.join(sys.argv[1], 'out.json'), 'w'))\n"
-          "open(os.path.join(sys.argv[1], 'mail.txt'), 'a').write(' two')\n")
+          "open(os.path.join(sys.argv[1], 'mail.txt'), 'w').write('one two')\n"
+          "old = os.path.join(sys.argv[1], 'old.txt')\nos.path.exists(old) and os.remove(old)\n")
 TEST_OK = "import unittest\nimport helper\nassert helper.VALUE == 1\nprint('OK')\n"
 TEST_NEEDS = "import pulsedep\nprint('OK')\n"
 
@@ -181,49 +184,78 @@ def decide_for_me_by_subject():
 def run_output_is_recorded():
     real = tempfile.mkdtemp(prefix="real-", dir=TMP)
     open(os.path.join(real, "mail.txt"), "w").write("one")
+    open(os.path.join(real, "old.txt"), "w").write("gone soon")
     open(os.path.join(real, "untouched.txt"), "w").write("same")
+    sha = lambda b: j2.hashlib.sha256(b).hexdigest()
+    lim = j2.OWN_RUNS["run_output"]["limits"]
+    ok(lim == {"stdout_lines": 200, "stderr_lines": 50, "tail_bytes": 65536, "max_files": 500, "text_cap_bytes": 65536}, f"(C) the limits are data: {lim}")
     keep = j2.secrets.token_hex
     j2.secrets.token_hex = lambda n=3: "a578a3"
     try:
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
+        w["real_run"]["result"] = "out.json"
         ok(run._ask_real_run({}) and run.paused["kind"] == "real_run", "(C) asked")
         reply(run, "RUN a578a3")
         r = receipts(run)[-1]
-        ok(r["approved"] and r["ran"] and r["exit"] == 0 and r.get("run_output") == "run_output/W-1-1.json", f"(C) the receipt names the record: {r}")
-        rec = json.load(open(os.path.join(run.dir, r["run_output"])))
-        ok(rec["schema"] == "run-output/1" and rec["exit"] == 0 and rec["workflow"] == "W-1" and rec["folder"] == real,
-           f"(C) the record has the exit code: {rec}")
-        ok(rec["stdout"].strip() == "read 3 threads" and rec["stderr"].strip() == "1 warning", "(C) and the end of stdout and of stderr")
-        files = {f["name"]: f for f in rec["files"]}
-        ok(sorted(files) == ["mail.txt", "out.json"] and not rec["deleted"] and rec["files_left_out"] == 0, f"(C) the files it made or changed: {sorted(files)}")
-        out = files["out.json"]
+        ok(r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["output"] == "run_output/rr-W-1-1.json",
+           f"(C) the receipt has its id and names the record: {r}")
+        ok(r["output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}, f"(C) and the counts: {r['output_counts']}")
+        rec = json.load(open(os.path.join(run.dir, r["output"])))
+        ok(list(rec) == ["schema", "receipt", "workflow", "command", "folder", "approved", "started_at", "ended_at", "exit", "main_result",
+                         "files", "stdout", "stderr", "limits"], f"(C) the record's fields, in order: {list(rec)}")
+        ok(rec["schema"] == "run-output/1" and rec["receipt"] == "rr-W-1-1" and rec["workflow"] == "W-1" and rec["folder"] == real
+           and rec["command"] == ["python3", "s.py", real] and rec["approved"] is True and rec["exit"] == 0 and rec["limits"] == lim
+           and rec["started_at"] <= rec["ended_at"] and len(rec["started_at"]) == 19, f"(C) who, what, when and the exit code: {rec}")
         data = open(os.path.join(real, "out.json"), "rb").read()
-        ok(out["change"] == "created" and out["size"] == len(data) and out["sha256"] == j2.hashlib.sha256(data).hexdigest()
-           and json.loads(out["text"]) == {"threads": 3}, f"(C) out.json: created, with its size, hash and text: {out}")
-        ok(files["mail.txt"]["change"] == "changed" and files["mail.txt"]["text"] == "one two", "(C) a changed file is marked changed")
-        rows = [x for x in j2_artifacts.rows(run.dir) if x["type"] == "run_output"]
-        ok(len(rows) == 1 and rows[0]["file"] == "run_output/W-1-1.json" and rows[0]["kind"] == "record" and rows[0]["name"] == "Run output"
-           and rows[0]["deliverable"] is False, f"(C) artifacts.json lists it: {rows}")
+        ok(rec["main_result"] == {"path": "out.json", "exists": True, "size": len(data), "sha256": sha(data), "text": data.decode()},
+           f"(C) the main result, with its text: {rec['main_result']}")
+        ok(rec["files"] == {"created": [{"path": "out.json", "size": len(data), "sha256": sha(data)}],
+                            "changed": [{"path": "mail.txt", "before": {"size": 3, "sha256": sha(b"one")}, "after": {"size": 7, "sha256": sha(b"one two")}}],
+                            "deleted": [{"path": "old.txt", "size": 9, "sha256": sha(b"gone soon")}]},
+           f"(C) created, changed (before and after) and deleted, and no contents: {rec['files']}")
+        ok(rec["stdout"] == {"tail": "read 3 threads", "lines_total": 1, "truncated": False}
+           and rec["stderr"] == {"tail": "1 warning", "lines_total": 1, "truncated": False}, f"(C) the output tails: {rec['stdout']} {rec['stderr']}")
+        rows = [x for x in j2_artifacts.rows(run.dir) if x["kind"] == "run_output"]
+        ok(len(rows) == 1 and rows[0]["file"] == "run_output/rr-W-1-1.json" and rows[0]["type"] == "run_output" and rows[0]["name"] == "Run output"
+           and rows[0]["deliverable"] is False, f"(C) artifacts.json has one row of kind run_output: {rows}")
         ok("run_output" not in {x["name"] for x in j2_artifacts.load_types()["types"]}, "(C) it is not a type an agent can choose")
-        # a text file over the cap keeps its name, size and hash, never its text; the output keeps its end
-        cfg = j2.OWN_RUNS["run_output"]
-        big = "x" * (cfg["text_bytes"] + 1)
-        run, w = made({"s.py": f"import os, sys\nprint('y' * {cfg['output_chars'] + 5})\n"
+        # the limits hold: 200 and 50 lines, a main result over the cap keeps no text; no result declared: null; one missing: exists false
+        big = "x" * (lim["text_cap_bytes"] + 1)
+        run, w = made({"s.py": "import os, sys\nfor i in range(300):\n    print('line', i)\n    sys.stderr.write('err %d\\n' % i)\n"
                                f"open(os.path.join(sys.argv[1], 'big.txt'), 'w').write({big!r})\n"}, [check("file-exists", "s.py")], real=real)
+        w["real_run"]["result"] = "big.txt"
         run._ask_real_run({})
         reply(run, "RUN a578a3")
-        rec = json.load(open(os.path.join(run.dir, receipts(run)[-1]["run_output"])))
-        bigrow = next(f for f in rec["files"] if f["name"] == "big.txt")
-        ok("text" not in bigrow and bigrow["size"] == len(big) and bigrow["sha256"] and len(rec["stdout"]) == cfg["output_chars"],
-           "(C) the caps hold: a large file's text is left out, the output keeps its end")
-        # a decline: no record
+        rec = json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))
+        ok(rec["stdout"]["lines_total"] == 300 and rec["stdout"]["truncated"] and rec["stdout"]["tail"].splitlines() == [f"line {i}" for i in range(100, 300)],
+           "(C) stdout keeps its last 200 lines")
+        ok(rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)],
+           "(C) stderr keeps its last 50 lines")
+        ok(rec["main_result"]["exists"] and rec["main_result"]["size"] == len(big) and "text" not in rec["main_result"], "(C) a main result over the cap keeps no text")
+        run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
+        run._ask_real_run({})
+        reply(run, "RUN a578a3")
+        ok(json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))["main_result"] is None, "(C) no result declared: null")
+        run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
+        w["real_run"]["result"] = "never.json"
+        run._ask_real_run({})
+        reply(run, "RUN a578a3")
+        ok(json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))["main_result"] == {"path": "never.json", "exists": False},
+           "(C) a declared result the run did not leave: exists false")
+        # the plan's result is checked by code
+        for bad in ("/etc/passwd", "../out.json", "a/../../x", "", 7, "out/"):
+            ok(j2.real_run_result_problems({"result": bad}), f"(C) a result that is not a file path inside the folder is refused: {bad!r}")
+        ok(j2.real_run_result_problems({"result": "out/report.json"}) == [] and j2.real_run_result_problems({}) == [], "(C) a relative path, or none, is fine")
+        ok('"result"' in j2.j2_types.builder_tools()["real_run"], "(C) the planning rules name the field (artifacts/real_run.md)")
+        # a decline: no record, no id
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
         run._ask_real_run({})
         reply(run, "decline")
-        ok("run_output" not in receipts(run)[-1] and not os.path.isdir(os.path.join(run.dir, "run_output")), "(C) a declined run leaves no record")
+        ok("id" not in receipts(run)[-1] and "output_counts" not in receipts(run)[-1] and not os.path.isdir(os.path.join(run.dir, "run_output")),
+           "(C) a declined run leaves no record")
     finally:
         j2.secrets.token_hex = keep
-    print("an approved real run leaves a run-output record (exit code, output, the files it made or changed), named in its receipt and listed in artifacts.json ok")
+    print("an approved real run leaves a run-output record (run-output/1), named in its receipt and listed in artifacts.json ok")
 
 
 @t.with_folder_type

@@ -706,57 +706,93 @@ def real_run(out_dir, rr, timeout, env=None, hosts=()):
         os.unlink(conf)
 
 
-def folder_state(root):
-    """{relative path: (size, mtime_ns)} of every file under root: what a real run's folder held, without reading a file."""
+def real_run_result_problems(rr):
+    """Why a planned real run's "result" is not usable ([] when it is, or when none is stated): the one file the run
+    leaves as its main result, a path inside the folder it writes: text, relative, never climbing out (..)."""
+    r = rr.get("result") if isinstance(rr, dict) else None
+    if r is None:
+        return []
+    if not isinstance(r, str) or not r.strip():
+        return ["real_run result must be one file path inside its folder (or left out)"]
+    parts = re.split(r"[/\\]", r.strip())
+    if os.path.isabs(r.strip()) or ".." in parts or r.strip().endswith(("/", "\\")):
+        return [f"real_run result {r!r} must be a file path relative to its folder, without .."]
+    return []
+
+
+def folder_files(root):
+    """{relative path: {"size", "sha256"}} of every file under root: what a real run's folder holds."""
     out = {}
     for r, _, fs in os.walk(root):
         for f in fs:
             p = os.path.join(r, f)
             try:
-                st = os.stat(p)
+                with open(p, "rb") as fh:
+                    data = fh.read()
             except OSError:
                 continue
-            out[os.path.relpath(p, root).replace(os.sep, "/")] = (st.st_size, st.st_mtime_ns)
+            out[os.path.relpath(p, root).replace(os.sep, "/")] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
     return out
 
 
-def run_output_record(run_dir, wid, rr, res, capture, before):
-    """What an approved real run produced, kept in the run folder as <folder>/<workflow>-<n>.json (OWN_RUNS.run_output:
-    the folder and the sizes): its command, exit code and the end of its stdout and stderr; every file it created or
-    changed in the folder it writes (name, size, sha256, and the text of a text file no larger than text_bytes); the
-    names it deleted. `before`: folder_state() of that folder taken just before the run. The record's path, relative
-    to the run folder."""
-    cfg, folder = OWN_RUNS["run_output"], os.path.realpath(rr["folder"])
-    after, files = folder_state(folder), []
-    names = sorted(k for k in after if after[k] != before.get(k))
-    for name in names[:cfg["files"]]:
-        row = {"name": name, "change": "changed" if name in before else "created", "size": after[name][0]}
-        try:
-            with open(os.path.join(folder, name), "rb") as f:
+def output_tail(text, lines, max_bytes):
+    """{"tail", "lines_total", "truncated"}: the last `lines` lines of a stream, never more than max_bytes of them."""
+    rows = str(text or "").splitlines()
+    tail = "\n".join(rows[-lines:])
+    cut = tail.encode("utf-8")[-max_bytes:].decode("utf-8", "ignore") if len(tail.encode("utf-8")) > max_bytes else tail
+    return {"tail": cut, "lines_total": len(rows), "truncated": len(rows) > lines or cut != tail}
+
+
+def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at):
+    """What an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
+    folder and the limits are data, OWN_RUNS.run_output): its receipt, workflow, command and folder, when it started and
+    ended, its exit code, its main result (the plan's "result" path in the folder it writes: path, exists, size, sha256,
+    and its text when it is text no larger than text_cap_bytes; None when the plan names none), the files it created,
+    changed and deleted in that folder (relative paths, sizes, sha256; a changed file before and after), and the last
+    lines of its stdout and stderr. Only the main result's contents are copied. `before`: folder_files() of that folder
+    taken just before the run. (the record's path relative to the run folder, its counts for the receipt)"""
+    cfg = OWN_RUNS["run_output"]
+    lim, folder = cfg["limits"], os.path.realpath(rr["folder"])
+    after, left = folder_files(folder), cfg["limits"]["max_files"]
+    files = {"created": [{"path": k, **after[k]} for k in sorted(after) if k not in before],
+             "changed": [{"path": k, "before": before[k], "after": after[k]} for k in sorted(after) if k in before and after[k] != before[k]],
+             "deleted": [{"path": k, **before[k]} for k in sorted(before) if k not in after]}
+    counts = {k: len(v) for k, v in files.items()}
+    for k in files:      # max_files over the three lists, in this order
+        files[k], left = files[k][:left], max(0, left - len(files[k]))
+    main = None
+    if rr.get("result") and not real_run_result_problems(rr):
+        rel = os.path.normpath(str(rr["result"]).strip()).replace(os.sep, "/")
+        path = os.path.join(folder, rel)
+        main = {"path": rel, "exists": llm.inside(os.path.realpath(path), folder) and os.path.isfile(path)}
+        if main["exists"]:
+            with open(path, "rb") as f:
                 data = f.read()
-        except OSError as e:
-            files.append({**row, "unread": str(e)})
-            continue
-        row["sha256"] = hashlib.sha256(data).hexdigest()
-        if len(data) <= cfg["text_bytes"] and b"\0" not in data:
-            try:
-                row["text"] = data.decode("utf-8")
-            except UnicodeDecodeError:
-                pass
-        files.append(row)
-    end = lambda k: str(capture.get(k, res.get(k)) or "")[-cfg["output_chars"]:]
-    rec = {"schema": "run-output/1", "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
-           "exit": res.get("exit"), "seconds": res.get("seconds"), "stdout": end("stdout"), "stderr": end("stderr"),
-           "files": files, "files_left_out": max(0, len(names) - cfg["files"]),
-           "deleted": sorted(k for k in before if k not in after), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}
+            main.update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+            if len(data) <= lim["text_cap_bytes"] and b"\0" not in data:
+                try:
+                    main["text"] = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+    out = output_tail(capture.get("stdout", res.get("stdout")), lim["stdout_lines"], lim["tail_bytes"])
+    err = output_tail(capture.get("stderr", res.get("stderr")), lim["stderr_lines"], lim["tail_bytes"])
+    rec = {"schema": "run-output/1", "receipt": receipt, "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
+           "approved": True, "started_at": started_at, "ended_at": ended_at, "exit": res.get("exit"), "main_result": main,
+           "files": files, "stdout": out, "stderr": err, "limits": dict(lim)}
+    rel = f"{cfg['folder']}/{receipt}.json"
     os.makedirs(os.path.join(run_dir, cfg["folder"]), exist_ok=True)
-    n = 1
-    while os.path.exists(os.path.join(run_dir, cfg["folder"], f"{wid}-{n}.json")):
-        n += 1
-    rel = f"{cfg['folder']}/{wid}-{n}.json"
     with open(os.path.join(run_dir, rel), "w", encoding="utf-8") as f:
         json.dump(rec, f, ensure_ascii=False, indent=1)
-    return rel
+    return rel, {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]}
+
+
+def run_output_receipt(run_dir, wid):
+    """The id of a real run's receipt, which names its run-output record: rr-<workflow>-<n>, n counting that
+    workflow's records in this run."""
+    n = 1
+    while os.path.exists(os.path.join(run_dir, OWN_RUNS["run_output"]["folder"], f"rr-{wid}-{n}.json")):
+        n += 1
+    return f"rr-{wid}-{n}"
 
 
 def _tree(root):
@@ -5732,13 +5768,17 @@ class J2Run:
                                   handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
         env, gone = self._run_env() if said == "run" else (None, "")
         ok = said == "run" and not gone
-        capture, before = {}, folder_state(w["real_run"]["folder"]) if ok else {}      # what its folder held before it ran
+        capture, before = {}, folder_files(w["real_run"]["folder"]) if ok else {}      # what its folder held before it ran
+        started = time.strftime("%Y-%m-%dT%H:%M:%S")
         res = real_run(self._out_dir(), {**w["real_run"], "capture": capture}, builder_timeout(), env,
                        real_hosts(w["real_run"])) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
              f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
-        if res.get("ran"):      # what it printed and the files it made or changed: a record of its own, named in the receipt
-            res["run_output"] = run_output_record(self.dir, w["id"], w["real_run"], res, capture, before)
+        if res.get("ran"):      # what it printed and the files it made, changed or deleted: a record of its own, named in the
+            rid = run_output_receipt(self.dir, w["id"])      # receipt ("output": its path, with the receipt's id and the counts)
+            path, counts = run_output_record(self.dir, rid, w["id"], w["real_run"], res, capture, before, started,
+                                             time.strftime("%Y-%m-%dT%H:%M:%S"))
+            res = {**res, "id": rid, "output": path, "output_counts": counts}
         self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
                                answer_msg=last.get("id"), **res)
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
@@ -9128,7 +9168,8 @@ class J2Run:
                 rel = self._out_rel()      # (file_sorter/sort_files.py): a run template finds the type they belong to
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
-                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir)
+                bad = real_run_problems(w["real_run"], self._fact_source(), self.out.get("test_runner"), self.dir) \
+                    + real_run_result_problems(w["real_run"])
                 if bad:
                     refused.append(self._reject(name, "; ".join(bad)))
                     continue
@@ -9146,6 +9187,8 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why")}
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
+                if w["real_run"].get("result"):      # the file the run leaves as its main result: kept in its run-output record
+                    wf["real_run"]["result"] = str(w["real_run"]["result"]).strip()
                 if real_hosts(w["real_run"]):      # the hosts its command must reach: shown, approved, then allowed
                     wf["real_run"]["hosts"] = real_hosts(w["real_run"])
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]

@@ -40,14 +40,14 @@ def load_types(run=None):
 
 
 def run_output_type():
-    """The record type of a real run's output (j2_own_runs.json run_output, beside this file): one row per record file
-    in a run's artifacts.json. None when the data file is not there."""
+    """The record type of a real run's output (j2_own_runs.json run_output, beside this file): one row of kind
+    "run_output" per record file in a run's artifacts.json. None when the data file is not there."""
     try:
         with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as f:
             c = json.load(f)["run_output"]
     except (OSError, ValueError, KeyError):
         return None
-    return {"name": c["name"], "kind": "record", "label": c["label"], "tag": c["tag"], "color": c["color"], "form": "data",
+    return {"name": c["name"], "kind": c["kind"], "label": c["label"], "tag": c["tag"], "color": c["color"], "form": "data",
             "file": c["folder"] + "/*.json", "deliverable": False}
 
 
