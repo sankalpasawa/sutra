@@ -13,7 +13,8 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T3 plan cards and wording | done | `SUT-27: D450 finished plan cards show the builder's line and their files; wording follows the output` |
 | T4 finish bar and share link | done | `SUT-27: D450 the finish bar downloads the main result on non-page runs, and a copied link says it opens on this computer only` |
 | T4 follow-up: document-set browser tests | done | `SUT-27: D450 a document set's toasts and plan cards, checked in the browser` |
-| T5-T6 | not started | |
+| T5 decision D450 | done | `SUT-27: D450 record the decision` (D450 free after fetch: origin/main max D448, SUT-28 has D449). `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_docs.py tests/test_ownership.py tests/test_traceability.py -q`: exit 0 |
+| T6 | final targeted run, no commit |
 
 ### T1
 

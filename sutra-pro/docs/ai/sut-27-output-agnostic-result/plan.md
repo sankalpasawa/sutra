@@ -58,7 +58,7 @@ Inputs: spec.md (Refined), architecture.md. Commands run from `sutra-pro/`.
   - Done when: `node --test tests/ui/js/result_view.test.js tests/ui/js/page_render.test.js` passes, and `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files" -q` passes with the existing two tests unedited
   - Covers: FR-16, FR-17, FR-19, FR-21, FR-22, NFR-2
 
-- [ ] T5: Record D450
+- [x] T5: Record D450
   - Files: `docs/DECISIONS.md` (append the D450 text from architecture.md D-4), `docs/diagram/decisions.json` (append the D450 entry)
   - Change: `git fetch origin` first and re-check the highest `## D<n>`; if D450 is taken, use the next free number in both files, the module comments and later commit messages.
   - Tests: none new.
