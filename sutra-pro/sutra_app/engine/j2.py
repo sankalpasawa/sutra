@@ -775,6 +775,16 @@ def real_paths_in(root, folders):
     return out
 
 
+def dry_secret_files(rr, tmp):
+    """P41 (D446): {NAME: placeholder} for the dry run: one empty file per secret file, made in the dry run's own temp folder
+    (tmp/secrets/s<n>, outside the copies, so never diffed; removed with tmp). The real path never reaches the dry run."""
+    out = {n: os.path.join(tmp, "secrets", f"s{i}") for i, n in enumerate(rr.get("secret_files") or {})}
+    for p in out.values():
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "w").close()
+    return out
+
+
 def real_run(out_dir, rr, timeout):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
@@ -801,10 +811,16 @@ def real_run(out_dir, rr, timeout):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads
+                                      + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
+                                      "allowWrite": [folder],
                                       "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
-        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
+        extra = {**(rr.get("settings") or {}), **(rr.get("secret_files") or {})}      # P41 (D446): only what the plan states
+        wrap = bool(cmd and extra) and os.name != "nt"      # defense in depth: under srt the names reach the script, never srt
+        run = ["env", *(f"{k}={v}" for k, v in extra.items()), *rr["command"]] if wrap else rr["command"]
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
+        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
+                           env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
@@ -862,6 +878,7 @@ def real_run_dry(out_dir, rr, timeout):
         before, reads_before = _tree(copies[0]), [_tree(c) for c in copies[1:]]      # P35 (D438): the read-only copies too
         cmd = [moved(x) for x in rr["command"]]
         rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
+        rr = {**rr, "secret_files": dry_secret_files(rr, tmp)}      # P41 (D446): empty placeholders, never the real paths
         res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
         out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
         d = _tree_diff(before, _tree(copies[0]))

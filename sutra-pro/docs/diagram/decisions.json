@@ -2133,5 +2133,10 @@
   "id": "D440",
   "label": "a file reaches the model or the owner is told why not: failed chip, receipt, Word, carry-over (0.8.3)",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D446",
+  "label": "scripts get an allowlisted env + only the plan's settings; secrets by path (P41)",
+  "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]
