@@ -13,7 +13,7 @@ from typing import Callable, Iterator, Optional, Protocol, Sequence, runtime_che
 
 from sutra_app import oslayer
 
-from .attachments import AttachmentStore, deliver
+from .attachments import AttachmentStore, Delivery, FileReceipt, deliver
 from .base import write_private_file
 from .cancel import CancelToken
 from .chat_blocks import BlockAccumulator
@@ -41,6 +41,7 @@ class ChatPort(Protocol):
     def default_pick(self, function: str = "") -> Pick: ...
     def plan_switch(self, session_id: str, target: str) -> CarryPlan: ...
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
+    def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]: ...
     def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]: ...
     def set_system(self, session_id: str, text: str) -> None: ...
     def stop(self, session_id: str) -> bool: ...
@@ -210,14 +211,24 @@ class RouterChatPort:
                          chars=len(text), kept_messages=len(messages) - omitted if full else TAIL_MESSAGES, omitted=omitted)
 
     # ---- a turn ---------------------------------------------------------------------------------------------------------------------
-    def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
+    def _delivery(self, session_id: str, turn: ChatTurnIn) -> Optional[Delivery]:
+        """What the turn's files become for the provider that will take them, or None for a turn with no file. Raises (naming the file) for one that cannot be delivered."""
         if not turn.attachments:
-            return Message(role="user", text=turn.text)
+            return None
         if self.attachments is None:
             raise InvalidRequestError("attachments are not available here", detail={"names": [a.name for a in turn.attachments]})
         provider = self._chosen(session_id) or self.router.plan(AskRequest(user="chat", ctx=self._ctx_for(session_id, turn))).order[0]
-        d = deliver(self.attachments, turn.attachments, provider)
-        return Message(role="user", text=turn.text + d.text, images=list(d.images))
+        return deliver(self.attachments, turn.attachments, provider)
+
+    def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
+        d = self._delivery(session_id, turn)
+        return Message(role="user", text=turn.text) if d is None else Message(role="user", text=turn.text + d.text, images=list(d.images))
+
+    def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]:
+        """Whether the turn's files can be delivered, and what each will become: the SAME code the turn runs (`_delivery`), with no process started and nothing written.
+        A file that cannot go raises here, so the caller refuses the send before it stores the owner's line (D440)."""
+        d = self._delivery(session_id, turn)
+        return () if d is None else d.files
 
     def _ctx_for(self, session_id: str, turn: ChatTurnIn) -> RouteContext:
         update = {"session_id": session_id, "tag": turn.tag}

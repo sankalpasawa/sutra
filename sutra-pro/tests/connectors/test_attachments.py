@@ -162,3 +162,25 @@ def test_the_attachment_limits_note_tells_the_owner_how_much_of_a_text_file_the_
     from pathlib import Path
     source = (Path(__file__).resolve().parents[2] / "sutra_app" / "ui" / "static" / "js" / "chat_search.js").read_text(encoding="utf-8")
     assert f"{INLINE_CHARS:,}" in source                                       # the page says the number the server cuts at
+
+
+def test_delivery_says_what_the_model_received_of_each_file(store):
+    """D440 FR-4: one receipt per file; text says how much went and whether the rest was cut; an image and a PDF say how they went."""
+    refs = [store.save("a.txt", b"x" * (INLINE_CHARS + 10)), store.save("b.png", PNG), store.save("c.pdf", PDF), store.save("d.md", b"hello")]
+    got = [(r.name, r.sent, r.chars, r.cut, r.total) for r in deliver(store, refs, "claude").files]
+    assert got == [("a.txt", "text", INLINE_CHARS, True, INLINE_CHARS + 10), ("b.png", "image", 0, False, 0), ("c.pdf", "pdf", 0, False, 0), ("d.md", "text", 5, False, 5)]
+    assert deliver(store, [], "claude").files == ()
+
+
+def test_the_port_preflight_is_the_delivery_without_a_turn(tmp_path):
+    port, *_ = make(tmp_path)
+    port.attachments = AttachmentStore(tmp_path / "att")
+    ref = port.attachments.save("n.txt", b"hello")
+    ref = ref.model_copy(update={"name": "n.txt"})
+    assert [r.as_dict() for r in port.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[ref]))] == [
+        {"name": "n.txt", "kind": "text", "sent": "text", "chars": 5, "cut": False, "total": 5}]
+    assert port.preflight("cs_port_a", ChatTurnIn(text="x")) == ()
+    pdf = port.attachments.save("p.pdf", PDF).model_copy(update={"name": "p.pdf"})
+    port.choose("cs_port_a", "codex")
+    with pytest.raises(InvalidRequestError, match="p.pdf"):
+        port.preflight("cs_port_a", ChatTurnIn(text="x", attachments=[pdf]))
