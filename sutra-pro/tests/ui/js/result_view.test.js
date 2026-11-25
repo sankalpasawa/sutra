@@ -200,13 +200,15 @@ function fakeEl(id) {
   const cls = new Set();
   return {id, innerHTML: "", hidden: false, children: [], className: "",
     classList: {toggle: (c, on) => (on ? cls.add(c) : cls.delete(c), on), contains: c => cls.has(c), add: c => cls.add(c), remove: c => cls.delete(c)},
-    appendChild(c) { this.children.push(c); return c; }, querySelectorAll: () => []};
+    appendChild(c) { this.children.push(c); return c; }, querySelectorAll: () => [],
+    attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); },
+    listeners: [], addEventListener(type, fn, capture) { this.listeners.push({type, fn, capture}); }};
 }
 
 // files: {file name: text | null (404)}; omit: page globals left out of the stub
-function page({files = {}, omit = []} = {}) {
+function page({files = {}, omit = [], groups = null} = {}) {
   const els = {}, el = id => (els[id] = els[id] || fakeEl(id));
-  ["sframebox", "sviews", "surl", "steamwork", "sout", "sdbody", "sopen"].forEach(el);
+  ["sframebox", "sviews", "surl", "steamwork", "sout", "sdbody", "sopen", "sfinish"].forEach(el);
   const head = fakeEl("head");
   const document = {
     head,
@@ -214,14 +216,16 @@ function page({files = {}, omit = []} = {}) {
     createElement: () => { const e = fakeEl(""); return new Proxy(e, {set(t, k, v) { t[k] = v; if (k === "id" && v) els[v] = t; return true; }}); },
     querySelector: sel => head.children.find(c => sel.includes(c.href)) || null,
   };
-  const log = {load: [], fetch: [], toast: [], orig: 0};
+  const log = {load: [], fetch: [], toast: [], orig: 0, copied: [], timers: []};
   const fetch = async url => {
     log.fetch.push(url);
+    if (url.startsWith("/api/artifacts/groups")) return groups ? {ok: true, json: async () => groups} : {ok: false, status: 404};
     const name = decodeURIComponent((/[?&]name=([^&]*)/.exec(url) || [])[1] || "");
     if (!url.startsWith("/api/artifact?") || files[name] === undefined || files[name] === null) return {ok: false, status: 404};
     return {ok: true, text: async () => files[name]};
   };
-  const ctx = vm.createContext({document, fetch, log, console});
+  const ctx = vm.createContext({document, fetch, log, console, location: {origin: "http://127.0.0.1:8765"},
+    navigator: {clipboard: {writeText: async url => { log.copied.push(url); }}}, setTimeout: (fn, ms) => log.timers.push({fn, ms})});
   const decl = {
     SV: 'const SV = {arts: {}, akey: "", view: "", pick: "", lastOut: ""};',
     esc: 'const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",\'"\':"&quot;"}[c]));',
@@ -237,6 +241,8 @@ function page({files = {}, omit = []} = {}) {
   };
   const stub = Object.entries(decl).filter(([k]) => !omit.includes(k)).map(([, v]) => v).join("\n")
     + "\nconst TYL = (k, d) => d;\nfunction sToast(t){ log.toast.push(t); }\nfunction renderSimple(s){ sViews(s, {}, isReady(s)); }"
+    + "\nconst failed = s => !!s.error;"
+    + "\nfunction sFinish(s){ return 'PAGE-FINISH:' + s.output; }"
     + "\nfunction sGo(sec){ log.go = sec; }"
     + "\nasync function sOpenPart(sec){ log.part = sec; document.getElementById('sdbody').innerHTML = '<p>The part, on the page.</p>'; }"
     + "\nfunction sPhase(s){ return s.phase || 'Checking it on a phone and a laptop'; }"
@@ -458,6 +464,7 @@ test("glue T3: How it was made is decorated through the page's sTeamwork; #sopen
   p.render(scriptRun({teamHTML: teamOf(SCRIPT)}));
   assert.match(p.html("steamwork"), /<small class="rvsum">I wrote env_report\/report.py.<\/small>/);
   assert.equal(p.els.sopen.hidden, true);
+  assert.equal(p.els.sopen.attrs.href, "#", "no /site/ link left on a hidden button");
   const w = page();
   w.SV.arts = {deliverables: WEBARTS};
   w.els.sopen.hidden = false;
@@ -509,4 +516,95 @@ test("the done script run's panel never says site, page or website, AC-13 / FR-1
     p.SV.pick = pick; p.render(s); await tick(); p.render(s);
     for (const id of ["sviews", "surl", "steamwork", "rvbody"]) assert.doesNotMatch(text(id), /\b(site|page|website)\b/i, `${pick} ${id}: ${text(id)}`);
   }
+});
+
+// ---- T4: the finish bar and Copy share link
+const finishOf = (p, s) => p.ctx.sFinish(s);
+test("finish bar: one main file is downloaded by its own name through /api/artifact; with it, Copy share link", () => {
+  const p = page();
+  p.SV.arts = {deliverables: [ARTS[1]]};
+  const html = finishOf(p, scriptRun());
+  assert.ok(html.startsWith('<span class="sfmsg"><span><i aria-hidden="true">✓</i>Checking the work</span></span>'), "the page's phase, through the wrapped sPhase");
+  assert.match(html, /<a class="pri" href="\/api\/artifact\?name=env_report%2Freport.txt&run=r1" download="report.txt"><svg[^>]*><path d="M12 4v11M7 10l5 5 5-5M5 20h14"\/><\/svg>Download<\/a>/);
+  assert.match(html, /<button type="button" data-share><svg[\s\S]*?<\/svg>Copy share link<\/button><button type="button" data-full>/);
+  assert.doesNotMatch(html, /href="\/site\//);
+});
+
+test("finish bar: two files give All files (2), no files give nothing, a real-run result gives no Download; none has Copy share link (Q-4)", () => {
+  const p = page();
+  p.SV.arts = {deliverables: ARTS};
+  const two = finishOf(p, scriptRun());
+  assert.match(two, /<button type="button" data-view="files">All files \(2\)<\/button>/);
+  p.SV.arts = {deliverables: []};
+  const none = finishOf(p, scriptRun());
+  assert.doesNotMatch(none, /data-share|class="pri"|data-view/);
+  assert.match(none, /data-full/);
+  for (const html of [two, none]) assert.doesNotMatch(html, /data-share/);
+});
+
+test("finish bar: a real-run result (P45 rows from /api/artifacts/groups) has no Download and no Copy share link", async () => {
+  const q = page({groups: {groups: [{id: "documents", rows: [{id: "x", real_runs: RUNS.p45}]}]}});
+  q.SV.arts = {deliverables: [ARTS[1]]};
+  q.SV.akey = "k1";
+  q.render(scriptRun());
+  await tick();
+  assert.ok(q.log.fetch.some(u => u.startsWith("/api/artifacts/groups?x=1&run=r1")));
+  const html = finishOf(q, scriptRun());
+  assert.doesNotMatch(html, /data-share|class="pri"|data-view/);
+  q.SV.pick = "result"; q.render(scriptRun());
+  assert.match(q.html("rvbody"), /<b>report.txt<\/b>/);
+});
+
+test("finish bar: a website and a document set keep the page's own sFinish, byte for byte", () => {
+  const p = page();
+  p.SV.arts = {deliverables: WEBARTS};
+  assert.equal(finishOf(p, webDone()), "PAGE-FINISH:website");
+  assert.equal(finishOf(p, scriptRun({docset: ["prd", "hld"], output: "prd"})), "PAGE-FINISH:prd");
+});
+
+test("finish bar: drawn again when /api/artifacts arrives after the run turned ready; a page run's is left to the page", () => {
+  const p = page();
+  p.render(scriptRun());
+  assert.doesNotMatch(p.html("sfinish"), /class="pri"|data-view/);
+  p.SV.arts = {deliverables: [ARTS[1]]};
+  p.render(scriptRun());
+  assert.match(p.html("sfinish"), /download="report.txt"/);
+  p.els.sfinish.innerHTML = "kept";      // an identical render does not write it again (a copied note stays)
+  p.render(scriptRun());
+  assert.equal(p.html("sfinish"), "kept");
+  const w = page();
+  w.render(webDone());
+  assert.equal(w.html("sfinish"), "");
+  const f = page();
+  f.render(scriptRun({error: "x"}));
+  assert.equal(f.html("sfinish"), "", "a failed run's bar is the page's");
+});
+
+test("Copy share link: a script run copies its main file's /view link, a website the page's URL; the note, then back after 2.5 s", async () => {
+  const click = async (p, s) => {
+    p.render(s);
+    const btn = {textContent: "Copy share link"}, ev = {target: {closest: sel => sel === "[data-share]" ? btn : null}, stopped: false, stopImmediatePropagation() { this.stopped = true; }};
+    const l = p.els.sfinish.listeners.find(x => x.type === "click");
+    assert.equal(l.capture, true);
+    l.fn(ev);
+    await tick();
+    return {btn, ev};
+  };
+  const p = page();
+  p.SV.arts = {deliverables: [ARTS[1]]};
+  const {btn, ev} = await click(p, scriptRun());
+  assert.equal(ev.stopped, true, "the page's own listener does not run");
+  assert.deepEqual(p.log.copied, ["http://127.0.0.1:8765/view?name=env_report%2Freport.txt&run=r1"]);
+  assert.equal(btn.textContent, "Link copied — opens on this computer only");
+  assert.equal(p.log.timers[0].ms, 2500);
+  p.log.timers[0].fn();
+  assert.equal(btn.textContent, "Copy share link");
+  const w = page();
+  w.SV.arts = {deliverables: WEBARTS};
+  const web = await click(w, webDone());
+  assert.deepEqual(w.log.copied, ["http://127.0.0.1:8765/site/latest?run=r1"]);
+  assert.equal(web.btn.textContent, "Link copied — opens on this computer only");
+  const other = page(), ev2 = {target: {closest: () => null}, stopImmediatePropagation() { throw new Error("must not stop"); }};
+  other.render(scriptRun());
+  other.els.sfinish.listeners[0].fn(ev2);      // any other button of the bar: the page handles it
 });

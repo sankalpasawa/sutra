@@ -186,7 +186,7 @@
   function pageGlobals() {      // the page's own `const`s (not on window): visible by bare name from this classic script
     try {
       return typeof SV === "object" && typeof esc === "function" && typeof runQ === "function" && typeof isReady === "function"
-        && typeof sNoun === "function" ? {SV, esc, runQ} : null;
+        && typeof sNoun === "function" ? {SV, esc, runQ, isReady, failed: typeof failed === "function" ? failed : () => false} : null;
     } catch (e) { return null; }
   }
 
@@ -294,6 +294,31 @@
     root.sDecorate();
   }
 
+  // The finish bar of a run that is not a page run (T4): the page's message, then the main file's Download, or "All files (N)" when
+  // Result is the Files list; Copy share link only with a main file (Q-4: a list, no files or a real-run result has no /view link).
+  // Same markup and icons as the page's own sFinish (j2_ui.html).
+  const ic = d => `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  function finish(root, G, s) {
+    const rows = (G.SV.arts && G.SV.arts.deliverables) || [], main = mainResult(s, rows, T.runs);
+    const dlink = main.kind === "file" ? `<a class="pri" href="/api/artifact?name=${enc(main.row.file)}${G.runQ()}" download="${G.esc(base(main.row.file))}">${ic('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>')}${WORDS.download}</a>`
+      : main.kind === "list" ? `<button type="button" data-view="files">${WORDS.allFiles} (${rows.length})</button>` : "";
+    return `<span class="sfmsg"><span><i aria-hidden="true">✓</i>${G.esc(root.sPhase(s, []))}</span></span>${dlink}`
+      + (main.kind === "file" ? `<button type="button" data-share>${ic('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>')}${WORDS.share}</button>` : "")
+      + `<button type="button" data-full>${ic('<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>')}Open full view</button>`;
+  }
+
+  // Copy share link, every run (FR-19): a page run copies the page's own URL, any other run its main file's /view link; then the note.
+  function share(root, G, e) {
+    const b = e.target && e.target.closest && e.target.closest("[data-share]");
+    if (!b) return;
+    e.stopImmediatePropagation();      // the page's own listener (anonymous, on the same element) never runs for this button
+    const s = T.last || {}, rows = (G.SV.arts && G.SV.arts.deliverables) || [], main = mainResult(s, rows, T.runs), o = root.location.origin;
+    const url = !isPageRun(s) && main.kind === "file" ? `${o}/view?name=${enc(main.row.file)}${G.runQ()}` : `${o}/site/latest${G.runQ().replace("&", "?")}`;
+    Promise.resolve().then(() => root.navigator.clipboard.writeText(url))
+      .then(() => { b.textContent = WORDS.copied; }, () => { b.textContent = url; })
+      .then(() => root.setTimeout(() => { b.textContent = WORDS.share; }, 2500));
+  }
+
   function adopt(root) {
     const d = root && root.document, G = pageGlobals();
     if (T.adopted || !d || !G || NEEDS.some(n => typeof root[n] !== "function")) return false;
@@ -332,9 +357,23 @@
       if (T.last && !isPageRun(T.last) && b && b.innerHTML.includes("The part, on the page.")) b.innerHTML = b.innerHTML.split("The part, on the page.").join(WORDS.partDrawer);
       return r;
     }));
+    const fin = d.getElementById("sfinish");
+    if (typeof root.sFinish === "function" && fin) {
+      const pageFinish = root.sFinish;
+      root.sFinish = function (s) {
+        if (isPageRun(s)) return pageFinish.apply(this, arguments);      // a website or a document set: the page's own, byte for byte
+        try { return finish(root, G, s); } catch (e) { return pageFinish.apply(this, arguments); }
+      };
+      fin.addEventListener("click", e => { try { share(root, G, e); } catch (err) {} }, true);
+    }
     wrap("renderSimple", (out, [s]) => {
       const open = d.getElementById("sopen");
-      if (open && s && !isPageRun(s)) open.hidden = true;      // "Open the site": the finish bar and Result cover it
+      if (open && s && !isPageRun(s)) { open.hidden = true; open.setAttribute("href", "#"); }      // "Open the site" (/site/latest): the finish bar and Result cover it
+      // the page draws the finish bar once, when the run turns ready; /api/artifacts comes later, so draw it again when it changes
+      if (fin && s && !isPageRun(s) && G.isReady(s) && !G.failed(s)) {
+        const html = root.sFinish(s);
+        if (html !== T.finish) { T.finish = html; fin.innerHTML = html; }
+      }
       return out;
     });
     T.adopted = true;

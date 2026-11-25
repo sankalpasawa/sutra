@@ -11,7 +11,8 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | Q-4 docs | done | `SUT-27: D450 Copy share link is hidden with no main file or a real-run result (Q-4, docs)` |
 | T2 tabs, viewers, page line | done | `SUT-27: D450 the page loads result_view.js; every run gets Result, Files, How it was made, and each file opens in its viewer` |
 | T3 plan cards and wording | done | `SUT-27: D450 finished plan cards show the builder's line and their files; wording follows the output` |
-| T4-T6 | not started | |
+| T4 finish bar and share link | done | `SUT-27: D450 the finish bar downloads the main result on non-page runs, and a copied link says it opens on this computer only` |
+| T5-T6 | not started | |
 
 ### T1
 
@@ -42,6 +43,15 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | `sutra_app/ui/static/css/result_view.css` | `.rvsum` one line with ellipsis; `.rvfiles` / `.rvfile` |
 | `tests/ui/js/result_view.test.js` | 8 tests: cards (AC-11, AC-12, escaping), website vs script "What you got", glue for `sTeamwork`, `#sopen`, `sPhase`, `sOpenPart`, throwing helpers, page-run toasts (website and document set; none on a script), and the FR-18 string scan of `#sviews`, `#surl`, `#steamwork`, `#rvbody` on the done script run over every tab |
 
+### T4
+
+| file | what |
+|---|---|
+| `sutra_app/ui/static/js/result_view.js` | `sFinish` replaced: a page run (website, document set) gets the page's own, byte for byte; any other run gets the page's phase line, then a Download of the main file (`/api/artifact?name=<file><runQ>`, `download="<basename>"`), or "All files (N)" (`data-view="files"`) when Result is the Files list, or nothing; Copy share link only with a main file (Q-4); Open full view as the page's. The `renderSimple` wrapper redraws `#sfinish` on non-page runs when ready and the bar's HTML changed (`/api/artifacts` arrives after the run turns ready), and clears the hidden `#sopen`'s `/site/latest` href. A capture-phase listener on `#sfinish` handles `[data-share]` on every run: a page run copies `/site/latest` as today, any other run the main file's `/view` link; the button reads "Link copied — opens on this computer only", back to "Copy share link" after 2.5 s; `stopImmediatePropagation` keeps the page's own listener out |
+| `tests/ui/js/result_view.test.js` | 6 tests: one file (Download, share), two files, no files, real-run result (through a stubbed `/api/artifacts/groups`), page runs byte for byte, redraw on arrival and no rewrite on an identical render, failed run left to the page, share URLs and note for a script and a website |
+| `tests/ui/test_dept_page.py` | new browser test `test_a_script_run_shows_its_files_and_no_site_words` (1280x860, 375x812): the fixture laid over J2's captured snapshot and `/api/artifacts` replaced through the fake's cache; tabs, Result selected, two files with their Download links, finish `["All files (2)"]`, no site/page/website in `#sstage`, `#sopen` not drawn, no `/site/` link or frame in `#sview`, no page-wide horizontal scroll, no console error or failed request. Existing tests unedited |
+
+
 ## Deviations
 
 | what | why |
@@ -63,7 +73,10 @@ Branch: `sut-27-output-agnostic-result`. Commands run from `sutra-pro/`.
 | T2: docset toasts ("The X is being written") dropped | reverted in T3 (coordinator): page runs get the page's own toasts again, computed with the page's `sTabs` (a website's "taking shape", a document set's "being written"); other runs none |
 | T2: two short strings with no spec text: "Opening…" (fetch in flight) and "No preview for this kind of file." (download viewer) | needed a body; no site/page word |
 | T3: cards decorated as an HTML string by wrapping `sTeamwork`, not DOM decoration after `renderSimple` | the page `paint`s `sTeamwork`'s string and skips an unchanged one, so decorating the string is idempotent (no duplicate lines on a skipped paint) and testable without a DOM; the page's own render is still not copied |
-| Owner, during T2: the "Link copied" note shows on website runs too (FR-19 stands) | recorded here; spec/implementation marked resolved at T4 |
+| Owner, during T2: the "Link copied" note shows on website runs too (FR-19 stands) | resolved in T4: built so, spec.md FR-19 says so |
+| T4: the browser test's state is the script fixture laid over J2's captured snapshot (not the fixture alone) | the page reads many keys the hand-built fixture does not carry (budget, agents, ...); the fixture's keys win |
+| T4: `#sopen`'s href set to `#` on non-page runs | it is hidden, but its `/site/latest` href was the one `/site/` link left in the panel (AC-13) |
+| T4: a real-run result has no Download in the finish bar | P45's route does not exist; the result is a file in the user's folder |
 
 ## Tests
 
@@ -90,6 +103,15 @@ T3:
 | `SUTRA_J2_CHECKOUT=<extraction> node --test tests/ui/js/page_render.test.js` | 54 pass; goldens unchanged |
 | `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` | exit 0; 363 passed, 5 skipped (as T2) |
 | `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record"` | exit 0 (3 tests; plan names no new browser test for T3) |
+
+T4:
+
+| command | result |
+|---|---|
+| `node --test tests/ui/js/result_view.test.js` | 39 tests, 39 pass |
+| `SUTRA_J2_CHECKOUT=<extraction> node --test tests/ui/js/page_render.test.js` | 54 pass; goldens unchanged (E4 at :292-302 unedited) |
+| `scripts/py -m pytest tests/ui/test_port_edits.py tests/ui/test_serve.py tests/test_ownership.py tests/ui/test_node_suite.py -q` | exit 0; 363 passed, 5 skipped (as T2) |
+| `SUTRA_BROWSER=1 scripts/py -m pytest tests/ui/test_dept_page.py -q -k "one_way_to_each_thing or opens_its_record or script_run_shows_its_files"` | 5 passed (the website finish test at :886-899 unedited) |
 
 Not run (owner rule): `scripts/gate.sh`, `scripts/live_smoke.py`, browser tests, beta install.
 

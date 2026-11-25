@@ -899,6 +899,50 @@ def test_beside_the_sidebar_the_studio_has_one_way_to_each_thing(finished_team, 
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
+# SUT-27 (D450): a run that made a script and its report, not a website. The hand-built fixture (fixtures/result_view/) is laid over J2's captured
+# snapshot (which keeps every key the page reads), and the run's two files replace the site in /api/artifacts, through the fake's cache.
+RESULT_VIEW_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "result_view"
+SCRIPT_PANEL = r"""(() => {
+  const drawn = el => !!el && (s => s.display !== "none" && s.visibility !== "hidden")(getComputedStyle(el)) && el.getClientRects().length > 0;
+  return {tabs: Array.from(document.querySelectorAll("#sviews [role=tab]")).map(b => [b.textContent.trim(), b.getAttribute("aria-selected")]),
+          files: Array.from(document.querySelectorAll("#rvbody .rvfiles li .slink")).filter(drawn).map(b => b.textContent.trim()),
+          downloads: Array.from(document.querySelectorAll("#rvbody .rvfiles a[download]")).map(a => a.getAttribute("href")),
+          finish: Array.from(document.querySelectorAll("#sfinish a, #sfinish button")).filter(drawn).map(el => el.textContent.trim()),
+          words: (document.getElementById("sstage").innerText.match(/\b(site|page|website)\b/gi) || []),
+          open: drawn(document.getElementById("sopen")),
+          siteUrls: Array.from(document.querySelectorAll("#sview [href], #sview iframe[src]")).map(e => e.getAttribute("href") || e.getAttribute("src")).filter(u => u.startsWith("/site/")),
+          scroll: document.documentElement.scrollWidth - window.innerWidth};
+})()"""
+
+
+@pytest.fixture()
+def script_team(team, fake_server, monkeypatch) -> Page:
+    j2 = fake_server.state.fx.j2
+    snapshot = json.loads(j2.raw("state.json"))
+    snapshot.update(json.loads((RESULT_VIEW_FIXTURES / "state-script.json").read_text(encoding="utf-8")))
+    monkeypatch.setitem(j2._cache, "state.json", json.dumps(snapshot).encode())
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-script.json").read_bytes())
+    return team
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", [(1280, 860), (375, 812)], ids=["1280x860", "375x812"])
+def test_a_script_run_shows_its_files_and_no_site_words(script_team, width, height):
+    team = script_team
+    run = json.loads((J2_FIXTURES / "runs.json").read_text(encoding="utf-8"))["live"]
+    team.b.set_size(width, height)
+    team.open(f"?run={run}", view="simple")
+    team.b.wait_for("!!document.querySelector('#sfinish [data-view=files]') && document.querySelectorAll('#rvbody .rvfiles li').length === 2")
+    seen = team.js(SCRIPT_PANEL)
+    assert seen["tabs"] == [["Result", "true"], ["Files", "false"], ["How it was made", "false"]], seen
+    assert seen["files"] == ["env_report/report.py", "env_report/report.txt"], seen
+    assert seen["downloads"] == [f"/api/artifact?name=env_report%2Freport.{x}&run={run}&dept={DEPT}" for x in ("py", "txt")], seen
+    assert seen["finish"] == ["All files (2)"], seen                              # no Copy share link without a main file (Q-4); Open full view is the sidebar's
+    assert seen["words"] == [] and seen["open"] is False and seen["siteUrls"] == [], seen
+    assert seen["scroll"] <= 0, seen
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
 # `.apill` names two things: the attention pill (a link in `.apillhost`) and the status pill of a work atom (a span in `.atomcard`). The atoms' rules used to be the later ones with the
 # same weight, so they drew the attention pill too, as a 21px box with the atoms' 10px corners and a plain border, and the strip's room for it was fitted to that box (0.3.1).
 PILL_LOOKS = r"""(() => {

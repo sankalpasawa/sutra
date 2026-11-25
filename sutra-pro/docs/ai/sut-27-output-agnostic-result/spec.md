@@ -93,7 +93,7 @@ Not in scope:
 | :1736 part drawer | The part, on the page. | The part, in the result. |
 
 - **FR-18** No visible text on the panel of a non-page run uses "site", "page" or "website" for the result. Checked by a string scan of the script-run fixture.
-- **FR-19** On every run, after "Copy share link" copies, the button reads "Link copied — opens on this computer only" for 2.5 s. The server listens on loopback only (main.py:20), so this is true. Page runs (websites, docsets) keep today's button and URL, `/site/latest` (FR-16). On any other run the copied URL is the main file's `/view` link (owner, Q-3), and the button is hidden when there is no main file (Files-list fallback or no outputs) or the main result is a real-run result (a file in the user's folder, no `/view` route) (owner, Q-4).
+- **FR-19** On every run, website runs included (owner confirmed during T4), after "Copy share link" copies, the button reads "Link copied — opens on this computer only" for 2.5 s. The server listens on loopback only (main.py:20), so this is true. Page runs (websites, docsets) keep today's button and URL, `/site/latest` (FR-16). On any other run the copied URL is the main file's `/view` link (owner, Q-3), and the button is hidden when there is no main file (Files-list fallback or no outputs) or the main result is a real-run result (a file in the user's folder, no `/view` route) (owner, Q-4).
 
 ### Edge cases
 - **FR-20** `output == null` (D165): not a page run; noun "result"; three tabs; no console error.
@@ -196,3 +196,4 @@ D450, one decision for the whole change. SUT-28 is expected to take D449; re-che
 | 2026-11-25 developer (T1) | Owner update: the P45 link key is `run_output` on the receipt row (pending Kaivan's OK); `output` stays the stdout+stderr tail and is never read as a link. FR-10 step 1, AC-10, Later, Q-1, Q-5 updated. |
 | 2026-11-25 developer (T1, second commit) | P45 confirmed: FR-10 step 1 reads the receipt row's own `result` and `run_output` (each workflow's last row, the last in plan order), no longer `workflows[].real_run.result`; Later folder changes read the row's top-level `created`/`changed`/`deleted`/`files_truncated`; AC-10 and Q-5 updated. |
 | 2026-11-25 developer (T1, docs) | Q-4 answered by the owner: Copy share link is hidden with no main file or a real-run result; otherwise it copies the main file's `/view` link; website runs as today. FR-19, AC-14 updated. |
+| 2026-11-25 developer (T4) | Resolved: the "Link copied — opens on this computer only" note shows on website runs too (owner confirmed); FR-19 as written stands. |
