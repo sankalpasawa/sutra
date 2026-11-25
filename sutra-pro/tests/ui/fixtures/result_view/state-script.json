@@ -1,0 +1,40 @@
+{
+  "output": "env_report",
+  "output_label": "Environment report",
+  "types": {
+    "env_report": {"label": "Environment report", "form": "agent", "file": "env_report/*", "tag": "Report", "color": "--agent"}
+  },
+  "doc": false,
+  "docset": [],
+  "docset_files": [],
+  "files": [],
+  "versions": 1,
+  "status": "done",
+  "outcome": "Done: the environment report is ready.",
+  "paused": null,
+  "saved": null,
+  "error": null,
+  "step": 9,
+  "total": 3,
+  "goal": {"goal": "A script that writes a short report of the environment it runs in."},
+  "workflows": [
+    {"id": "W-1", "name": "Plan", "purpose": "One plan every build follows", "outputs": ["artifacts/plan.md"], "dependencies": [], "status": "done", "kind": "build"},
+    {"id": "W-2", "name": "Write the report script", "purpose": "A script that prints the environment and saves it as a report", "outputs": ["env_report/report.py", "env_report/report.txt"], "dependencies": ["W-1"], "status": "done", "kind": "build",
+     "real_run": {"command": ["python3", "report.py"], "result": "report.txt", "checks": [1]}}
+  ],
+  "studio": {
+    "schema": 1,
+    "parts": [
+      {"sec": "W-1", "id": "W-1", "name": "Plan", "doc": "env_report", "kind": "writer", "person": "mira", "st": "done", "fixing": false, "fixes": 0, "workflows": ["W-1"]},
+      {"sec": "W-2", "id": "W-2", "name": "Write the report script", "doc": "env_report", "kind": "writer", "person": "kabir", "st": "done", "fixing": false, "fixes": 0, "workflows": ["W-2"]}
+    ],
+    "stream": [],
+    "qsec": null,
+    "done": 2,
+    "total": 2
+  },
+  "chat": [
+    {"id": 1, "t": "10:00:00", "who": "user", "text": "A script that writes a short report of the environment it runs in.", "step": 0},
+    {"id": 2, "t": "10:00:05", "who": "W-2", "text": "@Coordination I wrote env_report/report.py. It prints the environment.", "step": 6, "next": "coordination", "workflow": "W-2", "human_output": "@Coordination I wrote env_report/report.py. It prints the environment.", "version": 1, "section": "W-2"}
+  ]
+}

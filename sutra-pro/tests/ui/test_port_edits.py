@@ -36,7 +36,7 @@ _spec.loader.exec_module(port)
 
 SANDBOX = "allow-scripts allow-forms allow-popups"
 MODULES = ["avatars", "sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext"]
+           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "result_view", "dept_ext"]
 # The 34 exact data routes under /api/ of J2's server (sutra_ctx.js J2_EXACT has them and /view, the studio's output page), written out again
 # here. The page calls 33 of them: /api/output is posted by output_pick.js, not by the page (and /view is a frame's address, not a fetch).
 J2_API = ["state", "runs", "runlist", "changes", "call", "preview", "docs", "map", "plan", "plan-map", "library", "catalog", "run-templates", "run-template",

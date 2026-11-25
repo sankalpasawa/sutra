@@ -1,0 +1,44 @@
+{
+  "output": "prd",
+  "output_label": "Design documents",
+  "types": {
+    "prd": {"label": "Product requirements", "form": "document", "file": "prd.md", "tag": "PRD", "color": "--prd"},
+    "hld": {"label": "High-level design", "form": "document", "file": "hld.md", "tag": "HLD", "color": "--hld"}
+  },
+  "doc": true,
+  "docset": ["prd", "hld"],
+  "docset_files": [
+    {"kind": "prd", "label": "Product requirements", "md": "prd.md", "docx": "prd.docx"},
+    {"kind": "hld", "label": "High-level design", "md": "hld.md", "docx": "hld.docx"}
+  ],
+  "files": [],
+  "versions": 2,
+  "status": "done",
+  "outcome": "Done: your design documents are ready.",
+  "paused": null,
+  "saved": null,
+  "error": null,
+  "step": 9,
+  "total": 3,
+  "goal": {"goal": "Design documents for a small booking app."},
+  "workflows": [
+    {"id": "W-1", "name": "Product requirements", "purpose": "What the app must do", "outputs": ["prd.md"], "dependencies": [], "status": "done", "kind": "build"},
+    {"id": "W-2", "name": "High-level design", "purpose": "How the app is built", "outputs": ["hld.md"], "dependencies": ["W-1"], "status": "done", "kind": "build"}
+  ],
+  "studio": {
+    "schema": 1,
+    "parts": [
+      {"sec": "W-1", "id": "W-1", "name": "Product requirements", "doc": "prd", "kind": "writer", "person": "mira", "st": "done", "fixing": false, "fixes": 0, "workflows": ["W-1"]},
+      {"sec": "W-2", "id": "W-2", "name": "High-level design", "doc": "hld", "kind": "writer", "person": "mira", "st": "done", "fixing": false, "fixes": 0, "workflows": ["W-2"]}
+    ],
+    "stream": [],
+    "qsec": null,
+    "done": 2,
+    "total": 2
+  },
+  "chat": [
+    {"id": 1, "t": "10:00:00", "who": "user", "text": "Design documents for a small booking app.", "step": 0},
+    {"id": 2, "t": "10:00:05", "who": "W-1", "text": "@Coordination I wrote the product requirements. They cover booking and reminders.", "step": 6, "next": "coordination", "workflow": "W-1", "human_output": "@Coordination I wrote the product requirements. They cover booking and reminders.", "version": 1, "section": "W-1"},
+    {"id": 3, "t": "10:00:09", "who": "W-2", "text": "@Coordination I wrote the high-level design. It splits the app in three services.", "step": 6, "next": "coordination", "workflow": "W-2", "human_output": "@Coordination I wrote the high-level design. It splits the app in three services.", "version": 2, "section": "W-2"}
+  ]
+}

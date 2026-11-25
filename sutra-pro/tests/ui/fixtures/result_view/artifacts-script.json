@@ -1,0 +1,7 @@
+{
+  "deliverables": [
+    {"name": "Environment report", "type": "env_report", "kind": "type", "form": "agent", "file": "env_report/report.py", "deliverable": true, "workflows": ["W-2"], "depends_on": [], "version": 1, "sha256": "1111111111111111111111111111111111111111111111111111111111111111", "time": "2026-11-25T10:00:05", "label": "Environment report", "tag": "Report", "color": "--agent", "depends_on_labels": [], "saved": true},
+    {"name": "Environment report", "type": "env_report", "kind": "type", "form": "agent", "file": "env_report/report.txt", "deliverable": true, "workflows": ["W-2"], "depends_on": [], "version": 1, "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "time": "2026-11-25T10:00:05", "label": "Environment report", "tag": "Report", "color": "--agent", "depends_on_labels": [], "saved": true}
+  ],
+  "records": []
+}
