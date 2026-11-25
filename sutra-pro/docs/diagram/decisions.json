@@ -2156,7 +2156,7 @@
  },
  {
   "id": "D449",
-  "label": "a real run reaches only the hosts the Requester named, after Run; the dry run stays offline (P44)",
+  "label": "a real run reaches only the hosts the Requester named, after Run; the dry run stays offline (P44, E29)",
   "anchor": "band:DEPARTMENT RUNTIME"
  }
 ]

@@ -4771,13 +4771,14 @@ def test_p44_t1b_without_reaches_the_question_names_the_hosts_alone(p44_ask):
     assert q["options"][0] == "Allow internet access to api.made-up.invalid, *.cdn.made-up.invalid:8443"
 
 
-def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_asks_again(p44_ask):
+@pytest.mark.parametrize("answer", ["Option 2", "  don't ALLOW "])      # the Don't allow button (E29) or its exact text
+def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_asks_again(p44_ask, answer):
     without = [{**sort_proposals("x", fix=True)[0], "real_run": None}]      # Adaptation's plan without the real run
     run, q, plan = p44_ask(None, without)      # it first proposes the same hosts again: refused, not asked again
-    run.post("user", "Option 2")
+    run.post("user", answer)
     run._run()
     why = "The Requester did not allow internet access to api.made-up.invalid"
-    assert "picked" in run.decisions[-1] and len(p44_asked(run)) == 1 and run.paused is None
+    assert ("picked" in run.decisions[-1]) == (answer == "Option 2") and len(p44_asked(run)) == 1 and run.paused is None
     assert run.goal["done_when"] == P44_DONE_WHEN[:2]
     assert run.goal["dropped_reasons"] == [{"criterion": P44_DONE_WHEN[2], "reason": why, "hosts": ["api.made-up.invalid"]}]
     assert any(m["text"].startswith("Left out on the Requester's decision") and why.lower() in m["text"].lower() for m in run.chat)
@@ -4786,6 +4787,29 @@ def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_ask
     assert f"Left out: {P44_DONE_WHEN[2]}: {why}." in run.outcome, run.outcome
     run._hosts_to_ask("Build sort_files.py", plan[0]["real_run"])      # the same hosts in a later plan: never asked again
     assert run.hosts_ask is None and run.hosts_asked == {"api.made-up.invalid": False}
+
+
+@pytest.mark.parametrize("answer", ["yes", "Don't allow it, thanks", "allow", "Option 3"])
+def test_p44_t1b_any_other_answer_keeps_the_host_question_open(p44_ask, answer):
+    """Owner (E29): only the Allow pick, the hosts typed out, or a clear decline settle it; code reads no other word."""
+    run, q, _ = p44_ask()      # no later proposal: a handoff to Adaptation would end the test with StopIteration
+    run.post("user", answer)
+    run._run()
+    asked = p44_asked(run)
+    assert run.paused["kind"] == "hosts" and run.paused["questions"] == [q], run.paused
+    assert "Not allowed yet. Press Allow, or type the hosts." in asked[-1]["text"], asked[-1]["text"]
+    assert run.paused["handoff"]["hosts_ask"]["hosts"] == ["api.made-up.invalid"]
+    assert run.hosts_asked == {"api.made-up.invalid": None} and not run.workflows and "dropped_reasons" not in run.goal
+    assert not p31_receipts(run) and not any(m["text"].startswith("Left out") for m in run.chat)
+
+
+def test_p44_t1b_the_hosts_typed_out_register(p44_ask):
+    """Passes before E29 too: typed hosts already counted (T1); pinned beside the stricter answers."""
+    run, _, _ = p44_ask(None)
+    run.post("user", "yes, api.made-up.invalid")
+    run._run()
+    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
+    assert run.paused is None and run.hosts_asked == {"api.made-up.invalid": True}
 
 
 def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):

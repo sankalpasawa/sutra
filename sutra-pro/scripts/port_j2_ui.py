@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 54 edits (E1 to E13, E19 to E28; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E28a and E28b count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 55 edits (E1 to E13, E19 to E29; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E28a and E28b count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 54 edits
+    pages/j2_ui.html            the page after the 55 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -315,6 +315,12 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E28b", '  if (b.dataset.approve) return sendText(',
          _lines("  if (b.dataset.run !== undefined) return sendText(b.dataset.run);      // E28 (D434): Run sends the exact RUN <code>; Don't run declines",
                 '  if (b.dataset.approve) return sendText('), 1),
+    # E29 (D449): a live host question (pause kind "hosts", P44) shows Allow (sends Option 1: the Requester's own pick of the option
+    # that carries every host) and Don't allow (the engine's HOSTS_DENY) in place of its numbered options, clicked through E28's
+    # data-run. Any other reply is asked again by the engine (P44 _hosts_answered)
+    Edit("E29", '    else if (q.opts.length) h += `<div class="opts"',
+         _lines('    else if (kind === "hosts" && live) h += `<div class="acts"><button type="button" class="pri" data-run="Option 1">Allow</button><button type="button" class="ghost" data-run="Don\'t allow">Don\'t allow</button></div>`;      // E29 (D449)',
+                '    else if (q.opts.length) h += `<div class="opts"'), 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

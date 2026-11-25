@@ -975,6 +975,7 @@ def real_hosts(rr):
 
 
 HOSTS_DECLINE = "Don't allow it: leave the real run out"      # P44 (D449): the host question's second option
+HOSTS_DENY = "Don't allow"      # P44 (D449, E29): the Don't allow button's words; typed as the whole reply, a decline too
 
 
 def host_entry_ok(h):
@@ -6194,12 +6195,23 @@ class J2Run:
                        "hosts", to="adaptation", handoff={"kind": "propose", "hosts_ask": a})
 
     def _hosts_answered(self, p):
-        """P44 (D449): code reads the answer to _ask_hosts. Allowed when every host is now named (the Requester's own pick of
-        the first option, whose text carries them, or their own typed words): Adaptation proposes the plan again and it
-        registers. Anything else leaves the real run out: the done-when items it checks are dropped with the reason (also
-        in the run's outcome, _goal_done), and Adaptation proposes the workflow without it."""
+        """P44 (D449): code reads the answer to _ask_hosts; only three answers settle it (owner, E29). Allowed when every
+        host is now named (the Requester's own pick of the first option, the Allow button, whose text carries them, or
+        their own typed words): Adaptation proposes the plan again and it registers. A clear decline (their own pick of the
+        second option, the Don't allow button, or exactly HOSTS_DENY as the whole reply, as D434's REAL_RUN_DECLINE) leaves
+        the real run out: the done-when items it checks are dropped with the reason (also in the run's outcome,
+        _goal_done), and Adaptation proposes the workflow without it. Any other reply asks the same question again, as
+        P31's real-run card does: no word of it is read, nothing is decided, nothing is handed on."""
         a, g = p["handoff"]["hosts_ask"], self.goal or {}
+        last = next(m for m in reversed(self.chat) if m["who"] == "user")
         ok = not [h for h in a["hosts"] if not host_named(h, host_pieces(self.request, self.decisions, self.chat))]
+        no = not last.get("auto") and (self.decisions[-1].get("picked") == p["questions"][0]["options"][1]
+                                       or last["text"].strip().casefold() == HOSTS_DENY.casefold())
+        if not ok and not no:
+            self._ask_user("Not allowed yet. Press Allow, or type the hosts.", p["questions"], "hosts", to="adaptation",
+                           handoff=p["handoff"])
+            p["to"], p["handoff"] = None, {}      # _run's resume hands on nothing: the run waits on the same question
+            return
         self.hosts_asked[" ".join(sorted(a["hosts"]))] = ok
         if ok:
             p["handoff"] = {"kind": "propose", "why": f"The Requester allowed internet access to {', '.join(a['hosts'])}. "
