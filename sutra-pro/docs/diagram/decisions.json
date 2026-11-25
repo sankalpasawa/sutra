@@ -2128,5 +2128,10 @@
   "id": "D439",
   "label": "team avatars: Classic default, Illustrated opt-in, kept per app profile; one ring + badge for activity",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D440",
+  "label": "a file reaches the model or the owner is told why not: failed chip, receipt, Word, carry-over (0.8.3)",
+  "anchor": "band:EXPERIENCE"
  }
 ]
