@@ -30,7 +30,7 @@
   const STYLES = ["classic", "illustrated"];
   const DEFAULT = "classic";
   const CUT = 32;                 // px: the portrait from here up, the compact mark below
-  const TURN_MS = 1150;           // one turn of the working arc
+  const TURN_MS = 2400;           // one turn of the working arc (--dur-turn): slow enough to sit beside text for minutes
   const MSG_MS = 4000;            // how long a new message from Asha shows as a badge on a team page
   const MIRROR = "sutra:avatars"; // localStorage: only so the other open pages of this port hear a change; the server file is the truth
   const IMG = "/ui/img/avatars/";

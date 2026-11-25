@@ -129,7 +129,7 @@ test("after a render each teammate's avatar says what the page's own classes say
   assert.equal(p.sandbox.renderSimple({studio: {parts}, allChat: []}), "rendered");
   const got = Object.fromEntries(p.mates.map(m => [m.dataset.mate, [m.host.dataset.act || "", m.host.dataset.badge || "", m.host.dataset.avid]]));
   assert.deepEqual(got, {asha: ["ask", "ask", "rail-asha"], mira: ["work", "", "rail-mira"], kabir: ["done", "done", "rail-kabir"], dev: ["", "", "rail-dev"], nora: ["", "", "rail-nora"]});
-  assert.equal(p.mates[1].host.style.props["--avd"], "-200ms", "the arc carries on from the shared clock (2500 ms into 1150 ms turns)");
+  assert.equal(p.mates[1].host.style.props["--avd"], "-100ms", "the arc carries on from the shared clock (2500 ms into 2400 ms turns)");
   assert.equal(p.mates[0].host.style.props["--avd"], undefined);
 
   // the project is ready: Asha is done, and Nora too once she has checked it; nobody who is busy is ever "done"

@@ -45,7 +45,13 @@
   border: 2.5px solid var(--avc); transform: none; animation: none;
 }
 :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=work]::before {
-  border-left-color: color-mix(in srgb, var(--avc) 24%, transparent);
+  /* A calm arc, not a loading spinner: this turns for minutes beside text the owner is reading. One turn takes 2.4 s (--dur-turn), at the slow
+     end of the 1 to 2.5 s that reads as "at work" (faster feels hurried, slower looks stuck). The arc has no hard ends: it fades from the quiet
+     track up to the person's colour at its head, so no edge sweeps past the eye, and the speed is constant (linear), with no pulse. */
+  border: 0;
+  background: conic-gradient(from 0turn, color-mix(in srgb, var(--avc) 20%, transparent) 0 38%, var(--avc) 96%, color-mix(in srgb, var(--avc) 20%, transparent) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
 }
 :is(.avact, #sview .smate .sface[data-who][data-avid], #sview .sdock .sface[data-who][data-avid])[data-act=ask]::before {
   border-color: var(--av-ask); border-left-color: color-mix(in srgb, var(--av-ask) 26%, transparent);
