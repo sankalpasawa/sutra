@@ -4736,8 +4736,8 @@ def p44_asked(run):
 def p44_ask(p44_reg, monkeypatch):
     """A run whose brief names the folder but no host; Adaptation's plan names the made-up host: the validator refuses it and
     Identity asks the host question. Returns (run, the question, proposal(**fields) for later turns)."""
-    def go(*later, **fields):
-        run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+    def go(*later, runner=None, **fields):
+        run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}", runner=runner)
         plan = p44_reg.proposal(run, **fields)
         p44_flow(run, monkeypatch, plan, *[x if x is not None else plan for x in later])
         run.post("user", "Build it, please")
@@ -4748,8 +4748,8 @@ def p44_ask(p44_reg, monkeypatch):
     return go
 
 
-def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers_them(p44_ask):
-    run, q, _ = p44_ask(None, reaches="the made-up API")
+def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers_them(p44_ask, p44):
+    run, q, _ = p44_ask(None, reaches="the made-up API", runner=[sys.executable, "{target}"])      # p44: the fake srt
     assert q["question"] == "This script needs to reach the made-up API (api.made-up.invalid). Allow it?", q
     assert q["options"] == ["Allow internet access to api.made-up.invalid", "Don't allow it: leave the real run out"], q
     run.post("user", "Option 1")      # what a card click sends
@@ -4758,6 +4758,11 @@ def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers
     assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
     assert len(p44_asked(run)) == 1 and run.paused is None, "no second question"
     assert run.hosts_asked == {"api.made-up.invalid": True} and run.hosts_ask is None
+    run.workflows[0]["status"] = "done"      # T3: once built, the Run card shows the hosts the Requester's click allowed
+    os.makedirs(run._out_dir(), exist_ok=True)
+    (Path(run._out_dir()) / "fetch.py").write_text(P44_FETCH)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    assert "\nInternet access: api.made-up.invalid" in p32_card(run)
 
 
 def test_p44_t1b_without_reaches_the_question_names_the_hosts_alone(p44_ask):
@@ -4938,3 +4943,36 @@ def test_p44_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p44, monkey
           "command": [sys.executable, "fetch.py", str(real), "http://other.invalid/"]}
     res = j2ft.real_run(run._out_dir(), rr, 60)
     assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res
+
+# ---- P44 (D449) T3: the Run card names the internet hosts and what the dry run could not check ------------------------------
+P44_LOCAL = "import os, sys\nopen(os.path.join(sys.argv[1], 'title.txt'), 'w').write('made-up')\n"      # reaches nothing
+
+
+def test_p44_card_lines(p44, monkeypatch):
+    go, real, _ = p44
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    card = p32_card(run)
+    off = shlex.join([sys.executable, "fetch.py", str(real), "--offline"])
+    assert "\nInternet access: api.made-up.invalid" in card and "can't be limited" not in card, card
+    assert "\nThe dry run ran its offline command, without internet access: " + off in card, card
+    monkeypatch.setenv("J2_SANDBOX", "0")      # no sandbox for the real run; P32 still fences the dry run (the fake srt)
+    run = go()
+    assert run._ask_real_run({}) and run.real_runs_dry["W-1"]["fenced"] is True
+    card = p32_card(run)
+    assert "\nThis computer has no sandbox, so internet access can't be limited to these hosts." in card, card
+    assert "\nThe dry run ran its offline command" in card
+    monkeypatch.setenv("J2_SANDBOX_CMD", "no-such-sandbox-xyz")      # no runtime at all: no dry run
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    card = p32_card(run)
+    assert NO_DRY_RUN in card and "can't be limited to these hosts" in card and "offline command" not in card, card
+
+
+def test_p44_no_hosts_card_is_unchanged(j2ft, p44):
+    assert j2ft.real_run_net_lines({}, False, {"fenced": True}) == ""
+    go, _, _ = p44
+    run = go(P44_LOCAL, hosts=MISSING, offline=MISSING)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    card = p32_card(run)
+    assert "Internet access" not in card and "offline command" not in card and "couldn't be checked" not in card, card

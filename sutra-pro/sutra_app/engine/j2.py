@@ -1041,6 +1041,18 @@ def real_run_net_fields(rr):
                                                  "same_files": rr["offline"]["same_files"]}}
 
 
+def real_run_net_lines(rr, sandboxed, dry):
+    """P44 (D449): the Run card's internet lines ("" without hosts)."""
+    hosts, off = rr.get("hosts") or [], rr.get("offline") or {}
+    if not hosts:
+        return ""
+    return ("\nInternet access: " + ", ".join(hosts)
+            + ("" if sandboxed else "\nThis computer has no sandbox, so internet access can't be limited to these hosts.")
+            + (f"\nThe dry run ran its offline command, without internet access: {shlex.join(off['command'])}"
+               if dry.get("fenced") and off else "")
+            + ("\nFile changes couldn't be checked first." if off.get("same_files") is False else ""))
+
+
 def _tree(root):
     """{relative path: sha256} of every file under root."""
     out = {}
@@ -6255,6 +6267,7 @@ class J2Run:
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
+                            + real_run_net_lines(rr, sandbox_on(), dry)      # P44 (D449)
                             + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
                                                                             "dry run had no network access: results may differ."
                                                                             if dry.get("fenced") else      # P32 (D435)
