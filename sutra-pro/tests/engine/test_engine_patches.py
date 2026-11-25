@@ -2821,9 +2821,13 @@ def test_p32_without_a_sandbox_runtime_the_dry_run_is_not_run_and_the_card_says_
         monkeypatch.delenv(k) if v is None else monkeypatch.setenv(k, v)
     run = go(P31_OK)
 
-    def boom(*a, **k):
-        raise AssertionError("the dry run must never run without the sandbox runtime")
     import subprocess
+    real_run = subprocess.run
+
+    def boom(argv, *a, **k):
+        if argv[1:2] == ["-c"] and "find_spec" in argv[2]:      # P36 (D441): the import lookup before the dry run, which
+            return real_run(argv, *a, **k)                       # imports and runs nothing of the build
+        raise AssertionError("the dry run must never run without the sandbox runtime")
     monkeypatch.setattr(subprocess, "run", boom)
     assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
     dry = run.real_runs_dry["W-1"]
@@ -3611,3 +3615,295 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES
+
+
+# ---- P36 (D441): a build with a requirements.txt gets an environment of its own, installed only after RUN <code>; its test, its dry
+# run and its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
+# sandbox runtime records its settings ---------------------------------------------------------------------------------------------
+# TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
+# "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
+P36_FAKE_PYTHON = """#!{exe}
+import json, os, shutil, subprocess, sys
+me, a = os.path.abspath(sys.argv[0]), sys.argv[1:]
+site = os.path.join(os.path.dirname(os.path.dirname(me)), "site")
+def note(kind):
+    with open(os.environ["FAKE_LOG"], "a") as f:
+        f.write(json.dumps({{"kind": kind, "argv": a, "python": me}}) + "\\n")
+if a[:2] == ["-m", "venv"]:
+    note("venv")
+    os.makedirs(os.path.join(a[2], "bin"))
+    os.makedirs(os.path.join(a[2], "site"))
+    shutil.copy(me, os.path.join(a[2], "bin", "python"))
+    sys.exit(0)
+if a[:3] == ["-m", "pip", "install"]:
+    note("pip install")
+    if os.environ.get("FAKE_PIP_FAIL"):
+        sys.stderr.write("ERROR: No matching distribution found for " + os.environ["FAKE_PIP_FAIL"] + "\\n")
+        sys.exit(1)
+    for line in open(a[a.index("-r") + 1]):
+        name, _, version = line.strip().partition("==")
+        if name:
+            open(os.path.join(site, name.replace("-", "_") + ".py"), "w").write("VERSION = %r\\n" % version)
+    sys.exit(0)
+if a[:3] == ["-m", "pip", "list"]:
+    print(json.dumps([{{"name": f[:-3], "version": open(os.path.join(site, f)).read().split("'")[1]}}
+                      for f in sorted(os.listdir(site)) if f.endswith(".py")]))
+    sys.exit(0)
+note("run")
+env = dict(os.environ)
+if os.path.isdir(site):
+    env["PYTHONPATH"] = site
+sys.exit(subprocess.run([{exe!r}] + a, env=env).returncode)
+"""
+# TEST ONLY stand-in for the sandbox runtime (srt -s <settings> -c <command>): records the settings, runs the command WITHOUT a sandbox
+P36_FAKE_SANDBOX = """import json, os, subprocess, sys
+a = sys.argv[1:]
+with open(os.environ["FAKE_LOG"], "a") as f:
+    f.write(json.dumps({"kind": "sandbox", "settings": json.load(open(a[a.index("-s") + 1])), "command": a[a.index("-c") + 1]}) + "\\n")
+sys.exit(subprocess.run(a[a.index("-c") + 1], shell=True).returncode)
+"""
+P36_GOOD = "import sys, os\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write('done')\n"
+P36_NEEDS = "import sys, os\nimport pulsedep\nopen(os.path.join(sys.argv[1], 'out.txt'), 'w').write(pulsedep.VERSION)\n"
+# the fake interpreter is a `#!` script: Windows can't run one, so the tests that install with it run on macOS and Linux only
+p36_posix = pytest.mark.skipif(os.name == "nt", reason="the fake interpreter is a #! script, which Windows can't run")
+P36_FILES = {"s.py": P36_NEEDS, "test_s.py": "import pulsedep\nassert pulsedep.VERSION == '1.2.0'\n", "requirements.txt": "pulsedep==1.2.0\n"}
+
+
+@pytest.fixture(scope="module")
+def j2env(tmp_path_factory):
+    """J2 with the folder type FT, builder tools on (the general path), its data folder and the fake interpreter."""
+    base = tmp_path_factory.mktemp("j2-p36")
+    fake, srt = base / "python3.12", base / "fake_srt.py"
+    fake.write_text(P36_FAKE_PYTHON.format(exe=sys.executable), encoding="utf-8")
+    fake.chmod(0o755)
+    srt.write_text(P36_FAKE_SANDBOX, encoding="utf-8")
+    with fresh_j2(base, J2_TYPES_DIR=base / "types", J2_AGENT_TOOLS="1", J2_DATA_DIR=base / "data", J2_RUN_PYTHON=fake) as mod:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("FAKE_LOG", str(base / "fake.log"))
+            mod.j2_types.create(FT, "Script", None, form="agent")
+            mod._data_type.cache_clear()
+            mod.p36_log = lambda kind: [r for r in map(json.loads, (base / "fake.log").read_text().splitlines())
+                                        if r["kind"] == kind] if (base / "fake.log").exists() else []
+            mod.p36_srt = f"{sys.executable} {srt}"
+            yield mod
+
+
+@pytest.fixture
+def env_run(j2env, tmp_path):
+    """made(files, status, attempts, test) -> (run, workflow): one workflow that plans a real run on a folder of the Requester's."""
+    real = tmp_path / "inbox"
+    real.mkdir()
+    (real / "mail.txt").write_text("one")
+    counter = itertools.count(1)
+
+    def made(files, status="done", attempts=1, test=None):
+        run = j2env.J2Run(run_dir=tmp_path / "runs" / f"j2-20261124-0628{next(counter):02d}-01a2")
+        run._apply_output(FT)
+        run.goal, run.budget = {"statement": "read the folder", "done_when": ["the script has been run on the folder"]}, 300
+        os.makedirs(run._out_dir(), exist_ok=True)
+        for name, text in files.items():
+            Path(run._out_dir(), name).write_text(text)
+        checks = [{"text": "s.py exists", "type": "file-exists", "target": "s.py", "expect": True}] + (
+            [{"text": "its test passes", "type": "test-passed", "target": test, "expect": True}] if test else [])
+        w = {"id": "W-1", "name": "reader", "purpose": "read", "outputs": [f"{FT}/s.py"], "status": status, "calls_used": attempts,
+             "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [],
+             "real_run": {"command": ["python3", "s.py", str(real)], "folder": str(real), "why": "read it", "checks": [1]},
+             "atoms": [{"id": "W-1.a1", "goal": "read", "expected_output": [], "verification": checks}]}
+        run.workflows = [w]
+        j2env.add_workflow_agent("W-1")
+        run.sites = ["v1"]
+        run.post("user", "go")
+        return run, w
+    return made, real
+
+
+def p36_builder(run, *rounds):
+    """The run's builder, scripted: each call writes the next round's files (the last one again after that)."""
+    prompts = []
+
+    def call(fn, fmt, prompt, mock, **kw):
+        prompts.append(prompt)
+        for name, text in rounds[min(len(prompts), len(rounds)) - 1].items():
+            Path(run._out_dir(), name).write_text(text)
+        return {"say": "@Coordination built", "human_output": "I built the reader script and its test for the folder.", "atom_human_output": "The reader."}
+    run.call = call
+    return prompts
+
+
+def p36_reply(run, text, **meta):
+    h = run.paused["handoff"]
+    run.post("user", text, **meta)
+    run.paused = None
+    run._turn_identity({**h, "answer": text})
+
+
+def p36_receipts(run, kind="real_run"):
+    path = Path(run.dir, "receipts.jsonl")
+    return [r for r in map(json.loads, path.read_text().splitlines()) if r.get("type") == kind] if path.exists() else []
+
+
+def p36_system(run):
+    return [m["text"] for m in run.chat if m["who"] == "system"]
+
+
+def p36_code(run):
+    """The one-time code of the open install question: kept under "env:<hash>", where the snapshot reads it for the Run button."""
+    key = run.paused["handoff"]["wid"]
+    assert key.startswith("env:") and run.paused["handoff"]["kind"] == "env_install" and run.paused["kind"] == "real_run"
+    assert run.snapshot()["paused"]["code"] == run.real_runs_asked[key]
+    return run.real_runs_asked[key]
+
+
+@p36_posix
+def test_p36_requirements_get_an_environment_only_after_run_code_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+    made, real = env_run
+    runenv = j2env.j2_runenv
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    prompts = p36_builder(run, P36_FILES)
+    run._turn_workflow_agent({"wid": "W-1"})
+    plan, card, code = runenv.plan(run._out_dir()), p36_system(run)[-1], p36_code(run)
+    assert run._auto_pick() is None and run.paused["handoff"]["build"] == "W-1" and run.paused["handoff"]["hash"] == plan["hash"]
+    assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
+    assert "Or press Run. To decline, press Don't run." in card
+    assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
+    # nothing is installed without approval
+    assert not j2env.p36_log("venv") and not j2env.p36_log("pip install") and not os.path.exists(plan["dir"]) and not p36_receipts(run, "env_install")
+    assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
+    for text, meta in (("yes install", {}), (f"run {code}", {}), (f"RUN {code}", {"auto": True})):      # as D434: only the exact code
+        p36_reply(run, text, **meta)
+        assert run.paused and run.chat[-1]["who"] == "identity" and f"Not installed. Press Run or type RUN {code}." in run.chat[-1]["text"]
+        assert p36_code(run) == code and not j2env.p36_log("pip install") and not p36_receipts(run, "env_install")
+    p36_reply(run, f"RUN {code}")
+    assert len(j2env.p36_log("venv")) == 1 and len(j2env.p36_log("pip install")) == 1 and not run.paused
+    assert not [k for k in run.real_runs_asked if k.startswith("env:")], "the code is forgotten once it is answered"
+    argv = j2env.p36_log("pip install")[0]["argv"]
+    assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
+    e = p36_receipts(run, "env_install")[-1]
+    assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
+    assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"] and e["workflow"] == "W-1"
+    from sutra_app.library.records import _p_receipt
+    assert [k for k, _ in _p_receipt("receipts.jsonl", e)] == ["run_file.object"], "the install receipt is open JSON for the catalogue"
+    run._turn_workflow_agent(run.handoff)
+    test = next(x for x in run.receipts if x["check"] == "its test passes")
+    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True and "resume" not in w
+    assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat), "the builder's reply from before the question is kept"
+    assert [r for r in j2env.p36_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
+        "the test rerun used the environment's python (the system one has no pulsedep)"
+    # the dry run (fenced, D435) and the approved real run use the environment's python too
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p36_srt)
+    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
+    assert any("uses packages installed in an environment of its own" in x and "pulsedep==1.2.0" in x for x in p36_system(run))
+    assert "dry run on a copy: exit 0" in p36_system(run)[-1] and run.real_runs_dry["W-1"]["fenced"] is True
+    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p36_receipts(run)[-1]
+    want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
+    assert r["approved"] and r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
+    assert (real / "out.txt").read_text() == "1.2.0"
+    monkeypatch.delenv("J2_SANDBOX")
+    # a second run with the same requirements.txt reuses the environment: no question, no install
+    n = len(j2env.p36_log("pip install"))
+    run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
+    p36_builder(run2, P36_FILES)
+    run2._turn_workflow_agent({"wid": "W-1"})
+    assert not run2.paused and w2["status"] == "done" and not run2.real_runs_asked
+    assert len(j2env.p36_log("pip install")) == n and len(j2env.p36_log("venv")) == 1
+    assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
+    # Don't run: nothing installed, the test is not rerun with another python, and the real run goes back to the build (D434)
+    run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
+    p36_builder(run3, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
+    run3._turn_workflow_agent({"wid": "W-1"})
+    assert run3.paused and "extra-lib==0.3" in p36_system(run3)[-1]
+    p36_reply(run3, "don't run")
+    d = p36_receipts(run3, "env_install")[-1]
+    assert d["declined"] and not d["approved"] and d["evidence"] == "not installed: the Requester chose Don't run"
+    run3._turn_workflow_agent(run3.handoff)
+    t3 = [x for x in run3.receipts if x["check"] == "its test passes"][-1]
+    assert len(j2env.p36_log("pip install")) == n and t3["pass"] is None and "its packages are not installed" in t3["evidence"]
+    assert not run3.paused, "a declined requirements.txt is not asked about again in the run"
+    w3["status"] = "done"
+    assert run3._ask_real_run({}) is True and not run3.paused and "W-1" not in run3.real_runs_asked and not run3.real_runs_dry
+    assert w3["status"] == "failed" and w3["failure"] == ["dry_run", "its packages are not installed: the Requester chose not to install them"]
+    assert run3.turn == "adaptation" and p36_receipts(run3)[-1]["ran"] is False
+
+
+@p36_posix
+def test_p36_a_failed_install_goes_back_to_the_builder_with_pips_error(j2env, env_run, monkeypatch):
+    made, real = env_run
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    prompts = p36_builder(run, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P36_FILES)
+    run._turn_workflow_agent({"wid": "W-1"})
+    monkeypatch.setenv("FAKE_PIP_FAIL", "nosuch==9.9")
+    p36_reply(run, f"RUN {p36_code(run)}")
+    monkeypatch.delenv("FAKE_PIP_FAIL")
+    e = p36_receipts(run, "env_install")[-1]
+    assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
+    run._turn_workflow_agent(run.handoff)
+    assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
+
+
+def test_p36_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_are_refused(j2env, env_run, monkeypatch, tmp_path):
+    made, real = env_run
+    run, w = made({"s.py": "import sys\nimport notinstalledmod\nfrom helper import go\n", "helper.py": "def go():\n    pass\n"})
+    assert run._ask_real_run({}) is True and not run.paused and "W-1" not in run.real_runs_asked and not run.real_runs_dry
+    assert w["status"] == "failed" and w["failure"][0] == "dry_run" and run.turn == "adaptation"
+    assert "s.py imports notinstalledmod, not installed" in w["failure"][1] and "requirements.txt" in w["failure"][1] and "helper" not in w["failure"][1]
+    assert "notinstalledmod" in run.handoff["why"] and not p36_receipts(run)[-1]["ran"]
+    run, w = made({}, status="running", attempts=0)
+    prompts = p36_builder(run, *[{"s.py": P36_GOOD, "requirements.txt": text} for text in
+                                 ("requests>=2\n", "--extra-index-url https://example.invalid/simple\npulsedep==1.2.0\n", "git+https://example.invalid/x.git\n")])
+    n = len(j2env.p36_log("pip install"))
+    run._turn_workflow_agent({"wid": "W-1"})
+    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.real_runs_asked and len(j2env.p36_log("pip install")) == n
+    assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
+    monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: nothing is asked, nothing is run
+    run, w = made({"s.py": P36_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"})
+    assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is True and not run.paused
+    assert "which is not a Python that runs" in w["failure"][1] and "J2_RUN_PYTHON" in w["failure"][1]
+    assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
+
+
+@p36_posix
+def test_p36_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
+    made, real = env_run
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p36_srt)
+    run, w = made({}, status="running", attempts=0, test="test_s.py")
+    p36_builder(run, {**P36_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
+    before = len(j2env.p36_log("sandbox"))
+    run._turn_workflow_agent({"wid": "W-1"})
+    p36_reply(run, f"RUN {p36_code(run)}")
+    run._turn_workflow_agent(run.handoff)
+    run._ask_real_run({})
+    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    rows = j2env.p36_log("sandbox")[before:]
+    installs = [r for r in rows if " -m pip install " in r["command"]]
+    others = [r for r in rows if r not in installs]
+    env_dir = j2env.j2_runenv.plan(run._out_dir())["dir"]
+    assert len(installs) == 1 and installs[0]["settings"]["network"]["allowedDomains"] == ["pypi.org", "files.pythonhosted.org"]
+    assert installs[0]["settings"]["filesystem"]["allowWrite"] == [env_dir]
+    assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
+    assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
+    assert p36_receipts(run)[-1]["exit"] == 0
+
+
+def test_p36_a_real_run_receipt_keeps_the_end_of_stdout_and_of_stderr(j2env, env_run):
+    made, real = env_run
+    run, w = made({"s.py": "import sys\nprint('started')\nsys.stderr.write('x' * 3000 + 'LAST-LINE')\n"})
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"      # no sandbox here: no dry run (D435), still asked
+    p36_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p36_receipts(run)[-1]
+    assert r["exit"] == 0 and r["stdout"] == "started\n" and len(r["stderr"]) == 2000 and r["stderr"].endswith("LAST-LINE")
+    assert "env" not in r, "a build without a requirements.txt has no environment"
+    from sutra_app.library.records import _p_receipt
+    assert [k for k, _ in _p_receipt("receipts.jsonl", r)] == ["run_file.object"], "a real-run receipt stays open JSON for the catalogue"
+
+
+def test_p36_runenv_is_j2s_module_below_its_docstring():
+    """engine/runenv.py is Sutra's copy of J2's j2_runenv.py: the code is the same, only the module docstring differs. Skipped where
+    the J2 prototype is not checked out beside this project."""
+    theirs = Path(__file__).resolve().parents[3] / "prototypes" / "j2" / "j2_runenv.py"
+    if not theirs.is_file():
+        pytest.skip("prototypes/j2 is not here")
+    code = lambda p: p.read_text(encoding="utf-8").split('"""\nimport ast', 1)[1]
+    assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")

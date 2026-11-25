@@ -1,7 +1,7 @@
-"""The environment a built script runs in: code, never the model, makes it (patch P30, D433).
+"""The environment a built script runs in: code, never the model, makes it (patch P36, D441).
 
 Sutra's own module, not a vendored file: J2's `j2_runenv.py` from the branch `fix-real-run-approval` (J2 main is ahead of the
-pinned commit, so the file can't come from the extraction; when a sync moves the pin past it, this copy goes and P30's import
+pinned commit, so the file can't come from the extraction; when a sync moves the pin past it, this copy goes and P36's import
 becomes P1's). Everything below the imports is J2's code unchanged; `tests/engine/test_engine_patches.py` compares the two.
 
 A built folder that holds a requirements.txt gets a virtual environment of its own, and the test rerun, the dry run on

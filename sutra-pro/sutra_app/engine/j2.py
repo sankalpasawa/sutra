@@ -63,6 +63,7 @@ from . import j2_check
 from . import j2_map
 from . import j2_realization
 from . import j2_rules
+from . import runenv as j2_runenv      # P36 (D441): Sutra's copy of J2's j2_runenv.py, the environment a built script runs in
 from . import j2_schema
 from . import j2_send
 from . import j2_studio
@@ -619,12 +620,26 @@ def sandbox_on():
 SANDBOX_DENY_WRITE = ("/tmp/claude", "/private/tmp/claude")
 
 
-def sandbox_settings(folder):
+def sandbox_settings(folder, reads=()):
     """The sandbox runtime's settings for one test rerun: no network, nothing in the home folder readable but the
-    folder, writes only in the folder."""
+    folder (and reads, P36: the environment its python comes from), writes only in the folder."""
     return {"network": {"allowedDomains": [], "deniedDomains": []},
-            "filesystem": {"denyRead": ["~"], "allowRead": [folder], "allowWrite": [folder],
+            "filesystem": {"denyRead": ["~"], "allowRead": [folder] + list(reads), "allowWrite": [folder],
                            "denyWrite": list(SANDBOX_DENY_WRITE)}}
+
+
+def run_command(command, env):
+    """P36 (D441): a command as code runs it: with an environment (j2_runenv.plan, ready), its python in place of the
+    form's python; without one, as written."""
+    return [env["python"]] + list(command[1:]) if env and j2_runenv.is_python(command[0]) else list(command)
+
+
+def env_missing(env):
+    """P36 (D441): why a built folder's commands can't run yet ("" when they can): it has a requirements.txt whose
+    environment is not installed. Code never runs them with another python."""
+    if not env or env["ready"]:
+        return ""
+    return "its packages are not installed (" + (env["problem"] or "the Requester has not approved them") + ")"
 
 
 def _repo_root():
@@ -796,19 +811,25 @@ def real_run(out_dir, rr, timeout):
         if not os.path.isabs(x) and os.path.isfile(p):
             with open(p, "rb") as f:
                 shas[x] = hashlib.sha256(f.read()).hexdigest()
+    env = j2_runenv.plan(out_dir)      # P36 (D441): the built folder's environment (its requirements.txt), when it has one
+    if env_missing(env):      # never with another python
+        return {"ran": False, "exit": None, "sha256": shas, "evidence": "not run: " + env_missing(env)}
+    command = run_command(rr["command"], env)
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
     t0 = time.time()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads, "allowWrite": [folder],
-                                      "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(rr["command"])] if cmd else list(rr["command"])
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads + list((env or {}).get("reads") or []),
+                                      "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
-        return {"ran": True, "exit": p.returncode, "output": out, "seconds": round(time.time() - t0, 2), "sha256": shas,
+        return {"ran": True, "exit": p.returncode, "output": out, "stdout": j2_runenv.tail(p.stdout),      # P36 (D441): the end
+                "stderr": j2_runenv.tail(p.stderr), **({"env": j2_runenv.facts(env)} if env else {}),      # of each, and its python
+                "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
     except subprocess.TimeoutExpired:
         return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
@@ -894,6 +915,10 @@ def sandbox_rerun(folder, runner, target, timeout):
     with open(path, "rb") as f:
         sha = hashlib.sha256(f.read()).hexdigest()
     argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
+    env = j2_runenv.plan(folder)      # P36 (D441): the folder's environment (its requirements.txt), when it has one
+    if env_missing(env):      # never with another python
+        return {"pass": None, "exit": None, "sha256": sha, "evidence": "the test was not rerun: " + env_missing(env)}
+    as_run = run_command(argv, env)
     parent = os.path.dirname(os.path.realpath(folder))
     copy = tempfile.mkdtemp(prefix=".rerun-", dir=parent)
     fd, conf = tempfile.mkstemp(prefix=".rerun-", suffix=".json", dir=parent)
@@ -901,8 +926,8 @@ def sandbox_rerun(folder, runner, target, timeout):
     try:
         shutil.copytree(folder, copy, dirs_exist_ok=True, symlinks=True)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(sandbox_settings(copy), f)
-        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(argv)] if cmd else argv
+            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
+        run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
         p = subprocess.run(run_argv, cwd=copy, capture_output=True, text=True, timeout=timeout)
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
@@ -3711,6 +3736,7 @@ class J2Run:
         self.milestone_log = []      # milestone emails (J2_MILESTONE_EMAILS=1, or the brief asks for updates by email): one per goal reached
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
+        self.env_why = {}            # P36 (D441): requirements.txt hash -> why its environment was not made (declined, the install failed)
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
@@ -5288,7 +5314,8 @@ class J2Run:
                 "audit": self._identity_audit, "requester_answered": self._identity_hears_requester,
                 "ruling_budget": self._identity_ruling_budget, "limit": self._identity_limit,
                 "send_confirm": self._identity_send_confirm,
-                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
+                "real_run": self._identity_real_run,
+                "env_install": self._identity_env_install}.get(h.get("kind"), self._identity_question)(h)      # P36 (D441)
 
     CHARTER_FMT = ('{"statement": str, "site_name": str, "audience": str, "standards": [str], "rules": [str], '
                    '"done_when": [str] (one outcome per item: one thing the site shows or lets a visitor do, that '
@@ -5791,6 +5818,112 @@ class J2Run:
         return [f"done-when item {self._no(t)}: {t} (its real run has not run)"
                 for t in dict.fromkeys(self._real_run_items(pending=True))]
 
+    def _run_env(self):
+        """P36 (D441): the environment the built folder's commands run in. (None, "") without a requirements.txt: the
+        form's own python runs them. (the environment, "") once it is installed. (None, why) while it is not: nothing of
+        the build is run."""
+        p = j2_runenv.plan(self._out_dir())
+        if not p or p["ready"]:
+            return p, ""
+        return None, "its packages are not installed: " + (self.env_why.get(p["hash"]) or p["problem"]
+                                                            or "the Requester has not approved them")
+
+    def _env_stops_real_run(self, w, rr):
+        """P36 (D441): before the dry run. A real run whose packages are not installed, or whose script imports a module
+        that does not resolve in the python that runs it (only looked up, nothing is run), is a build failure like a
+        failed dry run (D434's _dry_run_failed: never a question): True. Else False; with an environment, one info line
+        names its packages."""
+        env, why = self._run_env()
+        if why:
+            return self._dry_run_failed(w, {}, why)
+        script = j2_runenv.script_of(rr["command"], self._out_dir()) if j2_runenv.is_python(rr["command"][0]) else None
+        missing = (j2_runenv.missing_imports(run_command(rr["command"], env)[0], script) if script else None) or []
+        if missing:
+            return self._dry_run_failed(
+                w, {}, f"{os.path.basename(script)} imports {and_list(missing)}, not installed in the Python that runs it: "
+                       "name each one's PyPI package in requirements.txt with its exact version (name==1.2.3, one per "
+                       "line), or take the import out")
+        if env:
+            self.post("system", f"{w['id']}'s real run uses packages installed in an environment of its own (Python "
+                                f"{env.get('python_version')}): {', '.join(env['packages']) or 'none'}.", real_run=w["id"])
+        return False
+
+    def _env_ask(self, w, attempt, cwd, reply=None):
+        """P36 (D441): a build whose requirements.txt has no installed environment yet: code posts the packages and
+        versions, where they go and a one-time code, and the run pauses before the build's checks (pause kind real_run:
+        Decide for me never answers, and the card has D434's Run and Don't run buttons; the code is kept in
+        real_runs_asked under "env:<hash>", where the snapshot reads it). Nothing is installed without RUN <code>.
+        attempt: the builder attempt whose files wait (with its reply, so its checks go on afterwards with no new
+        builder call); None for reused files, which are simply reused again. True when it paused; False when there is
+        nothing to ask (no requirements.txt, installed, declined or failed before, or it can't be made)."""
+        p = j2_runenv.plan(cwd)
+        if not p or p["ready"] or p["problem"] or p["hash"] in self.env_why:
+            return False
+        key = "env:" + p["hash"]
+        code = self.real_runs_asked[key] = secrets.token_hex(3)
+        if attempt:
+            w["resume"] = {"attempt": attempt, "built": True, "reply": reply if isinstance(reply, dict) else {}}
+        self.write_lock = self.atom = None
+        self.save("workflows.json", self.workflows)
+        self.post("system", f"{w['id']} built a script that needs packages. Nothing is installed until you approve.\n"
+                            f"Packages to install, from PyPI only: {', '.join(p['packages'])}\n"
+                            f"Where: an environment of its own at {p['dir']}, made with Python "
+                            f"{p['base']['python_version']} ({p['base']['python']}). Your files and your own Python are "
+                            "not touched.\nIts test, the dry run on copies and any real run then use that environment.\n"
+                            f"To install them, reply exactly: RUN {code}\n"
+                            "Or press Run. To decline, press Don't run.", real_run=w["id"])
+        self._ask_user("One of the workflows built a script that needs packages installed before code can test it. "
+                       "The list is above.", [{"question": "Install them?"}], "real_run",
+                       handoff={"kind": "env_install", "wid": key, "build": w["id"], "hash": p["hash"]})
+        return True
+
+    def _identity_env_install(self, h):
+        """P36 (D441): code, not an agent, reads the reply to _env_ask, as D434 reads a real run's: exactly RUN <code>
+        installs (j2_runenv.install: PyPI only; with J2_SANDBOX=1 the network is open to PyPI for this step alone); the
+        whole reply "Don't run" declines; any other reply asks again and the run stays paused. An env_install receipt
+        (the interpreter, the requirements hash, the installed versions, the exit code and the end of the output) goes
+        to receipts.jsonl, and the workflow's build goes on from its checks; a failed install goes back to its builder
+        with pip's error."""
+        key, w = h.get("wid"), self._wf(h.get("build"))
+        p, code = j2_runenv.plan(self._out_dir()), self.real_runs_asked.get(key)
+        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
+        ans = str(h.get("answer") or "").strip()
+        asked = bool(w and code and p and p["hash"] == h.get("hash"))
+        ok = asked and not last.get("auto") and ans == f"RUN {code}"
+        declined = asked and not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()
+        if asked and not ok and not declined:
+            self._event("identity", "env_install_unclear", f"{w['id']}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
+            return self._ask_user(f"Not installed. Press Run or type RUN {code}.", [{"question": "Install them?"}], "real_run",
+                                  handoff={k: h.get(k) for k in ("kind", "wid", "build", "hash")})
+        self.real_runs_asked.pop(key, None)
+        if ok and not p["ready"]:
+            res = j2_runenv.install(p, max(builder_timeout(), 600), agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None)
+        elif ok:      # installed since the question was asked (another run with the same requirements.txt)
+            res = {"ok": True, "exit": 0, **j2_runenv.facts(p), "evidence": f"already installed in {p['dir']}"}
+        else:
+            res = {"ok": False, "exit": None, "evidence": "not installed: the Requester chose Don't run" if declined
+                   else "not installed: the question no longer matches the build's requirements.txt"}
+        if p and not res["ok"]:
+            self.env_why[p["hash"]] = "the Requester chose not to install them" if declined else res["evidence"]
+        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"type": "env_install", "workflow": h.get("build"), "requirements_sha256": h.get("hash"),
+                                "packages": (p or {}).get("packages"), "code": code, "approved": ok, "declined": declined,
+                                "answer_msg": last.get("id"), **res,
+                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        self._event("code", "env_install", f"{h.get('build')}: {res['evidence']}")
+        self.post("system", ("Installed: " if res["ok"] else "") + res["evidence"] + ".",
+                  warning=ok and not res["ok"], real_run=h.get("build"))
+        if not w:
+            return self._handoff("coordination", kind="schedule")
+        n = as_int((w.get("resume") or {}).get("attempt"), 1)
+        if ok and not res["ok"] and w.get("resume") and n < MAX_CHECK_ATTEMPTS:      # the builder fixes its requirements.txt
+            w["resume"] = {"attempt": n, "evidence": "- installing the packages in requirements.txt failed: "
+                           f"{res['evidence']}. The end of pip's error output:\n"
+                           f"{(res.get('stderr') or res.get('stdout') or '').strip() or 'nothing'}\n"
+                           "Fix requirements.txt (every package on PyPI, with an exact version that exists)."}
+        self.save("workflows.json", self.workflows)
+        self._handoff(w["id"], kind="build", wid=w["id"])
+
     def _real_run_note(self):
         """Step 7, shown to Audit and Identity: who runs a planned real run and when, and what its receipts say."""
         nums = sorted(self._real_run_nums())
@@ -5811,6 +5944,8 @@ class J2Run:
         if w is None:
             return False
         rr, code = w["real_run"], secrets.token_hex(3)
+        if self._env_stops_real_run(w, rr):      # P36 (D441): its packages or an import are missing: back to the build
+            return True
         self.real_runs_asked[w["id"]] = code
         dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
@@ -10595,9 +10730,13 @@ class J2Run:
                  + self._artifact_context(w))
         attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
         fault = None      # P28 (D431): the outside-write fault, for the failure's signature
-        reused = self._reuse_folder(w, cwd)
+        unmet = ""      # P36 (D441): a requirements.txt code will not install as written (j2_runenv.bad_lines)
+        resume = w.pop("resume", None) or {}      # P36: its files waited for their packages, or a failed install sent it back
+        reused = None if resume else self._reuse_folder(w, cwd)
         if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
             reused, evidence = None, leak
+        if reused and self._env_ask(w, None, cwd):      # P36 (D441): the reused files need packages: asked before their checks
+            return
         if reused:      # step 6: the run template's files are already here: code checks them before any builder call
             attempt = 1
             text = self._out_text()
@@ -10607,6 +10746,15 @@ class J2Run:
                  "human_output": f"I reused the files of {reused} instead of building them again.",
                  "atom_human_output": "This part comes from an earlier run that made the same thing."}
             evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
+        if resume:      # P36 (D441): the attempt count goes on, with the builder's reply from before the question
+            attempt, evidence, r = as_int(resume.get("attempt")), str(resume.get("evidence") or ""), resume.get("reply") or {}
+        if resume.get("built"):      # its files waited for their packages: checked now, with no builder call first
+            text = self._out_text()
+            self._publish_out(text)
+            failed = self._run_checks(w, attempt, text, folder=cwd)
+            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): "
+                                 f"{x['evidence']}" for x in failed)      # P36
+            reused = "its own files"
         self.tools_builder = j2_types.builder_tools().get("builder")
         try:
             while (not reused or failed) and attempt < MAX_CHECK_ATTEMPTS and w["calls_used"] < max_calls + attempt:
@@ -10630,6 +10778,12 @@ class J2Run:
                 if leak:      # refused before its checks: the reason goes back to the builder
                     evidence = leak
                     continue
+                unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))      # P36 (D441)
+                if unmet:      # refused before its checks, like a leak
+                    evidence = unmet
+                    continue
+                if self._env_ask(w, attempt, cwd, r):      # its packages wait for the Requester: the run pauses here
+                    return
                 text = self._out_text()
                 self._publish_out(text)
                 failed = self._run_checks(w, attempt, text, folder=cwd)
@@ -10641,6 +10795,8 @@ class J2Run:
             self.tools_builder = None
         if leak and not stop:
             stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
+        if unmet and not stop:      # P36 (D441)
+            stop = "its requirements.txt still can't be installed as written: " + unmet.removeprefix("- ")
         self.write_lock = self.atom = None
         meta = r if isinstance(r, dict) else {}
         if stop or not self.sites:
