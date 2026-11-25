@@ -12,6 +12,8 @@ import math
 import json
 import os
 import re
+import shlex
+import shutil
 import sys
 import threading
 import time
@@ -3606,8 +3608,394 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    # P41 (D446) appends its environment rule right after this one, so the expect rule now sits just before it
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_EXPECT_RULE not in run.ATOM_RULES
+
+
+# ---- P41 (D446): a script gets only PATH, HOME, locale and temp folder, plus what its plan states; secrets go by file path ---
+# Made-up script: it reports its environment's names, a few values and the secret file's size, never the file's content;
+# printed, and written to argv[2] when given (the dry run's copies are gone once it returns).
+P41_DUMP = ("import json, os, sys\nf = os.environ.get('API_CRED_FILE')\nok = bool(f) and os.path.isfile(f)\n"
+            "r = json.dumps({'names': sorted(os.environ), 'vals': {k: os.environ.get(k) for k in ('SUT22_LEAK', "
+            "'FAKE_SERVICE_TOKEN', 'PLAN_LEVEL', 'API_CRED_FILE', 'J2_SMTP_PASSWORD', 'PYTHONPATH')}, "
+            "'cred': {'exists': ok, 'size': os.path.getsize(f) if ok else None}}, separators=(',', ':'))\n"
+            "print(r)\nif len(sys.argv) > 2:\n    open(sys.argv[2], 'w').write(r)\n")
+# Made-up stand-in for srt: it records its own environment and the allowRead it was given, then runs the -c command as a
+# list (never a shell; no sandbox: test only).
+P41_SRT = ("import json, os, shlex, subprocess, sys\na = sys.argv[1:]\nconf = json.load(open(a[a.index('-s') + 1]))\n"
+           "json.dump({'env': sorted(os.environ), 'allowRead': conf['filesystem']['allowRead']}, open(sys.argv[0] + '.seen', 'w'))\n"
+           "sys.exit(subprocess.run(shlex.split(a[a.index('-c') + 1])).returncode)\n")
+P41_CRED = "made-up-cred"
+
+
+@pytest.fixture
+def p41(tmp_path, monkeypatch):
+    """(out, folder, cred, fake srt, report): a built folder holding the dump, the stated folder, a made-up secret file, the
+    fake srt and where the dump writes its report; the app's environment holds made-up leaks."""
+    out, folder = tmp_path / "out", tmp_path / "folder"
+    out.mkdir()
+    folder.mkdir()
+    (out / "dump.py").write_text(P41_DUMP)
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P41_SRT)
+    monkeypatch.setenv("SUT22_LEAK", "x")
+    monkeypatch.setenv("FAKE_SERVICE_TOKEN", "x")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "made-up-path"))
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    return out, folder, cred, fake, tmp_path / "report.json"
+
+
+def p41_rr(folder, report=None, **extra):
+    return {"command": [sys.executable, "dump.py", str(folder)] + ([str(report)] if report else []), "folder": str(folder), **extra}
+
+
+def p41_dump(res):
+    assert res["ran"] and res["exit"] == 0, res
+    return json.loads(res["output"].strip().splitlines()[-1])
+
+
+def p41_fake_srt(monkeypatch, fake):
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))      # shlex.join: split back exactly, on any OS
+    return Path(str(fake) + ".seen")
+
+
+P41_ENV = {"settings": {"PLAN_LEVEL": "basic"}}
+
+
+def test_p41_real_run_env_is_clean_without_a_sandbox(j2ft, p41):
+    out, folder, *_ = p41
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder), 30))
+    assert d["vals"] == dict.fromkeys(d["vals"]), d["vals"]      # no leak, no PYTHONPATH, no SMTP password
+    # __CF*: macOS adds __CF_USER_TEXT_ENCODING to every process it starts
+    assert {n for n in d["names"] if not n.startswith("__CF")} - set(j2ft.llm.RUN_PASS_NAMES) == set(), d["names"]
+
+
+def test_p41_real_run_gets_settings_and_secret_paths(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, _ = p41
+    rr = p41_rr(folder, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)})
+    res = j2ft.real_run(str(out), rr, 30)
+    d = p41_dump(res)
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred) and d["vals"]["SUT22_LEAK"] is None
+    assert d["cred"] == {"exists": True, "size": len(P41_CRED)} and P41_CRED not in json.dumps(res)
+    seen = p41_fake_srt(monkeypatch, fake)
+    res = j2ft.real_run(str(out), rr, 30)
+    d = p41_dump(res)
+    assert "in the sandbox" in res["evidence"], res["evidence"]
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred) and d["vals"]["SUT22_LEAK"] is None
+    assert str(cred) in json.loads(seen.read_text())["allowRead"] and P41_CRED not in json.dumps(res)
+
+
+def test_p41_dry_run_gets_placeholders_never_real_paths(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, report = p41
+    seen = p41_fake_srt(monkeypatch, fake)
+    monkeypatch.setenv("J2_SANDBOX", "0")      # the dry run is fenced whatever the switch says (P32)
+    dry = j2ft.real_run_dry(str(out), p41_rr(folder, report, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)}), 30)
+    assert dry["ran"] is True and dry["exit"] == 0, dry
+    d = json.loads(report.read_text())
+    ph = d["vals"]["API_CRED_FILE"]
+    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["PLAN_LEVEL"] == "basic" and ph != str(cred)
+    area = os.path.dirname(ph)
+    assert os.path.basename(area) == "secrets" and os.path.basename(os.path.dirname(area)).startswith(".dryrun-")
+    assert os.path.dirname(os.path.dirname(area)) == os.path.dirname(os.path.realpath(out)), ph      # outside every copy (f<n>)
+    assert d["cred"] == {"exists": True, "size": 0}, "a real, empty placeholder file"
+    allow = json.loads(seen.read_text())["allowRead"]
+    assert ph in allow and str(cred) not in allow
+    assert not os.path.exists(ph), "removed with the dry run's temp folder"
+    assert not any("secrets" in p for k in ("created", "changed", "deleted") for p in dry[k]), dry
+    assert P41_CRED not in json.dumps(dry)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="on Windows the names are passed to srt with env=; there is no env program to wrap with")
+def test_p41_srt_itself_gets_the_base_only(j2ft, p41, monkeypatch):
+    out, folder, cred, fake, _ = p41
+    seen = p41_fake_srt(monkeypatch, fake)
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)}), 30))
+    srt_env = json.loads(seen.read_text())["env"]
+    assert not {"PLAN_LEVEL", "API_CRED_FILE", "SUT22_LEAK"} & set(srt_env), srt_env
+    assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred)
+
+
+def test_p41_smtp_password_from_env_file_never_reaches_a_script(j2ft, p41, monkeypatch, tmp_path):
+    from sutra_app.engine import paths
+    out, folder, *_ = p41
+    monkeypatch.setenv("J2_SMTP_PASSWORD", "")
+    (tmp_path / ".env").write_text("J2_SMTP_PASSWORD=made-up-pass\n")
+    assert paths.load_env_file(tmp_path / ".env") == ("J2_SMTP_PASSWORD",)
+    assert os.environ["J2_SMTP_PASSWORD"] == "made-up-pass"
+    d = p41_dump(j2ft.real_run(str(out), p41_rr(folder), 30))
+    assert "J2_SMTP_PASSWORD" not in d["names"] and d["vals"]["J2_SMTP_PASSWORD"] is None
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp_path):
+    out, folder, *_ = p41
+    home = tmp_path / "home"
+    home.mkdir()
+    cred = home / "cred.txt"
+    cred.write_text(P41_CRED)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    res = j2ft.real_run(str(out), p41_rr(folder, secret_files={"API_CRED_FILE": str(cred)}), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+# What srt 0.0.81 adds itself for the script it starts (generateProxyEnvVars, sandbox-utils.js): its own localhost proxy, with a
+# per-process random token (sandbox-manager.js, randomBytes(16)), and the per-tool proxy and trust settings that point at it.
+# None of these comes from the app: srt is started with the base environment only (test_p41_srt_itself_gets_the_base_only).
+SRT_OWN_NAMES = {
+    "SANDBOX_RUNTIME", "TMPDIR", "PWD", "SHLVL", "_",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "GRPC_PROXY", "RSYNC_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "grpc_proxy", "no_proxy",
+    "DOCKER_HTTP_PROXY", "DOCKER_HTTPS_PROXY", "GIT_CONFIG_PARAMETERS", "GIT_SSH_COMMAND", "SRT_SSH_PROXY_COMMAND",
+    "JAVA_TOOL_OPTIONS", "CLOUDSDK_PROXY_TYPE", "CLOUDSDK_PROXY_ADDRESS", "CLOUDSDK_PROXY_PORT",
+    "CLOUDSDK_PROXY_USERNAME", "CLOUDSDK_PROXY_PASSWORD",
+}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_path):
+    """Under the real srt the script sees the base, the plan's settings and srt's own local-proxy names: nothing else."""
+    out, folder, *_ = p41
+    home = tmp_path / "home"      # srt denies reads under ~; a temp HOME keeps this interpreter readable, as the tests below do
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    res = j2ft.real_run(str(out), p41_rr(folder, **P41_ENV), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    d = p41_dump(res)
+    extra = {n for n in d["names"] if not n.startswith("__CF")} - set(j2ft.llm.RUN_PASS_NAMES) - set(P41_ENV["settings"])
+    assert extra <= SRT_OWN_NAMES, sorted(extra - SRT_OWN_NAMES)
+    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["J2_SMTP_PASSWORD"] is None
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, monkeypatch, tmp_path):
+    """R1-2: the stored path is the real file, so srt's allowRead (and the env and the card) name what the script opens."""
+    out, folder, *_ = p41
+    keys = tmp_path / "home" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "real.txt").write_text(P41_CRED)
+    link = tmp_path / "home" / "link.txt"
+    link.symlink_to(keys / "real.txt")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})      # as _register stores it
+    assert stored == {"secret_files": {"API_CRED_FILE": os.path.realpath(keys / "real.txt")}}
+    res = j2ft.real_run(str(out), p41_rr(folder, **stored), 60)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p41_real_srt_dry_run_cannot_read_a_secret_file_outside_home(j2ft, p41, monkeypatch, tmp_path):
+    """R1-3: model code that hard-codes a secret file's path outside HOME reads nothing in the dry run; the real run reads it."""
+    out, folder, *_ = p41
+    (tmp_path / "home").mkdir()
+    secret = tmp_path / "elsewhere" / "cred.txt"      # outside HOME, so denyRead ["~"] alone would not cover it
+    secret.parent.mkdir()
+    secret.write_text(P41_CRED)
+    (out / "peek.py").write_text("import sys\ntry:\n    print('READ', open(sys.argv[1]).read())\n"
+                                 "except OSError as e:\n    print('DENIED', type(e).__name__)\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    rr = {"command": [sys.executable, "peek.py", str(secret)], "folder": str(folder),
+          "secret_files": {"API_CRED_FILE": str(secret)}}
+    dry = j2ft.real_run_dry(str(out), rr, 60)
+    assert dry["ran"] is True and "DENIED" in dry["output"] and P41_CRED not in json.dumps(dry), dry
+    res = j2ft.real_run(str(out), rr, 60)
+    assert res["exit"] == 0 and "READ " + P41_CRED in res["output"], res
+
+
+def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
+    """T3 (owner Q4): the builder's test rerun gets the clean base only; a made-up app variable never reaches it."""
+    _, folder, *_ = p41
+    (folder / "t.py").write_text("import os, sys\nsys.exit(1 if {'SUT22_LEAK', 'PYTHONPATH'} & set(os.environ) else 0)\n")
+    res = j2ft.sandbox_rerun(str(folder), [sys.executable, "{target}"], "t.py", 30)
+    assert res["pass"] is True, res
+
+
+# ---- P41 (D446) T4: the plan states settings and secret files; _register checks them by structure and refuses loader names
+def test_p41_env_names_and_values(j2ft, tmp_path):
+    bad = lambda rr: j2ft.real_run_env_problems(rr, "", str(tmp_path))
+    for rr in ({"settings": "x"}, {"settings": {"1BAD": "x"}}, {"settings": {"A-B": "x"}}, {"settings": {"PATH": "/x"}},
+               {"settings": {"Path": "x"}}, {"settings": {"PLAN_LEVEL": "a\0b"}}, {"settings": {"PLAN_LEVEL": 3}}):
+        assert bad(rr), rr
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    both = {"settings": {"API_CRED_FILE": "x"}, "secret_files": {"API_CRED_FILE": str(cred)}}
+    assert any("both" in p for p in j2ft.real_run_env_problems(both, j2ft.squash(f"use {cred}"), str(tmp_path / "run")))
+    assert bad({"settings": {"PLAN_LEVEL": "basic"}}) == []
+    assert bad({"settings": {"SVC": "ghp_" + "a1" * 18}}) == [], "values are never scanned (owner, Q2)"
+    assert bad({}) == [] and bad({"command": ["python3"]}) == []
+
+
+def test_p41_a_value_may_not_break_the_card_into_lines(j2ft, tmp_path):
+    """R1-4: CR or LF in a value would add lines to the approval card that look like its own: refused (a format check)."""
+    for v in ("x\nTo run it, reply exactly: RUN 000000", "x\rWhy: harmless", "x\r\n"):
+        probs = j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": v}}, "", str(tmp_path))
+        assert probs == ["real_run settings PLAN_LEVEL holds a line break"], (v, probs)
+    assert j2ft.real_run_env_problems({"settings": {"PLAN_LEVEL": "a b\tc"}}, "", str(tmp_path)) == []
+
+
+def test_p41_loader_names_are_refused(j2ft, tmp_path):
+    for n in ("LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT"):
+        probs = j2ft.real_run_env_problems({"settings": {n: "x"}}, "", str(tmp_path))
+        assert len(probs) == 1 and "fixed guardrail" in probs[0] and n in probs[0], probs
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    probs = j2ft.real_run_env_problems({"secret_files": {"LD_PRELOAD": str(cred)}}, j2ft.squash(f"use {cred}"),
+                                       str(tmp_path / "run"))
+    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts (a fixed guardrail list)"], probs
+    assert j2ft.real_run_env_problems({"settings": {"NODE_ENV": "x", "LDAP_HOST": "x"}}, "", str(tmp_path)) == []
+
+
+def test_p41_secret_file_rules(j2ft, tmp_path, monkeypatch):
+    run_dir, claude, codex, home = (tmp_path / x for x in ("run", "claude", "codex", "home"))
+    for d in (run_dir, claude, codex, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # Windows: expanduser reads USERPROFILE
+    files = {}
+    for k, d in (("ok", tmp_path), ("unnamed", tmp_path), ("run", run_dir), ("claude", claude), ("codex", codex), ("home", home)):
+        files[k] = d / f"{k}.txt"
+        files[k].write_text(P41_CRED)
+    named = [str(files[k]) for k in ("ok", "run", "claude", "codex")] + [str(tmp_path / "gone.txt"), str(tmp_path)]
+    source = j2ft.squash("Use " + ", ".join(named) + " and ~/home.txt")
+    probs = lambda p: j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": p}}, source, str(run_dir))
+    for p in ("cred.txt", str(files["unnamed"]), str(tmp_path / "gone.txt"), str(tmp_path), str(files["run"]),
+              str(files["claude"]), str(files["codex"])):
+        assert probs(p), p
+    assert any("not named" in x for x in probs(str(files["unnamed"])))
+    assert any("sign-in" in x for x in probs(str(files["claude"])))
+    assert probs(str(files["ok"])) == [] and probs("~/home.txt") == []
+    assert j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/home.txt"}, "command": ["x"]}) == {
+        "secret_files": {"API_CRED_FILE": os.path.expanduser("~/home.txt")}}
+
+
+def test_p41_case_variant_of_a_sign_in_file_is_refused(j2ft, tmp_path, monkeypatch):
+    """R1-1: on a case-insensitive disk (macOS, Windows default) an upper-cased path names the same sign-in file: refused."""
+    claude = tmp_path / "claudecfg"
+    claude.mkdir()
+    (claude / "creds.json").write_text(P41_CRED)
+    if not (tmp_path / "CLAUDECFG").exists():
+        pytest.skip("the temp folder's file system is case-sensitive: a case variant is another file there")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    variant = str(tmp_path / "CLAUDECFG" / "creds.json")
+    probs = j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": variant}}, j2ft.squash(f"use {variant}"),
+                                       str(tmp_path / "run"))
+    assert any("sign-in" in x for x in probs), probs
+
+
+@pytest.fixture
+def p41_reg(j2ft, tmp_path, monkeypatch):
+    """register(**fields): a fresh p35-style run (copy.py reading in/, writing out/) whose request names the made-up secret
+    file and a fake Claude sign-in folder's file; it registers W-1 with fields on its real run: (run, registered, refused)."""
+    src, dst, claude, home = (tmp_path / x for x in ("in", "out", "claude", "home"))
+    for d in (src, dst, claude, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "cred.txt").write_text(P41_CRED)
+    (claude / "cred.txt").write_text(P41_CRED)
+    counter = itertools.count(1)
+
+    def register(**fields):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0900{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        run.request = (f"Build copy.py, then run it on my notes in {src} and write the results to {dst}; "
+                       f"the key is in ~/cred.txt (or {claude / 'cred.txt'})")
+        run.goal, run.budget = {"statement": "x", "done_when": list(P35_DONE_WHEN)}, 100
+        rr = {"command": ["python3", "copy.py", str(src), str(dst)], "folder": str(dst), "reads": [str(src)],
+              "why": "The brief asks to run it on the Requester's notes.", "checks": [3], "expect": P35_ALL, **fields}
+        reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr}])
+        return run, reg, refused
+    return register, home, claude
+
+
+def test_p41_register_stores_and_refuses_with_its_key(p41_reg):
+    register, home, claude = p41_reg
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["settings"] == {"PLAN_LEVEL": "basic"}
+    assert reg[0]["real_run"]["secret_files"] == {"API_CRED_FILE": os.path.expanduser("~/cred.txt")}      # written out
+    run, reg, refused = register(secret_files={"API_CRED_FILE": str(claude / "cred.txt")})
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register(settings={"NODE_OPTIONS": "--x"})
+    assert not reg and "fixed guardrail" in refused[0] and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register()
+    assert len(reg) == 1 and not {"settings", "secret_files"} & set(reg[0]["real_run"]), reg[0]["real_run"]
+
+
+def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE)
+    rule = j2ft.REAL_RUN_ENV_RULE
+    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES
+
+
+P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, language, temp folder)"
+P41_PLACEHOLDERS = "\nThe dry run got the settings and an empty placeholder file for each secret file."
+
+
+def test_p41_card_lines(j2ft, tmp_path):
+    lines = j2ft.real_run_env_lines
+    assert lines({"command": ["x"]}) == P41_NONE
+    assert lines({"settings": {}, "secret_files": {}}) == P41_NONE
+    assert lines({"settings": {"PLAN_LEVEL": "basic", "REGION": "eu"}}) == "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu"
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    card = lines({"settings": {"PLAN_LEVEL": "basic"}, "secret_files": {"API_CRED_FILE": str(cred)}})
+    assert card == ("\nSettings it gets: PLAN_LEVEL=basic"
+                    f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}" + P41_PLACEHOLDERS)
+    assert P41_CRED not in card
+    card = lines({"secret_files": {"API_CRED_FILE": str(cred)}})      # a secret file alone: no setting, still every line
+    assert card.startswith(P41_NONE + "\nSecret files it may read") and card.endswith(P41_PLACEHOLDERS)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the FT form's runner is python3, which a Windows runner may not have")
+def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch, tmp_path):
+    register, home, _ = p41_reg
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P41_SRT)
+    p41_fake_srt(monkeypatch, fake)
+    cred = os.path.expanduser("~/cred.txt")
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic", "REGION": "eu"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    run.workflows[0]["status"] = "done"
+    os.makedirs(run._out_dir(), exist_ok=True)
+    (Path(run._out_dir()) / "copy.py").write_text(P35_COPY)
+    (tmp_path / "in" / "a.txt").write_text("alpha\n")
+    (tmp_path / "in" / "b.txt").write_text("beta\n")
+    run.post("user", "Build it and run it on my notes")
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
+    assert "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu\n" in card, card
+    assert f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}\n" in card, card
+    assert P41_PLACEHOLDERS in card and card.index("Settings it gets") < card.index("To run it, reply exactly")
+    assert P41_CRED not in card
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0, r
+    assert r["settings"] == {"PLAN_LEVEL": "basic", "REGION": "eu"} and r["secret_files"] == {"API_CRED_FILE": cred}
+    assert P41_CRED not in json.dumps(r) and P41_CRED not in json.dumps(run.chat)
