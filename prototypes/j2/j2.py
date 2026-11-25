@@ -743,14 +743,18 @@ def output_tail(text, lines, max_bytes):
     return {"tail": cut, "lines_total": len(rows), "truncated": len(rows) > lines or cut != tail}
 
 
-def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at):
+def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at, entry_file=None):
     """What an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
     folder and the limits are data, OWN_RUNS.run_output): its receipt, workflow, command and folder, when it started and
-    ended, its exit code, its main result (the plan's "result" path in the folder it writes: path, exists, size, sha256,
-    and its text when it is text no larger than text_cap_bytes; None when the plan names none), the files it created,
-    changed and deleted in that folder (relative paths, sizes, sha256; a changed file before and after), and the last
-    lines of its stdout and stderr. Only the main result's contents are copied. `before`: folder_files() of that folder
-    taken just before the run. (the record's path relative to the run folder, its counts for the receipt)"""
+    ended, its exit code, its main result, the files it created, changed and deleted in the folder it writes (relative
+    paths, sizes, sha256; a changed file before and after; files_truncated when the lists stop at max_files), and the
+    last lines of its stdout and stderr. The main result (path, exists, size, sha256, and its text when it is text no
+    larger than text_cap_bytes) is the plan's "result", a path in the folder the run writes; a plan that names none:
+    the type's entry_file (a path in the run folder), when it names one file that is there; else None. Only the main
+    result's contents are copied. `before`: folder_files() of the real folder taken just before the run.
+    What the real-run receipt row gains: {"id", "run_output" (the record's path, relative to the run folder),
+    "run_output_counts", "created", "changed", "deleted" (relative paths, sorted: the dry run's own format, _tree_diff),
+    "files_truncated", "result"}."""
     cfg = OWN_RUNS["run_output"]
     lim, folder = cfg["limits"], os.path.realpath(rr["folder"])
     after, left = folder_files(folder), cfg["limits"]["max_files"]
@@ -760,11 +764,14 @@ def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_a
     counts = {k: len(v) for k, v in files.items()}
     for k in files:      # max_files over the three lists, in this order
         files[k], left = files[k][:left], max(0, left - len(files[k]))
+    truncated = sum(counts.values()) > lim["max_files"]
+    declared = str(rr["result"]).strip() if rr.get("result") and not real_run_result_problems(rr) else None
+    entry = str(entry_file) if entry_file and not any(c in str(entry_file) for c in "*?[") else None      # one file, not a pattern
+    rel, base = (os.path.normpath(declared).replace(os.sep, "/"), folder) if declared else (entry, os.path.realpath(run_dir))
     main = None
-    if rr.get("result") and not real_run_result_problems(rr):
-        rel = os.path.normpath(str(rr["result"]).strip()).replace(os.sep, "/")
-        path = os.path.join(folder, rel)
-        main = {"path": rel, "exists": llm.inside(os.path.realpath(path), folder) and os.path.isfile(path)}
+    if rel and (declared or os.path.isfile(os.path.join(base, rel))):      # a declared result that is not there: exists false
+        path = os.path.join(base, rel)
+        main = {"path": rel, "exists": llm.inside(os.path.realpath(path), base) and os.path.isfile(path)}
         if main["exists"]:
             with open(path, "rb") as f:
                 data = f.read()
@@ -778,12 +785,15 @@ def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_a
     err = output_tail(capture.get("stderr", res.get("stderr")), lim["stderr_lines"], lim["tail_bytes"])
     rec = {"schema": "run-output/1", "receipt": receipt, "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
            "approved": True, "started_at": started_at, "ended_at": ended_at, "exit": res.get("exit"), "main_result": main,
-           "files": files, "stdout": out, "stderr": err, "limits": dict(lim)}
-    rel = f"{cfg['folder']}/{receipt}.json"
+           "files": files, "files_truncated": truncated, "stdout": out, "stderr": err, "limits": dict(lim)}
+    path = f"{cfg['folder']}/{receipt}.json"
     os.makedirs(os.path.join(run_dir, cfg["folder"]), exist_ok=True)
-    with open(os.path.join(run_dir, rel), "w", encoding="utf-8") as f:
+    with open(os.path.join(run_dir, path), "w", encoding="utf-8") as f:
         json.dump(rec, f, ensure_ascii=False, indent=1)
-    return rel, {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]}
+    return {"id": receipt, "run_output": path,
+            "run_output_counts": {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]},
+            **{k: [x["path"] for x in v] for k, v in files.items()}, "files_truncated": truncated,
+            "result": declared or (str(entry_file) if entry_file else None)}
 
 
 def run_output_receipt(run_dir, wid):
@@ -5774,11 +5784,11 @@ class J2Run:
                        real_hosts(w["real_run"])) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
              f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
-        if res.get("ran"):      # what it printed and the files it made, changed or deleted: a record of its own, named in the
-            rid = run_output_receipt(self.dir, w["id"])      # receipt ("output": its path, with the receipt's id and the counts)
-            path, counts = run_output_record(self.dir, rid, w["id"], w["real_run"], res, capture, before, started,
-                                             time.strftime("%Y-%m-%dT%H:%M:%S"))
-            res = {**res, "id": rid, "output": path, "output_counts": counts}
+        if res.get("ran"):      # what it printed and the files it made, changed or deleted: a record of its own, and on the
+            # receipt row its id, the record's path, the counts, the real run's own created/changed/deleted and its result
+            res = {**res, **run_output_record(self.dir, run_output_receipt(self.dir, w["id"]), w["id"], w["real_run"], res,
+                                              capture, before, started, time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                              (self.out or {}).get("entry_file"))}
         self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
                                answer_msg=last.get("id"), **res)
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")

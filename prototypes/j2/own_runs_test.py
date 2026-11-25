@@ -14,8 +14,11 @@ Each is modelled on a run of the Pulse agent that went wrong (the engineering ru
 (C) an approved real run that prints and writes out.json leaves a run-output record, run_output/<receipt id>.json
     (run-output/1): its receipt, workflow, command, folder, times and exit code; the main result the plan declared
     ("result"), with its text when small; the files created, changed (before and after) and deleted, without their
-    contents; the last 200 lines of stdout and 50 of stderr; the limits. The receipt has its id, "output" (the path)
-    and the counts, and artifacts.json has one row of kind run_output. A declined run leaves none;
+    contents, with files_truncated when the lists stop at max_files; the last 200 lines of stdout and 50 of stderr; the
+    limits. The receipt row keeps "output" (the end of the output, as before) and gains id, run_output (the path),
+    run_output_counts, created/changed/deleted (the real run's own, in the dry run's format), files_truncated and
+    result (the plan's, else the type's entry_file); artifacts.json has one row of kind run_output. A declined run
+    leaves none;
 (D) C2 finds the test the builder wrote: a charter that names no test falls back to the workflow's test check
     (87be: "the test '' is not a file in the folder"), for a builder writing tests/test_x.py with checks naming
     tests/test_x.py, and for the run-relative form (3429: copy_script/tests/test_x.py); a list target is checked
@@ -197,12 +200,19 @@ def run_output_is_recorded():
         ok(run._ask_real_run({}) and run.paused["kind"] == "real_run", "(C) asked")
         reply(run, "RUN a578a3")
         r = receipts(run)[-1]
-        ok(r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["output"] == "run_output/rr-W-1-1.json",
-           f"(C) the receipt has its id and names the record: {r}")
-        ok(r["output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}, f"(C) and the counts: {r['output_counts']}")
-        rec = json.load(open(os.path.join(run.dir, r["output"])))
+        ok(r["approved"] and r["ran"] and r["exit"] == 0 and r["id"] == "rr-W-1-1" and r["run_output"] == "run_output/rr-W-1-1.json",
+           f"(C) the receipt row has its id and names the record: {r}")
+        ok(r["output"] == "read 3 threads\n1 warning\n", f"(C) a reader of output still gets the end of stdout and stderr: {r['output']!r}")
+        ok(r["run_output_counts"] == {"created": 1, "changed": 1, "deleted": 1, "stdout_lines": 1, "stderr_lines": 1}, f"(C) and the counts: {r['run_output_counts']}")
+        dry = r["dry_run"]
+        ok((r["created"], r["changed"], r["deleted"]) == (["out.json"], ["mail.txt"], ["old.txt"])
+           and (dry["created"], dry["changed"], dry["deleted"]) == (["out.json"], ["mail.txt"], ["old.txt"]),
+           f"(C) the real run's own created, changed and deleted, in the dry run's format: {r['created']} {r['changed']} {r['deleted']}")
+        ok(r["files_truncated"] is False and r["result"] == "out.json", f"(C) files_truncated and result on the row: {r['files_truncated']} {r['result']}")
+        rec = json.load(open(os.path.join(run.dir, r["run_output"])))
         ok(list(rec) == ["schema", "receipt", "workflow", "command", "folder", "approved", "started_at", "ended_at", "exit", "main_result",
-                         "files", "stdout", "stderr", "limits"], f"(C) the record's fields, in order: {list(rec)}")
+                         "files", "files_truncated", "stdout", "stderr", "limits"] and rec["files_truncated"] is False,
+           f"(C) the record's fields, in order: {list(rec)}")
         ok(rec["schema"] == "run-output/1" and rec["receipt"] == "rr-W-1-1" and rec["workflow"] == "W-1" and rec["folder"] == real
            and rec["command"] == ["python3", "s.py", real] and rec["approved"] is True and rec["exit"] == 0 and rec["limits"] == lim
            and rec["started_at"] <= rec["ended_at"] and len(rec["started_at"]) == 19, f"(C) who, what, when and the exit code: {rec}")
@@ -226,7 +236,7 @@ def run_output_is_recorded():
         w["real_run"]["result"] = "big.txt"
         run._ask_real_run({})
         reply(run, "RUN a578a3")
-        rec = json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))
+        rec = json.load(open(os.path.join(run.dir, receipts(run)[-1]["run_output"])))
         ok(rec["stdout"]["lines_total"] == 300 and rec["stdout"]["truncated"] and rec["stdout"]["tail"].splitlines() == [f"line {i}" for i in range(100, 300)],
            "(C) stdout keeps its last 200 lines")
         ok(rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)],
@@ -235,12 +245,39 @@ def run_output_is_recorded():
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
         run._ask_real_run({})
         reply(run, "RUN a578a3")
-        ok(json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))["main_result"] is None, "(C) no result declared: null")
+        r = receipts(run)[-1]
+        ok(json.load(open(os.path.join(run.dir, r["run_output"])))["main_result"] is None and r["result"] == j2.output_def(FT)["entry_file"],
+           f"(C) no result declared and the type's entry_file is a pattern: null in the record, the entry_file on the row: {r['result']}")
+        # the entry_file fallback: a type whose entry_file names one file of the run folder
+        run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
+        run.out = {**run.out, "entry_file": f"{FT}/s.py"}
+        run._ask_real_run({})
+        reply(run, "RUN a578a3")
+        r = receipts(run)[-1]
+        main = json.load(open(os.path.join(run.dir, r["run_output"])))["main_result"]
+        ok(r["result"] == f"{FT}/s.py" and main["path"] == f"{FT}/s.py" and main["exists"] and main["text"] == PRINTS,
+           f"(C) no result declared: the type's entry_file, a file of the run folder: {main}")
+        # more files than max_files: the lists stop there, files_truncated says so on the row and in the record, the counts stay whole
+        keep_max, j2.OWN_RUNS["run_output"]["limits"]["max_files"] = lim["max_files"], 2
+        try:
+            run, w = made({"s.py": "import os, sys\nfor i in range(5):\n    open(os.path.join(sys.argv[1], 'n%d.txt' % i), 'w').write('x')\n"},
+                          [check("file-exists", "s.py")], real=real)
+            run._ask_real_run({})
+            reply(run, "RUN a578a3")
+            r = receipts(run)[-1]
+            rec = json.load(open(os.path.join(run.dir, r["run_output"])))
+            ok(r["files_truncated"] is True and rec["files_truncated"] is True and r["created"] == ["n0.txt", "n1.txt"]
+               and [f["path"] for f in rec["files"]["created"]] == ["n0.txt", "n1.txt"] and r["run_output_counts"]["created"] == 5,
+               f"(C) the lists stop at max_files and say so: {r['created']} {r['run_output_counts']}")
+        finally:
+            j2.OWN_RUNS["run_output"]["limits"]["max_files"] = keep_max
+            for i in range(5):
+                os.remove(os.path.join(real, f"n{i}.txt"))
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
         w["real_run"]["result"] = "never.json"
         run._ask_real_run({})
         reply(run, "RUN a578a3")
-        ok(json.load(open(os.path.join(run.dir, receipts(run)[-1]["output"])))["main_result"] == {"path": "never.json", "exists": False},
+        ok(json.load(open(os.path.join(run.dir, receipts(run)[-1]["run_output"])))["main_result"] == {"path": "never.json", "exists": False},
            "(C) a declared result the run did not leave: exists false")
         # the plan's result is checked by code
         for bad in ("/etc/passwd", "../out.json", "a/../../x", "", 7, "out/"):
@@ -251,7 +288,7 @@ def run_output_is_recorded():
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
         run._ask_real_run({})
         reply(run, "decline")
-        ok("id" not in receipts(run)[-1] and "output_counts" not in receipts(run)[-1] and not os.path.isdir(os.path.join(run.dir, "run_output")),
+        ok(not {"id", "run_output", "run_output_counts", "created", "files_truncated"} & set(receipts(run)[-1]) and not os.path.isdir(os.path.join(run.dir, "run_output")),
            "(C) a declined run leaves no record")
     finally:
         j2.secrets.token_hex = keep
