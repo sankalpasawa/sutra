@@ -6241,7 +6241,8 @@ class J2Run:
                 return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
                     f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
                     for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
-            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # a real run registered before P35 has none
+            if rr.get("expect") and (rr.get("offline") or {}).get("same_files") is not False \
+                    and (mm := expect_mismatch(rr["expect"], dry)):      # P35 (D438; D449: not when offline says it can't)
                 dry["expect_mismatch"] = mm
                 return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"

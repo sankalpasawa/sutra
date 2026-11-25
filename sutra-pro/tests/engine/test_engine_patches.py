@@ -4976,3 +4976,24 @@ def test_p44_no_hosts_card_is_unchanged(j2ft, p44):
     assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
     card = p32_card(run)
     assert "Internet access" not in card and "offline command" not in card and "couldn't be checked" not in card, card
+
+# ---- P44 (D449) T4: P35 compares the offline dry run's file changes with expect unless the plan says it can't ----------------
+P44_OTHER = P44_FETCH.replace("'title.txt'", "'other.txt' if src == '--offline' else 'title.txt'")      # offline: another file
+
+
+def test_p44_offline_mismatch_goes_back_to_the_builder(p44):
+    """A guard that P35 keeps comparing the offline command's changes with expect: passes before the amendment too."""
+    go, _, _ = p44
+    run = go(P44_OTHER)
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert w["failure"][0] == "dry_run" and "not what it said it would do" in w["failure"][1], w.get("failure")
+    assert run.turn == "adaptation" and not [m for m in run.chat if m.get("real_run")]
+
+
+def test_p44_same_files_false_skips_expect_with_the_card_line(p44):
+    go, real, _ = p44
+    run = go(P44_OTHER, offline={"command": [sys.executable, "fetch.py", str(real), "--offline"], "same_files": False})
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    assert "expect_mismatch" not in run.real_runs_dry["W-1"] and run.workflows[0].get("failure") is None
+    assert "\nFile changes couldn't be checked first." in p32_card(run)
