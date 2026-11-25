@@ -21,6 +21,7 @@
      ResultView.table(text, sep)         CSV / TSV: {head, rows, total}, rows capped at 1,000; null when it does not parse
      ResultView.jsonTable(text)          the same for a JSON array of objects; null otherwise
      ResultView.label(s, tab, main)      the address bar text for a tab ("result", "files", "team", "file:<path>")
+     ResultView.team(html, s, rows)      the page's "How it was made" HTML with finished cards decorated (T3; see team() below)
      ResultView.WORDS                    the wording of a non-page run (no site, page or website)
      ResultView.adopt(root)              on a team page: replaces the page's sViews (tabs Result, Files, How it was made; each file in the viewer
                                          for its type; #rvpane in #sout for text, code, tables and lists, the page's sandboxed frame for pages,
@@ -152,6 +153,30 @@
     return k === "list" ? "files" : "no files";
   }
 
+  // The plan cards of "How it was made" (the page's sTeamwork HTML), as a string: a part card that is not in progress loses its grey bars;
+  // a done one gets its builder's line and its files. Placeholder cards (no data-part) stay. On a run that is not a page run, the
+  // "What you got" line for a site goes (and its section when nothing is left in it).
+  const SL = '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>';
+  const unesc = x => x.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  const escape = x => String(x ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  function team(html, s, rows) {
+    const parts = ((s && s.studio && s.studio.parts) || []);
+    let out = String(html).replace(/(<button type="button" class="spart ([a-z]+)[^"]*" data-part="([^"]*)"[^>]*>)([\s\S]*?)<\/button>/g, (all, open, st, sec, inner) => {
+      if (st === "doing" || st === "fix") return all;
+      inner = inner.split(SL).join("");
+      if (st === "done") {
+        const part = parts.find(x => x && x.sec === unesc(sec)) || {sec: unesc(sec), workflows: [unesc(sec)]};
+        const files = filesOfPart(part, rows);
+        inner += `<small class="rvsum">${escape(summaryOf(s, part))}</small>`
+          + (files.length ? `<span class="rvfiles">${files.map(r => `<span class="rvfile" data-view="file:${escape(r.file)}">${escape(base(r.file))}</span>`).join("")}</span>` : "");
+      }
+      return open + inner + "</button>";
+    });
+    if (!isPageRun(s)) out = out.replace(/<button type="button" data-view="site">[\s\S]*?<\/button>/g, "")
+      .replace(/<section class="stw-sec"><h3>[^<]*<\/h3><div class="sdocs"><\/div><\/section>/g, "");
+    return out;
+  }
+
   // ---- the page glue (T2). Runs only on a team page: J2's page globals are read by bare name, typeof guarded.
   const T = {adopted: false, last: null, files: new Map(), runs: [], gkey: ""};
   const NEEDS = ["renderSimple", "sViews", "sLoad", "paint", "sTeamwork", "sSkTime", "sDecorate"];
@@ -248,9 +273,12 @@
     const tabOf = v.startsWith("file:") ? "files" : v, running = s.status === "running", web = isPageRun(s) && !(s.docset || []).length && s.versions > 0;
     const pip = k => running && (k === "result" ? web : k === "team" && !web) ? '<span class="pip" aria-hidden="true"></span>' : "";
     root.paint($("sviews"), TABS.map(([k, l]) => `<button type="button" role="tab" data-view="${k}" aria-selected="${k === tabOf}">${l}${pip(k)}</button>`).join(""));
-    if (web && running && SV.lastOut !== "site" && SV.view && !SV.pick && typeof root.sToast === "function")
-      root.sToast(`The ${typeof TYL === "function" ? TYL("site", "page").toLowerCase() : "page"} is taking shape`);      // a page run's own toast; none otherwise
-    SV.lastOut = web ? "site" : "";
+    if (isPageRun(s) && typeof root.sTabs === "function") {      // a page run's own toasts, as the page draws them; none on other runs
+      const outs = root.sTabs(s).filter(t => t.k !== "team"), last = outs[outs.length - 1];
+      if (last && SV.lastOut !== last.k && SV.view && !SV.pick && running && typeof root.sToast === "function")
+        root.sToast(last.k === "site" ? `The ${typeof TYL === "function" ? TYL("site", "page").toLowerCase() : "page"} is taking shape` : `The ${last.label} is being written`);
+      SV.lastOut = last ? last.k : "";
+    } else SV.lastOut = "";
     const team = v === "team", show = team ? {} : stage(root, G, s, v, rows, main), box = $("sframebox").classList, pane = $("rvpane");
     SV.view = team ? "team" : show.site ? "site" : v;      // "site" keeps the page's sGo and sDecorate working on a website
     box.toggle("team", team); box.toggle("site", !!show.site); box.toggle("live", running);
@@ -289,12 +317,32 @@
         return root.sOpenPart(sec);
       };
     }
+    const wrap = (name, after) => {      // the page's own function first; ours only adjusts its result, and never breaks it (NFR-7)
+      const fn = root[name];
+      if (typeof fn !== "function") return;
+      root[name] = function () {
+        const out = fn.apply(this, arguments);
+        try { return after(out, arguments); } catch (e) { return out; }
+      };
+    };
+    wrap("sTeamwork", (html, [s]) => team(html, s, (G.SV.arts && G.SV.arts.deliverables) || []));
+    wrap("sPhase", (text, [s]) => !isPageRun(s) && text === "Checking it on a phone and a laptop" ? WORDS.checking : text);
+    wrap("sOpenPart", (p) => Promise.resolve(p).then(r => {
+      const b = d.getElementById("sdbody");
+      if (T.last && !isPageRun(T.last) && b && b.innerHTML.includes("The part, on the page.")) b.innerHTML = b.innerHTML.split("The part, on the page.").join(WORDS.partDrawer);
+      return r;
+    }));
+    wrap("renderSimple", (out, [s]) => {
+      const open = d.getElementById("sopen");
+      if (open && s && !isPageRun(s)) open.hidden = true;      // "Open the site": the finish bar and Result cover it
+      return out;
+    });
     T.adopted = true;
     return true;
   }
 
   const ResultView = {MAX_ROWS, WORDS, isPageRun, done, realRun, named, mainResult, viewerFor, summaryOf, filesOfPart, table, jsonTable, label,
-    adopt};
+    team, adopt};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ResultView;
   else { root.ResultView = ResultView; adopt(root); }
 })(globalThis);

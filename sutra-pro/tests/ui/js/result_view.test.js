@@ -206,7 +206,7 @@ function fakeEl(id) {
 // files: {file name: text | null (404)}; omit: page globals left out of the stub
 function page({files = {}, omit = []} = {}) {
   const els = {}, el = id => (els[id] = els[id] || fakeEl(id));
-  ["sframebox", "sviews", "surl", "steamwork", "sout"].forEach(el);
+  ["sframebox", "sviews", "surl", "steamwork", "sout", "sdbody", "sopen"].forEach(el);
   const head = fakeEl("head");
   const document = {
     head,
@@ -230,14 +230,17 @@ function page({files = {}, omit = []} = {}) {
     sNoun: 'const sNoun = s => "result";',
     sLoad: "function sLoad(u){ log.load.push(u); }",
     paint: "function paint(el, html){ if (el.__html === html) return; el.innerHTML = html; el.__html = html; }",
-    sTeamwork: 'function sTeamwork(){ return "<div>the team</div>"; }',
+    sTeamwork: 'function sTeamwork(s){ return (s.teamHTML || "<div>the team</div>"); }',
     sSkTime: "function sSkTime(){}",
     sDecorate: "function sDecorate(){}",
     sViews: "function sViews(){ log.orig++; }",
   };
   const stub = Object.entries(decl).filter(([k]) => !omit.includes(k)).map(([, v]) => v).join("\n")
     + "\nconst TYL = (k, d) => d;\nfunction sToast(t){ log.toast.push(t); }\nfunction renderSimple(s){ sViews(s, {}, isReady(s)); }"
-    + "\nfunction sGo(sec){ log.go = sec; }\nfunction sOpenPart(sec){ log.part = sec; }";
+    + "\nfunction sGo(sec){ log.go = sec; }"
+    + "\nasync function sOpenPart(sec){ log.part = sec; document.getElementById('sdbody').innerHTML = '<p>The part, on the page.</p>'; }"
+    + "\nfunction sPhase(s){ return s.phase || 'Checking it on a phone and a laptop'; }"
+    + "\nfunction sTabs(s){ return (s.tabs || (s.versions > 0 && !(s.docset || []).length ? [{k: 'site', label: 'Page'}] : [])).concat([{k: 'team'}]); }";
   vm.runInContext(stub, ctx);
   vm.runInContext(SRC, ctx, {filename: "result_view.js"});
   const SV = omit.includes("SV") ? null : vm.runInContext("SV", ctx);
@@ -403,4 +406,107 @@ test("glue: sGo opens the part's record on a run that is not a website, the page
   p.render(webDone());
   p.ctx.sGo("W-3");
   assert.equal(p.log.go, "W-3");
+});
+
+// ---- T3: plan cards and wording. Card markup as the page's sTeamwork writes it (j2_ui.html sTeamwork `part`)
+const SLB = '<span class="sl" aria-hidden="true"><i></i><i></i><i></i></span>';
+const card = (sec, st, name) => `<button type="button" class="spart ${st}" data-part="${sec}" style="--c:var(--s-mira)"><span class="spn" aria-hidden="true">01</span><b>${name || sec}</b>`
+  + (st === "doing" || st === "fix" ? '<svg class="ssk"></svg>' : SLB) + (st === "next" ? "<small>Mira next</small>" : "") + "</button>";
+const PLACEHOLDER = `<div class="spart next"><b>&nbsp;</b>${SLB}</div>`;
+const gotSite = n => `<section class="stw-sec"><h3>What you got</h3><div class="sdocs"><button type="button" data-view="site"><svg></svg>The page, version ${n}</button></div></section>`;
+const teamOf = s => `<div class="smap"><div class="smap-parts">${s.studio.parts.map(p => card(p.sec, p.st, p.name)).join("")}</div></div>` + (s.versions > 0 ? gotSite(s.versions) : "");
+
+test("plan cards: a done card shows its builder's line and its files, no grey bars, AC-11", () => {
+  const out = RV.team(teamOf(SCRIPT), SCRIPT, ARTS);
+  const w2 = /<button[^>]*data-part="W-2"[^>]*>([\s\S]*?)<\/button>/.exec(out)[1], w1 = /<button[^>]*data-part="W-1"[^>]*>([\s\S]*?)<\/button>/.exec(out)[1];
+  assert.match(w2, /<small class="rvsum">I wrote env_report\/report.py.<\/small>/);
+  assert.equal((w2.match(/class="rvfile" data-view="file:env_report\/report\.(py|txt)"/g) || []).length, 2);
+  assert.match(w2, />report.txt<\/span>/);
+  assert.match(w1, /<small class="rvsum">Finished.<\/small>$/, "no message: Finished., and no file list");
+  assert.doesNotMatch(out, /class="sl"/);
+  const s = scriptRun({chat: [{who: "W-2", human_output: "@Coordination Wrote the script. It prints env vars."}]});
+  assert.match(RV.team(card("W-2", "done"), s, ARTS), /<small class="rvsum">Wrote the script.<\/small>/);
+  assert.match(RV.team(card("W-2", "done"), scriptRun({chat: [{who: "W-2", human_output: '<img src=x onerror="y">. Two.'}]}), []),
+    /<small class="rvsum">&lt;img src=x onerror=&quot;y&quot;&gt;.<\/small>/, "the line is escaped");
+});
+
+test("plan cards: grey bars stay only on cards in progress and on placeholders, AC-12", () => {
+  const html = ["doing", "fix", "next", "bad", "ask", "done"].map((st, i) => card("W-" + (i + 1), st)).join("") + PLACEHOLDER;
+  const out = RV.team(html, scriptRun({studio: {parts: []}}), []);
+  const cards = [...out.matchAll(/<(button|div)[^>]*class="spart ([a-z]+)[^"]*"[^>]*>([\s\S]*?)<\/\1>/g)].map(m => [m[2], m[3].includes('class="sl"')]);
+  assert.deepEqual(cards, [["doing", false], ["fix", false], ["next", false], ["bad", false], ["ask", false], ["done", false], ["next", true]]);
+  assert.match(out, /<small>Mira next<\/small>/, "the rest of a card's look is kept");
+  assert.equal((out.match(/rvsum/g) || []).length, 1, "only the done card gets a line");
+  assert.equal(RV.team(html.replace('class="spart doing"', 'class="spart doing fresh"'), scriptRun(), []).includes("ssk"), true);
+});
+
+test("plan cards: a website's cards are decorated and its 'What you got' site line stays; a script's goes with its empty section", () => {
+  const web = webDone(), webOut = RV.team(teamOf(web), web, WEBARTS);
+  assert.match(webOut, /rvsum/);
+  assert.match(webOut, /data-view="site">.*The page, version 5/);
+  const out = RV.team(teamOf(SCRIPT), SCRIPT, ARTS);
+  assert.doesNotMatch(out, /data-view="site"|What you got|stw-sec/);
+  const kept = RV.team('<section class="stw-sec"><h3>What you got</h3><div class="sdocs"><a href="/file/x" download>The document (markdown)</a><button type="button" data-view="site">The page, version 1</button></div></section>', SCRIPT, []);
+  assert.equal(kept, '<section class="stw-sec"><h3>What you got</h3><div class="sdocs"><a href="/file/x" download>The document (markdown)</a></div></section>');
+});
+
+test("glue T3: How it was made is decorated through the page's sTeamwork; #sopen is hidden only on runs that are not a website", () => {
+  const p = page();
+  p.SV.arts = {deliverables: ARTS};
+  p.els.sopen.hidden = false;
+  p.SV.pick = "team";
+  p.render(scriptRun({teamHTML: teamOf(SCRIPT)}));
+  assert.match(p.html("steamwork"), /<small class="rvsum">I wrote env_report\/report.py.<\/small>/);
+  assert.equal(p.els.sopen.hidden, true);
+  const w = page();
+  w.SV.arts = {deliverables: WEBARTS};
+  w.els.sopen.hidden = false;
+  w.SV.pick = "team";
+  w.render({...webDone(), teamHTML: teamOf(webDone())});
+  assert.equal(w.els.sopen.hidden, false);
+  assert.match(w.html("steamwork"), /The page, version 5/);
+});
+
+test("glue T3: the phase and the part drawer say 'the work' and 'the result' on a run that is not a page run; a website keeps the page's", async () => {
+  const p = page();
+  p.render(scriptRun());
+  assert.equal(p.ctx.sPhase(scriptRun(), []), "Checking the work");
+  assert.equal(p.ctx.sPhase(webDone(), []), "Checking it on a phone and a laptop");
+  assert.equal(p.ctx.sPhase(scriptRun({phase: "Planning the work"}), []), "Planning the work");
+  await p.ctx.sOpenPart("W-2");
+  assert.equal(p.html("sdbody"), "<p>The part, in the result.</p>");
+  p.render(webDone());
+  await p.ctx.sOpenPart("W-2");
+  assert.equal(p.html("sdbody"), "<p>The part, on the page.</p>");
+});
+
+test("glue T3: a wrapper whose helper throws returns the page's own output", () => {
+  const p = page();
+  const bad = new Proxy(scriptRun(), {get(t, k) { if (k === "docset") throw new Error("boom"); return t[k]; }});
+  assert.equal(p.ctx.sPhase(bad, []), "Checking it on a phone and a laptop");
+  assert.equal(p.ctx.sTeamwork(new Proxy(scriptRun({teamHTML: "<p>x</p>"}), {get(t, k) { if (k === "studio") throw new Error("boom"); return t[k]; }})), "<p>x</p>");
+});
+
+test("glue T3: toasts as the page's own on page runs: a website's site, a document set's documents; none on other runs", () => {
+  const run = extra => ({...copy(WEB), paused: null, status: "running", outcome: "", ...extra});
+  const docs = page();
+  docs.render(run({docset: ["prd", "hld"], versions: 0, tabs: []}));
+  docs.render(run({docset: ["prd", "hld"], versions: 0, tabs: [{k: "prd", label: "PRD"}]}));
+  docs.render(run({docset: ["prd", "hld"], versions: 0, tabs: [{k: "prd", label: "PRD"}, {k: "hld", label: "HLD"}]}));
+  assert.deepEqual(docs.log.toast, ["The PRD is being written", "The HLD is being written"]);
+  const script = page();
+  script.render(scriptRun({status: "running", outcome: "", versions: 0}));
+  script.render(scriptRun({status: "running", outcome: "", versions: 1, tabs: [{k: "a:Environment report", label: "Environment report"}]}));
+  assert.deepEqual(script.log.toast, []);
+});
+
+test("the done script run's panel never says site, page or website, AC-13 / FR-18", async () => {
+  const p = page({files: {}});
+  p.SV.arts = {deliverables: ARTS};
+  const s = scriptRun({teamHTML: teamOf(SCRIPT)});
+  const text = id => p.html(id).replace(/<[^>]*>/g, " ");
+  for (const pick of ["result", "files", "team", "file:env_report/report.txt"]) {
+    p.SV.pick = pick; p.render(s); await tick(); p.render(s);
+    for (const id of ["sviews", "surl", "steamwork", "rvbody"]) assert.doesNotMatch(text(id), /\b(site|page|website)\b/i, `${pick} ${id}: ${text(id)}`);
+  }
 });

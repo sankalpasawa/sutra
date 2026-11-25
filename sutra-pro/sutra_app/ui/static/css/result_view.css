@@ -24,3 +24,7 @@
 #sview .rvtable table{border-collapse:collapse;font-size:13px;width:max-content;min-width:100%}
 #sview .rvtable th,#sview .rvtable td{padding:6px 10px;border-bottom:1px solid var(--s-line);text-align:left;vertical-align:top;white-space:pre-wrap;max-width:32em}
 #sview .rvtable th{position:sticky;top:0;background:var(--s-surface2);font-weight:600}
+/* a finished plan card: its builder's line (one line) and its files (each opens in Files) */
+#sview .spart .rvsum{display:block;margin-top:8px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--s-muted)}
+#sview .spart .rvfiles{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:4px;min-width:0}
+#sview .spart .rvfile{color:var(--s-accentink);font-size:12.5px;text-decoration:underline;text-underline-offset:2px;cursor:pointer;overflow-wrap:anywhere}
