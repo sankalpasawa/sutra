@@ -801,7 +801,11 @@ def dry_secret_files(rr, tmp):
 
 
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")      # P41 (D446): a variable name a plan may give a script
-REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, the language and the temp folder. When it needs '
+SCRIPT_ENV_RULE = (" Scripts run with only PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM, locale and temp-folder variables (the "
+                   "test's rerun too); any other variable a script needs must be named in the real run's settings (secrets as "
+                   "secret_files).")      # P41 (D446): the tools builder, beside its test runner
+REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM, the language and '
+                     'the temp folder. When it needs '
                      'more, the real_run also carries "settings": {"NAME": "value"} (plain values the Requester sees before '
                      'approving and that the receipt keeps; never a password, key or token; never a name that changes how a '
                      'program starts, such as LD_*, DYLD_*, NODE_OPTIONS, PYTHONSTARTUP, PYTHONPATH, PERL5OPT, RUBYOPT) and '
@@ -10843,7 +10847,7 @@ class J2Run:
                  + (f" Its main file is {main}." if main else "")
                  + (f" Its sections, in this order, each a level-2 heading in {main}: {', '.join(self.out['sections'])}."
                     if self.out.get("sections") else "")
-                 + (f" Run a test with: {runner} ({{target}} = the test file)." if runner else "")
+                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
                  + f"\nCHARTER: {json.dumps(self.goal or {}, ensure_ascii=False)}"
                  + ("\nRUBRIC (Audit judges the result against it):\n" + "\n".join(f"{i} {t}" for i, t in self.out["rubric"]))
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "

@@ -3830,6 +3830,68 @@ def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
     assert res["pass"] is True, res
 
 
+# Made-up values for the base names added in the SUT-22 follow-up; the script exits 0 only when it sees every one.
+P41_USER_ENV = {"USER": "made-up-user", "LOGNAME": "made-up-user", "SHELL": "/made/up/sh", "TZ": "UTC", "TERM": "dumb"}
+P41_READS = "import os, sys\nwant = {}\nsys.exit(0 if all(os.environ.get(k) == v for k, v in want.items()) else 3)\n"
+
+
+def test_p41_dry_run_passes_a_script_that_reads_user(j2ft, p41, monkeypatch):
+    """D446 follow-up: USER, LOGNAME, SHELL, TZ and TERM are in the base, so a script reading $USER passes its dry run."""
+    out, folder, _, fake, _ = p41
+    for k, v in P41_USER_ENV.items():
+        monkeypatch.setenv(k, v)
+    (out / "reads.py").write_text(P41_READS.format(P41_USER_ENV))
+    p41_fake_srt(monkeypatch, fake)
+    dry = j2ft.real_run_dry(str(out), {"command": [sys.executable, "reads.py"], "folder": str(folder)}, 30)
+    assert dry["ran"] is True and dry["exit"] == 0, dry
+    assert set(P41_USER_ENV) <= set(j2ft.llm.RUN_PASS_NAMES)
+
+
+def test_p41_an_arbitrary_setting_reaches_the_script(j2ft, p41, monkeypatch, tmp_path):
+    """D446: any variable the plan names as a setting reaches the script, in the real run and in the dry run."""
+    out, folder, _, fake, _ = p41
+    named = {"MY_TOOL_HOME": "/made/up/path"}
+    assert j2ft.real_run_env_problems({"settings": named}, "", str(tmp_path)) == []
+    (out / "reads.py").write_text(P41_READS.format(named))
+    rr = {"command": [sys.executable, "reads.py"], "folder": str(folder), "settings": named}
+    res = j2ft.real_run(str(out), rr, 30)
+    assert res["ran"] and res["exit"] == 0, res
+    assert j2ft.real_run(str(out), {**rr, "settings": {}}, 30)["exit"] == 3, "not named: not passed"
+    p41_fake_srt(monkeypatch, fake)
+    assert j2ft.real_run(str(out), rr, 30)["exit"] == 0
+    dry = j2ft.real_run_dry(str(out), rr, 30)
+    assert dry["ran"] is True and dry["exit"] == 0, dry
+
+
+def test_p41_builders_and_planner_are_told_the_base_and_to_name_the_rest(j2ft, tmp_path, monkeypatch):
+    """D446 follow-up: Adaptation's rule and the tools builder's prompt list the base names and say any other variable is
+    named in the real run's settings (secrets as secret_files)."""
+    base = "PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM"
+    assert base in j2ft.REAL_RUN_ENV_RULE and '"settings"' in j2ft.REAL_RUN_ENV_RULE
+    rule = j2ft.SCRIPT_ENV_RULE
+    assert base in rule and "settings" in rule and "secret_files" in rule
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090200-5e12")
+    run._apply_output(FT)
+    run.goal, run.budget = {"statement": "copy", "done_when": ["copy.py copies the files"]}, 100
+    os.makedirs(run._out_dir(), exist_ok=True)
+    w = {"id": "W-1", "name": "copier", "purpose": "copy", "outputs": [f"{FT}/copy.py"], "status": "running", "calls_used": 0,
+         "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
+         "atoms": [{"id": "W-1.a1", "goal": "copy", "expected_output": [],
+                    "verification": [{"text": "copy.py exists", "type": "file-exists", "target": "copy.py", "expect": True}]}]}
+    run.workflows = [w]
+    j2ft.add_workflow_agent("W-1")
+    prompts = []
+
+    def call(fn, fmt, prompt, mock, **kw):
+        prompts.append(prompt)
+        (Path(run._out_dir()) / "copy.py").write_text("print('made-up')\n")
+        return {"say": "@Coordination built", "human_output": "I built it.", "atom_human_output": "The copier."}
+    run.call = call
+    run._run_tools(w, {"id": "W-1", "name": "copier", "outputs": w["outputs"]}, 3)
+    assert prompts and rule in prompts[0], prompts[0][:1500]
+
+
 # ---- P41 (D446) T4: the plan states settings and secret files; _register checks them by structure and refuses loader names
 def test_p41_env_names_and_values(j2ft, tmp_path):
     bad = lambda rr: j2ft.real_run_env_problems(rr, "", str(tmp_path))
