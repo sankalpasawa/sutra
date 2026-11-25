@@ -3613,8 +3613,8 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    # P41 (D446) appends its environment rule right after this one, so the expect rule now sits just before it
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    # P41 (D446) appends its environment rule right after this one and P44 (D449) its internet rule after that
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
@@ -4013,7 +4013,7 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE)
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE)      # P44 (D449)
     rule = j2ft.REAL_RUN_ENV_RULE
     assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
@@ -5082,3 +5082,54 @@ def test_p44_proxy_settings_are_refused_with_or_without_hosts(p44_reg, name, hos
     run, reg, refused = p44_reg.register(settings={name: "http://made-up.invalid:3128"}, **kw)
     assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
     assert f"real_run may not set {name}" in refused[0] and "where it connects (a fixed guardrail list)" in refused[0], refused
+
+# ---- P44 (D449) T8: the planner and the builder are told how hosts, the offline command and the read-only first call work ------
+def p44_builder_prompt(j2ft, tmp_path, runner):
+    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none."""
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0903{'01' if runner else '02'}-5e12")
+    run._apply_output(FT)
+    if not runner:
+        run.out = {**run.out, "test_runner": None}
+    run.goal, run.budget = {"statement": "fetch", "done_when": ["fetch.py saves the page title"]}, 100
+    os.makedirs(run._out_dir(), exist_ok=True)
+    w = {"id": "W-1", "name": "fetcher", "purpose": "fetch", "outputs": [f"{FT}/fetch.py"], "status": "running", "calls_used": 0,
+         "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
+         "atoms": [{"id": "W-1.a1", "goal": "fetch", "expected_output": [],
+                    "verification": [{"text": "fetch.py exists", "type": "file-exists", "target": "fetch.py", "expect": True}]}]}
+    run.workflows = [w]
+    j2ft.add_workflow_agent("W-1")
+    prompts = []
+
+    def call(fn, fmt, prompt, mock, **kw):
+        prompts.append(prompt)
+        (Path(run._out_dir()) / "fetch.py").write_text("print('made-up')\n")
+        return {"say": "@Coordination built", "human_output": "I built it.", "atom_human_output": "The fetcher."}
+    run.call = call
+    run._run_tools(w, {"id": "W-1", "name": "fetcher", "outputs": w["outputs"]}, 3)
+    assert prompts
+    return prompts[0]
+
+
+def test_p44_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    """A hint, not enforced: code checks the hosts and the offline command at registration and grants hosts only after Run."""
+    rule = j2ft.REAL_RUN_NET_RULE
+    for x in ('"hosts"', '"reaches"', '"offline"', '"same_files"', "made-up data", "read-only call", "*.example.com only if",
+              ":port", "80 characters", "asked once", "Only code and the Run card grant internet access", "never tell anyone",
+              "HTTP_PROXY"):
+        assert x in rule, x
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090300-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_ENV_RULE + rule)
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert rule not in run.ATOM_RULES
+    hint = j2ft.SCRIPT_NET_RULE
+    for x in ("read-only check", "a bad key or missing access fails", "--mock", "--dry-run", "made-up data", "fake local server",
+              "never promise it"):
+        assert x in hint, x
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    told = p44_builder_prompt(j2ft, tmp_path, runner=True)
+    assert j2ft.SCRIPT_ENV_RULE + hint in told, told[:2000]
+    assert hint not in p44_builder_prompt(j2ft, tmp_path, runner=False)

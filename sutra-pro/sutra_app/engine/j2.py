@@ -967,6 +967,24 @@ def real_run(out_dir, rr, timeout):
 # P44 (D449): the internet hosts a real run may reach. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
 HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?")      # srt's allowedDomains form, narrowed
+REAL_RUN_NET_RULE = ('\nREAL RUN AND THE INTERNET: when the script must reach a service over the internet, the real_run also carries '
+                     '"hosts": [each host it reaches, a bare name like api.example.com, exactly as the brief or the Requester '
+                     'wrote it; *.example.com only if they wrote that; an optional :port; no scheme, path or address], '
+                     '"reaches": "what it reaches, in plain words, like Gmail and Slack (at most 80 characters)" and "offline": '
+                     '{"command": [the same runner and folder arguments, plus what makes it use made-up data and no network], '
+                     '"same_files": true when that makes the same file changes as expect says, else false}. A real_run with '
+                     'hosts must give offline: its command makes the same file changes with made-up data. The dry run runs the '
+                     'offline command on copies with no internet access; only the approved real run reaches the named hosts, '
+                     'and nothing else. Its real run starts with a read-only call (such as reading the account profile), so a '
+                     'bad key or missing access fails before anything changes. List every host it needs: a host the Requester '
+                     'has not named is asked once, by code, and the plan is proposed again if they allow it. Never set '
+                     'HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or NO_PROXY. Only code and the Run card grant internet access: never '
+                     'tell anyone it will be allowed.')      # P44 (D449): Adaptation, after P41's rule
+SCRIPT_NET_RULE = (" A script that reaches the internet starts its real run with a read-only check (such as a profile call), so a "
+                   "bad key or missing access fails fast; it has an offline mode (a --mock or --dry-run style switch, its real "
+                   "run's offline command) that makes the same file changes with made-up data and no network; its tests cover "
+                   "the network part with a fake local server, never the internet. Only code and the Run card grant internet "
+                   "access: never promise it.")      # P44 (D449): the tools builder, after P41's line
 
 
 def real_hosts(rr):
@@ -4372,6 +4390,7 @@ class J2Run:
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
                 self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
                 self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
+                self.ATOM_RULES += REAL_RUN_NET_RULE      # P44 (D449)
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -11057,6 +11076,7 @@ class J2Run:
                  + (f" Its sections, in this order, each a level-2 heading in {main}: {', '.join(self.out['sections'])}."
                     if self.out.get("sections") else "")
                  + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
+                 + (SCRIPT_NET_RULE if runner else "")      # P44 (D449)
                  + f"\nCHARTER: {json.dumps(self.goal or {}, ensure_ascii=False)}"
                  + ("\nRUBRIC (Audit judges the result against it):\n" + "\n".join(f"{i} {t}" for i, t in self.out["rubric"]))
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
