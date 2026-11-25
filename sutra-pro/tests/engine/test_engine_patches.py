@@ -3608,7 +3608,8 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    # P41 (D446) appends its environment rule right after this one, so the expect rule now sits just before it
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
@@ -3753,3 +3754,109 @@ def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
     (folder / "t.py").write_text("import os, sys\nsys.exit(1 if {'SUT22_LEAK', 'PYTHONPATH'} & set(os.environ) else 0)\n")
     res = j2ft.sandbox_rerun(str(folder), [sys.executable, "{target}"], "t.py", 30)
     assert res["pass"] is True, res
+
+
+# ---- P41 (D446) T4: the plan states settings and secret files; _register checks them by structure and refuses loader names
+def test_p41_env_names_and_values(j2ft, tmp_path):
+    bad = lambda rr: j2ft.real_run_env_problems(rr, "", str(tmp_path))
+    for rr in ({"settings": "x"}, {"settings": {"1BAD": "x"}}, {"settings": {"A-B": "x"}}, {"settings": {"PATH": "/x"}},
+               {"settings": {"Path": "x"}}, {"settings": {"PLAN_LEVEL": "a\0b"}}, {"settings": {"PLAN_LEVEL": 3}}):
+        assert bad(rr), rr
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    both = {"settings": {"API_CRED_FILE": "x"}, "secret_files": {"API_CRED_FILE": str(cred)}}
+    assert any("both" in p for p in j2ft.real_run_env_problems(both, j2ft.squash(f"use {cred}"), str(tmp_path / "run")))
+    assert bad({"settings": {"PLAN_LEVEL": "basic"}}) == []
+    assert bad({"settings": {"SVC": "ghp_" + "a1" * 18}}) == [], "values are never scanned (owner, Q2)"
+    assert bad({}) == [] and bad({"command": ["python3"]}) == []
+
+
+def test_p41_loader_names_are_refused(j2ft, tmp_path):
+    for n in ("LD_PRELOAD", "DYLD_INSERT_LIBRARIES", "NODE_OPTIONS", "PYTHONSTARTUP", "PYTHONPATH", "PERL5OPT", "RUBYOPT"):
+        probs = j2ft.real_run_env_problems({"settings": {n: "x"}}, "", str(tmp_path))
+        assert len(probs) == 1 and "fixed guardrail" in probs[0] and n in probs[0], probs
+    cred = tmp_path / "cred.txt"
+    cred.write_text(P41_CRED)
+    probs = j2ft.real_run_env_problems({"secret_files": {"LD_PRELOAD": str(cred)}}, j2ft.squash(f"use {cred}"),
+                                       str(tmp_path / "run"))
+    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts (a fixed guardrail list)"], probs
+    assert j2ft.real_run_env_problems({"settings": {"NODE_ENV": "x", "LDAP_HOST": "x"}}, "", str(tmp_path)) == []
+
+
+def test_p41_secret_file_rules(j2ft, tmp_path, monkeypatch):
+    run_dir, claude, codex, home = (tmp_path / x for x in ("run", "claude", "codex", "home"))
+    for d in (run_dir, claude, codex, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # Windows: expanduser reads USERPROFILE
+    files = {}
+    for k, d in (("ok", tmp_path), ("unnamed", tmp_path), ("run", run_dir), ("claude", claude), ("codex", codex), ("home", home)):
+        files[k] = d / f"{k}.txt"
+        files[k].write_text(P41_CRED)
+    named = [str(files[k]) for k in ("ok", "run", "claude", "codex")] + [str(tmp_path / "gone.txt"), str(tmp_path)]
+    source = j2ft.squash("Use " + ", ".join(named) + " and ~/home.txt")
+    probs = lambda p: j2ft.real_run_env_problems({"secret_files": {"API_CRED_FILE": p}}, source, str(run_dir))
+    for p in ("cred.txt", str(files["unnamed"]), str(tmp_path / "gone.txt"), str(tmp_path), str(files["run"]),
+              str(files["claude"]), str(files["codex"])):
+        assert probs(p), p
+    assert any("not named" in x for x in probs(str(files["unnamed"])))
+    assert any("sign-in" in x for x in probs(str(files["claude"])))
+    assert probs(str(files["ok"])) == [] and probs("~/home.txt") == []
+    assert j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/home.txt"}, "command": ["x"]}) == {
+        "secret_files": {"API_CRED_FILE": os.path.expanduser("~/home.txt")}}
+
+
+@pytest.fixture
+def p41_reg(j2ft, tmp_path, monkeypatch):
+    """register(**fields): a fresh p35-style run (copy.py reading in/, writing out/) whose request names the made-up secret
+    file and a fake Claude sign-in folder's file; it registers W-1 with fields on its real run: (run, registered, refused)."""
+    src, dst, claude, home = (tmp_path / x for x in ("in", "out", "claude", "home"))
+    for d in (src, dst, claude, home):
+        d.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    (home / "cred.txt").write_text(P41_CRED)
+    (claude / "cred.txt").write_text(P41_CRED)
+    counter = itertools.count(1)
+
+    def register(**fields):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0900{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        run.request = (f"Build copy.py, then run it on my notes in {src} and write the results to {dst}; "
+                       f"the key is in ~/cred.txt (or {claude / 'cred.txt'})")
+        run.goal, run.budget = {"statement": "x", "done_when": list(P35_DONE_WHEN)}, 100
+        rr = {"command": ["python3", "copy.py", str(src), str(dst)], "folder": str(dst), "reads": [str(src)],
+              "why": "The brief asks to run it on the Requester's notes.", "checks": [3], "expect": P35_ALL, **fields}
+        reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr}])
+        return run, reg, refused
+    return register, home, claude
+
+
+def test_p41_register_stores_and_refuses_with_its_key(p41_reg):
+    register, home, claude = p41_reg
+    run, reg, refused = register(settings={"PLAN_LEVEL": "basic"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["settings"] == {"PLAN_LEVEL": "basic"}
+    assert reg[0]["real_run"]["secret_files"] == {"API_CRED_FILE": os.path.expanduser("~/cred.txt")}      # written out
+    run, reg, refused = register(secret_files={"API_CRED_FILE": str(claude / "cred.txt")})
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register(settings={"NODE_OPTIONS": "--x"})
+    assert not reg and "fixed guardrail" in refused[0] and run.rejections[-1]["key"] == ["real_run_env"], refused
+    run, reg, refused = register()
+    assert len(reg) == 1 and not {"settings", "secret_files"} & set(reg[0]["real_run"]), reg[0]["real_run"]
+
+
+def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE)
+    rule = j2ft.REAL_RUN_ENV_RULE
+    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES

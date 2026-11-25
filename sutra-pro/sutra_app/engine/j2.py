@@ -785,6 +785,74 @@ def dry_secret_files(rr, tmp):
     return out
 
 
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")      # P41 (D446): a variable name a plan may give a script
+REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, the language and the temp folder. When it needs '
+                     'more, the real_run also carries "settings": {"NAME": "value"} (plain values the Requester sees before '
+                     'approving and that the receipt keeps; never a password, key or token; never a name that changes how a '
+                     'program starts, such as LD_*, DYLD_*, NODE_OPTIONS, PYTHONSTARTUP, PYTHONPATH, PERL5OPT, RUBYOPT) and '
+                     '"secret_files": {"NAME": "/absolute/path"} (a file holding a secret that the Requester named in the brief '
+                     'or an answer; the script gets NAME=<path> and reads the file itself; never a sign-in folder of Claude, '
+                     'Codex or gh, nor the app\'s data). In the dry run each secret file name points at an empty placeholder '
+                     'file. If the brief needs a secret and names no file, ask the Requester for one. Leave both out when the '
+                     'script needs nothing.')
+
+
+def real_run_env_fields(rr):
+    """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out), each only
+    when stated."""
+    out = {"settings": dict(rr.get("settings") or {}),
+           "secret_files": {n: os.path.expanduser(p) for n, p in (rr.get("secret_files") or {}).items()}}
+    return {k: v for k, v in out.items() if v}
+
+
+def real_run_env_problems(rr, source, run_dir):
+    """P41 (D446): why a planned real run's settings and secret_files are not usable ([] when usable or absent). Structure
+    only: each a {name: string} object; names match ENV_NAME, are no llm.RUN_PASS_NAMES name (upper-case compare), not a
+    llm.RUN_LOADER_NAMES guardrail name (llm.is_loader_name: a fixed list, not a secret detector) and not in both; no NUL in
+    a value (values are never scanned); a secret file, ~ written out, is absolute, named in the brief or the Requester's
+    answers (real_run_problems' rule), an existing file once resolved, and not in the repo, the run folder or a
+    llm.login_homes() location."""
+    out, maps, base = [], {}, {n.upper() for n in llm.RUN_PASS_NAMES}
+    for key in ("settings", "secret_files"):
+        m = rr.get(key)
+        if m is None:
+            continue
+        if not (isinstance(m, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in m.items())):
+            out.append(f'real_run {key} must be an object of strings, {{"NAME": "..."}}')
+            continue
+        maps[key] = m
+        for n, v in m.items():
+            if not ENV_NAME.match(n):
+                out.append(f"real_run {key} name {n!r} is not a variable name (letters, digits and _, not starting with a digit)")
+            elif n.upper() in base:
+                out.append(f"real_run may not set {n}: the script already gets it")
+            elif llm.is_loader_name(n):
+                out.append(f"real_run may not set {n}: it changes how a program starts (a fixed guardrail list)")
+            if "\0" in v:
+                out.append(f"real_run {key} {n} holds a NUL character")
+    out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
+        {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
+    locked = [os.path.realpath(x) for x in llm.login_homes() + [_repo_root(), run_dir]]
+    for n, f in maps.get("secret_files", {}).items():
+        p = os.path.expanduser(f) if f == "~" or f.startswith("~/") else f
+        if "\0" in p:
+            continue
+        if not os.path.isabs(p):
+            out.append(f"real_run secret file {f!r} must be an absolute path")
+            continue
+        # named whole, as real_run_problems names a folder (the path ends there, or at a space or a sentence's end)
+        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
+                   for g in {p, home_tilde(p)}):
+            out.append(f"real_run secret file {f} is not named in the brief or the Requester's answers: ask for it")
+        r = os.path.realpath(p)
+        if not os.path.isfile(r):
+            out.append(f"real_run secret file {f} is not an existing file")
+        elif any(r == x or llm.inside(r, x) for x in locked):
+            out.append(f"real_run secret file {f} may not be in a sign-in folder of Claude, Codex or gh, the app's data, "
+                       "the repo or the run folder")
+    return out
+
+
 def real_run(out_dir, rr, timeout):
     """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
@@ -817,6 +885,8 @@ def real_run(out_dir, rr, timeout):
                                       "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
         extra = {**(rr.get("settings") or {}), **(rr.get("secret_files") or {})}      # P41 (D446): only what the plan states
         wrap = bool(cmd and extra) and os.name != "nt"      # defense in depth: under srt the names reach the script, never srt
+        # ponytail: on Windows under srt the plan's names reach srt itself (no env program); only the loader guardrail list
+        # guards srt there. Upgrade: a sys.executable wrapper that sets the names inside the -c command, if srt runs on Windows.
         run = ["env", *(f"{k}={v}" for k, v in extra.items()), *rr["command"]] if wrap else rr["command"]
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
@@ -4143,6 +4213,7 @@ class J2Run:
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
                 self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
+                self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
 
     def _begin_cycle(self, advance=True):
         if advance:
@@ -9578,6 +9649,10 @@ class J2Run:
                     continue
                 wf["real_run"] = {k: w["real_run"].get(k) for k in ("command", "folder", "reads", "why", "expect")}      # P35 (D438)
                 wf["real_run"]["checks"] = [as_int(i) for i in checks]
+                if bad := real_run_env_problems(w["real_run"], self._fact_source(), self.dir):      # P41 (D446)
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
+                    continue
+                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
                 wf["cause_change"] = str(w["cause_change"]).strip()
