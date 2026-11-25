@@ -153,7 +153,10 @@ TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 # Decide for me (the Simple view's switch, POST /api/settings): while it is on, an open question to the Requester is
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
-AUTO_ASK = {"send_confirm", "real_run"}
+AUTO_ASK = {"send_confirm", "real_run", "limit"}      # a limit question (keep going, leave out, finish) is the Requester's own
+with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as _f:      # vocabulary and sizes are data, never code
+    OWN_RUNS = json.load(_f)
+REQUESTER_ONLY = tuple((re.compile(x["pattern"], re.I), x["about"]) for x in OWN_RUNS["requester_only"])
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
@@ -4688,7 +4691,26 @@ class J2Run:
             return None
         if p["kind"] == "fact" and not all(q.get("kind") == "decision" for q in p.get("questions") or []):
             return None      # J2.g: only a decision is Decide for me's; a fact waits for the Requester
+        about = self._requester_only(p)
+        if about:      # by subject, whatever the kind: a real run, an install, the folder a real run uses
+            if not p.get("auto_waits"):      # said once per question
+                p["auto_waits"] = about
+                self._event("requester", "auto_waits", f"{p['kind']}: {about}")
+                self.post("system", f"Decide for me did not answer this question: it is about {about}. It waits for you.")
+            return None
         return self._auto_choice(p)
+
+    def _requester_only(self, p):
+        """What an open question is about when only the Requester may answer it (None: Decide for me may): a done-when
+        item a planned real run decides (the question's item tag, or the items its leave-out option names), or the
+        words of the question, its options and Identity's message (REQUESTER_ONLY, data)."""
+        qs, ho = p.get("questions") or [], p.get("handoff") or {}
+        nums = self._real_run_nums()
+        if any(as_int(q.get("item")) in nums for q in qs) or set(ho.get("drop_texts") or ()) & set(self._real_run_items()):
+            return REQUESTER_ONLY[0][1]
+        msg = next((m.get("text") or "" for m in reversed(self.chat) if m.get("id") == p.get("msg")), "")
+        text = "\n".join([msg] + [str(q.get("question") or "") for q in qs] + [str(o) for q in qs for o in q.get("options") or []])
+        return next((about for rx, about in REQUESTER_ONLY if rx.search(text)), None)
 
     def _auto_choice(self, p):
         """The answer Decide for me gives to pause p, whether or not it is on (the Simple view marks it "Suggested"):
@@ -4786,7 +4808,7 @@ class J2Run:
                     limit = (f"Cycles {self.cycle - 1} and {self.cycle} both registered nothing, so another cycle would "
                              "repeat the same blocker.")
                 elif self.cycle >= self.cycle_limit:
-                    limit = f"The department used its {MAX_CYCLES} cycles (J2_MAX_CYCLES) and the site isn't workable yet."
+                    limit = f"The department used its {MAX_CYCLES} cycles (J2_MAX_CYCLES) and the {self._thing()} isn't workable yet."
                 elif self.goal and self.budget - self.spent < cheapest:
                     self._event("system", "out_of_budget", f"{self.budget - self.spent} left, cheapest part {cheapest}")
                     limit = (f"Out of budget: {self.budget - self.spent} of {self.budget} work credits left, less than the "
@@ -5058,6 +5080,10 @@ class J2Run:
         k = run_page([self.output, *self.stages])
         return j2_types.info(k)["label"].lower() if k else None
 
+    def _thing(self):
+        """What code calls the output in its own workable messages: a folder's own noun (types.json), else "site"."""
+        return self.out["noun"] if self.folder and self.out else "site"
+
     def _page_ready(self):
         """The done message of a single output: its type's form's own ("Your website is ready.")."""
         return j2_types.info(self.output)["ready"]
@@ -5219,6 +5245,10 @@ class J2Run:
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
+        if self.folder:      # a folder of files a builder writes and runs (a program): its own charter, with its files and
+            # its test, from its own intake (the form's charter format), never a document's section charter (stage_goal)
+            self.post("system", f"The documents are done. Now {self._sw(kind)}, built from them.")
+            return self._handoff("identity", kind="intake")
         if is_page(kind):
             self.post("system", f"The documents are done. Now the {self._page_word()}, built from them.")
             self.proposed_lld = {}
@@ -5879,7 +5909,7 @@ class J2Run:
                       "number of the done-when item it blocks: that item is not met until they confirm it. "
                       "Keep everything the brief "
                       "asks for; if the charter leaves any of it out, list it in dropped_from_brief with the reason. "
-                      "Don't plan costs or resources.") + (SITE_LATER.format(page=self._page_word()) if self.docset and not self.doc and not change else "")
+                      "Don't plan costs or resources.") + (SITE_LATER.format(page=self._page_word() or self.out["noun"]) if self.docset and not self.doc and not change else "")
                       + ("\nRecord the charter now (enough=true) from what you have." if last else ""), mock,
                       defaults=("Thanks, I have everything I need. I'm starting the build now.",
                                 "Charter is ready. Propose the first workflows."))
@@ -6710,7 +6740,7 @@ class J2Run:
                 out.setdefault(("rubric", r["id"]), r["criterion"])
         mech = (last or {}).get("mechanical") or {}
         for p in (j2_check.problems(mech) if mech.get("available") else ["the browser check didn't run"]) \
-                if last and not self.doc else []:
+                if last and not self.doc and not self.folder else []:      # a browser check is a page's, never a folder's
             out.setdefault(("check", p), p)
         for c in (last or {}).get("conditions") or [] if not self.doc else []:   # by their text (the Requester reads it)
             if blocks(c) and not (not self.doc and c.get("check") in RENDER_CONDITIONS):
@@ -6817,7 +6847,7 @@ class J2Run:
                                 "no fix round is started.")
             return self._goal_done({"to_requester": r.get("to_requester") or self._page_ready()})
         if fails and r.get("needs_decision"):
-            return self._identity_limit({"reason": "Identity: the site can't be finished as asked without your "
+            return self._identity_limit({"reason": f"Identity: the {self._thing()} can't be finished as asked without your "
                                                    "decision.", "budget_needed": as_int(r.get("budget_needed")) or None})
         questions = clean_questions(r.get("requester_questions"))
         if code_q := [q for q in questions if q.get("kind") == "fact" and q.get("item") in rr]:
@@ -6828,9 +6858,9 @@ class J2Run:
         if questions and (facts or r.get("needs_requester")):
             return self._ask_user(r.get("to_requester") or r.get("say", ""), questions, "fact",
                                   handoff={"kind": "requester_answered"}, done=False)
-        note0 = ("Identity declared done, but the site isn't workable, so done-when can't hold. Back to J2.b."
+        note0 = (f"Identity declared done, but the {self._thing()} isn't workable, so done-when can't hold. Back to J2.b."
                  if r.get("done") and fails else
-                 "The site is workable, but Identity didn't declare done. Back to J2.b with Identity's reason."
+                 f"The {self._thing()} is workable, but Identity didn't declare done. Back to J2.b with Identity's reason."
                  if not fails else None)
         nxt, note = self._pick("identity", r.get("next"), ("adaptation",), "adaptation")
         self._reply(r, nxt, note0 or note, done=False)
