@@ -688,6 +688,8 @@ def real_run(out_dir, rr, timeout, env=None, hosts=()):
                                       "allowWrite": [folder], "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(command)] if cmd else command
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout)
+        if isinstance(rr.get("capture"), dict):      # the caller's own record of what it printed (run_output_record)
+            rr["capture"].update(stdout=p.stdout or "", stderr=p.stderr or "")
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
         where = f"in the sandbox, writing only {folder}" if cmd else "without a sandbox"
@@ -702,6 +704,59 @@ def real_run(out_dir, rr, timeout, env=None, hosts=()):
                             "and was stopped"}
     finally:
         os.unlink(conf)
+
+
+def folder_state(root):
+    """{relative path: (size, mtime_ns)} of every file under root: what a real run's folder held, without reading a file."""
+    out = {}
+    for r, _, fs in os.walk(root):
+        for f in fs:
+            p = os.path.join(r, f)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            out[os.path.relpath(p, root).replace(os.sep, "/")] = (st.st_size, st.st_mtime_ns)
+    return out
+
+
+def run_output_record(run_dir, wid, rr, res, capture, before):
+    """What an approved real run produced, kept in the run folder as <folder>/<workflow>-<n>.json (OWN_RUNS.run_output:
+    the folder and the sizes): its command, exit code and the end of its stdout and stderr; every file it created or
+    changed in the folder it writes (name, size, sha256, and the text of a text file no larger than text_bytes); the
+    names it deleted. `before`: folder_state() of that folder taken just before the run. The record's path, relative
+    to the run folder."""
+    cfg, folder = OWN_RUNS["run_output"], os.path.realpath(rr["folder"])
+    after, files = folder_state(folder), []
+    names = sorted(k for k in after if after[k] != before.get(k))
+    for name in names[:cfg["files"]]:
+        row = {"name": name, "change": "changed" if name in before else "created", "size": after[name][0]}
+        try:
+            with open(os.path.join(folder, name), "rb") as f:
+                data = f.read()
+        except OSError as e:
+            files.append({**row, "unread": str(e)})
+            continue
+        row["sha256"] = hashlib.sha256(data).hexdigest()
+        if len(data) <= cfg["text_bytes"] and b"\0" not in data:
+            try:
+                row["text"] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        files.append(row)
+    end = lambda k: str(capture.get(k, res.get(k)) or "")[-cfg["output_chars"]:]
+    rec = {"schema": "run-output/1", "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
+           "exit": res.get("exit"), "seconds": res.get("seconds"), "stdout": end("stdout"), "stderr": end("stderr"),
+           "files": files, "files_left_out": max(0, len(names) - cfg["files"]),
+           "deleted": sorted(k for k in before if k not in after), "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}
+    os.makedirs(os.path.join(run_dir, cfg["folder"]), exist_ok=True)
+    n = 1
+    while os.path.exists(os.path.join(run_dir, cfg["folder"], f"{wid}-{n}.json")):
+        n += 1
+    rel = f"{cfg['folder']}/{wid}-{n}.json"
+    with open(os.path.join(run_dir, rel), "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False, indent=1)
+    return rel
 
 
 def _tree(root):
@@ -5677,9 +5732,13 @@ class J2Run:
                                   handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": w["id"]})
         env, gone = self._run_env() if said == "run" else (None, "")
         ok = said == "run" and not gone
-        res = real_run(self._out_dir(), w["real_run"], builder_timeout(), env, real_hosts(w["real_run"])) if ok else \
+        capture, before = {}, folder_state(w["real_run"]["folder"]) if ok else {}      # what its folder held before it ran
+        res = real_run(self._out_dir(), {**w["real_run"], "capture": capture}, builder_timeout(), env,
+                       real_hosts(w["real_run"])) if ok else \
             {"ran": False, "exit": None, "evidence": "not run: the Requester declined" if said == "decline" else
              f"not run: {gone}" if gone else "not run: no approval code was issued for it"}
+        if res.get("ran"):      # what it printed and the files it made or changed: a record of its own, named in the receipt
+            res["run_output"] = run_output_record(self.dir, w["id"], w["real_run"], res, capture, before)
         self._real_run_receipt(h.get("wid"), code=code, approved=ok, declined=said == "decline",
                                answer_msg=last.get("id"), **res)
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
