@@ -2791,7 +2791,8 @@ def real_run(out_dir, rr, timeout):
 ''', r'''        extra = {**(rr.get("settings") or {}), **(rr.get("secret_files") or {})}      # P41 (D446): only what the plan states
         wrap = bool(cmd and extra) and os.name != "nt"      # defense in depth: under srt the names reach the script, never srt
         # ponytail: on Windows under srt the plan's names reach srt itself (no env program); only the loader guardrail list
-        # guards srt there. Upgrade: a sys.executable wrapper that sets the names inside the -c command, if srt runs on Windows.
+        # guards srt there. srt 0.0.81 has a Windows path; it is off by default only because sandbox_on is. Upgrade: a
+        # sys.executable wrapper that sets the names inside the -c command, when the sandbox is turned on on Windows.
         run = ["env", *(f"{k}={v}" for k, v in extra.items()), *rr["command"]] if wrap else rr["command"]
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
