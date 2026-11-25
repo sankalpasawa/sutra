@@ -4452,3 +4452,60 @@ def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
     run.post("user", "use 2 folders")
     run._run()
     assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
+
+
+# ---- P31, P41 amended (D448): a folder or secret file is named only whole (named_whole: one rule for both checks)
+D448_WHOLE = [      # (path, what the brief says, named whole?): made-up paths only
+    ("~/Documents/Made", "use ~/Documents/Made Up/Tool", False),
+    ("~/Documents/Made Up/Tool", "use ~/Documents/Made Up/Tool", True),
+    ("~/Documents/Made Up/Tool", "is it ~/Documents/Made Up/Tool?", True),
+    ("~/Documents/Made Up/Tool", "yes ~/Documents/Made Up/Tool! now", True),
+    ("~/Documents/Made Up/Tool", "the folder `~/Documents/Made Up/Tool` please", True),
+    ("~/Documents/Made Up/Tool", "~/Documents/Made Up/Tool/ and more", True),
+    ("~/demo/rename-test", "run it on ~/demo/rename-test", True),
+    ("~/demo/x", "run on ~/demo/x and ~/demo/y", True),
+    ("~/demo/x", "run on ~/demo/x, then stop.", True),
+    ("~/demo/x", "run on ~/demo/x. then stop", True),
+    ("~/demo/x", "run on ~/demo/xy", False),
+    ("/projects/x", "use /data/projects/x now", False),      # inside a longer path
+    ("~/demo/x", "folder=~/demo/x", True),
+    ("~/demo/x", "(~/demo/x)", True),
+    ("~/demo/x", "'~/demo/x'", True),
+    ("~/demo/x", "use ~/demo/x w/ care", False),      # known limit: a next word holding "/" reads as the path going on (fails safe)
+]
+
+
+def d448_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))      # Windows: expanduser reads USERPROFILE
+
+
+def test_p31_d448_a_folder_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    for d in (("Documents", "Made"), ("Documents", "Made Up", "Tool"), ("projects", "x")):
+        tmp_path.joinpath(*d).mkdir(parents=True)
+
+    def not_named(folder, said):
+        rr = {"command": [sys.executable, "tool.py"], "folder": folder, "reads": [], "why": "x"}
+        return any("is not named" in p for p in j2.real_run_problems(rr, j2.squash(said), [sys.executable], str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "use ~/Documents/Made Up/Tool"), "a parent of the named folder is not named"
+    for said in ("is it ~/Documents/Made Up/Tool?", "yes ~/Documents/Made Up/Tool! now", "the folder `~/Documents/Made Up/Tool` please"):
+        assert not not_named("~/Documents/Made Up/Tool", said), said
+    inner = str(tmp_path / "projects" / "x")
+    assert not_named(inner, f"use /data{inner} now"), "a path inside a longer one is not named"
+    for g, said, want in D448_WHOLE:
+        assert j2.named_whole(g, j2.squash(said)) is want, (g, said)
+
+
+def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
+    d448_home(tmp_path, monkeypatch)
+    (tmp_path / "Documents" / "Made Up").mkdir(parents=True)
+    (tmp_path / "Documents" / "Made").write_text("x")
+    (tmp_path / "Documents" / "Made Up" / "key.txt").write_text("x")
+
+    def not_named(f, said):
+        return any("is not named" in p for p in j2.real_run_env_problems({"secret_files": {"API_KEY_FILE": f}}, j2.squash(said),
+                                                                          str(tmp_path / "run")))
+    assert not_named("~/Documents/Made", "read ~/Documents/Made Up/key.txt"), "a shorter file is not named"
+    for said in ("read `~/Documents/Made Up/key.txt`?", "is it ~/Documents/Made Up/key.txt?", "yes ~/Documents/Made Up/key.txt! now"):
+        assert not not_named("~/Documents/Made Up/key.txt", said), said

@@ -718,8 +718,7 @@ def real_run_problems(rr, source, runner, run_dir):
             continue
         p = os.path.realpath(f)
         # named whole: a parent of a named folder is not named (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {f, home_tilde(f)}):      # P31 (D434, beta fix): the brief may write it ~/x
+        if not any(named_whole(g, source) for g in {f, home_tilde(f)}):      # P31 (D434, beta fix; D448: named whole): ~/x too
             out.append(f"real_run folder {f} is not named in the brief or the Requester's answers: ask for it")
         if not os.path.isdir(p):
             out.append(f"real_run folder {f} is not an existing folder")
@@ -762,6 +761,13 @@ def home_tilde(f):
     """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
     h = os.path.expanduser("~").rstrip("/")
     return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
+
+
+def named_whole(g, source):
+    """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
+    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end."""
+    return bool(re.search(r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
+                          + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))", source))
 
 
 def real_folders(workflows):
@@ -871,9 +877,8 @@ def real_run_env_problems(rr, source, run_dir):
         if not os.path.isabs(p):
             out.append(f"real_run secret file {f!r} must be an absolute path")
             continue
-        # named whole, as real_run_problems names a folder (the path ends there, or at a space or a sentence's end)
-        if not any(re.search(re.escape(squash(g).rstrip("/")) + r"/?(?=$|[\s,;:)'\"]|\.(?:\s|$))", source)
-                   for g in {p, home_tilde(p)}):
+        # named whole, as real_run_problems names a folder (named_whole, D448)
+        if not any(named_whole(g, source) for g in {p, home_tilde(p)}):
             out.append(f"real_run secret file {f} is not named in the brief or the Requester's answers: ask for it")
         r = os.path.realpath(p)
         if not os.path.isfile(r):
