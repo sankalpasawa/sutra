@@ -502,3 +502,15 @@ test("E32: the crew says what the live agents do, Asha and Nora included; the ot
     "Keeping things on track", "Checks each part as it finishes", "Free for the next part", "Waiting for the plan", "Nothing for this project", "Hit a problem",
     "Wrapped up", "Ready when you are", "Checked the work", "coming up", "Finished "]) assert.ok(!src.includes(gone), gone);
 });
+
+test("E32 (R1-1): a run that ended, or another run in the same tab, shows its own crew lines, not the last run's live lines", () => {
+  const page = livePage(), crew = s => call(page, `(() => { const s = ${JSON.stringify(s)}; return sCrew(s, sModel(s)); })()`);
+  const lines = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v.line]));
+  const S = readJson(fixture("state.json")), fresh = lines(call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`));
+  call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), run_id: "j2-a"})})`);
+  assert.deepEqual(lines(crew(S)), fresh);                                                    // the run ended: the stream lines again
+  assert.deepEqual(lines(crew({...S, saved: "j2-b"})), lines(call(plain(), `(() => { const s = ${JSON.stringify({...S, saved: "j2-b"})}; return sCrew(s, sModel(s)); })()`)));
+  const other = {...RUNNING({}), run_id: "j2-c"};
+  assert.equal(call(page, `liveTyping(${JSON.stringify(other)})`), "Is the site workable?");   // another run: no line of the first one
+  assert.equal(crew(other).mira.line, "Mira finished item 5.");
+});

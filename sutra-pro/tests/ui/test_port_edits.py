@@ -189,7 +189,7 @@ CASES = {
     # E32 (D453): who works now and what, from agent_live.json: the chat line, the Map's chip and its lit boxes
     "E32a": ([("function liveLines(s){", 1), ("RawChat.helpers.personOf(k)", 1), ("name = p ? PEOPLE[p].name : named || MAPLABEL.persona[k] || k;", 1), ("const liveTyping = s => {", 1), ("function mapLive(m){", 1)], []),
     "E32b": ([("liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });", 1),
-              ("  if (qp){ const m = t[qp.person], b = SV.bat && SV.bat.park", 1), ('line: plain(LIVE.last[k] || "") || liveSaid(s, k)});', 1)],
+              ("  if (qp){ const m = t[qp.person], b = SV.bat && SV.bat.park", 1), ('line: (s.status === "running" && plain(LIVE.last[k] || "")) || liveSaid(s, k)});', 1)],
              ["Planning the parts", "Deciding what comes first", "Lining up who goes next", "Making sure each part is ready to start", "Talking it through with the team",
               "Keeping things on track", "Checks each part as it finishes", "Free for the next part", "Waiting for the plan", "Nothing for this project", "Hit a problem",
               "Wrapped up", "Ready when you are", "Checked the work", "const sNum =", "const th = s.thinking"]),

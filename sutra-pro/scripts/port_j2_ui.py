@@ -164,7 +164,7 @@ SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \
 SCREW = _lines(
     '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};',
     "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
-    '    line: plain(LIVE.last[k] || "") || liveSaid(s, k)});',
+    '    line: (s.status === "running" && plain(LIVE.last[k] || "")) || liveSaid(s, k)});',
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
     "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json",
     "")
@@ -336,6 +336,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
         "const liveSaid = (s, k) => { const ev = sTalk(s), x = ev.filter(e => e.who === k).pop() || ev[ev.length - 1]; return x ? `${PEOPLE[x.who].name} ${x.text}` : liveStep(s); };      // between calls: the person's last team-stream line, else the run's, else the step",
         "function liveLines(s){",
         '  if (!s || s.status !== "running") return [];',
+        '  if (s.run_id !== LIVE.run) Object.assign(LIVE, {run: s.run_id, last: {}, line: ""});      // another run in this tab: nothing of the last one',
         "  const parts = sModel(s).parts, rc = k => (typeof RawChat === \"object\" && RawChat.helpers.personOf(k)) || {};      // raw_chat.js PEOPLE: a function's person, else its role title",
         "  return Object.entries(s.live || {}).sort((a, b) => (a[1].since || 0) - (b[1].since || 0)).map(([k, e]) => {",
         "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, r = rc(k), named = r.role === k ? r.name : \"\",",
