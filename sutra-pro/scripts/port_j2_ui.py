@@ -315,10 +315,10 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E30c", '  if (!text) return;\n  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ',
          '  if (!text) return;\n  const said = await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ', 1),
     Edit("E30d", "  if (RTNEW.id) RTNEW.sent = true;\n}", "  if (RTNEW.id) RTNEW.sent = true;\n  if (window.StartFiles) StartFiles.answered(said);      // E30 (D451): the files of this send are cleared, or a refusal is said and the words come back\n}", 1),
-    # E31 (D452): a real run runs unasked, so the Deliverables' "Run for real" line says whether it ran automatically, never
-    # "approved by you" (the row has no `approved` any more)
+    # E31 (D452): a real run runs unasked, so the Deliverables' "Run for real" line says whether it ran automatically; a row
+    # written before D452 still carries `approved` and says what happened then (review R1-6)
     Edit("E31", '      + ` · ${r.approved ? "approved by you" : "not approved"}</span>',
-         '      + ` · ${r.ran ? "ran automatically" : "did not start"}</span>', 1),
+         '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

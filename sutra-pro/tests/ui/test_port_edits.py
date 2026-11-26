@@ -183,8 +183,9 @@ CASES = {
     "E30b": ([('<div class="sfiles" id="sfiles"></div><form class="scbox" id="sform"><span id="sattach"></span><input id="sbox"', 1)], ['<form class="scbox" id="sform"><input id="sbox"']),
     "E30c": ([('  const said = await fetch("/api/say", {method:"POST"', 1)], ['  if (!text) return;\n  await fetch("/api/say"']),
     "E30d": ([("  if (window.StartFiles) StartFiles.answered(said);", 1)], []),
-    # E31 (D452): the "Run for real" line says whether it ran automatically; never "approved by you"
-    "E31": ([('      + ` · ${r.ran ? "ran automatically" : "did not start"}</span>', 1)], ["approved by you", "not approved"]),
+    # E31 (D452): the "Run for real" line says whether it ran automatically; only a row written before D452 says "approved by you"
+    "E31": ([('      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1)],
+            ['      + ` · ${r.approved ? "approved by you" : "not approved"}</span>']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],

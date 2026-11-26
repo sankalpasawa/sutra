@@ -1671,7 +1671,7 @@ def test_refs_and_file_read_the_data_so_a_registered_type_and_a_new_one_are_in_t
 
 def test_d452_artifacts_list_an_old_real_run_row_and_a_new_one(w):
     """AC-23, NFR-6: a row written before D452 (approved false, a filled dry_run, offline) and a row without them both read
-    without error; the projection the page shows carries no `approved`."""
+    without error; the projection the page shows carries `approved` only for the old row that has it (E31, review R1-6)."""
     d = w.base / "runs-d452" / SITE_ID
     shutil.copytree(w.site.dir, d)
     old = {"type": "real_run", "workflow": "W-1", "command": ["python3", "s.py"], "folder": "/made/up", "reads": [], "code": "abc123",
@@ -1685,5 +1685,5 @@ def test_d452_artifacts_list_an_old_real_run_row_and_a_new_one(w):
     for view in ("artifacts", "artifacts_groups"):      # both answer with the old row in the file
         assert jbody(call(w, view, saved_ctx(w, SITE_ID, folder="runs-d452")))
     got = w.j2.j2_artifacts._deliverable_extras(str(d))["real_runs"]      # what a deliverable row of /api/artifacts/groups carries
-    assert [r["workflow"] for r in got] == ["W-1", "W-2"] and not any("approved" in r for r in got), got
+    assert [r["workflow"] for r in got] == ["W-1", "W-2"] and got[0]["approved"] is False and "approved" not in got[1], got
     assert got[1]["ran"] is True and got[0]["evidence"].startswith("not run")

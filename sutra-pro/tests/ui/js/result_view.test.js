@@ -660,3 +660,13 @@ test("review R1-2: a part click on a website with no version yet opens the part'
   p.ctx.sGo("W-3");
   assert.equal(p.log.go, "W-3", "with a version the site tab exists: the page's own");
 });
+
+test("E31 (D452, review R1-6): the Deliverables' Run for real line says ran automatically only for a row without approval keys", () => {
+  const page = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/pages/j2_ui.html"), "utf8");
+  const expr = page.split("\n").find(l => l.includes('"ran automatically"')).match(/ · \$\{(.*)\}<\/span><span class="aev">/)[1];
+  const say = new Function("r", `return ${expr};`);
+  assert.equal(say({ran: true, exit: 0}), "ran automatically");
+  assert.equal(say({ran: false}), "did not start");
+  assert.equal(say({approved: true, ran: true, exit: 0}), "approved by you", "a row written before D452");
+  assert.equal(say({approved: false, ran: false}), "not approved", "a row written before D452 that was declined");
+});

@@ -2762,6 +2762,44 @@ def test_p46_a_follow_up_never_reruns_a_parents_real_run(p31, j2ft, monkeypatch,
         assert len(calls) - before == (0 if ran_before else 1), (ran_before, calls)
 
 
+P46_LEAVES_UNREADABLE = P31_OK + ("os.symlink(os.path.join(sys.argv[1], 'gone'), os.path.join(sys.argv[1], 'broken'))\n"
+                                  "p = os.path.join(sys.argv[1], 'locked'); open(p, 'w').write('x'); os.chmod(p, 0)\n")
+
+
+def test_p46_a_real_run_that_leaves_an_unreadable_file_still_writes_its_row(p31, j2ft):
+    """Review R1-3: a script that leaves a broken symlink and an unreadable file in its folder: the after-run record lists
+    them as unreadable instead of raising, the row is written, and the real run never runs again."""
+    go, real = p31
+    run = go(P46_LEAVES_UNREADABLE)
+    try:
+        assert run._real_run_next({}) is True
+        assert j2ft._tree(real)["broken"] == j2ft._tree(real)["locked"] == "unreadable"
+        rows = p31_receipts(run)
+        assert len(rows) == 1 and rows[0]["ran"] and rows[0]["exit"] == 0, rows
+        assert any(m["text"].startswith("Ran for real: ") for m in run.chat if m["who"] == "system")
+        assert run._real_run_next({}) is False
+    finally:
+        os.chmod(os.path.join(real, "locked"), 0o600)
+
+
+def test_p46_a_step_that_fails_after_the_real_run_still_writes_its_row(p31, monkeypatch):
+    """Review R1-3: Audit's call fails after the command ran: the row is written with the items not judged, so the real
+    run stays open and is never run again."""
+    go, _ = p31
+    run = go(P31_OK)
+
+    def boom(*a, **k):
+        raise RuntimeError("the model is away")
+    monkeypatch.setattr(run, "_judge_real_run", boom)
+    with pytest.raises(RuntimeError):
+        run._real_run_next({})
+    rows = p31_receipts(run)
+    assert len(rows) == 1 and rows[0]["ran"] and rows[0]["audit"]["3"]["verdict"] == "NEEDS_REVISION", rows
+    assert "not judged: RuntimeError" in rows[0]["audit"]["3"]["evidence"]
+    assert run._real_run_next({}) is False
+    assert any("W-1's real run did not pass" in x for x in run._real_run_open())
+
+
 P46_NO_MODULE = "import sys, os\nimport made_up_module_d452\n"      # imports a module that is not installed: FR-9 sends it back
 
 
@@ -2794,6 +2832,51 @@ def test_p46_no_done_without_the_required_real_run(p31, case):
            "mismatch": "W-1's real run did not pass: not what it said it would do: created: expected done.txt, got none"}[case]
     assert out.startswith("Done with open items:") and why in out, out
     assert p46_summary_status(run) == "done_with_open_items"
+
+
+P46_OPEN = "W-1's real run has not run"
+
+
+@pytest.mark.parametrize("ending", ["tpl", "stages", "deeds_pass", "deeds_fail", "chain_stages"])
+def test_p46_every_chain_ending_names_the_open_real_run(p31, ending):
+    """Review R1-2, R1-5 (FR-40): the endings that write their own outcome through _chain_done (a run template's partial
+    stage, the last stage, a send deed that passed or failed) and the stage gate's "finish as it is" (_chain_blocked) name
+    a required real run that has not run, and never start "Done:"."""
+    go, _ = p31
+    run = go(P31_OK)      # W-1 is done; its real run has not run
+    if ending == "tpl":
+        run.run_tpl = {"name": "t", "selected": ["W-1"], "total": 2}
+        run._run_tpl_stage_end()
+    elif ending == "stages":
+        run._stages_finished()
+    elif ending.startswith("deeds"):
+        run.deed_log = [{"note": "Sent.", "pass": ending == "deeds_pass", "status": "done"}]
+        run._deeds_finished()
+    else:      # a chain of stages: the stage gate's "finish as it is" reads _chain_blocked, as _chain_done does
+        run.stages = ["a", "b"]
+        assert P46_OPEN in run._chain_blocked()
+        run.outcome = run._chain_done("Done: x")
+    assert run.outcome.startswith("Done with open items:") and P46_OPEN in run.outcome, run.outcome
+    if ending == "deeds_fail":
+        assert "Sent." in run.outcome
+
+
+def test_p46_the_chat_never_says_done_while_a_real_run_is_open(p31, monkeypatch):
+    """Review R1-2 (FR-40): an ending that sets "Done: ..." itself (here a change with nothing to build) is turned into "Done
+    with open items: <why>" before the closing system line is posted, so no chat line starts "Done:"; summary.json agrees."""
+    go, _ = p31
+    run = go(P31_OK)
+    run.goal = {**run.goal, "to_be_confirmed": [{"criterion": "x", "fact": "y"}]}      # any path: the handoff is stubbed
+
+    def ends(*a, **k):
+        run.turn, run.outcome = None, "Done: the change left the charter's items, rules and standards as they were; nothing to build."
+    monkeypatch.setattr(run, "_handoff", ends)
+    run.post("user", "change nothing")
+    run._run()
+    closing = [m["text"] for m in run.chat if m["who"] == "system"]
+    assert not [t for t in closing if t.startswith("Done:")], closing
+    assert any(t.startswith(f"Done with open items: {P46_OPEN}.") for t in closing), closing
+    assert json.loads((Path(run.dir) / "summary.json").read_text())["status"] == "done_with_open_items"
 
 
 def test_p46_a_passing_real_run_ends_done_and_a_replacement_that_passed_too(p31):

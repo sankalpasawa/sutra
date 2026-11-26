@@ -933,13 +933,18 @@ def real_run_hosts_problems(rr):
 
 
 def _tree(root):
-    """{relative path: sha256} of every file under root."""
+    """{relative path: sha256} of every file under root. P46 (D452, review R1-3): a file that cannot be read (a broken
+    symlink, no permission) is recorded as "unreadable", never raised, so a real run's row is written after it."""
     out = {}
     for r, _, fs in os.walk(root):
         for f in fs:
             p = os.path.join(r, f)
-            with open(p, "rb") as fh:
-                out[os.path.relpath(p, root).replace(os.sep, "/")] = hashlib.sha256(fh.read()).hexdigest()
+            try:
+                with open(p, "rb") as fh:
+                    h = hashlib.sha256(fh.read()).hexdigest()
+            except OSError:
+                h = "unreadable"
+            out[os.path.relpath(p, root).replace(os.sep, "/")] = h
     return out
 
 
@@ -5337,6 +5342,8 @@ class J2Run:
         where = " " if not noun or (self.folder and self.paused) else \
             f" The {self.out['noun']} is in {self.out['folder']}/ in the run folder. " if self.folder else \
             f" {noun} v{len(self.sites)} is in the preview. "
+        if (self.outcome or "").startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for
+            self.outcome = "Done with open items: " + "; ".join(x) + "."      # every ending, before chat shows the outcome
         self.post("system", (self.outcome or "Stopped.") + where
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
@@ -6008,21 +6015,26 @@ class J2Run:
         to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts."""
         rr, wid, mm, judged = w["real_run"], w["id"], "", {}
         folder = os.path.realpath(rr["folder"])
-        before = _tree(folder)
-        res = real_run(self._out_dir(), rr, builder_timeout())
-        diff = _tree_diff(before, _tree(folder))
-        ran_ok = bool(res.get("ran") and res.get("exit") == 0)
         nums = {as_int(c) for c in rr.get("checks") or []}
         mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
-        if ran_ok:
-            mm = expect_mismatch(rr["expect"], diff) if rr.get("expect") else ""      # a real run registered before P35 has none
-            judged = ({t: (False, "not what it said it would do: " + mm) for t in mine} if mm
-                      else self._judge_real_run(w, res, diff, mine) if mine else {})
-        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **res,
-                                **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
-                                              for t, v in judged.items()}} if judged else {}),
-                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
+        before = _tree(folder)
+        res = real_run(self._out_dir(), rr, builder_timeout())
+        try:      # review R1-3: once the command ran its row is always written, so a follow-up never runs it again
+            diff = _tree_diff(before, _tree(folder))
+            ran_ok = bool(res.get("ran") and res.get("exit") == 0)
+            if ran_ok:
+                mm = expect_mismatch(rr["expect"], diff) if rr.get("expect") else ""      # a real run registered before P35 has none
+                judged = ({t: (False, "not what it said it would do: " + mm) for t in mine} if mm
+                          else self._judge_real_run(w, res, diff, mine) if mine else {})
+        except BaseException as e:      # the items stay open: not judged
+            judged = {t: (False, f"not judged: {type(e).__name__}: {str(e)[:200]}") for t in mine}
+            raise
+        finally:
+            with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **res,
+                                    **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
+                                                  for t, v in judged.items()}} if judged else {}),
+                                    "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{wid}: {res['evidence']}" + (f"; not what it said it would do: {mm}" if mm else ""))
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + "."
                   + (f" Not what it said it would do: {mm}." if mm else ""), warning=bool(res.get("ran") and res.get("exit") != 0 or mm))
@@ -10963,13 +10975,14 @@ class J2Run:
     def _chain_blocked(self):
         """P30 (D433, review R5-1): every blocked line a run's ending names when it writes the outcome itself: the earlier
         stages' (_stage_blocked) and the current stage's, archived when the chain left it; in a run of one output, the
-        current goal's blocked items."""
+        current goal's blocked items. Amended in D452 (P46, FR-40): first, each required real run that has not passed."""
+        rr = self._real_run_open()
         if not self.stages:
             blocked = set(self._blocked_items())
-            return self._open_items(skip=[t for t in (self.goal or {}).get("done_when") or [] if t not in blocked]) \
-                if blocked else []
-        return self._stage_blocked() + [f"{a['stage'].upper()} {line}" for a in self.stage_archive
-                                        if a.get("stage") == self.stage_kind for line in a.get("blocked") or []]
+            return rr + (self._open_items(skip=[t for t in (self.goal or {}).get("done_when") or [] if t not in blocked])
+                         if blocked else [])
+        return rr + self._stage_blocked() + [f"{a['stage'].upper()} {line}" for a in self.stage_archive
+                                             if a.get("stage") == self.stage_kind for line in a.get("blocked") or []]
 
     def _chain_done(self, done, head="not every done-when item is built."):
         """P30 (D433, review R5-1): a chain ending's outcome: done as given while no blocked line is left, else "Done with
@@ -13420,8 +13433,6 @@ class J2Run:
     def _write_summary(self):
         """runs/<run>/summary.json when a run ends (done, stopped, out of budget or crashed). Code only, no AI call."""
         o = self.outcome or ""
-        if o.startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for every ending
-            o = self.outcome = "Done with open items: " + "; ".join(x) + "."
         status = next((k for p, k in (("Done with open items", "done_with_open_items"), ("Done", "done"), ("Crashed", "crashed"))
                        if o.startswith(p)), "stopped")
         last = self.audits[-1] if self.audits else None
