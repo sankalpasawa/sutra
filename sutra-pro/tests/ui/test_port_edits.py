@@ -2,7 +2,7 @@
 
 Three groups, none of them needs a browser or the J2 source:
   1. the committed files (sutra_app/ui/pages/j2_ui.html, static/css/j2.css, static/vendor/*, the two harness copies, and the frozen
-     static/css/j2-shell.css that Home and the console keep): edit by edit (the 59 page edits) against a table written out here, and
+     static/css/j2-shell.css that Home and the console keep): edit by edit (the 57 page edits) against a table written out here, and
      the invariants the design lists;
   2. scripts/port_j2_ui.py on a miniature J2 built below: the same table holds for what the script produces, J2 drift stops the
      port, `--check`, `--commit`, J2 is never written, two ports give the same bytes;
@@ -68,7 +68,7 @@ PAGE = read(UI / "pages" / "j2_ui.html")
 EDIT_IDS = ["E1", "E2a", "E2b", "E2c", "E3", "E4", "E5", "E6a", "E6b", "E7", "E8", "E9", "E9b", "E10", "E11", "E12", "E13a", "E13b", "E13c", "E13d",
             "E19", "E20a", "E20b", "E20c", "E20d", "E20e", "E20f1", "E20f2", "E20g", "E20h", "E20i", "E21", "E22", "E23",
             "E24a", "E24b", "E24c", "E24d", "E24e", "E24f", "E25a", "E25b", "E25c", "E25d", "E26a", "E26b", "E26c", "E27a", "E27b", "E27c", "E27d", "E27e",
-            "E28a", "E28b", "E29", "E30a", "E30b", "E30c", "E30d"]
+            "E30a", "E30b", "E30c", "E30d", "E31"]
 COUNTS = {edit: 1 for edit in EDIT_IDS} | {"E13b": 3, "E20d": 2, "E20i": 2, "E27d": 2}
 E1_HEAD = ('<link rel="stylesheet" href="/ui/css/j2.css">\n'
            '<link rel="stylesheet" href="/ui/css/sutra-graph.css"><link rel="stylesheet" href="/ui/css/sutra-panel.css">\n'
@@ -178,18 +178,14 @@ CASES = {
     "E27c": ([('return sendText("Add $" + n + " and keep going"); }', 1), ('if (b.dataset.raise !== undefined)', 1)], []),
     "E27d": ([(r"\[adds (?:\d+ (?:units|work credits)|\$[\d,.]+)[^\]]*\]", 2)], [r"\[adds \d+ (?:units|work credits)[^\]]*\]"]),
     "E27e": ([('  if (ok) h += sRaise(s, kind, live) + `<div class="acts">', 1)], ['  if (ok) h += `<div class="acts">']),
-    # E28 (D434): the real-run card's Run (exactly RUN <code>) and Don't run buttons, and their click
-    "E28a": ([('data-run="RUN ${esc(s.paused.code)}">Run</button>', 1), ('data-run="Don\'t run">Don\'t run</button>', 1),
-              ('  if (kind === "real_run" && live && (s.paused || {}).code) h += ', 1)], []),
-    "E28b": ([("  if (b.dataset.run !== undefined) return sendText(b.dataset.run);", 1)], []),
-    # E29 (D449): a live host question's Allow (Option 1, the pick that carries every host) and Don't allow buttons, in place of its options
-    "E29": ([('    else if (kind === "hosts" && live) h += `<div class="acts">', 1), ('data-run="Option 1">Allow</button>', 1),
-             ('data-run="Don\'t allow">Don\'t allow</button>', 1), ('    else if (q.opts.length) h += `<div class="opts"', 1)], []),
     # E30 (D451): files where work starts: the paperclip and the chips of the start box and the follow-up box, and the files of a send carried to the route
     "E30a": ([('<div class="sfiles" id="lfiles"></div>\n        <div class="sbrow"><span id="lattach"></span>', 1)], ['</textarea>\n        <div class="sbrow"><div class="schips"']),
     "E30b": ([('<div class="sfiles" id="sfiles"></div><form class="scbox" id="sform"><span id="sattach"></span><input id="sbox"', 1)], ['<form class="scbox" id="sform"><input id="sbox"']),
     "E30c": ([('  const said = await fetch("/api/say", {method:"POST"', 1)], ['  if (!text) return;\n  await fetch("/api/say"']),
     "E30d": ([("  if (window.StartFiles) StartFiles.answered(said);", 1)], []),
+    # E31 (D452): the "Run for real" line says whether it ran automatically; only a row written before D452 says "approved by you"
+    "E31": ([('      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1)],
+            ['      + ` · ${r.approved ? "approved by you" : "not approved"}</span>']),
     "E21": ([(E21_HYDRATE, 1)], ["Object.assign(FEED, v); } } catch (e) {}\n  paintFeed();"]),
     "E22": ([('runsettings: "appearance and saved runs"};', 1)], ["appearance, what to build, saved runs"]),
     "E23": ([("/* no web fonts in the app (UI-D3): the studio's Google Fonts link is not added to a generated document */ }", 1)],
@@ -213,13 +209,17 @@ def test_edit_is_in_the_committed_page(case):
     check_case(PAGE, case)
 
 
-def test_there_are_fifty_nine_edits_and_every_one_has_a_case_here():
-    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 59 and sorted(CASES) == sorted(EDIT_IDS)
+def test_there_are_fifty_seven_edits_and_every_one_has_a_case_here():
+    assert len(EDIT_IDS) == len(set(EDIT_IDS)) == 57 and sorted(CASES) == sorted(EDIT_IDS)
     assert [COUNTS[f"E13{letter}"] for letter in "abcd"] == [1, 3, 1, 1] and COUNTS["E20d"] == COUNTS["E20i"] == 2
-    assert sum(1 for count in COUNTS.values() if count == 1) == 55
+    assert sum(1 for count in COUNTS.values() if count == 1) == 53
 
 
 def test_the_retired_edits_left_nothing_behind():
+    # E29 (D449, deleted in D452): no host question exists, so no Allow / Don't allow buttons
+    assert 'kind === "hosts"' not in PAGE and 'data-run="Don\'t allow"' not in PAGE
+    # E28 (D434, deleted in D452): no real-run card, so no Run / Don't run buttons and no data-run click
+    assert "data-run" not in PAGE and "s.paused.code" not in PAGE
     # E14 to E18 (Run settings: J2's own is native now) and E19a to E19c (the start select, OUTS and /api/output moved to a module)
     for gone in ('id="outsel"', 'id="to-simple"', "What to build", "EFFOUT", "PICKEDOUT", 'id="stitle"', 'id="sotype"',
                  "run-settings.css", "/api/output"):
@@ -549,6 +549,8 @@ function qCard(s, kind, live){ let h = "";
     else if (q.opts.length) h += `<div class="opts"></div>`;
   else h += `<div class="own"><input aria-label="Your answer"></div>`;
   if (later) h += `<p class="qnote">Saved for later.</p>`; }
+function artRun(r){ return `<span class="empty">writes only ${esc(r.folder || "")}`
+      + ` · ${r.approved ? "approved by you" : "not approved"}</span>`; }
 const qa = l => l.match(/^\s+Option \d+: (.*?)(?: \[adds \d+ (?:units|work credits)[^\]]*\])?$/) || l.replace(/ \[adds \d+ (?:units|work credits)[^\]]*\]$/, "");
 function sCardClick(e){
   if (b.dataset.approve) return sendText("Yes, approve it.");
@@ -674,7 +676,7 @@ def test_check_is_quiet_about_files_in_step_and_writes_nothing(ported, capsys):
     j2, root = ported
     before = tree(root)
     code, out, err = run(capsys, "--j2", j2, "--root", root, "--check")
-    assert (code, err) == (0, "") and out.startswith("ok: the 59 anchors of the page edits match their counts, ")
+    assert (code, err) == (0, "") and out.startswith("ok: the 57 anchors of the page edits match their counts, ")
     assert "and the 7 committed files equal a fresh port of J2 " in out
     assert tree(root) == before
 
@@ -901,7 +903,7 @@ def test_e13_words_are_the_four_pairs_of_the_design_and_the_script_prints_them_a
 
 def test_the_edit_table_has_the_design_ids_and_counts():
     assert [(edit.id, edit.count) for edit in port.PAGE_EDITS] == [(edit, COUNTS[edit]) for edit in EDIT_IDS]
-    assert len(port.PAGE_EDITS) == 59
+    assert len(port.PAGE_EDITS) == 57
     assert [(e.id, e.count) for e in port.RENDER_EDITS] == [("H1", 1), ("H2", 1), ("H3", 1)]
     assert [(e.id, e.count) for e in port.LAYOUT_EDITS] == [("H1", 1)]
     for retired in ("RUN_SETTINGS_EDITS", "OUTPUT_EDITS", "RUN_SETTINGS_CSS"):
@@ -932,5 +934,5 @@ def test_a_fresh_port_of_the_real_j2_equals_the_committed_files_and_leaves_j2_al
     before = [p.read_bytes() for p in watched]
     code, out, err = run(capsys, "--j2", j2, "--commit", PIN, "--check")
     assert (code, err) == (0, ""), out + err
-    assert out.startswith("ok: the 59 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
+    assert out.startswith("ok: the 57 anchors of the page edits match their counts, and the 7 committed files equal a fresh port of J2 ")
     assert [p.read_bytes() for p in watched] == before

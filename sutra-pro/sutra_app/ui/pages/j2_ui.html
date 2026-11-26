@@ -1141,13 +1141,11 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
   qs.forEach((q, i) => {
     h += q.q ? sQText(q.q) : "";
     if (ok) h += q.opts.length ? `<p class="qnote">${esc(q.opts.map(plain).join(" · "))}</p>` : "";
-    else if (kind === "hosts" && live) h += `<div class="acts"><button type="button" class="pri" data-run="Option 1">Allow</button><button type="button" class="ghost" data-run="Don't allow">Don't allow</button></div>`;      // E29 (D449)
     else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
   if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
   else h += sRaise(s, kind, live) + `<div class="own"><input aria-label="Your answer" placeholder="${one && qs[0].opts.length ? "Or say it in your own words…" : "Type your answer…"}"><button type="button" class="pri" data-own>Send</button></div>`
     + `<div class="acts"><button type="button" class="ghost" data-later>Answer later</button></div>`;
-  if (kind === "real_run" && live && (s.paused || {}).code) h += `<div class="acts"><button type="button" class="pri" data-run="RUN ${esc(s.paused.code)}">Run</button><button type="button" class="ghost" data-run="Don't run">Don't run</button></div>`;      // E28 (D434)
   if (later) h += `<p class="qnote">Saved for later. The team waits for your answer. <button type="button" class="ghost" data-now>Answer now</button></p>`;
   else h += `<p class="qnote">${(s.paused || {}).auto_waits ? "Decide for me never answers this one: it needs you." : qp ? `${PEOPLE[qp.person].name} waits on this.` : "The team waits for your answer."}</p>`;
   return h + "</div>";
@@ -1164,7 +1162,6 @@ function sRaise(s, kind, live){      // E27 (D423): the raise input, only on a l
   return add > 0 && window.BudgetChip ? BudgetChip.raiseHtml(add) : ""; }
 function sCardClick(e){
   const b = e.target.closest && e.target.closest("button"), c = b && b.closest(".qcard"); if (!c || b.disabled) return;
-  if (b.dataset.run !== undefined) return sendText(b.dataset.run);      // E28 (D434): Run sends the exact RUN <code>; Don't run declines
   if (b.dataset.approve) return sendText(b.dataset.approve === "yes" ? "Yes, approve it." : "No, not now.");      // only a click sends an approval
   if (b.dataset.later !== undefined){ SLATER.add(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
   if (b.dataset.now !== undefined){ SLATER.delete(c.dataset.msg); simpleHTML = null; SV.inlineKey = ""; if (state) renderSimple(state); return; }
@@ -2404,7 +2401,7 @@ function artDeliv(x){ const cs = x.conditions || [], ws = x.warnings || [];
       + ` <span class="empty">(attempt ${esc(c.attempt)} failed)</span><span class="aev">${esc(c.evidence)}</span></span></li>`)}</div>` : "")
     + ((x.real_runs || []).length ? `<div class="ablk"><h5>Run for real (${x.real_runs.length})</h5>${artList(x.real_runs, r => `<li>${artMark(r.ran ? r.exit === 0 : null)}<span>`
       + `<span class="mono">${esc((r.command || []).join(" "))}</span> <span class="empty">writes only ${esc(r.folder || "")}${(r.reads || []).length ? `, reads ${esc(r.reads.join(", "))}` : ""}`
-      + ` · ${r.approved ? "approved by you" : "not approved"}</span><span class="aev">${esc(r.evidence || "")}</span></span></li>`)}</div>` : "")
+      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span><span class="aev">${esc(r.evidence || "")}</span></span></li>`)}</div>` : "")
     + artFiles(x); }
 function artFolder(x){ const fs = x.files || [], f = fs.some(y => y.file === ARTS.ver) ? ARTS.ver : (fs[0] || {}).file;
   return `<div class="avers" role="group" aria-label="File"><span class="empty">File</span>${fs.map(y => `<button type="button" data-afile="${esc(y.file)}" aria-pressed="${y.file === f}">${esc(y.name)}</button>`).join("")}</div>`

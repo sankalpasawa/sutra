@@ -1388,6 +1388,16 @@ def test_p22_the_real_run_workflow_covering_its_own_item_keeps_the_old_message(s
     assert not reg and "so no workflow covers it: take it out of covers and keep it in real_run checks" in refused[0]
 
 
+@pytest.mark.parametrize("checks, why", [([9], "real_run checks item 9, which is not a done-when item"),
+                                          ([], "real_run checks is empty")])
+def test_d452_a_real_runs_checks_must_name_done_when_items(sort_run, checks, why):
+    """Review R1-8: J2's checks refusals, kept from the legacy real_run_checks block (skipped in D452 for its approval part)."""
+    make, real = sort_run
+    script = sort_proposals(real, fix=True)[0]
+    reg, refused, _ = make()._register([{**script, "real_run": {**script["real_run"], "checks": checks}}])
+    assert not reg and any(why in str(x) for x in refused), refused
+
+
 def test_p22_the_same_rejection_of_the_same_workflow_twice_in_a_row_stops_the_cycle(sort_run):
     """Cycles 2 to 4 of the run refused the script again and again; the second identical refusal stops the cycle: Identity
     asks the Requester (a limit), and "keep going" resumes where the validator was going."""
@@ -2618,8 +2628,8 @@ def test_p30_a_served_section_carries_the_earlier_runs_status_or_not_built(site_
     assert {x["status"] for x in run._served_status(w, {"dir": str(tmp_path / "gone"), "workflow": "W-1"})} == {"not_built"}
 
 
-# ---- P31 (D434): a failed dry run goes back to the build; only Run or Don't run answers the real-run question ----------
-# Made-up script: it names the folder it was given (a temp copy in the dry run) and fails with "missing argument".
+# ---- P46 (D452): a planned real run runs once, unasked, when the rest is workable (P31's question is gone) --------------------
+# Made-up script: it names the folder it was given and fails with "missing argument".
 P31_FAIL = "import sys\nsys.stderr.write('cannot read ' + sys.argv[1] + '\\nmissing argument\\n')\nsys.exit(2)\n"
 P31_OK = "import os, sys\nopen(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n"
 P31_SRT = ("import json, subprocess, sys\na = sys.argv[1:]\njson.load(open(a[a.index('-s') + 1]))\n"
@@ -2628,7 +2638,7 @@ P31_SRT = ("import json, subprocess, sys\na = sys.argv[1:]\njson.load(open(a[a.i
 
 @pytest.fixture
 def p31(sort_run, tmp_path, monkeypatch):
-    """A sort run with W-1 (the script and its real run on item 3) registered and done, its sort_files.py written; the dry
+    """A sort run with W-1 (the script and its real run on item 3) registered and done, its sort_files.py written; the real
     run goes through a fake srt the test writes."""
     fake = tmp_path / "fake_srt.py"
     fake.write_text(P31_SRT)
@@ -2652,209 +2662,287 @@ def p31_receipts(run):
     return [json.loads(x) for x in p.read_text().splitlines() if '"real_run"' in x] if p.exists() else []
 
 
-def p31_revise(run, real, wid):
-    """Adaptation's fix: a workflow that revises wid and keeps its real run; built (no failed check), so P28 sees a pass."""
-    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": wid}])
-    assert len(reg) == 1 and not refused, refused
-    reg[0]["status"] = "done"
-    assert run._repeat_build_stop(reg[0]["id"]) is False
-    return reg[0]
+FR27_KEYS = ["type", "workflow", "command", "folder", "reads", "why", "expect", "checks", "ran", "exit", "output", "stdout", "stderr",
+             "seconds", "sha256", "evidence", "audit", "t", "by"]      # FR-27, for a plan with no hosts, settings or secret files
 
 
-def test_p31_a_failed_dry_run_goes_to_adaptation_never_to_the_requester(p31):
-    go, real = p31
-    run = go()
-    assert run._ask_real_run({}) is True
-    w = run.workflows[0]
-    assert not [m for m in run.chat if m.get("real_run")] and run.paused is None and run.turn == "adaptation"
-    assert w["status"] == "failed" and w["failure"] == ["dry_run", "exit 2: missing argument"], w.get("failure")
-    assert "W-1" not in run.real_runs_asked and run.handoff["kind"] == "propose" and "missing argument" in run.handoff["why"]
-    assert not any(m.get("to_user") for m in run.chat if m["who"] == "system")
-    # owner (review R1-7): one plain info line, never a warning, a question or a card
-    said = [m for m in run.chat if "dry run" in m["text"].lower()]
-    assert [m["text"] for m in said] == ["Dry run failed, sent back to the builder"], said
-    assert not said[0].get("warning") and not said[0].get("to_user") and not said[0].get("real_run") and run.paused is None
-    assert any(e["type"] == "real_run" and "the dry run on copies failed" in str(e) for e in run.events)
-    # the plan's open point: P22 takes a replacement real-run workflow for the item whose first real run failed its dry run
-    w2 = p31_revise(run, real, "W-1")
-    assert w2["real_run"]["checks"] == [3]
-
-
-def test_p31_two_identical_dry_run_failures_stop_the_cycle_across_temp_folders(p31, j2ft):
-    go, real = p31
-    run = go()
-    run._ask_real_run({})
-    w2 = p31_revise(run, real, "W-1")      # its build passed: P28's memory of the dry-run failure stays
-    assert run._ask_real_run({}) is True
-    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
-    assert sig[0] == sig[1] == ("dry_run", "exit 2: missing argument")
-    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
-    assert "the same failure came back twice" in run.handoff["reason"].lower()
-
-
-def test_p31_the_revising_builder_sees_the_dry_run_output(p31, monkeypatch):
-    go, real = p31
-    run = go()
-    run._ask_real_run({})
-    w2 = p31_revise(run, real, "W-1")
-    w2["status"] = "registered"
-    seen = {}
-    monkeypatch.setattr(run, "_file_wf", lambda w: True)      # the brief goes to the builder call, caught here
-    monkeypatch.setattr(run, "_run_artifact", lambda w, brief, n: seen.update(brief))
-    run._build_workflow({"wid": w2["id"]})
-    assert "missing argument" in seen["dry_run_failure"] and seen["dry_run_failure"] == run.workflows[0]["dry_run_output"]
-    seen.clear()
-    run._build_workflow({"wid": "W-1"})      # a workflow that revises nothing: no field, so other prompts don't change
-    assert "dry_run_failure" not in seen and seen
-
-
-def test_p31_the_receipt_keeps_the_dry_run_output(p31):
-    go, _ = p31
-    run = go()
-    run._ask_real_run({})
-    r = p31_receipts(run)[-1]
-    assert not r["approved"] and not r["ran"] and r["evidence"] == "not asked: the dry run on copies failed (exit 2: missing argument)"
-    assert "missing argument" in r["dry_run"]["output"] and "cannot read <copy>/f0" in r["dry_run"]["output"]
-    assert ".dryrun-" not in json.dumps(r["dry_run"]["output"]) and r["dry_run"]["exit"] == 2
-
-
-def test_p31_the_snapshot_carries_the_code_for_a_real_run_pause(p31):
-    go, _ = p31
-    run = go(P31_OK)
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    assert run.snapshot()["paused"]["code"] == run.real_runs_asked["W-1"]
-    ask = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
-    assert "Or press Run. To decline, press Don't run." in ask and "Any other reply" not in ask
-
-
-def p31_answer(run, text, auto=False):
-    run.post("user", text, **({"auto": True} if auto else {}))
-    p, run.paused = run.paused, None      # as _run does when the Requester answers
-    run._identity_real_run({**p["handoff"], "answer": text})
-
-
-def test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open(p31):
-    go, real = p31
-    run = go(P31_OK)
-    run._ask_real_run({})
-    code = run.real_runs_asked["W-1"]
-    for text, auto in (("yes", False), ("RUN", False), (f"RUN {code}", True)):      # Decide for me's exact code is no answer either
-        p31_answer(run, text, auto)
-        last = run.chat[-1]
-        assert last["who"] == "identity" and f"Not run. Press Run or type RUN {code}." in last["text"], last["text"]
-        assert run.paused["kind"] == "real_run" and run.real_runs_asked["W-1"] == code and run.snapshot()["paused"]["code"] == code
-        assert str(run.outcome).startswith("Paused") and p31_receipts(run) == [] and not os.path.exists(os.path.join(real, "done.txt"))
-    p31_answer(run, f"RUN {code}")
-    r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and os.path.exists(os.path.join(real, "done.txt"))
-    assert run._real_run_pending() == []
-
-
-def test_p31_dont_run_declines_as_before(p31):
-    go, _ = p31
-    run = go(P31_OK)
+def p31_audit(run):
+    """The last audit: items 1 and 2 pass, item 3 waits for its real run."""
     crit = run.goal["done_when"]
-    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]],
-                   "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3, "verdict": "PASS" if i != 3 else "FAIL",
-                                "note": ""} for i, c in enumerate(crit, 1)]}]
-    run._ask_real_run({})
-    p31_answer(run, "  don't RUN ")
-    r = p31_receipts(run)[-1]
-    assert not r["approved"] and not r["ran"] and r["evidence"] == "not run: the Requester chose Don't run"
-    assert run.paused is None and str(run.outcome).startswith("Done with open items"), run.outcome
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False, "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3,
+                                                   "verdict": "PASS" if i != 3 else "FAIL", "note": ""} for i, c in enumerate(crit, 1)]}]
 
 
-def test_p31_decide_for_me_still_never_answers_a_real_run(p31):
-    go, _ = p31
+def test_p46_a_planned_real_run_runs_once_unasked(p31, j2ft, monkeypatch):
+    """AC-1, AC-23: real_run is called once, no message holds RUN, nothing pauses, one row with exactly FR-27's keys."""
+    go, real = p31
+    run = go(P31_OK)
+    p31_audit(run)
+    calls, orig = [], j2ft.real_run
+    monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: calls.append(a) or orig(*a, **k))
+    assert run._real_run_next({}) is True
+    assert len(calls) == 1 and run.paused is None and not [m for m in run.chat if "RUN " in m["text"]]
+    r = p31_receipts(run)
+    assert len(r) == 1 and list(r[0]) == FR27_KEYS, list(r[0])
+    assert r[0]["ran"] and r[0]["exit"] == 0 and r[0]["by"] == "code" and os.path.exists(os.path.join(real, "done.txt"))
+    assert any(m["text"].startswith("Ran for real: ") for m in run.chat if m["who"] == "system")
+    assert run._real_run_next({}) is False and len(calls) == 1, "once per workflow id"
+    assert str(run.outcome).startswith("Done:"), run.outcome
+
+
+def test_p46_a_failed_real_run_never_runs_again(p31, j2ft, monkeypatch):
+    """AC-2: it exits 2; the command ran exactly once, its item is FAIL, there is no second row for W-1."""
+    go, real = p31
+    run = go()      # P31_FAIL
+    p31_audit(run)
+    calls, orig = [], j2ft.real_run
+    monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: calls.append(a) or orig(*a, **k))
+    run._real_run_next({})
+    for _ in range(2):
+        run._identity_audit({})
+        run._goal_done({})
+    assert len(calls) == 1 and [x["workflow"] for x in p31_receipts(run)] == ["W-1"]
+    row = next(x for x in run.audits[-1]["results"] if x["item"] == 3)
+    assert row["verdict"] == "FAIL" and run.real_runs_done == {"W-1": False}
+
+
+def test_p46_no_real_run_or_hosts_pause_exists(j2ft):
+    """AC-3: nothing asks for a real run or its hosts any more."""
+    assert j2ft.AUTO_ASK == {"send_confirm", "limit"} and "real_run" not in j2ft.PAUSES and "hosts" not in j2ft.PAUSES
+    assert "real_run" not in j2ft.DECISION_PAUSES
+    src = Path(j2ft.__file__).read_text(encoding="utf-8")
+    for gone in ("REAL_RUN_DECLINE", "HOSTS_DENY", "real_runs_asked", "_ask_real_run", "_identity_real_run", "_env_ask",
+                 "_identity_env_install", "real_run_env_lines"):
+        assert gone not in src, gone
+
+
+def test_p46_decide_for_me_on_the_real_run_runs_once(p31):
+    """AC-4: with Decide for me on there is no pause to skip; the real run runs once."""
+    go, real = p31
     run = go(P31_OK)
     run.auto = True
-    run._ask_real_run({})
-    assert run.paused["kind"] == "real_run" and run._auto_pick() is None and run.snapshot()["paused"]["auto_waits"]
+    assert run._real_run_next({}) is True and run.paused is None and run._auto_pick() is None
+    assert len(p31_receipts(run)) == 1 and os.path.exists(os.path.join(real, "done.txt"))
 
 
-def test_p31_a_replacements_approved_run_decides_the_item_the_failed_one_checked(p31):
+def test_p46_the_receipt_answer_says_ran_not_approved(p31):
+    """AC-5: _real_run_answer from the receipt: ran (or did not start) and its evidence; never "approved"."""
+    go, _ = p31
+    run = go(P31_OK)
+    assert run._real_run_answer(3) == {"item": 3, "receipt": "none yet: code runs it once the rest is workable"}
+    run._real_run_next({})
+    a = run._real_run_answer(3)["receipt"]
+    assert a.startswith("W-1: ran, ") and "exited 0" in a and "approv" not in a, a
+
+
+def test_p46_a_follow_up_never_reruns_a_parents_real_run(p31, j2ft, monkeypatch, tmp_path):
+    """AC-29 (review R1-9): a finished run continued as a follow-up through rehydrate (which copies receipts.jsonl and
+    restores the workflows): a W-1 with a row there never runs again, one without runs once."""
+    go, real = p31
+    calls, orig = [], j2ft.real_run
+    monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: calls.append(a) or orig(*a, **k))
+    package = sys.modules[j2ft.__name__.rpartition(".")[0]]      # rehydrate imports J2 from its package: this module's copy, as
+    monkeypatch.setattr(package, "j2", j2ft)                     # in the app (another test module's fresh copy may sit there)
+    monkeypatch.setattr(package, "j2_types", j2ft.j2_types)
+    for ran_before in (True, False):
+        parent = go(P31_OK)
+        if ran_before:
+            parent._real_run_next({})
+        parent.outcome = "Done with open items: x."
+        parent.save("goal.json", parent.goal)
+        parent.save("workflows.json", parent.workflows)
+        parent._write_summary()
+        nxt = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261126-1200{int(ran_before):02d}-a29f")
+        nxt.rehydrate(parent.dir)
+        assert [w["id"] for w in nxt.workflows] == ["W-1"] and nxt.workflows[0]["real_run"]
+        assert (Path(nxt.dir) / "receipts.jsonl").exists() == ran_before
+        before = len(calls)
+        nxt._real_run_next({})
+        assert len(calls) - before == (0 if ran_before else 1), (ran_before, calls)
+
+
+P46_LEAVES_UNREADABLE = P31_OK + ("os.symlink(os.path.join(sys.argv[1], 'gone'), os.path.join(sys.argv[1], 'broken'))\n"
+                                  "p = os.path.join(sys.argv[1], 'locked'); open(p, 'w').write('x'); os.chmod(p, 0)\n")
+
+
+def test_p46_a_real_run_that_leaves_an_unreadable_file_still_writes_its_row(p31, j2ft):
+    """Review R1-3: a script that leaves a broken symlink and an unreadable file in its folder: the after-run record lists
+    them as unreadable instead of raising, the row is written, and the real run never runs again."""
+    go, real = p31
+    run = go(P46_LEAVES_UNREADABLE)
+    try:
+        assert run._real_run_next({}) is True
+        assert j2ft._tree(real)["broken"] == j2ft._tree(real)["locked"] == "unreadable"
+        rows = p31_receipts(run)
+        assert len(rows) == 1 and rows[0]["ran"] and rows[0]["exit"] == 0, rows
+        assert any(m["text"].startswith("Ran for real: ") for m in run.chat if m["who"] == "system")
+        assert run._real_run_next({}) is False
+    finally:
+        os.chmod(os.path.join(real, "locked"), 0o600)
+
+
+def test_p46_a_step_that_fails_after_the_real_run_still_writes_its_row(p31, monkeypatch):
+    """Review R1-3: Audit's call fails after the command ran: the row is written with the items not judged, so the real
+    run stays open and is never run again."""
+    go, _ = p31
+    run = go(P31_OK)
+
+    def boom(*a, **k):
+        raise RuntimeError("the model is away")
+    monkeypatch.setattr(run, "_judge_real_run", boom)
+    with pytest.raises(RuntimeError):
+        run._real_run_next({})
+    rows = p31_receipts(run)
+    assert len(rows) == 1 and rows[0]["ran"] and rows[0]["audit"]["3"]["verdict"] == "NEEDS_REVISION", rows
+    assert "not judged: RuntimeError" in rows[0]["audit"]["3"]["evidence"]
+    assert run._real_run_next({}) is False
+    assert any("W-1's real run did not pass" in x for x in run._real_run_open())
+
+
+P46_NO_MODULE = "import sys, os\nimport made_up_module_d452\n"      # imports a module that is not installed: FR-9 sends it back
+
+
+def p46_summary_status(run):
+    run._write_summary()
+    return json.loads((Path(run.dir) / "summary.json").read_text())["status"]
+
+
+@pytest.mark.parametrize("case", ["exit_1", "mismatch", "sent_back_then_finished", "exit_1_no_audit", "accepted_as_is"])
+def test_p46_no_done_without_the_required_real_run(p31, case):
+    """AC-28 (FR-40): a required real run that did not pass, or never ran, never ends "Done:"; the outcome names the workflow
+    and why, and summary.json says done_with_open_items."""
+    go, real = p31
+    run = go({"exit_1": P31_FAIL, "exit_1_no_audit": P31_FAIL, "accepted_as_is": P31_FAIL, "sent_back_then_finished": P46_NO_MODULE,
+              "mismatch": P31_OK.replace("'done.txt'", "'other.txt'")}[case])
+    if case != "exit_1_no_audit":
+        p31_audit(run)
+    if case == "accepted_as_is":
+        run.accepted = [run.goal["done_when"][2]]
+        run.audits[-1]["accepted"] = [run.goal["done_when"][2]]
+    if case == "sent_back_then_finished":
+        assert run._real_run_next({}) is True and run.workflows[0]["failure"][0] == "real_run_setup"
+        run.sites = ["v1"]
+        run.outcome = run._ship_outcome("on the Requester's decision")
+    else:
+        run._real_run_next({})
+    out = str(run.outcome)
+    why = {"exit_1": "W-1's real run did not pass: python3 sort_files.py", "exit_1_no_audit": "W-1's real run did not pass: python3",
+           "accepted_as_is": "W-1's real run did not pass: python3", "sent_back_then_finished": "W-1's real run has not run",
+           "mismatch": "W-1's real run did not pass: not what it said it would do: created: expected done.txt, got none"}[case]
+    assert out.startswith("Done with open items:") and why in out, out
+    assert p46_summary_status(run) == "done_with_open_items"
+
+
+P46_OPEN = "W-1's real run has not run"
+
+
+@pytest.mark.parametrize("ending", ["tpl", "stages", "deeds_pass", "deeds_fail", "chain_stages"])
+def test_p46_every_chain_ending_names_the_open_real_run(p31, ending):
+    """Review R1-2, R1-5 (FR-40): the endings that write their own outcome through _chain_done (a run template's partial
+    stage, the last stage, a send deed that passed or failed) and the stage gate's "finish as it is" (_chain_blocked) name
+    a required real run that has not run, and never start "Done:"."""
+    go, _ = p31
+    run = go(P31_OK)      # W-1 is done; its real run has not run
+    if ending == "tpl":
+        run.run_tpl = {"name": "t", "selected": ["W-1"], "total": 2}
+        run._run_tpl_stage_end()
+    elif ending == "stages":
+        run._stages_finished()
+    elif ending.startswith("deeds"):
+        run.deed_log = [{"note": "Sent.", "pass": ending == "deeds_pass", "status": "done"}]
+        run._deeds_finished()
+    else:      # a chain of stages: the stage gate's "finish as it is" reads _chain_blocked, as _chain_done does
+        run.stages = ["a", "b"]
+        assert P46_OPEN in run._chain_blocked()
+        run.outcome = run._chain_done("Done: x")
+    assert run.outcome.startswith("Done with open items:") and P46_OPEN in run.outcome, run.outcome
+    if ending == "deeds_fail":
+        assert "Sent." in run.outcome
+
+
+def test_p46_the_chat_never_says_done_while_a_real_run_is_open(p31, monkeypatch):
+    """Review R1-2 (FR-40): an ending that sets "Done: ..." itself (here a change with nothing to build) is turned into "Done
+    with open items: <why>" straight after the loop, before the board tally, the export and the closing system line, so
+    neither the snapshot (the page's run summary, review R2-1), a chat line nor summary.json starts "Done:"."""
+    go, _ = p31
+    run = go(P31_OK)
+    run.goal = {**run.goal, "to_be_confirmed": [{"criterion": "x", "fact": "y"}]}      # any path: the handoff is stubbed
+
+    def ends(*a, **k):
+        run.turn, run.outcome = None, "Done: the change left the charter's items, rules and standards as they were; nothing to build."
+    monkeypatch.setattr(run, "_handoff", ends)
+    seen, tally = [], run._board_tally      # review R2-1: the snapshot (the page's run summary) is right from the loop's end
+
+    def tally_sees():
+        seen.append(run.snapshot()["outcome"])
+        return tally()
+    monkeypatch.setattr(run, "_board_tally", tally_sees)
+    run.post("user", "change nothing")
+    run._run()
+    assert seen and seen[0].startswith(f"Done with open items: {P46_OPEN}."), seen
+    assert not run.snapshot()["outcome"].startswith("Done:")
+    closing = [m["text"] for m in run.chat if m["who"] == "system"]
+    assert not [t for t in closing if t.startswith("Done:")], closing
+    assert any(t.startswith(f"Done with open items: {P46_OPEN}.") for t in closing), closing
+    assert json.loads((Path(run.dir) / "summary.json").read_text())["status"] == "done_with_open_items"
+
+
+def test_p46_a_passing_real_run_ends_done_and_a_replacement_that_passed_too(p31):
+    go, real = p31
+    run = go(P31_OK)
+    p31_audit(run)
+    run._real_run_next({})
+    assert str(run.outcome).startswith("Done:") and run._real_run_open() == [] and p46_summary_status(run) == "done"
+    os.remove(os.path.join(real, "done.txt"))      # the same made-up folder: its expect says it creates done.txt
+    run = go()      # P31_FAIL, then a replacement whose real run passes
+    p31_audit(run)
+    run._real_run_next({})
+    assert str(run.outcome).startswith("Done with open items: W-1's real run did not pass")
+    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": "W-1", "parts": ["fix"]}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    (Path(run._out_dir()) / "sort_files.py").write_text(P31_OK)
+    run._real_run_next({})
+    assert run._real_run_open() == [] and str(run.outcome).startswith("Done:"), run.outcome
+
+
+def test_p46_a_replacements_real_run_decides_the_item_the_failed_one_checked(p31):
+    """Q-1: a replacement (a new workflow id) runs its own real run once, unasked."""
     go, real = p31
     run = go()
-    run._ask_real_run({})
-    w2 = p31_revise(run, real, "W-1")
+    run._real_run_next({})      # it ran on the folder itself and exited 2
+    assert run.real_runs_done == {"W-1": False} and p31_receipts(run)[-1]["exit"] == 2
+    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": "W-1", "parts": ["fix"]}])      # W-1 is done:
+    assert len(reg) == 1 and not refused, refused      # only its real run failed, so rewriting it is priced as a fix
+    w2 = reg[0]
+    w2["status"] = "done"
     (Path(run._out_dir()) / "sort_files.py").write_text(P31_OK)
-    assert run._real_run_pending() and run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
-    assert run.real_runs_done == {w2["id"]: True} and run._real_run_pending() == []
+    assert run._real_run_next({}) and run.paused is None
+    assert run.real_runs_done == {"W-1": False, w2["id"]: True} and run._real_run_pending() == []
 
 
-# ---- P32 (D435): the dry run always runs inside the sandbox runtime (no network), or it is not run --------------------
+# ---- P46 (D452): with the sandbox switch off the real run runs without it (P32's fenced dry run is retired) -----------------
 # Made-up stand-in for srt: it keeps the settings it was given beside itself, then runs the command (no sandbox: test only).
 P32_SRT = ("import shutil, subprocess, sys\na = sys.argv[1:]\nshutil.copy(a[a.index('-s') + 1], sys.argv[0] + '.json')\n"
            "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
-NO_DRY_RUN = "No dry run: this computer has no sandbox, so it wasn't tested first"
 
 
-@pytest.fixture
-def p32(p31, tmp_path, monkeypatch):
-    """p31's run with the sandbox switch off and the recording stand-in as J2_SANDBOX_CMD; (go, real, settings file)."""
+def test_p46_with_the_sandbox_switch_off_the_real_run_runs_without_it(p31, tmp_path, monkeypatch):
     go, real = p31
     fake = tmp_path / "rec_srt.py"
     fake.write_text(P32_SRT)
     monkeypatch.setenv("J2_SANDBOX", "0")
     monkeypatch.setenv("J2_SANDBOX_CMD", f"python3 {fake}")
-    return go, real, tmp_path / "rec_srt.py.json"
-
-
-def p32_card(run):
-    return next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
-
-
-def test_p32_the_dry_run_is_fenced_with_the_sandbox_switch_off(p32):
-    go, _, seen = p32
     run = go(P31_OK)
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    assert json.loads(seen.read_text())["network"]["allowedDomains"] == []
-    assert run.real_runs_dry["W-1"]["ran"] is True and run.real_runs_dry["W-1"]["fenced"] is True
-    card = p32_card(run)
-    assert "dry run on a copy: exit 0" in card and "\nThe dry run had no network access: results may differ." in card, card
-    assert NO_DRY_RUN not in card
-
-
-@pytest.mark.parametrize("env", [{"J2_SANDBOX_CMD": "no-such-sandbox-xyz"},      # the program is not on PATH (Windows, no srt)
-                                 {"J2_SANDBOX": None}])      # an offline run without J2_SANDBOX: no sandbox, even with a runtime
-def test_p32_without_a_sandbox_runtime_the_dry_run_is_not_run_and_the_card_says_so(p32, monkeypatch, env):
-    go, real, seen = p32
-    for k, v in env.items():
-        monkeypatch.delenv(k) if v is None else monkeypatch.setenv(k, v)
-    run = go(P31_OK)
-
-    import subprocess
-    real_run = subprocess.run
-
-    def boom(argv, *a, **k):
-        if argv[1:2] == ["-c"] and "find_spec" in argv[2]:      # P42 (D447): the import lookup before the dry run, which
-            return real_run(argv, *a, **k)                       # imports and runs nothing of the build
-        raise AssertionError("the dry run must never run without the sandbox runtime")
-    monkeypatch.setattr(subprocess, "run", boom)
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
-    dry = run.real_runs_dry["W-1"]
-    assert dry["ran"] is False and dry["fenced"] is False and not seen.exists()
-    assert dry["evidence"] == "no sandbox runtime here: the dry run was not run, because it never runs with network"
-    card = p32_card(run)
-    assert f"\n{NO_DRY_RUN}\n" in card and "no network access" not in card and "What it would do" not in card, card
-    assert not os.path.exists(os.path.join(real, "done.txt"))
-
-
-def test_p32_the_approved_run_still_follows_the_switch(p32):
-    go, real, seen = p32
-    run = go(P31_OK)
-    run._ask_real_run({})
-    assert seen.exists()
-    seen.unlink()
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and "without a sandbox" in r["evidence"], r["evidence"]
-    assert not seen.exists() and os.path.exists(os.path.join(real, "done.txt"))
+    assert r["ran"] and r["exit"] == 0 and "without a sandbox" in r["evidence"], r["evidence"]
+    assert not (tmp_path / "rec_srt.py.json").exists() and os.path.exists(os.path.join(real, "done.txt"))
 
 
-# ---- P33 (D436): Audit reads an approved real run's output against the brief; exit 0 alone never passes an item -------------
-# Made-up script: it exits 0 and prints what it did (in the dry run, to the temp copy).
+# ---- P33 (D436): Audit reads a real run's output and its diff against the brief; exit 0 alone never passes an item -----------
+# Made-up script: it exits 0 and prints what it did.
 P33_OK = ("import os, sys\nprint('moved a.pdf to pdf/')\nprint('moved b.jpg to jpg/')\nprint('sorted 2 files in ' + sys.argv[1])\n"
           "open(os.path.join(sys.argv[1], 'done.txt'), 'w').write('1')\n")      # P35 (D438): what its real run's expect says
 P33_SAYS = "the output lists only a.pdf and b.jpg moved; c.txt and d.csv are not named"
@@ -2873,8 +2961,6 @@ def p33(p31, monkeypatch):
                                 "note": ""} for i, c in enumerate(crit, 1)]}]
     calls, real_call = [], run.call
     monkeypatch.setattr(run, "call", lambda fn, fmt, task, *a, **k: calls.append((fn, task)) or real_call(fn, fmt, task, *a, **k))
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    calls.clear()
     return run, real, calls
 
 
@@ -2882,16 +2968,28 @@ def p33_row(run):
     return next(x for x in run.audits[-1]["results"] if x["item"] == 3)
 
 
-def test_p33_an_approved_run_is_judged_by_audit_on_its_output(p33):
+def test_p46_the_note_and_the_audit_prompt_promise_no_question(p33):
+    """AC-25 (FR-34): _real_run_note of a run with a planned real run and the P33 Audit prompt hold none of FR-34's phrases."""
     run, _, calls = p33
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
+    for text in (run._real_run_note(), calls[0][1]):
+        for phrase in ("RUN <code>", "RUN {code}", "Don't run", "Don't allow", "dry run", "on copies", "placeholder", "offline",
+                       "approval", "approved"):
+            assert phrase.lower() not in text.lower(), (phrase, text[:300])
+    assert "Code runs it once, when everything else is workable" in run._real_run_note()
+
+
+def test_p33_a_real_run_is_judged_by_audit_on_its_output(p33):
+    run, _, calls = p33
+    run._real_run_next({})
     assert [fn for fn, _ in calls] == ["audit"], calls
     task = calls[0][1]
     assert f"REQUESTER'S BRIEF: {run.request}" in task and "moved b.jpg to jpg/" in task and "sorted 2 files in " in task
-    assert '"item": 3' in task and "COMMAND: python3 sort_files.py" in task and "WHAT THE DRY RUN DID TO THE COPY" in task
+    assert '"item": 3' in task and "COMMAND: python3 sort_files.py" in task and "DRY RUN" not in task      # AC-15: the real diff
+    assert 'WHAT THE RUN DID TO THE FOLDER: {"created": ["done.txt"], "changed": [], "deleted": []}' in task
     row, r = p33_row(run), p31_receipts(run)[-1]
     assert row["pass"] is True and row["verdict"] == "PASS" and row["note"].endswith("Audit read its output: mock: the output was read")
-    assert r["approved"] and r["exit"] == 0 and r["audit"] == {"3": {"verdict": "PASS", "evidence": "mock: the output was read"}}
+    assert r["exit"] == 0 and r["audit"] == {"3": {"verdict": "PASS", "evidence": "mock: the output was read"}} and "approved" not in r
     assert run.real_runs_done == {"W-1": True}
     assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {})["pass"] is True
 
@@ -2902,28 +3000,26 @@ def test_p33_an_approved_run_is_judged_by_audit_on_its_output(p33):
 def test_p33_exit_0_with_audit_needs_revision_leaves_the_item_open(p33, monkeypatch, finding, says):
     run, real, calls = p33
     monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [finding] if finding else []})
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     assert [fn for fn, _ in calls] == ["audit"]
     row, r = p33_row(run), p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0      # it ran and exited 0 ...
+    assert r["ran"] and r["exit"] == 0      # it ran and exited 0 ...
     assert row["pass"] is False and row["verdict"] == "NEEDS_REVISION"      # ... and that alone does not pass the item
     assert f"real run receipt (W-1): {r['evidence']}" in row["note"] and row["note"].endswith(f"Audit read its output: {says}")
     assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": says}}
-    # the receipt's result stays "approved and exit 0" (review R1-4); Audit's verdict is kept per item, and the check reads both
+    # the receipt's result stays "exit 0" (review R1-4); Audit's verdict is kept per item, and the check reads both
     assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {run.goal["done_when"][2]: False}
     assert run._run_item_check(run.goal["done_when"][2], {"type": "real-run"}, "", {}) == {
-        "pass": False, "evidence": "its real run did not pass (approved, exit 0 and Audit PASS)"}
+        "pass": False, "evidence": "its real run did not pass"}
     assert str(run.outcome).startswith("Done with open items"), run.outcome
 
 
-@pytest.mark.parametrize("answer, ran", [("RUN", {"ran": True, "exit": 3, "output": "boom", "evidence": "sort_files.py exited 3"}),
-                                         ("Don't run", None)])
-def test_p33_no_judge_call_when_the_run_did_not_pass(p33, j2ft, monkeypatch, answer, ran):
+@pytest.mark.parametrize("ran", [{"ran": True, "exit": 3, "output": "boom", "evidence": "sort_files.py exited 3"},
+                                 {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}])
+def test_p33_no_judge_call_when_the_run_did_not_pass(p33, j2ft, monkeypatch, ran):
     run, _, calls = p33
-    if ran:
-        monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: dict(ran))
-        answer = f"RUN {run.real_runs_asked['W-1']}"
-    p31_answer(run, answer)
+    monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: dict(ran))
+    run._real_run_next({})
     r = p31_receipts(run)[-1]
     assert calls == [] and "audit" not in r and p33_row(run)["verdict"] == "FAIL" and run.real_runs_done == {"W-1": False}
     assert "Audit read" not in p33_row(run)["note"] and str(run.outcome).startswith("Done with open items")
@@ -2936,17 +3032,17 @@ def test_p33_mixed_verdicts_leave_the_passed_item_passing(p33, monkeypatch):
     run.workflows[0]["real_run"]["checks"] = [2, 3]
     monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append((fn, a[1])) or {"say": "x", "findings": [
         {"item": 3, "verdict": "PASS", "evidence": "pdf/a.pdf is listed"}, {"item": 2, "verdict": "NEEDS_REVISION", "evidence": "no test ran"}]})
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     rows = {x["item"]: x for x in run.audits[-1]["results"]}
     assert (rows[3]["pass"], rows[3]["verdict"]) == (True, "PASS") and (rows[2]["pass"], rows[2]["verdict"]) == (False, "NEEDS_REVISION")
     assert run.real_runs_done == {"W-1": True} and run.real_run_item_ok == {crit[1]: False, crit[2]: True}
     assert run._run_item_check(crit[2], {"type": "real-run"}, "", {}) == {
-        "pass": True, "evidence": "its real run was approved, exited 0 and Audit passed its output"}
+        "pass": True, "evidence": "its real run exited 0 and Audit passed its output"}
     assert run._run_item_check(crit[1], {"type": "real-run"}, "", {})["pass"] is False
 
 
 def test_p33_an_item_checks_charter_with_a_real_run_item_ends_done(p33):
-    # review R1-1: no builder owns an item a real run decides; an approved run, exit 0 and Audit PASS ends "Done:"
+    # review R1-1: no builder owns an item a real run decides; a real run, exit 0 and Audit PASS ends "Done:"
     run, _, calls = p33
     crit = run.goal["done_when"]
     run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
@@ -2958,7 +3054,7 @@ def test_p33_an_item_checks_charter_with_a_real_run_item_ends_done(p33):
     for x in run.audits[-1]["results"]:
         x["pass"], x["verdict"] = (x["item"] != 3, "PASS" if x["item"] != 3 else "FAIL")
     assert run._open_items() == []      # item 3 is the real run's, never "not built: no workflow built it"
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     assert run.real_runs_done == {"W-1": True} and str(run.outcome).startswith("Done:"), run.outcome
 
 
@@ -2967,14 +3063,14 @@ def test_p33_without_the_real_run_the_item_stays_open(p33):
     crit = run.goal["done_when"]
     assert run._real_run_pending() == [f"done-when item 3: {crit[2]} (its real run has not run)"]
     assert run._run_item_check(crit[2], {"type": "real-run"}, "", {})["pass"] is False
-    assert calls == [] and p31_receipts(run) == [] and p33_row(run)["pass"] is False and run.paused["kind"] == "real_run"
+    assert calls == [] and p31_receipts(run) == [] and p33_row(run)["pass"] is False
 
 
 def test_p33_the_judge_call_counts_in_budget_and_dollar_mode_and_raises_no_route_event(p33, j2ft, monkeypatch):
     run, _, calls = p33
     monkeypatch.setattr(j2ft, "USD_BUDGET", 20.0)      # dollar mode (P26) for this run's accounting
     n, usd, rows, events = run.calls, run.usd_used, len(run.call_log), len(run.events)
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     assert [fn for fn, _ in calls] == ["audit"] and run.calls == n + 1 and len(run.call_log) == rows + 1
     logged = json.loads((Path(run.dir) / "calls.jsonl").read_text().splitlines()[-1])
     assert logged["fn"] == "audit" and logged["usd_counted"] > 0 and run.usd_used == pytest.approx(usd + logged["usd_counted"], abs=1e-6)      # the row rounds to 6 places
@@ -3005,10 +3101,8 @@ def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_don
     crit, calls, real_call = run.goal["done_when"], [], run.call
     monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or real_call(fn, *a, **k))
     run._identity_audit({})
-    assert calls == [] and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # asked at once, by code
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and calls == ["audit"]      # only P33's reading of the output
+    r = p31_receipts(run)[-1]      # it ran at once, by code (D452: unasked)
+    assert r["ran"] and r["exit"] == 0 and calls == ["audit"]      # only P33's reading of the output
     assert len(run.audits) == 1 and run.paused is None and run.turn is None      # no audit loop, no question: the end
     out = str(run.outcome)
     assert out.startswith("Done with open items: not every done-when item is built."), out
@@ -3018,10 +3112,10 @@ def test_p30_a_blocked_item_does_not_hold_back_the_real_run_and_the_run_ends_don
 
 
 def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_run(p31):
-    """Review R3-1: a fix workflow of F-3 owns real-run item 3 and its builder sets it blocked. The Requester declines the
-    real run: the run ends "Done with open items" naming the real run, never "Done:"."""
+    """Review R3-1: a fix workflow of F-3 owns real-run item 3 and its builder sets it blocked. The real run fails: the run
+    ends "Done with open items" naming the real run, never "Done:"."""
     go, _ = p31
-    run = go(P33_OK)
+    run = go()      # P31_FAIL
     crit = run.goal["done_when"]
     run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "sort_files.py", "expect": True},
                                crit[1]: {"type": "file-exists", "target": "test_sort_files.py", "expect": True},
@@ -3035,9 +3129,8 @@ def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_
                                 "verdict": "PASS" if i < 3 else "NEEDS_REVISION", "note": "x"} for i, c in enumerate(crit, 1)]}]
     assert crit[2] in run._owned_items(run.workflows[-1])
     run._identity_audit({})
-    p31_answer(run, "Don't run")
     out = str(run.outcome)
-    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: the real run did not pass."), out
+    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: W-1's real run did not pass: "), out
     assert out.count("done-when item 3") == 1, out
     assert run._blocked_items() == []      # a builder's status never decides a real-run item
 
@@ -3061,8 +3154,7 @@ def test_p30_a_to_be_confirmed_item_is_blocked_with_its_missing_fact(p31):
     assert run._open_items() == [f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. "
                                  "Send it as a follow-up to finish."]
     run._identity_audit({})
-    assert run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked      # it does not hold back the real run
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run._ran_real_run("W-1") and run.paused is None      # it does not hold back the real run
     out = str(run.outcome)
     assert out.startswith("Done with open items: not every done-when item is built."), out
     assert f"done-when item 2: {crit[1].rstrip('.')} blocked: needs the team channel's address. Send it as a follow-up to finish." \
@@ -3148,7 +3240,7 @@ def test_p30_a_blocked_item_beside_an_open_one_does_not_end_the_run(sort_run, mo
 def test_p30_an_item_that_is_not_blocked_still_holds_back_the_real_run(p31, status):
     run = blocked_run(p31, status)
     run._identity_audit({})
-    assert "W-1" not in run.real_runs_asked and not [m for m in run.chat if m.get("real_run")] and p31_receipts(run) == []
+    assert not run._ran_real_run("W-1") and p31_receipts(run) == []
 
 
 # ---- beta fix, P30 amended (D433): a follow-up to a run with a to-be-confirmed item goes through Identity's intake ---------
@@ -3471,7 +3563,7 @@ def test_p34_no_site_copy_carries_a_claude_folder(j2, make_run):
     assert not [p for p in site.rglob(".claude")]
 
 
-# ---- P35 (D438): a real run states what it creates, changes and deletes; the dry run must match and leave read-only copies alone
+# ---- P35 (D438): a real run states what it creates, changes and deletes; code compares it with the real run's own diff (D452)
 # SUT-12 (impact.md §9), made up: in/ holds two notes, out/ is empty, and copy.py <input> <output> upper-cases each input file
 # into the output and writes report.txt. Passed the folders swapped, it reads the empty out/ and writes report.txt into in/.
 P35_COPY = ("import os, sys\nsrc, dst = sys.argv[1], sys.argv[2]\nnames = sorted(os.listdir(src))\n"
@@ -3486,8 +3578,7 @@ P35_DONE_WHEN = ["copy.py upper-cases each file of a given input folder into a g
 @pytest.fixture
 def p35(j2ft, tmp_path, monkeypatch):
     """(go, in, out): go(args, expect) makes a run whose W-1 (copy.py, its real run writing out/ and reading in/, checking
-    item 3) is registered and done. The dry run goes through P31's fake srt, which enforces nothing, so a swap is caught
-    only by code's own checks."""
+    item 3) is registered and done. The real run goes through P31's fake srt, which enforces nothing."""
     fake = tmp_path / "fake_srt.py"
     fake.write_text(P31_SRT)
     monkeypatch.setenv("J2_SANDBOX", "1")
@@ -3517,36 +3608,9 @@ def p35(j2ft, tmp_path, monkeypatch):
     return go, src, dst
 
 
-def p35_again(run):
-    """Adaptation's fix: a workflow that revises W-1 with the same real run; its build passed (P28 sees a pass)."""
-    rr = {k: v for k, v in run.workflows[0]["real_run"].items()}
-    reg, refused, _ = run._register([{**sort_proposals(rr["folder"], fix=True)[0], "real_run": rr, "revises": "W-1"}])
-    assert len(reg) == 1 and not refused, refused
-    reg[0]["status"] = "done"
-    assert run._repeat_build_stop(reg[0]["id"]) is False
-    return reg[0]
-
-
-def test_p35_swapped_folders_reproduce_and_now_go_back_to_the_build(p35):
-    """The reported bug: before P35 the swapped command's dry run said "0 created" and the Requester was asked to run it."""
-    go, src, dst = p35
-    run = go(("out", "in"), {"created": ["*.txt"], "changed": [], "deleted": []})
-    assert run._ask_real_run({}) is True
-    w = run.workflows[0]
-    assert not [m for m in run.chat if m.get("real_run")], "the swapped command reached the Requester"
-    assert w["status"] == "failed" and w["failure"] == [
-        "dry_run", "wrote into a folder it may only read: read folder 1: 1 created, 0 deleted, 0 changed"], w["failure"]
-    assert "W-1" not in run.real_runs_asked and run.paused is None and run.turn == "adaptation"
-    assert run.handoff["kind"] == "propose" and "wrote into a folder it may only read" in run.handoff["why"]
-    r = p31_receipts(run)[-1]
-    assert not r["approved"] and not r["ran"] and r["dry_run"]["reads_changed"] == {
-        "1": {"created": ["report.txt"], "deleted": [], "changed": []}}, r["dry_run"]
-    assert sorted(os.listdir(src)) == ["a.txt", "b.txt"] and os.listdir(dst) == [], "the real folders are untouched"
-
-
 def test_p35_expect_mismatch_missing_and_unexpected(j2ft):
     em = j2ft.expect_mismatch
-    dry = {"created": ["z.txt", "a.txt", "report.txt"], "changed": [], "deleted": [], "output": "/tmp/.dryrun-x/f0"}
+    dry = {"created": ["z.txt", "a.txt", "report.txt"], "changed": [], "deleted": []}
     assert em(P35_ALL | {"created": ["*.txt"]}, dry) == ""
     assert em(P35_ALL | {"created": ["a.txt", "report.txt", "z.txt"]}, dry) == ""
     assert em(P35_ALL | {"created": ["*.csv", "a.txt"]}, dry) == \
@@ -3555,38 +3619,50 @@ def test_p35_expect_mismatch_missing_and_unexpected(j2ft):
     assert em({"created": ["*.txt"], "changed": ["keep.txt"], "deleted": []}, dry) == "changed: expected keep.txt, got none"
     assert em(P35_ALL, {"created": [], "changed": [], "deleted": []}) == \
         "created: expected a.txt, got none; created: expected b.txt, got none; created: expected report.txt, got none"
-    assert ".dryrun-" not in em(P35_ALL, dry)
 
 
-def test_p35_a_matching_dry_run_is_asked(p35):
+def p35_ran(run, monkeypatch, j2ft):
+    """W-1's real run, unasked; (the AI calls it made, how often real_run ran)."""
+    calls, runs, orig = [], [], j2ft.real_run
+    monkeypatch.setattr(run, "call", lambda fn, *a, **k: calls.append(fn) or {"say": "x", "findings": []})
+    monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: runs.append(a) or orig(*a, **k))
+    assert run._real_run_next({}) and run.paused is None
+    return calls, runs
+
+
+def test_p46_an_expect_mismatch_fails_its_items_without_audit(p35, j2ft, monkeypatch):
+    """AC-14: expect says a.txt and b.txt; the script also writes report.txt. Its items are NEEDS_REVISION with the mismatch,
+    no Audit call is made, the row's audit carries it, and the row has no created/changed/deleted keys."""
+    go, src, dst = p35
+    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
+    crit = run.goal["done_when"]
+    run.audits = [{"output": FT, "rubric": [], "conditions": [], "after_real_run": [crit[2]], "cycle": 1, "version": 1,
+                   "all_pass": False, "results": [{"id": f"F-{i}", "item": i, "criterion": c, "pass": i != 3,
+                                                   "verdict": "PASS" if i != 3 else "FAIL", "note": ""} for i, c in enumerate(crit, 1)]}]
+    calls, runs = p35_ran(run, monkeypatch, j2ft)
+    mm = "not what it said it would do: created: unexpected report.txt"
+    r = p31_receipts(run)[-1]
+    assert calls == [] and len(runs) == 1 and r["ran"] and r["exit"] == 0, (calls, r)
+    assert r["audit"] == {"3": {"verdict": "NEEDS_REVISION", "evidence": mm}} and not {"created", "changed", "deleted"} & set(r)
+    row = next(x for x in run.audits[-1]["results"] if x["item"] == 3)
+    assert (row["pass"], row["verdict"]) == (False, "NEEDS_REVISION") and row["note"].endswith(mm), row
+    assert run.real_runs_done == {"W-1": False} and run.real_run_item_ok == {crit[2]: False}
+    assert sorted(os.listdir(dst)) == ["a.txt", "b.txt", "report.txt"], "it ran on the folder itself; nothing runs again"
+    assert any(mm.replace("not what", "Not what") in m["text"] for m in run.chat if m["who"] == "system")
+
+
+def test_p46_no_copy_no_placeholder_one_run(p35, j2ft, monkeypatch, tmp_path):
+    """AC-9: no .dryrun- folder, no placeholder file, the command runs once, on the folder itself."""
     go, src, dst = p35
     run = go()
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run" and "W-1" in run.real_runs_asked
-    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
-    assert "Created (3): a.txt, b.txt, report.txt" in card and run.workflows[0]["status"] == "done"
-    assert run.real_runs_dry["W-1"]["reads_changed"] == {} and os.listdir(dst) == []
-
-
-def test_p35_a_file_the_expect_left_out_goes_back(p35):
-    go, _, dst = p35
-    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
-    assert run._ask_real_run({}) is True
-    w = run.workflows[0]
-    assert not [m for m in run.chat if m.get("real_run")] and run.turn == "adaptation" and "W-1" not in run.real_runs_asked
-    assert w["failure"] == ["dry_run", "not what it said it would do: created: unexpected report.txt"], w["failure"]
-    assert p31_receipts(run)[-1]["dry_run"]["expect_mismatch"] == "created: unexpected report.txt"
-    assert os.listdir(dst) == []
-
-
-def test_p35_two_identical_mismatches_stop_the_cycle(p35, j2ft):
-    go, _, _ = p35
-    run = go(expect={"created": ["a.txt", "b.txt"], "changed": [], "deleted": []})
-    run._ask_real_run({})
-    w2 = p35_again(run)
-    assert run._ask_real_run({}) is True
-    sig = [j2ft.build_failure(x) for x in (run.workflows[0], w2)]
-    assert sig[0] == sig[1] == ("dry_run", "not what it said it would do: created: unexpected report.txt")
-    assert run.turn == "identity" and run.handoff["kind"] == "limit" and run.repeat_steps == ["W-1", w2["id"]]
+    made = []
+    orig_mkdtemp = j2ft.tempfile.mkdtemp
+    monkeypatch.setattr(j2ft.tempfile, "mkdtemp", lambda *a, **k: made.append(k.get("prefix")) or orig_mkdtemp(*a, **k))
+    calls, runs = p35_ran(run, monkeypatch, j2ft)
+    assert len(runs) == 1 and runs[0][1]["folder"] == str(dst) and runs[0][1]["command"][2:] == [str(src), str(dst)]
+    assert ".dryrun-" not in made and not list(tmp_path.rglob(".dryrun-*")) and not list(tmp_path.rglob("secrets/s0"))
+    assert sorted(os.listdir(dst)) == ["a.txt", "b.txt", "report.txt"] and calls == ["audit"]
+    assert not hasattr(j2ft, "real_run_dry") and not hasattr(j2ft, "dry_secret_files") and not hasattr(run, "real_runs_dry")
 
 
 @pytest.mark.parametrize("expect", [None, {"created": [], "changed": [], "deleted": []}, "report.txt",
@@ -3594,14 +3670,14 @@ def test_p35_two_identical_mismatches_stop_the_cycle(p35, j2ft):
                                     {"created": ["/abs/report.txt"], "changed": [], "deleted": []},
                                     {"created": ["../report.txt"], "changed": [], "deleted": []},
                                     {"created": ["./report.txt"], "changed": [], "deleted": []},      # review R1-8: never matches a
-                                    {"created": ["pdf/"], "changed": [], "deleted": []}])      # dry-run file path, so refused
+                                    {"created": ["pdf/"], "changed": [], "deleted": []}])      # file path of the diff, so refused
 def test_p35_a_real_run_without_expect_is_refused_with_its_own_key(p35, j2ft, expect):
     go, src, dst = p35
     run = go()
     rr = {**run.workflows[0]["real_run"], "expect": expect}
     if expect is None:
         rr.pop("expect")
-    run.workflows[0]["status"] = "failed"      # as after a failed dry run: the fix proposes the same real run again
+    run.workflows[0]["status"] = "failed"      # as after a failed build: the fix proposes the same real run again
     reg, refused, _ = run._register([{**sort_proposals(str(dst), fix=True)[0], "real_run": rr, "revises": "W-1"}])
     assert not reg and len(refused) == 1 and "real_run expect" in refused[0], refused
     assert run.rejections[-1]["key"] == ["real_run_expect"]
@@ -3613,7 +3689,7 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    # P41 (D446) appends its environment rule right after this one and P44 (D449) its internet rule after that
+    # P41 (D446) appends its environment rule right after this one and P46 (D452) its internet rule after that
     assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
@@ -3623,7 +3699,7 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
 
 # ---- P41 (D446): a script gets only PATH, HOME, locale and temp folder, plus what its plan states; secrets go by file path ---
 # Made-up script: it reports its environment's names, a few values and the secret file's size, never the file's content;
-# printed, and written to argv[2] when given (the dry run's copies are gone once it returns).
+# printed, and written to argv[2] when given.
 P41_DUMP = ("import json, os, sys\nf = os.environ.get('API_CRED_FILE')\nok = bool(f) and os.path.isfile(f)\n"
             "r = json.dumps({'names': sorted(os.environ), 'vals': {k: os.environ.get(k) for k in ('SUT22_LEAK', "
             "'FAKE_SERVICE_TOKEN', 'PLAN_LEVEL', 'API_CRED_FILE', 'J2_SMTP_PASSWORD', 'PYTHONPATH')}, "
@@ -3695,26 +3771,6 @@ def test_p41_real_run_gets_settings_and_secret_paths(j2ft, p41, monkeypatch):
     assert "in the sandbox" in res["evidence"], res["evidence"]
     assert d["vals"]["PLAN_LEVEL"] == "basic" and d["vals"]["API_CRED_FILE"] == str(cred) and d["vals"]["SUT22_LEAK"] is None
     assert str(cred) in json.loads(seen.read_text())["allowRead"] and P41_CRED not in json.dumps(res)
-
-
-def test_p41_dry_run_gets_placeholders_never_real_paths(j2ft, p41, monkeypatch):
-    out, folder, cred, fake, report = p41
-    seen = p41_fake_srt(monkeypatch, fake)
-    monkeypatch.setenv("J2_SANDBOX", "0")      # the dry run is fenced whatever the switch says (P32)
-    dry = j2ft.real_run_dry(str(out), p41_rr(folder, report, **P41_ENV, secret_files={"API_CRED_FILE": str(cred)}), 30)
-    assert dry["ran"] is True and dry["exit"] == 0, dry
-    d = json.loads(report.read_text())
-    ph = d["vals"]["API_CRED_FILE"]
-    assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["PLAN_LEVEL"] == "basic" and ph != str(cred)
-    area = os.path.dirname(ph)
-    assert os.path.basename(area) == "secrets" and os.path.basename(os.path.dirname(area)).startswith(".dryrun-")
-    assert os.path.dirname(os.path.dirname(area)) == os.path.dirname(os.path.realpath(out)), ph      # outside every copy (f<n>)
-    assert d["cred"] == {"exists": True, "size": 0}, "a real, empty placeholder file"
-    allow = json.loads(seen.read_text())["allowRead"]
-    assert ph in allow and str(cred) not in allow
-    assert not os.path.exists(ph), "removed with the dry run's temp folder"
-    assert not any("secrets" in p for k in ("created", "changed", "deleted") for p in dry[k]), dry
-    assert P41_CRED not in json.dumps(dry)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="on Windows the names are passed to srt with env=; there is no env program to wrap with")
@@ -3802,27 +3858,6 @@ def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, mon
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
-def test_p41_real_srt_dry_run_cannot_read_a_secret_file_outside_home(j2ft, p41, monkeypatch, tmp_path):
-    """R1-3: model code that hard-codes a secret file's path outside HOME reads nothing in the dry run; the real run reads it."""
-    out, folder, *_ = p41
-    (tmp_path / "home").mkdir()
-    secret = tmp_path / "elsewhere" / "cred.txt"      # outside HOME, so denyRead ["~"] alone would not cover it
-    secret.parent.mkdir()
-    secret.write_text(P41_CRED)
-    (out / "peek.py").write_text("import sys\ntry:\n    print('READ', open(sys.argv[1]).read())\n"
-                                 "except OSError as e:\n    print('DENIED', type(e).__name__)\n")
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
-    rr = {"command": [sys.executable, "peek.py", str(secret)], "folder": str(folder),
-          "secret_files": {"API_CRED_FILE": str(secret)}}
-    dry = j2ft.real_run_dry(str(out), rr, 60)
-    assert dry["ran"] is True and "DENIED" in dry["output"] and P41_CRED not in json.dumps(dry), dry
-    res = j2ft.real_run(str(out), rr, 60)
-    assert res["exit"] == 0 and "READ " + P41_CRED in res["output"], res
-
-
 def test_p41_test_rerun_sees_no_app_variable(j2ft, p41):
     """T3 (owner Q4): the builder's test rerun gets the clean base only; a made-up app variable never reaches it."""
     _, folder, *_ = p41
@@ -3836,20 +3871,20 @@ P41_USER_ENV = {"USER": "made-up-user", "LOGNAME": "made-up-user", "SHELL": "/ma
 P41_READS = "import os, sys\nwant = {}\nsys.exit(0 if all(os.environ.get(k) == v for k, v in want.items()) else 3)\n"
 
 
-def test_p41_dry_run_passes_a_script_that_reads_user(j2ft, p41, monkeypatch):
-    """D446 follow-up: USER, LOGNAME, SHELL, TZ and TERM are in the base, so a script reading $USER passes its dry run."""
+def test_p41_a_real_run_passes_a_script_that_reads_user(j2ft, p41, monkeypatch):
+    """D446 follow-up: USER, LOGNAME, SHELL, TZ and TERM are in the base, so a script reading $USER passes its real run."""
     out, folder, _, fake, _ = p41
     for k, v in P41_USER_ENV.items():
         monkeypatch.setenv(k, v)
     (out / "reads.py").write_text(P41_READS.format(P41_USER_ENV))
     p41_fake_srt(monkeypatch, fake)
-    dry = j2ft.real_run_dry(str(out), {"command": [sys.executable, "reads.py"], "folder": str(folder)}, 30)
-    assert dry["ran"] is True and dry["exit"] == 0, dry
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "reads.py"], "folder": str(folder)}, 30)
+    assert res["ran"] is True and res["exit"] == 0, res
     assert set(P41_USER_ENV) <= set(j2ft.llm.RUN_PASS_NAMES)
 
 
 def test_p41_an_arbitrary_setting_reaches_the_script(j2ft, p41, monkeypatch, tmp_path):
-    """D446: any variable the plan names as a setting reaches the script, in the real run and in the dry run."""
+    """D446: any variable the plan names as a setting reaches the script, with or without the sandbox runtime."""
     out, folder, _, fake, _ = p41
     named = {"MY_TOOL_HOME": "/made/up/path"}
     assert j2ft.real_run_env_problems({"settings": named}, "", str(tmp_path)) == []
@@ -3860,8 +3895,6 @@ def test_p41_an_arbitrary_setting_reaches_the_script(j2ft, p41, monkeypatch, tmp
     assert j2ft.real_run(str(out), {**rr, "settings": {}}, 30)["exit"] == 3, "not named: not passed"
     p41_fake_srt(monkeypatch, fake)
     assert j2ft.real_run(str(out), rr, 30)["exit"] == 0
-    dry = j2ft.real_run_dry(str(out), rr, 30)
-    assert dry["ran"] is True and dry["exit"] == 0, dry
 
 
 def test_p41_builders_and_planner_are_told_the_base_and_to_name_the_rest(j2ft, tmp_path, monkeypatch):
@@ -4013,41 +4046,24 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE)      # P44 (D449)
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE)      # P46 (D452)
     rule = j2ft.REAL_RUN_ENV_RULE
-    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
+    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" not in rule and "NODE_OPTIONS" in rule      # D452
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES
 
 
-P41_NONE = "\nSettings it gets: none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)"
-P41_PLACEHOLDERS = "\nThe dry run got the settings and an empty placeholder file for each secret file."
-
-
-def test_p41_card_lines(j2ft, tmp_path):
-    lines = j2ft.real_run_env_lines
-    assert lines({"command": ["x"]}) == P41_NONE
-    assert lines({"settings": {}, "secret_files": {}}) == P41_NONE
-    assert lines({"settings": {"PLAN_LEVEL": "basic", "REGION": "eu"}}) == "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu"
-    cred = tmp_path / "cred.txt"
-    cred.write_text(P41_CRED)
-    card = lines({"settings": {"PLAN_LEVEL": "basic"}, "secret_files": {"API_CRED_FILE": str(cred)}})
-    assert card == ("\nSettings it gets: PLAN_LEVEL=basic"
-                    f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}" + P41_PLACEHOLDERS)
-    assert P41_CRED not in card
-    card = lines({"secret_files": {"API_CRED_FILE": str(cred)}})      # a secret file alone: no setting, still every line
-    assert card.startswith(P41_NONE + "\nSecret files it may read") and card.endswith(P41_PLACEHOLDERS)
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="the FT form's runner is python3, which a Windows runner may not have")
-def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch, tmp_path):
+def test_p41_no_message_holds_a_secret_path_or_a_setting_value(j2ft, p41_reg, monkeypatch, tmp_path):
+    """AC-22: the run happens; no chat message holds the secret file's path or a setting's value; the row holds the path;
+    the process gets the clean environment plus those names."""
     register, home, _ = p41_reg
     fake = tmp_path / "fake_srt.py"
     fake.write_text(P41_SRT)
     p41_fake_srt(monkeypatch, fake)
     cred = os.path.expanduser("~/cred.txt")
-    run, reg, refused = register(settings={"PLAN_LEVEL": "basic", "REGION": "eu"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
+    run, reg, refused = register(settings={"PLAN_LEVEL": "made-up-level", "REGION": "eu"}, secret_files={"API_CRED_FILE": "~/cred.txt"})
     assert len(reg) == 1 and not refused, refused
     run.workflows[0]["status"] = "done"
     os.makedirs(run._out_dir(), exist_ok=True)
@@ -4055,21 +4071,17 @@ def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch
     (tmp_path / "in" / "a.txt").write_text("alpha\n")
     (tmp_path / "in" / "b.txt").write_text("beta\n")
     run.post("user", "Build it and run it on my notes")
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
-    card = next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
-    assert "\nSettings it gets: PLAN_LEVEL=basic, REGION=eu\n" in card, card
-    assert f"\nSecret files it may read (the app never opens them): API_CRED_FILE = {cred}\n" in card, card
-    assert P41_PLACEHOLDERS in card and card.index("Settings it gets") < card.index("To run it, reply exactly")
-    assert P41_CRED not in card
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run._real_run_next({}) is True and run.paused is None
     r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0, r
-    assert r["settings"] == {"PLAN_LEVEL": "basic", "REGION": "eu"} and r["secret_files"] == {"API_CRED_FILE": cred}
-    assert P41_CRED not in json.dumps(r) and P41_CRED not in json.dumps(run.chat)
+    assert r["ran"] and r["exit"] == 0, r
+    assert r["settings"] == {"PLAN_LEVEL": "made-up-level", "REGION": "eu"} and r["secret_files"] == {"API_CRED_FILE": cred}
+    said = json.dumps([m["text"] for m in run.chat])
+    assert cred not in said and "made-up-level" not in said and P41_CRED not in json.dumps(r) and P41_CRED not in said
+    assert str(Path(cred)) in json.loads(Path(str(fake) + ".seen").read_text())["allowRead"]
 
 
-# ---- P42 (D447): a build with a requirements.txt gets an environment of its own, installed only after RUN <code>; its test, its dry
-# run and its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
+# ---- P42 (D447): a build with a requirements.txt gets an environment of its own, installed with no question (D452); its test and
+# its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
 # sandbox runtime records its settings. The fakes hold their log's path: D446's clean environment passes them no variable ---------------------------------------------------------------------------------------------
 # TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
 # "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
@@ -4181,13 +4193,6 @@ def p42_builder(run, *rounds):
     return prompts
 
 
-def p42_reply(run, text, **meta):
-    h = run.paused["handoff"]
-    run.post("user", text, **meta)
-    run.paused = None
-    run._turn_identity({**h, "answer": text})
-
-
 def p42_receipts(run, kind="real_run"):
     path = Path(run.dir, "receipts.jsonl")
     return [r for r in map(json.loads, path.read_text().splitlines()) if r.get("type") == kind] if path.exists() else []
@@ -4197,121 +4202,98 @@ def p42_system(run):
     return [m["text"] for m in run.chat if m["who"] == "system"]
 
 
-def p42_code(run):
-    """The one-time code of the open install question: kept under "env:<hash>", where the snapshot reads it for the Run button."""
-    key = run.paused["handoff"]["wid"]
-    assert key.startswith("env:") and run.paused["handoff"]["kind"] == "env_install" and run.paused["kind"] == "real_run"
-    assert run.snapshot()["paused"]["code"] == run.real_runs_asked[key]
-    return run.real_runs_asked[key]
-
-
 @p42_posix
-def test_p42_requirements_get_an_environment_only_after_run_code_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+def test_p42_packages_install_without_a_question_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+    """AC-6: installed once with no pause and no code; one info line names the packages; the env_install row has FR-28's keys."""
     made, real = env_run
     runenv = j2env.j2_runenv
+    venvs, pips = len(j2env.p42_log("venv")), len(j2env.p42_log("pip install"))
     run, w = made({}, status="running", attempts=0, test="test_s.py")
     prompts = p42_builder(run, P42_FILES)
     run._turn_workflow_agent({"wid": "W-1"})
-    plan, card, code = runenv.plan(run._out_dir()), p42_system(run)[-1], p42_code(run)
-    assert run._auto_pick() is None and run.paused["handoff"]["build"] == "W-1" and run.paused["handoff"]["hash"] == plan["hash"]
-    assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
-    assert "Or press Run. To decline, press Don't run." in card
-    assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
-    # nothing is installed without approval
-    assert not j2env.p42_log("venv") and not j2env.p42_log("pip install") and not os.path.exists(plan["dir"]) and not p42_receipts(run, "env_install")
-    assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
-    for text, meta in (("yes install", {}), (f"run {code}", {}), (f"RUN {code}", {"auto": True})):      # as D434: only the exact code
-        p42_reply(run, text, **meta)
-        assert run.paused and run.chat[-1]["who"] == "identity" and f"Not installed. Press Run or type RUN {code}." in run.chat[-1]["text"]
-        assert p42_code(run) == code and not j2env.p42_log("pip install") and not p42_receipts(run, "env_install")
-    p42_reply(run, f"RUN {code}")
-    assert len(j2env.p42_log("venv")) == 1 and len(j2env.p42_log("pip install")) == 1 and not run.paused
-    assert not [k for k in run.real_runs_asked if k.startswith("env:")], "the code is forgotten once it is answered"
-    argv = j2env.p42_log("pip install")[0]["argv"]
+    plan = runenv.plan(run._out_dir())
+    assert not run.paused and run._auto_pick() is None, run.paused
+    assert len(j2env.p42_log("venv")) == venvs + 1 and len(j2env.p42_log("pip install")) == pips + 1
+    assert plan["ready"] and plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
+    said = [x for x in p42_system(run) if "pulsedep==1.2.0" in x]
+    assert said == [f"Installed pulsedep==1.2.0 in {plan['dir']} for W-1."], p42_system(run)
+    assert not [m for m in run.chat if "RUN " in m["text"] or m.get("pause")], "no question, no code"
+    argv = j2env.p42_log("pip install")[-1]["argv"]
     assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
     e = p42_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
+    assert list(e)[:4] == ["type", "workflow", "requirements_sha256", "packages"] and list(e)[-2:] == ["t", "by"], list(e)
+    assert not {"code", "approved", "declined", "answer_msg"} & set(e), list(e)
+    assert e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"} and e["by"] == "code"
     assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"] and e["workflow"] == "W-1"
     from sutra_app.library.records import _p_receipt
     assert [k for k, _ in _p_receipt("receipts.jsonl", e)] == ["run_file.object"], "the install receipt is open JSON for the catalogue"
-    run._turn_workflow_agent(run.handoff)
     test = next(x for x in run.receipts if x["check"] == "its test passes")
-    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True and "resume" not in w
-    assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat), "the builder's reply from before the question is kept"
+    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True
+    assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat)
     assert [r for r in j2env.p42_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
         "the test rerun used the environment's python (the system one has no pulsedep)"
-    # the dry run (fenced, D435) and the approved real run use the environment's python too
+    # the real run uses the environment's python too
     monkeypatch.setenv("J2_SANDBOX", "1")
     monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p42_srt)
-    assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
+    assert run._real_run_next({}) and not run.paused
     assert any("uses packages installed in an environment of its own" in x and "pulsedep==1.2.0" in x for x in p42_system(run))
-    assert "dry run on a copy: exit 0" in p42_system(run)[-1] and run.real_runs_dry["W-1"]["fenced"] is True
-    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
     r = p42_receipts(run)[-1]
     want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
-    assert r["approved"] and r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
+    assert r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
     assert (real / "out.txt").read_text() == "1.2.0"
     monkeypatch.delenv("J2_SANDBOX")
-    # a second run with the same requirements.txt reuses the environment: no question, no install
+    # a second run with the same requirements.txt reuses the environment: no install, no receipt
     n = len(j2env.p42_log("pip install"))
     run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
     p42_builder(run2, P42_FILES)
     run2._turn_workflow_agent({"wid": "W-1"})
-    assert not run2.paused and w2["status"] == "done" and not run2.real_runs_asked
-    assert len(j2env.p42_log("pip install")) == n and len(j2env.p42_log("venv")) == 1
+    assert not run2.paused and w2["status"] == "done" and not p42_receipts(run2, "env_install")
+    assert len(j2env.p42_log("pip install")) == n and len(j2env.p42_log("venv")) == venvs + 1
     assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
-    # Don't run: nothing installed, the test is not rerun with another python, and the real run goes back to the build (D434)
-    run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
-    p42_builder(run3, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
-    run3._turn_workflow_agent({"wid": "W-1"})
-    assert run3.paused and "extra-lib==0.3" in p42_system(run3)[-1]
-    p42_reply(run3, "don't run")
-    d = p42_receipts(run3, "env_install")[-1]
-    assert d["declined"] and not d["approved"] and d["evidence"] == "not installed: the Requester chose Don't run"
-    run3._turn_workflow_agent(run3.handoff)
-    t3 = [x for x in run3.receipts if x["check"] == "its test passes"][-1]
-    assert len(j2env.p42_log("pip install")) == n and t3["pass"] is None and "its packages are not installed" in t3["evidence"]
-    assert not run3.paused, "a declined requirements.txt is not asked about again in the run"
-    w3["status"] = "done"
-    assert run3._ask_real_run({}) is True and not run3.paused and "W-1" not in run3.real_runs_asked and not run3.real_runs_dry
-    assert w3["status"] == "failed" and w3["failure"] == ["dry_run", "its packages are not installed: the Requester chose not to install them"]
-    assert run3.turn == "adaptation" and p42_receipts(run3)[-1]["ran"] is False
 
 
 @p42_posix
 def test_p42_a_failed_install_goes_back_to_the_builder_with_pips_error(j2env, env_run, monkeypatch):
+    """AC-7: pip's error goes to the builder; the same requirements.txt is not installed again in the run."""
     made, real = env_run
     run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P42_FILES)
-    run._turn_workflow_agent({"wid": "W-1"})
+    bad = {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}
+    prompts = p42_builder(run, bad, P42_FILES)
     j2env.p42_pip_fail.write_text("nosuch==9.9")
     try:
-        p42_reply(run, f"RUN {p42_code(run)}")
+        run._turn_workflow_agent({"wid": "W-1"})
     finally:
         j2env.p42_pip_fail.unlink()
-    e = p42_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
-    run._turn_workflow_agent(run.handoff)
+    e = [x for x in p42_receipts(run, "env_install") if x["exit"] != 0]
+    assert len(e) == 1 and "No matching distribution found for nosuch==9.9" in e[0]["stderr"], e
     assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
+    assert not run.paused and w["status"] == "done"
+    for name, text in bad.items():      # the same requirements.txt again: not installed again in this run
+        Path(run._out_dir(), name).write_text(text)
+    n, rows = len(j2env.p42_log("pip install")), len(p42_receipts(run, "env_install"))
+    assert run._env_install(w, run._out_dir()) == ""
+    assert len(j2env.p42_log("pip install")) == n and len(p42_receipts(run, "env_install")) == rows
 
 
 def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_are_refused(j2env, env_run, monkeypatch, tmp_path):
     made, real = env_run
     run, w = made({"s.py": "import sys\nimport notinstalledmod\nfrom helper import go\n", "helper.py": "def go():\n    pass\n"})
-    assert run._ask_real_run({}) is True and not run.paused and "W-1" not in run.real_runs_asked and not run.real_runs_dry
-    assert w["status"] == "failed" and w["failure"][0] == "dry_run" and run.turn == "adaptation"
+    assert run._real_run_next({}) is True and not run.paused and not run._ran_real_run("W-1")
+    assert w["status"] == "failed" and w["failure"][0] == "real_run_setup" and run.turn == "adaptation"
     assert "s.py imports notinstalledmod, not installed" in w["failure"][1] and "requirements.txt" in w["failure"][1] and "helper" not in w["failure"][1]
-    assert "notinstalledmod" in run.handoff["why"] and not p42_receipts(run)[-1]["ran"]
+    assert "notinstalledmod" in run.handoff["why"] and not p42_receipts(run)
+    assert [m["text"] for m in run.chat if m["text"].startswith("Sent back to the builder: s.py imports notinstalledmod")]
+    assert not [m for m in run.chat if "dry run" in m["text"].lower()]      # AC-8
     run, w = made({}, status="running", attempts=0)
     prompts = p42_builder(run, *[{"s.py": P42_GOOD, "requirements.txt": text} for text in
                                  ("requests>=2\n", "--extra-index-url https://example.invalid/simple\npulsedep==1.2.0\n", "git+https://example.invalid/x.git\n")])
     n = len(j2env.p42_log("pip install"))
     run._turn_workflow_agent({"wid": "W-1"})
-    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and not run.real_runs_asked and len(j2env.p42_log("pip install")) == n
+    assert len(prompts) == 3 and w["status"] == "failed" and not run.paused and len(j2env.p42_log("pip install")) == n
     assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
     monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: nothing is asked, nothing is run
     run, w = made({"s.py": P42_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"})
-    assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is True and not run.paused
+    assert run._env_install(w, run._out_dir()) == "" and run._real_run_next({}) is True and not run.paused
     assert "which is not a Python that runs" in w["failure"][1] and "J2_RUN_PYTHON" in w["failure"][1]
     assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
 
@@ -4325,17 +4307,14 @@ def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_
     p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
     before = len(j2env.p42_log("sandbox"))
     run._turn_workflow_agent({"wid": "W-1"})
-    p42_reply(run, f"RUN {p42_code(run)}")
-    run._turn_workflow_agent(run.handoff)
-    run._ask_real_run({})
-    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    run._real_run_next({})
     rows = j2env.p42_log("sandbox")[before:]
     installs = [r for r in rows if " -m pip install " in r["command"]]
     others = [r for r in rows if r not in installs]
     env_dir = j2env.j2_runenv.plan(run._out_dir())["dir"]
     assert len(installs) == 1 and installs[0]["settings"]["network"]["allowedDomains"] == ["pypi.org", "files.pythonhosted.org"]
     assert installs[0]["settings"]["filesystem"]["allowWrite"] == [env_dir]
-    assert len(others) == 3 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the dry run, the real run"
+    assert len(others) == 2 and all(r["settings"]["network"]["allowedDomains"] == [] for r in others), "the test rerun, the real run"
     assert all(env_dir in r["settings"]["filesystem"]["allowRead"] for r in others)
     assert p42_receipts(run)[-1]["exit"] == 0
 
@@ -4343,8 +4322,7 @@ def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_
 def test_p42_a_real_run_receipt_keeps_the_end_of_stdout_and_of_stderr(j2env, env_run):
     made, real = env_run
     run, w = made({"s.py": "import sys\nprint('started')\nsys.stderr.write('x' * 3000 + 'LAST-LINE')\n"})
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"      # no sandbox here: no dry run (D435), still asked
-    p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert run._real_run_next({}) and not run.paused
     r = p42_receipts(run)[-1]
     assert r["exit"] == 0 and r["stdout"] == "started\n" and len(r["stderr"]) == 2000 and r["stderr"].endswith("LAST-LINE")
     assert "env" not in r, "a build without a requirements.txt has no environment"
@@ -4362,10 +4340,9 @@ def test_p42_runenv_is_j2s_module_below_its_docstring():
     assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
 
 
-# ---- P43 (D448): an answer never confirms a real-run item; a picked option counts with its full text, the Requester's only
+# ---- P43 (D448, D452): an answer confirms a real-run item like any other; a picked option counts with its full text, the Requester's only
 P43_RR, P43_DOC = "The tool tidies the made-up folder for real", "A README explains how to run it"
 P43_ANSWER = "It runs on ~/Documents/Made Up/Tool"
-P43_LATER = "This part is checked when the real run actually happens, not from an answer."
 
 
 def p43_answer(make_run, confirmed, planned=False, still=()):
@@ -4382,22 +4359,22 @@ def p43_answer(make_run, confirmed, planned=False, still=()):
     return run
 
 
-@pytest.mark.parametrize("planned", [False, True], ids=["unplanned", "planned"])
-def test_p43_an_answer_never_confirms_a_real_run_item(make_run, planned):
-    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned)
+def test_p46_an_answer_confirms_a_real_run_item(make_run):
+    """AC-20 (FR-24): the charter marks item 1 real-run; the Requester's answer confirms it, as any other item."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
     texts = [m["text"] for m in run.chat]
-    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
-    assert not any(t.startswith("Confirmed by the Requester") for t in texts)
-    # review R1-2 (owner, option 1): an item not planned yet leaves to_be_confirmed, the fact is known; a planned one is J2's
-    assert (P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}) is planned
+    assert P43_RR in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert f"Confirmed by the Requester: {P43_RR} = {P43_ANSWER}" in texts
+    assert not any(t.startswith("Noted.") or "checked when the real run actually happens" in t for t in texts), texts
     assert P43_ANSWER in run.handoff["why"], "the answer still reaches Adaptation"
-    assert "~/documents/made up/tool" in run._fact_source()
-    noted = [t for t in texts if t == "Noted. " + P43_LATER]
-    planned_note = [t for t in texts if t.startswith("Not taken from the answer: whether a real run happened")]
-    if planned:
-        assert not noted and len(planned_note) == 1 and planned_note[0].endswith(". " + P43_LATER)
-    else:
-        assert len(noted) == 1 and not planned_note
+
+
+def test_p46_a_planned_real_runs_item_keeps_j2s_own_note_without_p43s_sentence(make_run):
+    """J2's own rule stays: whether a planned real run happened is answered by code from its receipts, never by an answer."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned=True)
+    note = [m["text"] for m in run.chat if m["text"].startswith("Not taken from the answer: whether a real run happened")]
+    assert len(note) == 1 and "checked when the real run actually happens" not in note[0], note
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
 
 
 def test_p43_an_answer_still_confirms_an_item_that_is_not_real_run(make_run):
@@ -4456,12 +4433,12 @@ def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
     assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
 
 
-def test_p43_r1_2_a_held_answer_clears_its_to_be_confirmed_entry_and_the_item_still_needs_a_receipt(make_run):
-    """Review R1-2 (owner, option 1): the held answer gives the fact, so the item is no longer waiting on the Requester (never
-    blocked, never asked again as a follow-up); it is still not confirmed and passes only on a real run's receipt."""
+def test_p43_r1_2_a_confirmed_real_run_item_clears_its_to_be_confirmed_entry_and_still_needs_a_receipt(make_run):
+    """Review R1-2, amended in D452: the answer confirms the fact, so the item is no longer waiting on the Requester (never
+    blocked, never asked again as a follow-up); it passes only on a real run's receipt."""
     run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
     assert P43_RR not in {t["criterion"] for t in run.goal["to_be_confirmed"]}
-    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert P43_RR in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
     run.audits = [{"results": [{"id": "F-1", "item": 1, "criterion": P43_RR, "verdict": "TO_BE_CONFIRMED", "pass": False},
                                {"id": "F-2", "item": 2, "criterion": P43_DOC, "verdict": "PASS", "pass": True}]}]
     assert run._blocked_items() == [] and run._tbc_blocked() == {}
@@ -4570,17 +4547,17 @@ def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
         assert not not_named("~/Documents/Made Up/key.txt", said), said
 
 
-# ---- P44 (D449): a real run's internet hosts; the dry run runs an offline command ----------------------------------------------
+# ---- P46 (D452): a real run's internet hosts, listed by the planner and checked for their syntax only; nobody is asked ---------
 # Made-up hosts only (.invalid, RFC 2606); nothing here resolves a name or reaches the internet.
-P44_DONE_WHEN = ["fetch.py saves the page title", "A test covers fetch.py with a fake server", "fetch.py ran for real on the folder"]
-P44_URL = "http://api.made-up.invalid/v1"
+P46_DONE_WHEN = ["fetch.py saves the page title", "A test covers fetch.py with a fake server", "fetch.py ran for real on the folder"]
+P46_URL = "http://api.made-up.invalid/v1"
 MISSING, DEFAULT = object(), object()      # a field left out of the plan; the fixture's default value
 
 
 @pytest.fixture
-def p44_reg(j2ft, tmp_path, monkeypatch):
-    """new(request, goal, runner): a fresh run of the folder type whose brief names the made-up folder and host;
-    register(run, hosts, offline, folder, **fields): W-1 proposed with a real run on that folder: (run, registered, refused)."""
+def p46_reg(j2ft, tmp_path, monkeypatch):
+    """new(request, goal, runner): a fresh run of the folder type whose brief names the made-up folder (never a host);
+    register(run, hosts, folder, **fields): W-1 proposed with a real run on that folder: (run, registered, refused)."""
     dst, home = tmp_path / "out", tmp_path / "home"
     dst.mkdir()
     home.mkdir()
@@ -4593,17 +4570,15 @@ def p44_reg(j2ft, tmp_path, monkeypatch):
         run._apply_output(FT)
         if runner:
             run.out = {**run.out, "test_runner": runner}
-        run.request = request or f"Build fetch.py and run it on {dst}: it reads {P44_URL} and writes title.txt"
-        run.goal, run.budget = goal or {"statement": "x", "done_when": list(P44_DONE_WHEN)}, 100
+        run.request = request or f"Build fetch.py and run it on {dst}: it reads a page and writes title.txt"
+        run.goal, run.budget = goal or {"statement": "x", "done_when": list(P46_DONE_WHEN)}, 100
         return run
 
-    def proposal(run, hosts=DEFAULT, offline=DEFAULT, folder=None, **fields):
+    def proposal(run, hosts=DEFAULT, folder=None, **fields):
         x, f = run.out["test_runner"][0], folder or str(dst)
-        rr = {"command": [x, "fetch.py", f, P44_URL], "folder": f, "reads": [], "why": "x", "checks": [3],
+        rr = {"command": [x, "fetch.py", f, P46_URL], "folder": f, "reads": [], "why": "x", "checks": [3],
               "expect": {"created": ["title.txt"], "changed": [], "deleted": []},
-              "hosts": ["api.made-up.invalid"] if hosts is DEFAULT else hosts,
-              "offline": {"command": [x, "fetch.py", f, "--offline"], "same_files": True} if offline is DEFAULT else offline,
-              **fields}
+              "hosts": ["api.made-up.invalid"] if hosts is DEFAULT else hosts, **fields}
         return [{**sort_proposals(f, fix=True)[0], "real_run": {k: v for k, v in rr.items() if v is not MISSING}}]
 
     def register(run=None, **kw):
@@ -4613,35 +4588,20 @@ def p44_reg(j2ft, tmp_path, monkeypatch):
     return SimpleNamespace(new=new, proposal=proposal, register=register, dst=dst, home=home)
 
 
-def test_p44_a_good_plan_registers_hosts_and_offline(p44_reg):
-    run, reg, refused = p44_reg.register(hosts=[" API.Made-Up.invalid ", "api.made-up.invalid"])
+@pytest.mark.parametrize("offline", [MISSING, {"command": ["python3", "fetch.py", "--offline"], "same_files": True}, "anything"])
+def test_p46_offline_is_neither_needed_nor_stored(p46_reg, offline):
+    """AC-10: hosts without offline register; an offline a plan still sends registers too, and is not stored."""
+    run, reg, refused = p46_reg.register(offline=offline)
     assert len(reg) == 1 and not refused, refused
-    x = run.out["test_runner"][0]
-    assert reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"]      # lower case, each once (Kaivan's real_hosts)
-    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", str(p44_reg.dst), "--offline"], "same_files": True}
-    run, reg, refused = p44_reg.register(hosts=MISSING, offline=MISSING)
-    assert len(reg) == 1 and not {"hosts", "offline"} & set(reg[0]["real_run"]), reg[0]["real_run"]
-    run, reg, refused = p44_reg.register(hosts=MISSING)      # offline without hosts is not stored
-    assert len(reg) == 1 and "offline" not in reg[0]["real_run"], reg[0]["real_run"]
-    (p44_reg.home / "x").mkdir()
-    run = p44_reg.new(request=f"Build fetch.py and run it on ~/x: it reads {P44_URL}")
-    run, reg, refused = p44_reg.register(run, folder="~/x", offline={"command": [x, "fetch.py", "~/x", "--offline"], "same_files": False})
-    assert len(reg) == 1 and not refused, refused
-    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", os.path.expanduser("~/x"), "--offline"], "same_files": False}
+    assert reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"] and "offline" not in reg[0]["real_run"], reg[0]["real_run"]
 
 
-@pytest.mark.parametrize("case, want", [
-    ("missing", 'also needs "offline"'), ("no_same_files", "must be exactly"), ("same_files_text", "must be exactly"),
-    ("real_command", "is the real command"), ("no_folder", "offline: real_run command must pass the folder")])
-def test_p44_hosts_without_offline_are_refused_with_their_key(p44_reg, case, want):
-    x, f = "python3", str(p44_reg.dst)
-    offline = {"missing": MISSING, "no_same_files": {"command": [x, "fetch.py", f, "--offline"]},
-               "same_files_text": {"command": [x, "fetch.py", f, "--offline"], "same_files": "yes"},
-               "real_command": {"command": [x, "fetch.py", f, P44_URL], "same_files": True},
-               "no_folder": {"command": [x, "fetch.py", "--offline"], "same_files": True}}[case]
-    run, reg, refused = p44_reg.register(offline=offline)
-    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_offline"], refused
-    assert want in refused[0] and (case != "no_folder" or "offline: real_run command must pass the folder" in run.rejections[-1]["reason"])
+def test_p46_listed_hosts_are_stored_lower_case_once_and_none_store_nothing(p46_reg):
+    run, reg, refused = p46_reg.register(hosts=[" API.Made-Up.invalid ", "api.made-up.invalid"])
+    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
+    for hosts in (MISSING, []):
+        run, reg, refused = p46_reg.register(hosts=hosts)
+        assert len(reg) == 1 and "hosts" not in reg[0]["real_run"], reg[0]["real_run"]
 
 
 @pytest.mark.parametrize("host, ok", [
@@ -4649,9 +4609,9 @@ def test_p44_hosts_without_offline_are_refused_with_their_key(p44_reg, case, wan
     ("10.0.0.8", False), ("localhost", False), ("api.made-up.invalid:0", False), ("api.made-up.invalid:65536", False),
     ("api.made-up.invalid:08", False), ("made-up", False), (5, False),
     ("*.made-up.invalid", True), ("api.made-up.invalid:8443", True)])
-def test_p44_host_format_refused_and_accepted(p44_reg, host, ok):
-    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}: it reads {host} and {P44_URL}")
-    run, reg, refused = p44_reg.register(run, hosts=[host])
+def test_p46_host_format_refused_and_accepted(p46_reg, host, ok):
+    """AC-17: the syntax check, the only rule on hosts."""
+    run, reg, refused = p46_reg.register(hosts=[host])
     if ok:
         assert len(reg) == 1 and reg[0]["real_run"]["hosts"] == [host], refused
         return
@@ -4659,222 +4619,15 @@ def test_p44_host_format_refused_and_accepted(p44_reg, host, ok):
     assert ("must be a list of host names" if host == 5 else "must be a host name") in refused[0], refused
 
 
-def test_p44_host_named_only_whole_in_brief_typed_or_picked(j2ft):
-    named = lambda h, *pieces: j2ft.host_named(h, [j2ft.squash(p) for p in pieces])
-    for said in ("https://api.made-up.invalid/v1 and", "api.made-up.invalid:8443/x", "api.made-up.invalid.", "(api.made-up.invalid)"):
-        assert named("api.made-up.invalid", said), said
-    for said in ("x.api.made-up.invalid", "notapi.made-up.invalid", "api.made-up.invalid.evil.example", "bob@api.made-up.invalid",
-                 "*.api.made-up.invalid"):
-        assert not named("api.made-up.invalid", said), said
-    assert named("api.made-up.invalid:8443", "use api.made-up.invalid"), "a port only narrows: it need not be written"
-    assert named("*.made-up.invalid", "use *.made-up.invalid") and not named("*.made-up.invalid", "made-up.invalid")
-    assert not named("api.made-up.invalid", "api.made-", "up.invalid"), "a host split across two texts is not named"
-
-
-def p44_option(run, monkeypatch):
-    """P43's option setup: one decision question whose first option names the made-up host."""
-    run._ask_user("Which host?", [{"question": "Which host should it reach?", "options": ["Use api.made-up.invalid", "Another host"],
-                                   "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
-    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
-    monkeypatch.setattr(run, "_plan_stages", lambda: None)
-
-
-def test_p44_host_only_in_charter_or_decide_for_me_is_refused(p44_reg, monkeypatch):
-    """Owner answer 1: the charter (an agent writes it) and Decide for me never name a host; _fact_source would have."""
-    brief = f"Build fetch.py and run it on {p44_reg.dst}"
-    goal = {"statement": "x", "done_when": ["fetch.py saves the page title of api.made-up.invalid"] + P44_DONE_WHEN[1:]}
-    run, reg, refused = p44_reg.register(p44_reg.new(request=brief, goal=goal))
-    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"] and "not named" in refused[0], refused
-    assert "api.made-up.invalid" in run._fact_source()
-    run = p44_reg.new(request=brief)
-    p44_option(run, monkeypatch)
-    run.auto = True
-    run._auto_go()
-    assert [m for m in run.chat if m["who"] == "user"][-1].get("auto") and "picked" not in run.decisions[-1]
-    run, reg, refused = p44_reg.register(run)
-    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
-    run = p44_reg.new(request=brief)
-    run.post("user", "api.made-up.invalid", auto=True)
-    run, reg, refused = p44_reg.register(run)
-    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
-
-
-def test_p44_host_in_a_requester_click_registers(p44_reg, monkeypatch):
-    brief = f"Build fetch.py and run it on {p44_reg.dst}"
-    run = p44_reg.new(request=brief)
-    p44_option(run, monkeypatch)
-    run.post("user", "Option 1")
-    run._run()
-    assert run.decisions[-1]["picked"] == "Use api.made-up.invalid"
-    run, reg, refused = p44_reg.register(run)
-    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
-    run = p44_reg.new(request=brief)
-    run.post("user", "it calls api.made-up.invalid")
-    run, reg, refused = p44_reg.register(run)
-    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
-
-
-# ---- P44 (D449) T1b (owner): hosts the Requester has not named are asked once, in a pickable option; never Decide for me
-def p44_flow(run, monkeypatch, *proposals):
-    """Adaptation's proposals, one per Adaptation turn, registered by the validator's own _agree; any other turn (building)
-    ends the run here."""
-    it = iter(proposals)
-
-    def turn():
-        if run.turn == "adaptation":
-            run._agree(next(it))
-        else:
-            run.turn = None
-    monkeypatch.setattr(run, "_dispatch_turn", turn)
-
-
-def p44_asked(run):
-    return [m for m in run.chat if m.get("pause") == "hosts"]
-
-
-@pytest.fixture
-def p44_ask(p44_reg, monkeypatch):
-    """A run whose brief names the folder but no host; Adaptation's plan names the made-up host: the validator refuses it and
-    Identity asks the host question. Returns (run, the question, proposal(**fields) for later turns)."""
-    def go(*later, runner=None, **fields):
-        run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}", runner=runner)
-        plan = p44_reg.proposal(run, **fields)
-        p44_flow(run, monkeypatch, plan, *[x if x is not None else plan for x in later])
-        run.post("user", "Build it, please")
-        run._run()
-        assert not run.workflows and run.rejections[-1]["key"] == ["real_run_hosts"], run.rejections
-        assert len(p44_asked(run)) == 1 and run.paused["kind"] == "hosts", [m["text"] for m in run.chat]
-        return run, run.paused["questions"][0], plan
-    return go
-
-
-def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers_them(p44_ask, p44):
-    run, q, _ = p44_ask(None, reaches="the made-up API", runner=[sys.executable, "{target}"])      # p44: the fake srt
-    assert q["question"] == "This script needs to reach the made-up API (api.made-up.invalid). Allow it?", q
-    assert q["options"] == ["Allow internet access to api.made-up.invalid", "Don't allow it: leave the real run out"], q
-    run.post("user", "Option 1")      # what a card click sends
-    run._run()
-    assert run.decisions[-1]["picked"] == "Allow internet access to api.made-up.invalid"
-    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
-    assert len(p44_asked(run)) == 1 and run.paused is None, "no second question"
-    assert run.hosts_asked == {"api.made-up.invalid": True} and run.hosts_ask is None
-    run.workflows[0]["status"] = "done"      # T3: once built, the Run card shows the hosts the Requester's click allowed
-    os.makedirs(run._out_dir(), exist_ok=True)
-    (Path(run._out_dir()) / "fetch.py").write_text(P44_FETCH)
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
-    assert "\nInternet access: api.made-up.invalid" in p32_card(run)
-
-
-def test_p44_t1b_without_reaches_the_question_names_the_hosts_alone(p44_ask):
-    _, q, _ = p44_ask(hosts=["api.made-up.invalid", "*.cdn.made-up.invalid:8443"], reaches="two\nlines")
-    assert q["question"] == "This script needs to reach api.made-up.invalid, *.cdn.made-up.invalid:8443. Allow it?", q
-    assert q["options"][0] == "Allow internet access to api.made-up.invalid, *.cdn.made-up.invalid:8443"
-
-
-@pytest.mark.parametrize("answer", ["Option 2", "  don't ALLOW "])      # the Don't allow button (E29) or its exact text
-def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_asks_again(p44_ask, answer):
-    without = [{**sort_proposals("x", fix=True)[0], "real_run": None}]      # Adaptation's plan without the real run
-    run, q, plan = p44_ask(None, without)      # it first proposes the same hosts again: refused, not asked again
-    run.post("user", answer)
-    run._run()
-    why = "The Requester did not allow internet access to api.made-up.invalid"
-    assert ("picked" in run.decisions[-1]) == (answer == "Option 2") and len(p44_asked(run)) == 1 and run.paused is None
-    assert run.goal["done_when"] == P44_DONE_WHEN[:2]
-    assert run.goal["dropped_reasons"] == [{"criterion": P44_DONE_WHEN[2], "reason": why, "hosts": ["api.made-up.invalid"]}]
-    assert any(m["text"].startswith("Left out on the Requester's decision") and why.lower() in m["text"].lower() for m in run.chat)
-    assert [w.get("real_run") for w in run.workflows] == [None], run.rejections      # registered without its real run
-    run._goal_done({})
-    assert f"Left out: {P44_DONE_WHEN[2]}: {why}." in run.outcome, run.outcome
-    run._hosts_to_ask("Build sort_files.py", plan[0]["real_run"])      # the same hosts in a later plan: never asked again
-    assert run.hosts_ask is None and run.hosts_asked == {"api.made-up.invalid": False}
-
-
-@pytest.mark.parametrize("answer", ["yes", "Don't allow it, thanks", "allow", "Option 3"])
-def test_p44_t1b_any_other_answer_keeps_the_host_question_open(p44_ask, answer):
-    """Owner (E29): only the Allow pick, the hosts typed out, or a clear decline settle it; code reads no other word."""
-    run, q, _ = p44_ask()      # no later proposal: a handoff to Adaptation would end the test with StopIteration
-    run.post("user", answer)
-    run._run()
-    asked = p44_asked(run)
-    assert run.paused["kind"] == "hosts" and run.paused["questions"] == [q], run.paused
-    assert "Not allowed yet. Press Allow, or type the hosts." in asked[-1]["text"], asked[-1]["text"]
-    assert run.paused["handoff"]["hosts_ask"]["hosts"] == ["api.made-up.invalid"]
-    assert run.hosts_asked == {"api.made-up.invalid": None} and not run.workflows and "dropped_reasons" not in run.goal
-    assert not p31_receipts(run) and not any(m["text"].startswith("Left out") for m in run.chat)
-
-
-def test_p44_t1b_the_hosts_typed_out_register(p44_ask):
-    """Passes before E29 too: typed hosts already counted (T1); pinned beside the stricter answers."""
-    run, _, _ = p44_ask(None)
-    run.post("user", "yes, api.made-up.invalid")
-    run._run()
-    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
-    assert run.paused is None and run.hosts_asked == {"api.made-up.invalid": True}
-
-
-@pytest.mark.parametrize("answer", ["Option 1", "Option 2"])
-def test_p44_t1b_the_host_question_loses_no_other_workflow_of_its_batch(p44_reg, monkeypatch, answer):
-    """R1-4: one batch registers a workflow without hosts and asks about the other's. The question takes coordination's
-    schedule turn; after the answer the batch-mate is still registered and coordination still schedules it."""
-    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
-    hosted, other = p44_reg.proposal(run)[0], {**sort_proposals("x")[1], "dependencies": []}
-    again = hosted if answer == "Option 1" else {**hosted, "real_run": None}
-    it, turns = iter([[hosted, other], [again]]), []
-
-    def turn():
-        turns.append((run.turn, run.handoff.get("kind")))
-        if run.turn == "adaptation":
-            run._agree(next(it))
-        else:
-            run.turn = None
-    monkeypatch.setattr(run, "_dispatch_turn", turn)
-    run.post("user", "Build it, please")
-    run._run()
-    assert run.paused["kind"] == "hosts" and [w["name"] for w in run.workflows] == [other["name"]], run.rejections
-    assert ("coordination", "schedule") not in turns, turns
-    run.post("user", answer)
-    run._run()
-    assert run.paused is None and turns[-1] == ("coordination", "schedule"), turns
-    assert sorted(w["name"] for w in run.workflows) == sorted([other["name"], hosted["name"]]), run.rejections
-    assert all(w["status"] == "registered" for w in run.workflows), run.workflows
-
-
-def test_p44_t1b_a_document_run_asks_about_the_hosts_as_written(p44_reg, monkeypatch):
-    """R1-1: a document run's "site" -> "document" rewrite never touches the host question; else Allow named a host that
-    isn't the plan's and asked again on every press."""
-    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
-    run.doc = True      # a document run (its form has a template) that asks for no page
-    assert run._requester_noun("sites.made-up.invalid") == "documents.made-up.invalid"      # the rewrite this test guards
-    run._hosts_to_ask("Build sort_files.py", p44_reg.proposal(run, hosts=["sites.made-up.invalid"])[0]["real_run"])
-    a, run.hosts_ask = run.hosts_ask, None      # as _run's loop takes it
-    run._ask_hosts(a)
-    q = run.paused["questions"][0]
-    assert q["options"][0] == "Allow internet access to sites.made-up.invalid" and "sites.made-up.invalid" in q["question"], q
-    monkeypatch.setattr(run, "_dispatch_turn", lambda: setattr(run, "turn", None))
-    run.doc = False      # the folder fixture has no document file for the run's end (summary.json); the pick is already made
-    run.post("user", "Option 1")
-    run._run()
-    assert run.paused is None and run.hosts_asked == {"sites.made-up.invalid": True} and len(p44_asked(run)) == 1, run.paused
-
-
-def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
-    run, _, _ = p44_ask()
-    assert "hosts" in j2ft.AUTO_ASK
-    run.auto = True
-    run._auto_go()
-    assert run.paused["kind"] == "hosts" and not [m for m in run.chat if m.get("auto")], "it waits for the Requester"
-    assert run.snapshot()["paused"]["auto_waits"] is True
-
-# ---- P44 (D449) T2: the dry run runs the offline command, offline; only the approved real run reaches the named hosts --------
-# Made-up script: offline it writes a made-up title; for real it fetches the URL it was given (through the sandbox's proxy).
-P44_FETCH = ("import os, sys, urllib.request\nf, src = sys.argv[1], sys.argv[2]\n"
-             "body = '<title>made-up</title>' if src == '--offline' else urllib.request.urlopen(src, timeout=5).read().decode()\n"
+# Made-up script: it fetches the URL it was given (through the sandbox's proxy) and writes the page.
+P46_FETCH = ("import os, sys, urllib.request\nf, src = sys.argv[1], sys.argv[2]\n"
+             "body = urllib.request.urlopen(src, timeout=5).read().decode()\n"
              "open(os.path.join(f, 'title.txt'), 'w').write(body)\n")
 # Made-up stand-in for srt (test only, no sandbox): it records the allowedDomains and the -c command it was given, then runs the
 # command (a list, never a shell) with HTTP_PROXY at its own 127.0.0.1 proxy. The proxy serves a made-up page itself for an
 # allowed host (exact, or *.x for a strict subdomain; ports dropped) and answers 403 for any other, as srt does; nothing is forwarded,
 # no name is resolved (urllib sends the absolute URI to the proxy).
-P44_SRT = r'''import http.server, json, os, shlex, subprocess, sys, threading, urllib.parse
+P46_SRT = r'''import http.server, json, os, shlex, subprocess, sys, threading, urllib.parse
 a = sys.argv[1:]
 allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]
 cmd = a[a.index("-c") + 1]
@@ -4906,87 +4659,71 @@ sys.exit(subprocess.run(shlex.split(cmd), env={**os.environ, "HTTP_PROXY": p, "h
 '''
 
 
-def p44_net(seen):
+def p46_net(seen):
     return [json.loads(x) for x in seen.read_text().splitlines()] if seen.exists() else []
 
 
 @pytest.fixture
-def p44(p44_reg, tmp_path, monkeypatch):
+def p46(p46_reg, tmp_path, monkeypatch):
     """go(script, request, **register fields): W-1 (fetch.py, its real run on the made-up folder, item 3) registered with
-    sys.executable as the runner, done, its script written; the dry run and the real run go through the fake srt. Returns
-    (go, the real folder, where the fake srt records what it was given)."""
+    sys.executable as the runner, done, its script written; real runs go through the fake srt. Returns (go, the real folder,
+    where the fake srt records what it was given)."""
     fake = tmp_path / "fake_srt.py"
-    fake.write_text(P44_SRT)
+    fake.write_text(P46_SRT)
     monkeypatch.setenv("J2_SANDBOX", "1")
     monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))      # split back exactly, on any OS
 
-    def go(script=P44_FETCH, request=None, **fields):
-        run = p44_reg.new(request=request, runner=[sys.executable, "{target}"])
-        run, reg, refused = p44_reg.register(run, **fields)
+    def go(script=P46_FETCH, request=None, **fields):
+        run = p46_reg.new(request=request, runner=[sys.executable, "{target}"])
+        run, reg, refused = p46_reg.register(run, **fields)
         assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
         run.workflows[0]["status"] = "done"
         os.makedirs(run._out_dir(), exist_ok=True)
         (Path(run._out_dir()) / "fetch.py").write_text(script)
         run.post("user", "Build it and run it on my folder")
         return run
-    return go, p44_reg.dst, Path(str(fake) + ".net.jsonl")
+    return go, p46_reg.dst, Path(str(fake) + ".net.jsonl")
 
 
-def test_p44_the_dry_run_runs_the_offline_command_without_network(p44):
-    go, real, seen = p44
+def test_p46_an_unnamed_host_registers_with_no_question_and_srt_gets_it(j2ft, p46):
+    """AC-16: the brief names no host; the plan's host registers, nothing is asked, and the real run's srt settings hold it."""
+    go, real, seen = p46
     run = go()
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
-    net = p44_net(seen)
-    assert len(net) == 1 and net[0]["allowedDomains"] == [], net
-    assert "--offline" in net[0]["command"] and "api.made-up.invalid" not in net[0]["command"]
-    dry = run.real_runs_dry["W-1"]
-    assert dry["exit"] == 0 and dry["created"] == ["title.txt"], dry
-    assert not (real / "title.txt").exists()
+    assert "made-up.invalid" not in run.request
+    assert run.paused is None and not [m for m in run.chat if m["who"] != "user"], [m["text"] for m in run.chat]
+    res = j2ft.real_run(run._out_dir(), run.workflows[0]["real_run"], 30)
+    assert p46_net(seen)[-1]["allowedDomains"] == ["api.made-up.invalid"]
+    assert res["ran"] and res["exit"] == 0 and (real / "title.txt").read_text() == "<title>made-up</title>", res
 
 
-@pytest.mark.parametrize("hosts", [["api.made-up.invalid"], ["api.made-up.invalid", "*.cdn.made-up.invalid:8443"]])
-def test_p44_the_real_run_gets_exactly_the_hosts(p44, hosts):
-    go, real, seen = p44
-    run = go(request=f"Build fetch.py and run it on {real}: it reads {P44_URL} and *.cdn.made-up.invalid", hosts=hosts)
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
-    assert p44_net(seen)[-1]["allowedDomains"] == hosts
-    r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["hosts"] == hosts and "offline" in r, r
-    assert (real / "title.txt").read_text() == "<title>made-up</title>"
+@pytest.mark.parametrize("hosts", [["api.made-up.invalid"], ["api.made-up.invalid", "*.cdn.made-up.invalid:8443"], MISSING])
+def test_p46_the_real_run_gets_exactly_the_hosts(j2ft, p46, hosts):
+    go, real, seen = p46
+    run = go(hosts=hosts)
+    res = j2ft.real_run(run._out_dir(), run.workflows[0]["real_run"], 30)
+    assert p46_net(seen)[-1]["allowedDomains"] == ([] if hosts is MISSING else hosts)
+    assert res["ran"] and (res["exit"] == 0) == (hosts is not MISSING), res
 
 
-def test_p44_a_host_not_named_is_refused_in_the_real_run(p44):
-    """Fails closed: the approved real run reaches only its hosts; any other gets the sandbox's 403."""
-    go, real, seen = p44
-    run = go(P44_FETCH.replace("urlopen(src,", "urlopen('http://other.made-up.invalid/',"))
-    run._ask_real_run({})
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p31_receipts(run)[-1]
-    assert p44_net(seen)[-1]["allowedDomains"] == ["api.made-up.invalid"]
-    assert r["approved"] and r["exit"] != 0 and "403" in r["output"] and not (real / "title.txt").exists(), r
+def test_p46_a_host_not_listed_is_refused_in_the_real_run(j2ft, p46):
+    """Fails closed: the real run reaches only its hosts; any other gets the sandbox's 403."""
+    go, real, seen = p46
+    run = go(P46_FETCH.replace("urlopen(src,", "urlopen('http://other.made-up.invalid/',"))
+    res = j2ft.real_run(run._out_dir(), run.workflows[0]["real_run"], 30)
+    assert p46_net(seen)[-1]["allowedDomains"] == ["api.made-up.invalid"]
+    assert res["exit"] != 0 and "403" in res["output"] and not (real / "title.txt").exists(), res
 
 
-def test_p44_a_networked_command_in_the_dry_run_never_gets_hosts(j2ft, p44):
-    """A guard of P32's fence: the dry run of a networked command gets no host even when the run it is given names hosts. It
-    passes before and after P44 (the fence was already there); it pins that Edit C keeps it."""
-    go, real, seen = p44
-    run = go()
-    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
-    dry = j2ft.real_run_dry(run._out_dir(), rr, 30)
-    assert p44_net(seen)[-1]["allowedDomains"] == [] and dry["exit"] != 0 and "403" in dry["output"], dry
-
-
-def test_p44_rerun_and_install_keep_their_network(j2ft):
+def test_p46_rerun_and_install_keep_their_network(j2ft):
     assert j2ft.sandbox_settings("/x")["network"]["allowedDomains"] == []
     assert j2ft.j2_runenv.PYPI_HOSTS == ("pypi.org", "files.pythonhosted.org")
 
 
-def p44_real_srt(p44, monkeypatch, tmp_path):
+def p46_real_srt(p46, monkeypatch, tmp_path):
     """The real srt (no network is reached: srt's proxy refuses a name not on its list with 403, observed as "HTTP Error 403:
     Forbidden" for a plain-HTTP GET; a .invalid name never resolves), with a temp HOME as P41's real-srt tests have (srt
-    denies reads under ~). The dry-run test passes before P44 too: P32's fence already held."""
-    go, real, _ = p44
+    denies reads under ~)."""
+    go, real, _ = p46
     run = go()
     home = tmp_path / "srt-home"
     home.mkdir()
@@ -4996,141 +4733,46 @@ def p44_real_srt(p44, monkeypatch, tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
-def test_p44_real_srt_dry_run_refuses_a_named_host(j2ft, p44, monkeypatch, tmp_path):
-    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
-    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
-    dry = j2ft.real_run_dry(run._out_dir(), rr, 60)
-    assert dry["ran"] and dry["exit"] != 0 and "HTTP Error 403" in dry["output"], dry      # srt's proxy refused the name
-
-
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
-def test_p44_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p44, monkeypatch, tmp_path):
-    """srt starts with a P44 hosts list (a wildcard with a port) and still refuses a host not on it. The allowed path is not
-    tested with the real srt: it would resolve a name. Passes before Edit C too (an empty list refuses the same host)."""
-    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
+def test_p46_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p46, monkeypatch, tmp_path):
+    """AC-19 (network): srt starts with the plan's hosts list (a wildcard with a port) and still refuses a host not on it. The
+    allowed path is not tested with the real srt: it would resolve a name."""
+    run, real = p46_real_srt(p46, monkeypatch, tmp_path)
     rr = {**run.workflows[0]["real_run"], "hosts": ["*.made-up.invalid:8443"],
           "command": [sys.executable, "fetch.py", str(real), "http://other.invalid/"]}
     res = j2ft.real_run(run._out_dir(), rr, 60)
     assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res
 
-# ---- P44 (D449) T3: the Run card names the internet hosts and what the dry run could not check ------------------------------
-P44_LOCAL = "import os, sys\nopen(os.path.join(sys.argv[1], 'title.txt'), 'w').write('made-up')\n"      # reaches nothing
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p46_real_srt_writes_only_the_plans_folder(j2ft, p46, monkeypatch, tmp_path):
+    """AC-19 (writes, NFR-8, review R1-4): under the real srt a real run writes its folder and nothing outside it."""
+    run, real = p46_real_srt(p46, monkeypatch, tmp_path)
+    outside = Path(real).parent / "outside-d452"
+    outside.mkdir()
+    (Path(run._out_dir()) / "write.py").write_text(
+        "import os, sys\nopen(os.path.join(sys.argv[1], 'inside.txt'), 'w').write('1')\n"
+        "try:\n    open(os.path.join(sys.argv[2], 'outside.txt'), 'w').write('1')\nexcept OSError as e:\n    print('refused', e)\n")
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "write.py", str(real), str(outside)]}
+    res = j2ft.real_run(run._out_dir(), rr, 60)
+    assert res["ran"] and res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert (Path(real) / "inside.txt").exists() and not (outside / "outside.txt").exists(), res["output"]
 
 
-def test_p44_card_lines(p44, monkeypatch):
-    go, real, _ = p44
-    run = go()
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    card = p32_card(run)
-    off = shlex.join([sys.executable, "fetch.py", str(real), "--offline"])
-    assert "\nInternet access: api.made-up.invalid" in card and "can't be limited" not in card, card
-    assert "\nThe dry run ran its offline command, without internet access: " + off in card, card
-    monkeypatch.setenv("J2_SANDBOX", "0")      # no sandbox for the real run; P32 still fences the dry run (the fake srt)
-    run = go()
-    assert run._ask_real_run({}) and run.real_runs_dry["W-1"]["fenced"] is True
-    card = p32_card(run)
-    assert "\nThis computer has no sandbox, so internet access can't be limited to these hosts." in card, card
-    assert "\nThe dry run ran its offline command" in card
-    monkeypatch.setenv("J2_SANDBOX_CMD", "no-such-sandbox-xyz")      # no runtime at all: no dry run
-    run = go()
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
-    card = p32_card(run)
-    assert NO_DRY_RUN in card and "can't be limited to these hosts" in card and "offline command" not in card, card
-
-
-def test_p44_no_hosts_card_is_unchanged(j2ft, p44):
-    assert j2ft.real_run_net_lines({}, False, {"fenced": True}) == ""
-    go, _, _ = p44
-    run = go(P44_LOCAL, hosts=MISSING, offline=MISSING)
-    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
-    card = p32_card(run)
-    assert "Internet access" not in card and "offline command" not in card and "couldn't be checked" not in card, card
-
-# ---- P44 (D449) T4: P35 compares the offline dry run's file changes with expect unless the plan says it can't ----------------
-P44_OTHER = P44_FETCH.replace("'title.txt'", "'other.txt' if src == '--offline' else 'title.txt'")      # offline: another file
-
-
-def test_p44_offline_mismatch_goes_back_to_the_builder(p44):
-    """A guard that P35 keeps comparing the offline command's changes with expect: passes before the amendment too."""
-    go, _, _ = p44
-    run = go(P44_OTHER)
-    assert run._ask_real_run({}) is True
-    w = run.workflows[0]
-    assert w["failure"][0] == "dry_run" and "not what it said it would do" in w["failure"][1], w.get("failure")
-    assert run.turn == "adaptation" and not [m for m in run.chat if m.get("real_run")]
-
-
-def test_p44_same_files_false_skips_expect_with_the_card_line(p44):
-    go, real, _ = p44
-    run = go(P44_OTHER, offline={"command": [sys.executable, "fetch.py", str(real), "--offline"], "same_files": False})
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
-    assert "expect_mismatch" not in run.real_runs_dry["W-1"] and run.workflows[0].get("failure") is None
-    assert "\nFile changes couldn't be checked first." in p32_card(run)
-
-# ---- P44 (D449) T5: a failed dry run never makes built work "not built" (P30 amended); run 458e's shape, made-up data ---------
-def test_p44_a_dry_run_failure_keeps_the_builders_built_items(p44):
-    go, real, _ = p44
-    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src == '--offline' else None\nbody = "))      # offline: exit 1
-    crit = run.goal["done_when"]
-    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "fetch.py", "expect": True},
-                               crit[1]: {"type": "file-exists", "target": "test_fetch.py", "expect": True},
-                               crit[2]: {"type": "real-run"}}
-    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}, crit[1]: {"status": "built", "reason": ""}}
-    assert run._ask_real_run({}) is True
-    w = run.workflows[0]
-    assert w["status"] == "failed" and w["failure"][0] == "dry_run", w.get("failure")
-    assert run._open_items() == [], run._open_items()      # never "(not built: no workflow built it)"
-    assert run._item_states()[crit[0]]["wid"] == "W-1"
-    assert any("done-when item 3" in x for x in run._real_run_pending()), "the real run's item stays open"
-    reg, refused, _ = run._register([{**sort_proposals(str(real), fix=True)[0], "real_run": None, "revises": "W-1"}])
-    assert len(reg) == 1 and not refused, refused
-    w2 = reg[0]      # a later done revision's own statuses win
-    w2["status"] = "done"
-    w2["item_status"] = {crit[0]: {"status": "not_built", "reason": "x"}}
-    assert run._item_states()[crit[0]]["status"] == "not_built" and run._item_states()[crit[0]]["wid"] == w2["id"]
-
-# ---- P44 (D449) T6: a real run is never run again without its own Run press (a pin; no code change) ------------------------
-def test_p44_a_failed_real_run_is_never_run_again_without_its_own_code(j2ft, p44, p44_reg, monkeypatch):
-    """FR-10: an approved real run that fails is not run again by itself: the same workflow is never asked again, and a
-    replacement gets its own card and code and runs only after its own RUN <code>. That Decide for me's exact RUN <code> never
-    runs one is pinned by P31 (test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open); not repeated here.
-    Passes before and after P44: _ask_real_run skips a workflow already asked (real_runs_asked)."""
-    go, real, _ = p44
-    calls, orig = [], j2ft.real_run
-    monkeypatch.setattr(j2ft, "real_run", lambda out, rr, t: calls.append(rr.get("fence") is True) or orig(out, rr, t))
-    unfenced = lambda: sum(1 for f in calls if not f)
-    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src != '--offline' else None\nbody = "))      # real: exit 1
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
-    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
-    r = p31_receipts(run)[-1]
-    assert r["approved"] and r["ran"] and r["exit"] == 1 and unfenced() == 1, (r, calls)
-    assert run._ask_real_run({}) is False and unfenced() == 1
-    assert (run.paused or {}).get("kind") != "real_run"
-    reg, refused, _ = run._register([{**p44_reg.proposal(run)[0], "revises": "W-1", "parts": ["fix"]}])      # a replacement
-    # that keeps the real run; W-1 is done (only its real run failed), so rewriting it is priced as a fix
-    assert len(reg) == 1 and not refused, refused
-    w2 = reg[0]
-    w2["status"] = "done"
-    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run" and unfenced() == 1
-    assert run.real_runs_asked[w2["id"]] != run.real_runs_asked["W-1"]
-    assert any(m.get("real_run") == w2["id"] for m in run.chat), "the replacement gets its own card"
-    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
-    assert unfenced() == 2
-
-# ---- P44 (D449) T7: the proxy names join the fixed guardrail list (D446 amended, P41 amended) -------------------------------
 @pytest.mark.parametrize("name", ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy",
                                   "no_proxy"])
 @pytest.mark.parametrize("hosts", [True, False])
-def test_p44_proxy_settings_are_refused_with_or_without_hosts(p44_reg, name, hosts):
-    """srt's own proxy can't be overridden by a plan: a proxy name is refused as a setting, in either case, with hosts or not."""
-    kw = {} if hosts else {"hosts": MISSING, "offline": MISSING}
-    run, reg, refused = p44_reg.register(settings={name: "http://made-up.invalid:3128"}, **kw)
+def test_p46_proxy_settings_are_refused_with_or_without_hosts(p46_reg, name, hosts):
+    """AC-18: srt's own proxy can't be overridden by a plan: a proxy name is refused as a setting, with hosts or not."""
+    kw = {} if hosts else {"hosts": MISSING}
+    run, reg, refused = p46_reg.register(settings={name: "http://made-up.invalid:3128"}, **kw)
     assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
     assert f"real_run may not set {name}" in refused[0] and "where it connects (a fixed guardrail list)" in refused[0], refused
 
-# ---- P44 (D449) T8: the planner and the builder are told how hosts, the offline command and the read-only first call work ------
-def p44_builder_prompt(j2ft, tmp_path, runner):
-    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none."""
+
+def p46_builder_prompt(j2ft, tmp_path, runner, body="print('made-up')\n", real_folder=None, out=None):
+    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none.
+    body: what the builder writes into fetch.py; real_folder: the workflow's real-run folder; out: a dict that gets the run,
+    the workflow and every prompt."""
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0903{'01' if runner else '02'}-5e12")
     run._apply_output(FT)
     if not runner:
@@ -5141,27 +4783,35 @@ def p44_builder_prompt(j2ft, tmp_path, runner):
          "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
          "atoms": [{"id": "W-1.a1", "goal": "fetch", "expected_output": [],
                     "verification": [{"text": "fetch.py exists", "type": "file-exists", "target": "fetch.py", "expect": True}]}]}
+    if real_folder:
+        w["real_run"] = {"command": ["python3", "fetch.py", real_folder], "folder": real_folder, "reads": [], "checks": [1]}
     run.workflows = [w]
     j2ft.add_workflow_agent("W-1")
     prompts = []
 
     def call(fn, fmt, prompt, mock, **kw):
         prompts.append(prompt)
-        (Path(run._out_dir()) / "fetch.py").write_text("print('made-up')\n")
+        (Path(run._out_dir()) / "fetch.py").write_text(body)
         return {"say": "@Coordination built", "human_output": "I built it.", "atom_human_output": "The fetcher."}
     run.call = call
     run._run_tools(w, {"id": "W-1", "name": "fetcher", "outputs": w["outputs"]}, 3)
     assert prompts
+    if out is not None:
+        out.update(run=run, w=w, prompts=prompts)
     return prompts[0]
 
 
-def test_p44_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
-    """A hint, not enforced: code checks the hosts and the offline command at registration and grants hosts only after Run."""
+def test_p46_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    """FR-22: list every host, never set a proxy; nothing about offline, naming, asking, a card or approval."""
     rule = j2ft.REAL_RUN_NET_RULE
-    for x in ('"hosts"', '"reaches"', '"offline"', '"same_files"', "made-up data", "read-only call", "*.example.com only if",
-              ":port", "80 characters", "asked once", "Only code and the Run card grant internet access", "never tell anyone",
-              "HTTP_PROXY"):
+    for x in ('"hosts"', "api.example.com", "*.example.com", ":port", "no scheme, path or address", "HTTP_PROXY", "HTTPS_PROXY",
+              "ALL_PROXY", "NO_PROXY"):
         assert x in rule, x
+    hint = j2ft.SCRIPT_NET_RULE
+    assert "fake local server, never the internet" in hint
+    for text in (rule, hint):
+        for x in ("offline", "named", "ask", "Run card", "approv", "--mock", "--dry-run", "reaches\""):
+            assert x not in text, (x, text)
     monkeypatch.setenv("J2_AGENT_TOOLS", "1")
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090300-5e12")
     run._apply_output(FT)
@@ -5170,21 +4820,36 @@ def test_p44_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert rule not in run.ATOM_RULES
-    hint = j2ft.SCRIPT_NET_RULE
-    for x in ("read-only check", "a bad key or missing access fails", "--mock", "--dry-run", "made-up data", "fake local server",
-              "never promise it"):
-        assert x in hint, x
     monkeypatch.setenv("J2_AGENT_TOOLS", "1")
-    told = p44_builder_prompt(j2ft, tmp_path, runner=True)
+    told = p46_builder_prompt(j2ft, tmp_path, runner=True)
     assert j2ft.SCRIPT_ENV_RULE + hint in told, told[:2000]
-    assert hint not in p44_builder_prompt(j2ft, tmp_path, runner=False)
+    assert hint not in p46_builder_prompt(j2ft, tmp_path, runner=False)
 
 
-# ---- P44 (D449): the deliverables planner's replies that were not JSON are kept in deliverables.json -----------------------
+# ---- P46 (D452): the two rules that existed only for the dry run on copies are gone -------------------------------------------
+def test_p46_a_command_that_passes_no_folder_argument_registers(p46_reg):
+    """AC-11 (FR-12): the script may take its folder any way; nothing points it at a copy any more."""
+    run, reg, refused = p46_reg.register(command=["python3", "fetch.py", P46_URL])
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["command"] == ["python3", "fetch.py", P46_URL]
+
+
+def test_p46_a_built_file_may_hold_the_real_folder_path(j2ft, tmp_path, monkeypatch):
+    """AC-12 (FR-13): a build whose file holds its real run's folder is neither refused nor rebuilt."""
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    real, got = tmp_path / "made-up-folder", {}
+    real.mkdir()
+    p46_builder_prompt(j2ft, tmp_path, runner=True, body=f"FOLDER = {str(real)!r}\nprint(FOLDER)\n", real_folder=str(real), out=got)
+    assert len(got["prompts"]) == 1 and got["w"]["status"] == "done", (got["prompts"][1:], got["w"].get("failure"))
+    assert not [e for e in got["run"].events if e.get("type") == "real_path_in_build"]
+    assert not hasattr(j2ft, "real_paths_in") and not hasattr(j2ft, "real_folders") and not hasattr(j2ft.J2Run, "_real_path_leak")
+
+
+# ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json --------
 NOT_JSON = "Here is the plan: (not JSON)"      # made-up text, no model call
 
 
-def test_p44_the_deliverables_planners_unreadable_replies_are_kept(j2, make_run, monkeypatch):
+def test_p46_the_deliverables_planners_unreadable_replies_are_kept(j2, make_run, monkeypatch):
     """The plan and its one revision both come back as text: the run stops as before, and both replies are kept."""
     real = j2.j2_realization.deliverable_mocks
     monkeypatch.setattr(j2.j2_realization, "deliverable_mocks",
@@ -5199,7 +4864,7 @@ def test_p44_the_deliverables_planners_unreadable_replies_are_kept(j2, make_run,
     assert [m for m in run.chat if m.get("text") == note and m["who"] == "system"], run.chat[-5:]
 
 
-def test_p44_a_json_plan_keeps_no_unparsed_key(j2, make_run):
+def test_p46_a_json_plan_keeps_no_unparsed_key(j2, make_run):
     run = make_run()
     say(run, BREW_LAB)
     saved = json.loads((Path(run.dir) / "deliverables.json").read_text())

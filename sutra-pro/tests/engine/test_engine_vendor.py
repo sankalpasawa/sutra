@@ -166,29 +166,31 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p44_without_p6_p13_p20_and_sut19s_p36_to_p40():
+def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_p32_sut19s_p36_to_p40_p44_and_p45():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
     Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422); P27 lists only files for a type's pattern (main c9d4e662); P28 stops the cycle on the same build failure twice in a
     row, across workflows (D431); P29 never offers, applies or declares done what leaves nothing built (D431); P30 gives every done-when item a runnable check and a
-    builder-set status, and ends Done only when all are built and pass (D433); P31 sends a failed dry run back to the build and takes only
-    RUN <code> or Don't run as the real-run answer (D434); P32 runs the dry run only inside the sandbox runtime, never with network (D435); P33 has Audit read an approved real
-    run's output against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and sends a dry run that
-    differs, or writes into a read-only folder, back to the build (D438); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
+    builder-set status, and ends Done only when all are built and pass (D433); P31 keeps a real-run folder written ~/x and names a path
+    only whole (D434, D448; D452 removed its RUN <code> question); P32 (D435, the dry run only inside the sandbox runtime) is retired by D452, which has
+    no dry run; P33 has Audit read a real run's output and what it did to its folder against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and code compares it after
+    the real run (D438, D452); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
     the engine runs a clean environment from an allowlist plus what its plan states, with secrets by file path (D446); P42 gives a build with a requirements.txt an
-    environment of its own, installed only after RUN <code> (D447); P43 keeps an answer from confirming a real-run item and
-    counts a picked option's text (D448); P44 lets a real run name the internet hosts the Requester named, dry-runs a
-    stated offline command and grants the hosts only to the approved run (D449)."""
+    environment of its own, installed with no question (D447, D452); P43 keeps an answer from confirming a real-run item and
+    counts a picked option's text (D448); P44 (D449, hosts the Requester named, an offline dry run) is retired by D452, which
+    keeps its `unparsed` diagnostic in P46; P45 is another developer's, not on this base yet; P46 runs a planned real run once,
+    unasked, with no dry run, checks expect against its own diff, and lets the planner list its hosts, checked for their syntax
+    only (D452)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 45) if n not in (6, 13, 20, 36, 37, 38, 39, 40)]
+    assert ids == [f"P{n}" for n in range(1, 47) if n not in (6, 13, 20, 32, 36, 37, 38, 39, 40, 44, 45)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
 
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
-    marks = {"P44": ("j2.py", "def real_run_hosts_problems"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def dry_secret_files"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P32": ("j2.py", "results may differ."), "P31": ("j2.py", "def _dry_run_failed"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
+    marks = {"P46": ("j2.py", "def _real_run_next"), "P42": ("j2.py", "def _env_install"), "P41": ("j2.py", "def real_run_env_problems"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P31": ("j2.py", "def home_expanded"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "def _mark_run_template_used"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", '(self.out or {}).get("single")'),
              "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),
@@ -321,3 +323,72 @@ def test_the_tree_is_exactly_what_the_vendoring_script_derives_from_the_extracti
                           text=True, env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f"{FILES} files, ok" in done.stdout
+
+
+def _fake_build(monkeypatch, edits):
+    """build() over a tiny in-memory source: one role file, one artifacts file, the seed index, no code module."""
+    module = vendor_module()
+    files = {"agents/j2/identity.md": b"line one\nRun it after approval.\n", "artifacts/real_run.md": b"copied\n",
+             "library/index.json": b"{}\n"}
+
+    class Fake(module.Source):
+        def __init__(self):
+            self.commit, self.git = PIN, False
+
+        def read(self, rel):
+            return files.get(rel, b"")
+
+        def tree(self, rel):
+            return sorted(p for p in files if p.startswith(rel + "/"))
+
+    for name, value in (("CODE", ()), ("ROLE_FILES", ("identity.md",)), ("REF_TOP", ()), ("REF_DOCS", ()), ("REF_TREES", ()),
+                        ("EDITS", tuple(module.Edit(*e) for e in edits)), ("scrub_seed_index", lambda text: (text, [])),
+                        ("TREES", (("artifacts", "sutra_app/engine/artifacts", ()),))):
+        monkeypatch.setattr(module, name, value)
+    return module, Fake()
+
+
+def test_d452_a_data_edit_changes_the_vendored_file_and_names_its_patch(monkeypatch):
+    module, src = _fake_build(monkeypatch, [("P46", "agents/j2/identity.md", "after approval", "once, unasked")])
+    files, rows, ranges = module.build(src)
+    assert files["sutra_app/engine/agents/j2/identity.md"] == b"line one\nRun it once, unasked.\n"
+    row = next(r for r in rows if r[0] == "sutra_app/engine/agents/j2/identity.md")
+    assert row[2] == "P46" and row[3] != row[4]
+    assert ranges["P46"] == ["agents/j2/identity.md:2"]
+    assert next(r for r in rows if r[0] == "sutra_app/engine/artifacts/real_run.md")[2] == ""
+
+
+def test_d452_a_data_edit_for_a_file_that_is_not_vendored_stops_the_run(monkeypatch):
+    module, src = _fake_build(monkeypatch, [("P46", "agents/j2/nosuch.md", "a", "b")])
+    with pytest.raises(module.VendorError, match="not vendored"):
+        module.build(src)
+
+
+FR34 = ("RUN <code>", "RUN {code}", "Don't run", "Don't allow", "dry run", "on copies", "placeholder", "offline", "approval", "approved",
+        "approves", "copies' paths", "refuses a build")
+
+
+def test_d452_the_real_run_texts_promise_no_question_and_no_dry_run():
+    """AC-25 (FR-31 to FR-34, review R1-1): the four vendored data files (the tools builder's prompt and the atom rules too), the prompt constants and runenv's docstring hold none of FR-34's
+    phrases; VENDORED.md lists P46 for both data files with a vendored sha256 unlike J2's. (_real_run_note and the P33 prompt:
+    test_engine_patches.py, test_p46_the_note_and_the_audit_prompt_promise_no_question.)"""
+    from sutra_app.engine import j2
+    # identity.md: its lines about running (J2's line 40 names "approval" as a process step a done-when item is not: unrelated)
+    texts = {"identity.md": "\n".join(x for x in (ENGINE / "agents" / "j2" / "identity.md").read_text(encoding="utf-8").splitlines()
+                                       if " run" in x.lower()),
+             "real_run.md": (ENGINE / "artifacts" / "real_run.md").read_text(encoding="utf-8"),
+             **{f: (ENGINE / "templates" / f).read_text(encoding="utf-8").replace("complete files, not placeholders", "")
+                for f in ("builder.md", "atom_rules.md")},      # builder.md: "real, complete files, not placeholders" is unrelated
+             "runenv": (ENGINE / "runenv.py").read_text(encoding="utf-8").split('"""')[1]
+             .replace("`fix-real-run-approval`", ""),      # J2's branch name, where the module comes from
+             **{k: getattr(j2, k) for k in ("REAL_RUN_EXPECT_RULE", "REAL_RUN_ENV_RULE", "REAL_RUN_NET_RULE", "SCRIPT_NET_RULE")}}
+    for name, text in texts.items():
+        for phrase in FR34:
+            assert phrase.lower() not in text.lower(), (name, phrase)
+    assert "code runs it once, when the rest is workable, and keeps a receipt" in texts["identity.md"]
+    assert '"folder"' in texts["real_run.md"] and '"checks"' in texts["real_run.md"]
+    assert "once, when the rest is workable" in texts["builder.md"]
+    for vendored in ("sutra_app/engine/agents/j2/identity.md", "sutra_app/engine/artifacts/real_run.md",
+                     "sutra_app/engine/templates/builder.md", "sutra_app/engine/templates/atom_rules.md"):
+        row = next(r for r in rows() if r[0] == vendored)
+        assert row[2] == "P46" and row[3] != row[4], row

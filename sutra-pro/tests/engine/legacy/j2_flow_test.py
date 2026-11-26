@@ -9082,7 +9082,11 @@ SAVED_RUNS_GOLDEN = {
 # written but never sent) is blocked, never built. Compared field by field with the engine before it: outcomes, spend,
 # the call order, every workflow field, the documents and every user prompt are identical; only the builders' system
 # prompts differ, by that text. Before: {"prd": "21389698fc4e", "design docs": "329d16437aaa", "docs then site": "ed6fa6e18d61"}.
-DOC_RUN_GOLDEN = {"prd": "06aa6f78ed32", "design docs": "2e43c43f3eed", "docs then site": "a886b4154aec"}      # Sutra P30 (D433, beta fix c)
+# Re-recorded 2026-11-26 (Sutra Pro P46, D452, D249) for one prompt text only: agents/j2/identity.md line 43 says code runs a planned
+# real run once, unasked (no RUN <code> step). tests/engine/golden/prompts_*.json, recorded from the engine before and after, differ
+# only in Identity's system digest; every user prompt, outcome and spend is identical.
+# Before: {"prd": "06aa6f78ed32", "design docs": "2e43c43f3eed", "docs then site": "a886b4154aec"}.
+DOC_RUN_GOLDEN = {"prd": "ae9858bac8f4", "design docs": "ee7ecc2d6216", "docs then site": "80e86fbcc9fa"}      # Sutra P46 (D452)
 DOC_PROMPTS_GOLDEN = {
     "prd.builder": "e971c88e727f", "prd.intake": "75a955fb24fa",
     "prd.charter_fmt": "eedccdf82d84", "prd.atom_rules": "b8a918ef6039", "prd.system": "d09f06fa3181",
@@ -16547,6 +16551,15 @@ for _name in ("rubric_and_credits", "detail_stays_open", "plain_words", "general
     if _name in KNOWN_UPSTREAM:
         globals()[_name] = known_upstream_failure(globals()[_name])
     globals()[_name] = skippable(globals()[_name])
+
+# Sutra D452: a planned real run runs once, unasked, with no dry run on copies; these J2 blocks test the approval, the dry run or a
+# rule that existed only for the dry run, so each prints why and runs nothing (tests/engine/test_engine_patches.py holds the new tests)
+D452_GONE = {"run_for_real": "no approval, no dry run and no folder-argument rule",
+             "dry_run_real_folders": "the folder-argument and real-path rules existed only for the dry run",
+             "real_run_checks": "no approval: the real run runs once, unasked",
+             "real_run_order": "no RUN ask: the real run runs once, unasked"}
+for _name, _why in D452_GONE.items():
+    globals()[_name] = (lambda n, w: lambda *a, **k: print(f"  skipped the rest of {n}: D452: {w}"))(_name, _why)
 
 
 if __name__ == "__main__":
