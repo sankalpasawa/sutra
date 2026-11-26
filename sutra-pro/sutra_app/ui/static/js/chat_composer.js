@@ -149,7 +149,7 @@
     const where = mode === "direct" ? "" : '<small class="ccwhere">Files go to the team with your message.</small>';
     const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' + where +
       '<input type="file" class="ccinput" multiple hidden tabindex="-1" aria-label="Choose files to attach"/><small>' + esc(limit) + "</small></div>";
-    const note = clean(s.note) === "" ? "" : '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>";
+    const note = clean(s.note) === "" || (mode !== "direct" && !askOn && held === "") ? "" : '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>";          // the team's bar draws a note only with Ask or with chips, as it always did
     const about = asking ? '<p class="ccnote ccasknote">' + esc(ASK_NOTE) + "</p>" : "";
     return askSwitch + about + toggle + held + attach + note;
   }

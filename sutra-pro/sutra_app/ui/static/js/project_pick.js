@@ -12,6 +12,7 @@
   "use strict";
 
   const NEW = "+new";
+  const FILES = "+files";                  // "Project files and memory" (D451): opens the panel of the picked project
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const isObj = v => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -40,6 +41,7 @@
     const item = (value, label, on) => '<button type="button" class="pp-item" role="menuitemradio" aria-checked="' + String(on) + '" data-pp="' + esc(value) + '">' + label + "</button>";
     return '<div class="pp-menu" role="menu" aria-label="Where this goes">' +
       list(projects).map(p => item(p.id, esc(clean(p.name) || p.id), p.id === id)).join("") +
+      (id ? '<button type="button" class="pp-item pp-files" role="menuitem" data-pp="' + FILES + '">Project files and memory</button>' : "") +
       '<button type="button" class="pp-item pp-new" role="menuitem" data-pp="' + NEW + '">+ New project&hellip;</button></div>';
   }
 
@@ -109,7 +111,7 @@
     };
   }
 
-  const ProjectPick = {heading, menuHtml, pickOf, refusal, mount, NEW};
+  const ProjectPick = {heading, menuHtml, pickOf, refusal, mount, NEW, FILES};
   if (typeof module === "object" && module.exports) module.exports = ProjectPick;
   else root.ProjectPick = ProjectPick;
 })(globalThis);

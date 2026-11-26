@@ -29,7 +29,8 @@ try { if (new URLSearchParams(location.search).get("pane") === "settings") { doc
     <section class="fdnew" aria-labelledby="fd-new-h">
       <h1 class="fdtitle" id="fd-new-h">What should we make?</h1>
       <div class="fdcompose"><textarea id="fdbox" rows="3" aria-label="A new project" placeholder="A one-page website for my cafe, with the menu and opening hours&hellip;" maxlength="20000"></textarea>
-        <div class="fdcfoot"><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><span id="fdbudget" style="margin-left:auto"></span><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Go</button></div></div>
+        <div class="sfiles" id="fdfiles"></div>
+        <div class="fdcfoot"><span id="fdattach"></span><p class="fdtry">Try: <button type="button" class="fdtrylink" data-act="fd-try" data-text="A website for my cafe: menu, opening hours, how to find us">a cafe website</button> &middot; <button type="button" class="fdtrylink" data-act="fd-try" data-text="A one-page website for my bakery, with cake orders and contact">a bakery page</button></p><span id="fdbudget" style="margin-left:auto"></span><button type="button" class="fdbtn fdyes fdstart" id="fdsend">Go</button></div></div>
       <div id="fdfaces"></div>
       <div id="fdlatest"></div>
     </section>
@@ -129,6 +130,8 @@ try { if (new URLSearchParams(location.search).get("pane") === "settings") { doc
 <script src="/ui/js/chat_live_activity.js"></script>
 <script src="/ui/js/chat_live_view.js"></script>
 <script src="/ui/js/attach_bar.js"></script>
+<script src="/ui/js/start_files.js"></script>
+<script src="/ui/js/project_context_view.js"></script>
 <script src="/ui/js/chat_composer.js"></script>
 <script src="/ui/js/chat_draft.js"></script>
 <script src="/ui/js/chat_scroll.js"></script>
