@@ -246,8 +246,11 @@ def run_output_is_recorded():
         run._ask_real_run({})
         reply(run, "RUN a578a3")
         r = receipts(run)[-1]
-        ok(json.load(open(os.path.join(run.dir, r["run_output"])))["main_result"] is None and r["result"] == j2.output_def(FT)["entry_file"],
-           f"(C) no result declared and the type's entry_file is a pattern: null in the record, the entry_file on the row: {r['result']}")
+        ok(json.load(open(os.path.join(run.dir, r["run_output"])))["main_result"] is None and r["result"] is None,
+           f"(C) no result declared and the type's entry_file is a pattern: null in the record and on the row: {r['result']}")
+        shown = [x for x in j2.j2_artifacts._deliverable_extras(run.dir)["real_runs"] if x.get("run_output")][-1]
+        ok(all(shown[k] == r[k] for k in j2.j2_artifacts.RUN_OUTPUT_KEYS) and "output" not in shown and "dry_run" not in shown,
+           f"(C) the views' real_runs rows carry the row's run-output keys, never output or dry_run: {sorted(shown)}")
         # the entry_file fallback: a type whose entry_file names one file of the run folder
         run, w = made({"s.py": PRINTS}, [check("file-exists", "s.py")], real=real)
         run.out = {**run.out, "entry_file": f"{FT}/s.py"}

@@ -793,7 +793,7 @@ def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_a
     return {"id": receipt, "run_output": path,
             "run_output_counts": {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]},
             **{k: [x["path"] for x in v] for k, v in files.items()}, "files_truncated": truncated,
-            "result": declared or (str(entry_file) if entry_file else None)}
+            "result": main["path"] if main else None}      # resolved: the plan's, else the entry_file that is one file there
 
 
 def run_output_receipt(run_dir, wid):
