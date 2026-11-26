@@ -162,9 +162,9 @@ _E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
 SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \(open\)\{.*?\n).*?    if \(qp && qp\.person === k\)\{ const b = (.*?\n)'
                       r'.*?(?=  \["mira", "kabir", "dev", "nora"\]\.forEach)', re.S)
 SCREW = _lines(
-    '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {}, ev = sTalk(s), said = x => x ? `${PEOPLE[x.who].name} ${x.text}` : "";',
+    '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};',
     "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
-    '    line: plain(LIVE.last[k] || "") || said(ev.filter(x => x.who === k).pop() || ev[ev.length - 1]) || liveStep(s)});',
+    '    line: plain(LIVE.last[k] || "") || liveSaid(s, k)});',
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
     "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json",
     "")
@@ -331,16 +331,18 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
     Edit("E32a", 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);', _lines(      # E32 (D453): replaces sNum/sCap (only the crew's fixed lines used them)
         "// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines",
-        'const LIVE = {last: {}, line: "", key: ""};',
+        'const LIVE = {last: {}, line: "", key: "", p: ""};',
         'const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step\'s name without its code',
+        "const liveSaid = (s, k) => { const ev = sTalk(s), x = ev.filter(e => e.who === k).pop() || ev[ev.length - 1]; return x ? `${PEOPLE[x.who].name} ${x.text}` : liveStep(s); };      // between calls: the person's last team-stream line, else the run's, else the step",
         "function liveLines(s){",
         '  if (!s || s.status !== "running") return [];',
-        "  const parts = sModel(s).parts;",
+        "  const parts = sModel(s).parts, rc = k => (typeof RawChat === \"object\" && RawChat.helpers.personOf(k)) || {};      // raw_chat.js PEOPLE: a function's person, else its role title",
         "  return Object.entries(s.live || {}).sort((a, b) => (a[1].since || 0) - (b[1].since || 0)).map(([k, e]) => {",
-        "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, p = part.person || \"\",",
-        "      what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120), name = p ? PEOPLE[p].name : MAPLABEL.persona[k] || k;",
+        "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, r = rc(k), named = r.role === k ? r.name : \"\",",
+        "      p = part.person || SKEYS.find(x => PEOPLE[x].name === named) || \"\", what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120),",
+        "      name = p ? PEOPLE[p].name : named || MAPLABEL.persona[k] || k;",
         "    if (p) LIVE.last[p] = what;",
-        "    LIVE.line = what ? `${name}: ${what}` : name;",
+        "    LIVE.line = what ? `${name}: ${what}` : name; LIVE.p = p;",
         "    return {k, p, what, line: LIVE.line}; });",
         "}",
         'const liveTyping = s => { const L = liveLines(s).map(l => l.line), r = L.length ? L : s.status === "running" ? [LIVE.line || liveStep(s)] : [];',
@@ -356,7 +358,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '    const lk = liveLines(s).map(l => l.line).join("\\n"); if (lk !== LIVE.key){ LIVE.key = lk; paintMap(); }      // the Map follows the live lines\n', 1),
     Edit("E32d", "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n",
          "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n"
-         '  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveStep(CTX); if (t) return [t, "running"]; }      // E32 (D453)\n', 1),
+         '  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveSaid(CTX, LIVE.p); if (t) return [t, "running"]; }      // E32 (D453)\n', 1),
     Edit("E32e", "function paintMap(){ paint(", "function paintMap(){ mapLive(MAP); paint(", 1),
 )
 

@@ -94,7 +94,7 @@ def test_a_live_state_carries_the_live_agents_and_a_saved_one_does_not(api):
     """D453 (FR-2, FR-5b, FR-7): the page's one poll carries agent_live.json, redacted; the chat is still only what chat.jsonl holds."""
     got = api.client.get("/api/state?dept=web")
     body = got.json()
-    assert set(body["live"]) == {"adaptation", "W-2", "audit", "agent"}
+    assert set(body["live"]) == {"identity", "adaptation", "W-2", "audit", "agent"}
     assert {k: body["live"]["W-2"][k] for k in ("tool", "since", "step")} == {"tool": "Reading src/a.py", "since": 1793786400.0, "step": 6}
     assert LIVE_SECRET not in got.text and body["live"]["audit"]["tool"] == "Reading .env ([redacted])"
     assert len(body["chat"]) == 1
