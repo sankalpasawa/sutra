@@ -75,6 +75,25 @@ Tests deleted or rewritten (FR-39): the R1 to R4 tests of impact.md §4 (the P31
 
 - With the sandbox off (Windows, no srt) a real run is a plain process with full network and no write limit, and nobody is asked (spec A-1, accepted by the founder).
 - A mismatch is found after the files changed; nothing reruns or undoes it (by design, FR-16).
-- `_tree` raises on an unreadable file in the folder, as the dry run did (architecture risk 4).
+- ~~`_tree` raises on an unreadable file in the folder~~: fixed in review round 1 (R1-3).
 - P45 (another developer) may want `created`/`changed`/`deleted` in the row; this branch writes none (FR-17).
 - Not run: browser tests (`SUTRA_BROWSER=1`), the desktop tests outside the gate, live smoke, a beta install.
+
+## Review round 1 fixes
+
+| finding | status | commit | test (mutation: guard removed, tests that fail) |
+|---|---|---|---|
+| R1-1 (P2) builder.md promised approval, copies, a refusal | fixed: P46 data edits of `templates/builder.md` (bullet trimmed, folder-path bullet deleted) and `templates/atom_rules.md` ("after the Requester approves the run" gone, found by the grep of every prompt/template/data file); no golden moved (tools-on prompts only) | 12927a31 | AC-25 (`test_d452_the_real_run_texts_promise_no_question_and_no_dry_run`) scans both files, FR34 + "approves", "copies' paths", "refuses a build" |
+| R1-2 (P2) "Done:" in chat before the summary net | fixed: `_chain_blocked` (P30, amended in place) lists `_real_run_open()` first, so `_chain_done` and the stage gate's "finish as it is" name it; the net moved from `_write_summary` to just before the closing system line in `_run`, so chat never shows "Done:" | 06e6579d | `test_p46_every_chain_ending_names_the_open_real_run` (5 endings), `test_p46_the_chat_never_says_done_while_a_real_run_is_open` (asserts no system line starts "Done:"). Mutations: net off 1 fail; `rr = []` 5; no-stage branch 4; stage branch 1 |
+| R1-3 (P2) unreadable file crashed after the run, no row | fixed: `_tree` records an unreadable file as `"unreadable"`; `_real_run_once` writes the row in `finally` once the command ran (items "not judged: <error>" when a later step raised) | 06e6579d | `..._leaves_an_unreadable_file_still_writes_its_row` (broken symlink + chmod 000), `..._a_step_that_fails_after_the_real_run_still_writes_its_row`. Mutations: `_tree` raise 1 fail; `finally`→`else` 1 fail |
+| R1-4 (P2) no real-srt write test | fixed (skips without srt, as the network test) | 30fa953b | `test_p46_real_srt_writes_only_the_plans_folder` (ran here with srt: passes) |
+| R1-5 (P3) two endings did not name the reason | fixed with R1-2 (`_chain_blocked`) | 06e6579d | `deeds_fail`, `chain_stages` cases above |
+| R1-6 (P3) old approved rows said "ran automatically" | fixed: the projection carries `approved` only when the row has it; E31 says "approved by you" / "not approved" for such a row, else "ran automatically" / "did not start" | 06e6579d | `test_d452_artifacts_list_an_old_real_run_row_and_a_new_one`; node `E31 (D452, review R1-6)` evaluates the page's own expression on 4 rows |
+| R1-7 (P3) dead helpers | fixed: `p32_card`, `p35_again` deleted | 30fa953b | n/a |
+| R1-8 (P3) checks refusals lost | fixed | 30fa953b | `test_d452_a_real_runs_checks_must_name_done_when_items` (item 9, empty) |
+| R1-9 (P3) AC-29 hand copy | fixed: parent saved and summarised, follow-up via `J2Run.rehydrate`; the test points the engine package's `j2`/`j2_types` at this module's copy (the cause of deviation 9: another test module's fresh copy sat there, so rehydrate did not know the folder type) | 30fa953b | `test_p46_a_follow_up_never_reruns_a_parents_real_run`; mutation `_ran_real_run` → False: 1 fail |
+
+Deviation: R1-2's net no longer lives in `_write_summary`; the only other caller (owner override "ship") takes `_ship_outcome`, already guarded. The net replaces a "Done:" outcome by the reasons alone (the old text claimed the work passes).
+
+Results (round 1): `vendor_j2.py --check` 527 files ok, `port_j2_ui.py --check` ok (57 anchors) after each change. `scripts/gate.sh`: 4 failed, 13629 passed, 389 skipped (14m53s); the 4 are the known main failures listed above. Desktop `npm test`: 134, 133 pass, 1 skipped. `node --test tests/ui/js/`: 1750, 1748 pass, 2 skipped.
+Lines vs origin/main: sutra_app + scripts without .md +888 −1301 (413 net fewer); tests +716 −944 (228 net fewer). `j2.py` 13641 lines.
