@@ -106,7 +106,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests, vendor tests, `scripts/py -m pytest tests/ui/test_port_edits.py tests/engine/test_engine_views.py tests/ui/test_dept_page.py -q`, port `--check`, `node --test tests/ui/js/result_view.test.js tests/ui/js/page_render.test.js` pass
   - Covers: FR-1, FR-2, FR-3, FR-4, FR-5, FR-6, FR-27, NFR-6
 
-- [ ] T8: A run never ends "Done:" while a required real run has not passed
+- [x] T8: A run never ends "Done:" while a required real run has not passed
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_patches.py`
   - Change: P46: `real_run_why = {}` in the state init (beside `real_runs_done`), set by `_real_run_next` step 8; `_real_run_open()`; `_goal_done` outcome (replace j2.py:7351-7356 and delete the P44 "Left out" lines if any remain); `_ship_outcome` (:4411) uses `_real_run_open()` in place of `_real_run_pending()`; `_write_summary` (:13795) net. All per architecture.md "Outcome rules".
   - Tests (first): `test_p46_no_done_without_the_required_real_run`, parametrized (a) exit 1, (b) expect mismatch, (c) workflow sent back by FR-9 then finish as it is (`_ship_outcome`), (d) exit 1 with `run.audits = []`, (e) the failing item accepted as is by the Requester: each outcome starts "Done with open items:" and names the workflow and the reason, and `summary.json` `status == "done_with_open_items"`; plus a passing run → "Done:"; plus a replacement whose run passed after a failed one (follow-up) → "Done:".

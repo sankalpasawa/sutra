@@ -2293,12 +2293,12 @@ def mock_item_check(out):
                             f" Still not workable: {'; '.join(fails)}.")
 ''', r'''        rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
-        rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
+        open_rr = self._real_run_open()      # P46 (D452, FR-40): never "Done:" while a required real run has not passed
         opened = self._stage_blocked() + (self._open_items() if self.audits else [])      # P30 (D433), R4-1: earlier stages too
-        if rr or opened:
-            self.outcome = ("Done with open items: "
-                            + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
-                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
+        if open_rr or opened or (rest and self.real_runs_done):
+            self.outcome = ("Done with open items: " + ("; ".join(open_rr) + "." if open_rr else "not every done-when item is built."
+                                                        if opened else "not every done-when item passes.")
+                            + (f" Still not workable: {'; '.join(rest + opened).rstrip('.')}." if rest + opened else ""))
 '''),
     Edit("P30", "j2.py", r'''        fails = workable(self.audits[-1]) if self.audits else ["nothing has been checked"]
         fails = self.open_docs + fails + self._real_run_pending()
@@ -2307,7 +2307,7 @@ def mock_item_check(out):
         return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails)}."
 ''', r'''        fails = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             if self.audits else ["nothing has been checked"]      # beta fix (b): a blocked item is listed once, by _open_items
-        fails = self.open_docs + fails + self._real_run_pending() + self._stage_blocked() + self._open_items()      # P30 (D433)
+        fails = self.open_docs + fails + self._real_run_open() + self._stage_blocked() + self._open_items()      # P30 (D433; D452)
         if not fails:
             return self.out["done"]
         return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails).rstrip('.')}."      # beta fix d
@@ -3051,6 +3051,7 @@ def sandbox_rerun(folder, runner, target, timeout):
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
 ''', r'''        self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
+        self.real_run_why = {}       # P46 (D452): workflow id -> why its real run did not pass (FR-40)
 '''),
     Edit("P46", "j2.py", r'''          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
           "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
@@ -3135,15 +3136,47 @@ def sandbox_rerun(folder, runner, target, timeout):
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
         self._goal_done(h.get("r") or {})
-''', r'''    def _ran_real_run(self, wid):
-        """P46 (D452): a real_run row for wid is in this run folder's receipts.jsonl. A follow-up copies that file, so a
-        parent's real run counts too: each workflow id's real run runs at most once."""
+''', r'''    def _real_run_row(self, wid):
+        """P46 (D452): the last real_run row for wid in this run folder's receipts.jsonl (a follow-up copies the file, so a
+        parent's row counts), or None."""
         try:
             with open(os.path.join(self.dir, "receipts.jsonl"), encoding="utf-8") as f:
-                return any(x.get("type") == "real_run" and x.get("workflow") == wid
-                           for x in (json.loads(line) for line in f if '"real_run"' in line))
+                rows = [x for x in (json.loads(line) for line in f if '"real_run"' in line)
+                        if x.get("type") == "real_run" and x.get("workflow") == wid]
         except OSError:
-            return False
+            return None
+        return rows[-1] if rows else None
+
+    def _ran_real_run(self, wid):
+        """P46 (D452): wid's real run has a row, so it never runs again (each workflow id at most once)."""
+        return self._real_run_row(wid) is not None
+
+    def _real_run_open(self):
+        """P46 (D452, FR-40): one line per planned real run still required that has not passed: a done-when item on the
+        checklist is in its checks, and no real run that checks that item passed it (ran, exit 0, matched its expect,
+        Audit passed the item; from this run's own record, else from the row a follow-up copied). "<id>'s real run has not
+        run" or "<id>'s real run did not pass: <why>". [] when every required real run passed."""
+        texts = {self._no(t): t for t in (self.goal or {}).get("done_when") or []}
+        planned = [(w, [texts[n] for n in dict.fromkeys(as_int(c) for c in w["real_run"].get("checks") or []) if n in texts])
+                   for w in self.workflows if w.get("real_run")]
+        rows = {w["id"]: self._real_run_row(w["id"]) for w, _ in planned}
+
+        def passed(w, t):
+            row = rows[w["id"]] or {}
+            ran = self.real_runs_done[w["id"]] if w["id"] in self.real_runs_done else row.get("ran") and row.get("exit") == 0
+            item = self.real_run_item_ok[t] if t in self.real_run_item_ok else \
+                (row.get("audit") or {}).get(str(self._no(t)), {}).get("verdict", "PASS") == "PASS"
+            return bool(ran) and item
+        out = []
+        for w, mine in planned:
+            if not mine or all(any(passed(x, t) for x, xs in planned if t in xs) for t in mine):
+                continue
+            if rows[w["id"]] is None and w["id"] not in self.real_runs_done:
+                out.append(f"{w['id']}'s real run has not run")
+            else:
+                out.append(f"{w['id']}'s real run did not pass: "
+                           + (self.real_run_why.get(w["id"]) or (rows[w["id"]] or {}).get("evidence") or "no receipt"))
+        return out
 
     def _real_run_next(self, r):
         """Step 7 (P46, D452: J2's step 7 without its question): the next done workflow with a planned real run that
@@ -3186,6 +3219,9 @@ def sandbox_rerun(folder, runner, target, timeout):
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + "."
                   + (f" Not what it said it would do: {mm}." if mm else ""), warning=bool(res.get("ran") and res.get("exit") != 0 or mm))
         ran_ok = self.real_runs_done[wid] = ran_ok and not mm      # the receipt
+        if not (ran_ok and all(v[0] for v in judged.values())):      # FR-40: why, for the run's outcome (_real_run_open)
+            self.real_run_why[wid] = ("not what it said it would do: " + mm if mm else res["evidence"] if not ran_ok
+                                      else next(v[1] for v in judged.values() if not v[0]))
         self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): the verdict per item (P30 reads it)
         passed = ran_ok and all(v[0] for v in judged.values())      # P33 (D436): an item it did not judge needs every one passed
         items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
@@ -3221,6 +3257,14 @@ def sandbox_rerun(folder, runner, target, timeout):
 '''),
     Edit("P46", "j2_artifacts.py", r'''                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
 ''', r'''                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "ran", "exit",      # P46 (D452)
+'''),
+    # ---- P46 (D452, FR-40): no ending says "Done:" while a required real run has not passed
+    Edit("P46", "j2.py", r'''        o = self.outcome or ""
+        status = next((k for p, k in (("Done with open items", "done_with_open_items"), ("Done", "done"), ("Crashed", "crashed"))
+''', r'''        o = self.outcome or ""
+        if o.startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for every ending
+            o = self.outcome = "Done with open items: " + "; ".join(x) + "."
+        status = next((k for p, k in (("Done with open items", "done_with_open_items"), ("Done", "done"), ("Crashed", "crashed"))
 '''),
     # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json
     # (`unparsed`, each clipped to 20000 characters) with one system line; the plan and the stop are J2's
@@ -3493,7 +3537,7 @@ PATCH_NOTES = {
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
     "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. When the answer gives such an item's fact (Identity's `confirmed`), its `to_be_confirmed` entry is dropped too (review R1-2): the item no longer waits on the Requester, so it is never blocked on that fact or asked for it again, is still never a confirmed fact, and passes only on its real run's receipt; an item Identity puts in `still_to_be_confirmed` keeps its entry. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers. When the paused question is one question with options and the Requester's own reply is a bare pick (`ONLY_PICK`, resolved by `option_picked`), `_run` records the option's full text as `picked` on the decision record; a pick Decide for me sent (its chat message is flagged `auto`) records nothing, so it never names a folder, a secret file or a charter fact. `_fact_source` (the source of `real_run_problems`, `real_run_env_problems`, `check_problems` and `requester_words`) and `_fact_problems` add every `picked` text; `real_run_problems` and `real_run_env_problems` get `_fact_source(pieces=True)`, each text squashed on its own, and `named_whole` accepts a path named whole in any one of them, so a path that ends one text is never read as going on into the next text's first word (review R1-1: a brief starting `CSV/Excel`). A typed bare option number or `Option n` from the Requester is their pick too (it is what a card click sends, and its message is not flagged `auto`); any other typed answer is never read as a pick",
-    "P46": "(D452, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run's `hosts` stay optional and are checked for their syntax only (`host_entry_ok`, key `real_run_hosts`), with no rule on where they come from and no question; they are stored (`real_hosts`) when listed, and the real run's srt settings allow exactly them (`[]` without). The planner's rule asks to list every host the script reaches and never to set the four proxy settings; the tools builder's line asks for tests that reach a fake local server, never the internet. The deliverables planner's replies that were not JSON are kept in `deliverables.json` under `unparsed` with one system line (moved from P44; `j2_realization.plan_goal` returns its calls only when asked). Step 7 runs a planned real run unasked: `_real_run_next(r)` (from `_goal_done` and the audit path, once the rest is workable) runs the next done workflow's real run that has no `real_run` row in receipts.jsonl (`_ran_real_run`, so a follow-up, which copies the file, never runs a parent's again, and a failed run never runs again; a replacement, a new id, runs its own once), with no card, code or pause, then `_goal_done` goes on; `real_runs_asked`, `PAUSES[\"real_run\"]`, `real_run` in `AUTO_ASK` (P29's line) and `DECISION_PAUSES`, the `real_run` dispatch and J2's `_ask_real_run` and `_identity_real_run` are gone; the row is `type`, `workflow`, the stored plan, the result of `real_run`, `audit` when judged or mismatched, `t`, `by` (no `code`, `approved`, `answer_msg`, `dry_run`); `_real_run_answer` says `<id>: ran, <evidence>` or `did not start`, else \"none yet: code runs it once the rest is workable\"; P30's real-run item evidence no longer says approved; `j2_artifacts._deliverable_extras` no longer projects `approved` (page edit E31). The two rules that existed only for the dry run on copies are gone: `real_run_problems` no longer requires the command to pass each folder as an argument, and `_real_path_leak`, `real_paths_in` and `real_folders` with their callers are deleted. No dry run on copies: J2's `real_run_dry`, `real_runs_dry` and the card's dry-run lines are deleted; `_real_run_once(w)` runs the command once on the folder itself, records every file under its folder (path and sha256) before and after it, and when it exited 0 compares what it created, changed and deleted with its `expect` (P35): a mismatch makes every item it checks `NEEDS_REVISION` (\"not what it said it would do: ...\", also in the row's `audit` key) with no Audit call, else P33's Audit call reads the output and that diff; the row has no `dry_run` key; `_real_run_back(w, detail)` (from P31's `_dry_run_failed`) sends a real run that cannot start back to the build with the failure `[\"real_run_setup\", detail]` and no row (P28's repeat stop applies).",
+    "P46": "(D452, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run's `hosts` stay optional and are checked for their syntax only (`host_entry_ok`, key `real_run_hosts`), with no rule on where they come from and no question; they are stored (`real_hosts`) when listed, and the real run's srt settings allow exactly them (`[]` without). The planner's rule asks to list every host the script reaches and never to set the four proxy settings; the tools builder's line asks for tests that reach a fake local server, never the internet. The deliverables planner's replies that were not JSON are kept in `deliverables.json` under `unparsed` with one system line (moved from P44; `j2_realization.plan_goal` returns its calls only when asked). Step 7 runs a planned real run unasked: `_real_run_next(r)` (from `_goal_done` and the audit path, once the rest is workable) runs the next done workflow's real run that has no `real_run` row in receipts.jsonl (`_ran_real_run`, so a follow-up, which copies the file, never runs a parent's again, and a failed run never runs again; a replacement, a new id, runs its own once), with no card, code or pause, then `_goal_done` goes on; `real_runs_asked`, `PAUSES[\"real_run\"]`, `real_run` in `AUTO_ASK` (P29's line) and `DECISION_PAUSES`, the `real_run` dispatch and J2's `_ask_real_run` and `_identity_real_run` are gone; the row is `type`, `workflow`, the stored plan, the result of `real_run`, `audit` when judged or mismatched, `t`, `by` (no `code`, `approved`, `answer_msg`, `dry_run`); `_real_run_answer` says `<id>: ran, <evidence>` or `did not start`, else \"none yet: code runs it once the rest is workable\"; P30's real-run item evidence no longer says approved; `j2_artifacts._deliverable_extras` no longer projects `approved` (page edit E31). The two rules that existed only for the dry run on copies are gone: `real_run_problems` no longer requires the command to pass each folder as an argument, and `_real_path_leak`, `real_paths_in` and `real_folders` with their callers are deleted. No dry run on copies: J2's `real_run_dry`, `real_runs_dry` and the card's dry-run lines are deleted; `_real_run_once(w)` runs the command once on the folder itself, records every file under its folder (path and sha256) before and after it, and when it exited 0 compares what it created, changed and deleted with its `expect` (P35): a mismatch makes every item it checks `NEEDS_REVISION` (\"not what it said it would do: ...\", also in the row's `audit` key) with no Audit call, else P33's Audit call reads the output and that diff; the row has no `dry_run` key; `_real_run_back(w, detail)` (from P31's `_dry_run_failed`) sends a real run that cannot start back to the build with the failure `[\"real_run_setup\", detail]` and no row (P28's repeat stop applies). A run never ends \"Done:\" while a required real run has not passed (FR-40): `_real_run_open()` lists each planned real run whose checked items, still on the checklist, no real run passed (\"<id>'s real run has not run\", or \"did not pass: <why>\" from `real_run_why`: the mismatch, the evidence or Audit's evidence; in a follow-up the copied row's), and P30's `_goal_done` outcome and `_ship_outcome` use it, and `_write_summary` turns a \"Done:\" outcome into \"Done with open items: ...\" while it is not empty (the net for every other ending), so `summary.json` says `done_with_open_items`.",
 }
 
 

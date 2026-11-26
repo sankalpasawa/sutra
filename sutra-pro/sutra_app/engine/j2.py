@@ -3787,6 +3787,7 @@ class J2Run:
         self.deed_log, self.deed_seen = [], set()      # send deeds done (note, result) and the notices already given
         self.milestone_log = []      # milestone emails (J2_MILESTONE_EMAILS=1, or the brief asks for updates by email): one per goal reached
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
+        self.real_run_why = {}       # P46 (D452): workflow id -> why its real run did not pass (FR-40)
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
@@ -4220,7 +4221,7 @@ class J2Run:
             return f"Stopped {why}: nothing was built."
         fails = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             if self.audits else ["nothing has been checked"]      # beta fix (b): a blocked item is listed once, by _open_items
-        fails = self.open_docs + fails + self._real_run_pending() + self._stage_blocked() + self._open_items()      # P30 (D433)
+        fails = self.open_docs + fails + self._real_run_open() + self._stage_blocked() + self._open_items()      # P30 (D433; D452)
         if not fails:
             return self.out["done"]
         return f"Done with open items: shipped as is {why}. Still not workable: {'; '.join(fails).rstrip('.')}."      # beta fix d
@@ -5945,15 +5946,47 @@ class J2Run:
                 "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
                 f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
 
-    def _ran_real_run(self, wid):
-        """P46 (D452): a real_run row for wid is in this run folder's receipts.jsonl. A follow-up copies that file, so a
-        parent's real run counts too: each workflow id's real run runs at most once."""
+    def _real_run_row(self, wid):
+        """P46 (D452): the last real_run row for wid in this run folder's receipts.jsonl (a follow-up copies the file, so a
+        parent's row counts), or None."""
         try:
             with open(os.path.join(self.dir, "receipts.jsonl"), encoding="utf-8") as f:
-                return any(x.get("type") == "real_run" and x.get("workflow") == wid
-                           for x in (json.loads(line) for line in f if '"real_run"' in line))
+                rows = [x for x in (json.loads(line) for line in f if '"real_run"' in line)
+                        if x.get("type") == "real_run" and x.get("workflow") == wid]
         except OSError:
-            return False
+            return None
+        return rows[-1] if rows else None
+
+    def _ran_real_run(self, wid):
+        """P46 (D452): wid's real run has a row, so it never runs again (each workflow id at most once)."""
+        return self._real_run_row(wid) is not None
+
+    def _real_run_open(self):
+        """P46 (D452, FR-40): one line per planned real run still required that has not passed: a done-when item on the
+        checklist is in its checks, and no real run that checks that item passed it (ran, exit 0, matched its expect,
+        Audit passed the item; from this run's own record, else from the row a follow-up copied). "<id>'s real run has not
+        run" or "<id>'s real run did not pass: <why>". [] when every required real run passed."""
+        texts = {self._no(t): t for t in (self.goal or {}).get("done_when") or []}
+        planned = [(w, [texts[n] for n in dict.fromkeys(as_int(c) for c in w["real_run"].get("checks") or []) if n in texts])
+                   for w in self.workflows if w.get("real_run")]
+        rows = {w["id"]: self._real_run_row(w["id"]) for w, _ in planned}
+
+        def passed(w, t):
+            row = rows[w["id"]] or {}
+            ran = self.real_runs_done[w["id"]] if w["id"] in self.real_runs_done else row.get("ran") and row.get("exit") == 0
+            item = self.real_run_item_ok[t] if t in self.real_run_item_ok else \
+                (row.get("audit") or {}).get(str(self._no(t)), {}).get("verdict", "PASS") == "PASS"
+            return bool(ran) and item
+        out = []
+        for w, mine in planned:
+            if not mine or all(any(passed(x, t) for x, xs in planned if t in xs) for t in mine):
+                continue
+            if rows[w["id"]] is None and w["id"] not in self.real_runs_done:
+                out.append(f"{w['id']}'s real run has not run")
+            else:
+                out.append(f"{w['id']}'s real run did not pass: "
+                           + (self.real_run_why.get(w["id"]) or (rows[w["id"]] or {}).get("evidence") or "no receipt"))
+        return out
 
     def _real_run_next(self, r):
         """Step 7 (P46, D452: J2's step 7 without its question): the next done workflow with a planned real run that
@@ -5996,6 +6029,9 @@ class J2Run:
         self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + "."
                   + (f" Not what it said it would do: {mm}." if mm else ""), warning=bool(res.get("ran") and res.get("exit") != 0 or mm))
         ran_ok = self.real_runs_done[wid] = ran_ok and not mm      # the receipt
+        if not (ran_ok and all(v[0] for v in judged.values())):      # FR-40: why, for the run's outcome (_real_run_open)
+            self.real_run_why[wid] = ("not what it said it would do: " + mm if mm else res["evidence"] if not ran_ok
+                                      else next(v[1] for v in judged.values() if not v[0]))
         self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): the verdict per item (P30 reads it)
         passed = ran_ok and all(v[0] for v in judged.values())      # P33 (D436): an item it did not judge needs every one passed
         items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
@@ -6992,12 +7028,12 @@ class J2Run:
             self.outcome += f" Still open, accepted as it is by the Requester: {'; '.join(self.accepted)}."
         rest = workable({**self.audits[-1], "accepted": list(self.audits[-1].get("accepted") or []) + self._blocked_items()}) \
             + self._real_run_pending() if self.audits else []      # beta fix: a blocked item is no real-run failure
-        rr = bool(rest and (self.real_runs_done or self._real_run_pending()))    # step 7: workable only after an approved run passed
+        open_rr = self._real_run_open()      # P46 (D452, FR-40): never "Done:" while a required real run has not passed
         opened = self._stage_blocked() + (self._open_items() if self.audits else [])      # P30 (D433), R4-1: earlier stages too
-        if rr or opened:
-            self.outcome = ("Done with open items: "
-                            + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
-                               "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
+        if open_rr or opened or (rest and self.real_runs_done):
+            self.outcome = ("Done with open items: " + ("; ".join(open_rr) + "." if open_rr else "not every done-when item is built."
+                                                        if opened else "not every done-when item passes.")
+                            + (f" Still not workable: {'; '.join(rest + opened).rstrip('.')}." if rest + opened else ""))
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -13400,6 +13436,8 @@ class J2Run:
     def _write_summary(self):
         """runs/<run>/summary.json when a run ends (done, stopped, out of budget or crashed). Code only, no AI call."""
         o = self.outcome or ""
+        if o.startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for every ending
+            o = self.outcome = "Done with open items: " + "; ".join(x) + "."
         status = next((k for p, k in (("Done with open items", "done_with_open_items"), ("Done", "done"), ("Crashed", "crashed"))
                        if o.startswith(p)), "stopped")
         last = self.audits[-1] if self.audits else None

@@ -2745,6 +2745,59 @@ def test_p46_a_follow_up_never_reruns_a_parents_real_run(p31, j2ft, monkeypatch)
         assert len(calls) - before == (0 if ran_before else 1), (ran_before, calls)
 
 
+P46_NO_MODULE = "import sys, os\nimport made_up_module_d452\n"      # imports a module that is not installed: FR-9 sends it back
+
+
+def p46_summary_status(run):
+    run._write_summary()
+    return json.loads((Path(run.dir) / "summary.json").read_text())["status"]
+
+
+@pytest.mark.parametrize("case", ["exit_1", "mismatch", "sent_back_then_finished", "exit_1_no_audit", "accepted_as_is"])
+def test_p46_no_done_without_the_required_real_run(p31, case):
+    """AC-28 (FR-40): a required real run that did not pass, or never ran, never ends "Done:"; the outcome names the workflow
+    and why, and summary.json says done_with_open_items."""
+    go, real = p31
+    run = go({"exit_1": P31_FAIL, "exit_1_no_audit": P31_FAIL, "accepted_as_is": P31_FAIL, "sent_back_then_finished": P46_NO_MODULE,
+              "mismatch": P31_OK.replace("'done.txt'", "'other.txt'")}[case])
+    if case != "exit_1_no_audit":
+        p31_audit(run)
+    if case == "accepted_as_is":
+        run.accepted = [run.goal["done_when"][2]]
+        run.audits[-1]["accepted"] = [run.goal["done_when"][2]]
+    if case == "sent_back_then_finished":
+        assert run._real_run_next({}) is True and run.workflows[0]["failure"][0] == "real_run_setup"
+        run.sites = ["v1"]
+        run.outcome = run._ship_outcome("on the Requester's decision")
+    else:
+        run._real_run_next({})
+    out = str(run.outcome)
+    why = {"exit_1": "W-1's real run did not pass: python3 sort_files.py", "exit_1_no_audit": "W-1's real run did not pass: python3",
+           "accepted_as_is": "W-1's real run did not pass: python3", "sent_back_then_finished": "W-1's real run has not run",
+           "mismatch": "W-1's real run did not pass: not what it said it would do: created: expected done.txt, got none"}[case]
+    assert out.startswith("Done with open items:") and why in out, out
+    assert p46_summary_status(run) == "done_with_open_items"
+
+
+def test_p46_a_passing_real_run_ends_done_and_a_replacement_that_passed_too(p31):
+    go, real = p31
+    run = go(P31_OK)
+    p31_audit(run)
+    run._real_run_next({})
+    assert str(run.outcome).startswith("Done:") and run._real_run_open() == [] and p46_summary_status(run) == "done"
+    os.remove(os.path.join(real, "done.txt"))      # the same made-up folder: its expect says it creates done.txt
+    run = go()      # P31_FAIL, then a replacement whose real run passes
+    p31_audit(run)
+    run._real_run_next({})
+    assert str(run.outcome).startswith("Done with open items: W-1's real run did not pass")
+    reg, refused, _ = run._register([{**sort_proposals(real, fix=True)[0], "revises": "W-1", "parts": ["fix"]}])
+    assert len(reg) == 1 and not refused, refused
+    reg[0]["status"] = "done"
+    (Path(run._out_dir()) / "sort_files.py").write_text(P31_OK)
+    run._real_run_next({})
+    assert run._real_run_open() == [] and str(run.outcome).startswith("Done:"), run.outcome
+
+
 def test_p46_a_replacements_real_run_decides_the_item_the_failed_one_checked(p31):
     """Q-1: a replacement (a new workflow id) runs its own real run once, unasked."""
     go, real = p31
@@ -2961,7 +3014,7 @@ def test_p30_a_real_run_item_a_builder_set_blocked_is_still_decided_by_its_real_
     assert crit[2] in run._owned_items(run.workflows[-1])
     run._identity_audit({})
     out = str(run.outcome)
-    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: the real run did not pass."), out
+    assert run.real_runs_done == {"W-1": False} and out.startswith("Done with open items: W-1's real run did not pass: "), out
     assert out.count("done-when item 3") == 1, out
     assert run._blocked_items() == []      # a builder's status never decides a real-run item
 
