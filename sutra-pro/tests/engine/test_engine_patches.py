@@ -2863,7 +2863,8 @@ def test_p46_every_chain_ending_names_the_open_real_run(p31, ending):
 
 def test_p46_the_chat_never_says_done_while_a_real_run_is_open(p31, monkeypatch):
     """Review R1-2 (FR-40): an ending that sets "Done: ..." itself (here a change with nothing to build) is turned into "Done
-    with open items: <why>" before the closing system line is posted, so no chat line starts "Done:"; summary.json agrees."""
+    with open items: <why>" straight after the loop, before the board tally, the export and the closing system line, so
+    neither the snapshot (the page's run summary, review R2-1), a chat line nor summary.json starts "Done:"."""
     go, _ = p31
     run = go(P31_OK)
     run.goal = {**run.goal, "to_be_confirmed": [{"criterion": "x", "fact": "y"}]}      # any path: the handoff is stubbed
@@ -2871,8 +2872,16 @@ def test_p46_the_chat_never_says_done_while_a_real_run_is_open(p31, monkeypatch)
     def ends(*a, **k):
         run.turn, run.outcome = None, "Done: the change left the charter's items, rules and standards as they were; nothing to build."
     monkeypatch.setattr(run, "_handoff", ends)
+    seen, tally = [], run._board_tally      # review R2-1: the snapshot (the page's run summary) is right from the loop's end
+
+    def tally_sees():
+        seen.append(run.snapshot()["outcome"])
+        return tally()
+    monkeypatch.setattr(run, "_board_tally", tally_sees)
     run.post("user", "change nothing")
     run._run()
+    assert seen and seen[0].startswith(f"Done with open items: {P46_OPEN}."), seen
+    assert not run.snapshot()["outcome"].startswith("Done:")
     closing = [m["text"] for m in run.chat if m["who"] == "system"]
     assert not [t for t in closing if t.startswith("Done:")], closing
     assert any(t.startswith(f"Done with open items: {P46_OPEN}.") for t in closing), closing

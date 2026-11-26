@@ -80,3 +80,50 @@ Not run: the full `scripts/gate.sh` (the developer reports 13618 passed and 4 fa
 
 ### Earlier findings
 None (first round).
+
+## Round 2  (2026-11-26, commit 75f7801c)
+Verdict: Approved
+
+All nine round-1 findings are fixed, and I checked each fix myself. Every new guard has a test that fails when the guard is removed (7 mutations, 7 caught). Two new P3 findings, both optional: a short window in which the run snapshot (not chat) can still show "Done:", and architecture.md text that the fixes made out of date. There are no P0, P1 or P2 findings.
+
+### Findings
+| ID | Sev | File:line | Finding | Evidence | Suggested fix |
+|---|---|---|---|---|---|
+| R2-1 | P3 | sutra_app/engine/j2.py:5345-5346 (net), :8129 (the ending it still catches) | The net runs in `_finish` after `_board_tally()` and `_export()`. Until then, `self.outcome` can hold "Done: ..." (the change-with-nothing-to-build ending at :8129 is the only one left unguarded at its source). The snapshot exposes it (`"outcome"` at :4271, `_status_snap` :4334), and the page's run summary shows it (j2_ui.html:812, `runSummary`, rendered whenever workflows exist). Chat never shows it, and summary.json is right. With a doc run, `_export` makes the window non-zero. | Code read. The ordering is visible at j2.py:5336-5347. | Move the two net lines to straight after the loop (before `_board_tally`), or guard :8129 at the source. Optional. |
+| R2-2 | P3 | docs/ai/remove-real-run-gates/architecture.md:26, :71-96, :279 | The architecture still says `_write_summary` uses `_real_run_open` (now `_finish`, :5345), and that E31 and the projection drop `approved` (they now carry it for old rows, R1-6). Its row-key reader table does not list `_real_run_row`/`_real_run_open` (j2.py:5954-6000) as readers of `ran`, `exit`, `evidence` and `audit`, or `_chain_blocked` as a user of `_real_run_open`. implementation.md and VENDORED.md P30/P46 do record both changes. | grep of architecture.md. | Update the architecture's reader table and the E31 decision, or note there that implementation.md supersedes them. |
+
+### Earlier findings
+| ID | Status | Evidence |
+|---|---|---|
+| R1-1 | verified fixed | builder.md:12-13 now says "Code runs it on the Requester's folder once, when the rest is workable". The folder-path/copies bullet is gone, and so is atom_rules.md's "after the Requester approves". I grepped every file under engine/templates, agents, artifacts, seed, capabilities, conditions, fnodes and ui for approval, copies, dry run, Allow, Don't run and the run card: no hits. real_run.md's "ask the Requester for the folder" is a folder question, not approval. |
+| R1-2 | verified fixed | `_chain_blocked` (j2.py:10975) puts `_real_run_open()` first in both branches. The net sits before the closing post (:5345). I removed each guard in turn on a copy of the tree (test_engine_patches + test_engine_finish): net off → 1 fail (`..._chat_never_says_done...`); `rr = []` → 5 fail; no-stage branch without rr → 4; stage branch without rr → 1. Every ending is covered: goal (`_goal_done` :7027), ship (`_ship_outcome`), chain/deed/run-template (`_chain_done`), stage "finish as it is" (:5709 `_chain_blocked`), summary (the net precedes `_write_summary` :5354; the other two callers are the owner-override ship (:5150, `_ship_outcome`) and the crash path (:5228, "Crashed:")). No `post(...)` anywhere starts with "Done". Residual window: R2-1. |
+| R1-3 | verified fixed | `_tree` (:935) records "unreadable" on OSError. `_real_run_once` (:6022-6037) writes the row in `finally` once `real_run` has returned. Mutations: `_tree` raising → 1 fail; `finally`→`else` → 1 fail; empty "not judged" audit → 1 fail. The "not judged" path cannot end "Done:": it re-raises (outcome "Crashed:"), and on resume or follow-up `_ran_real_run` is True (no second run) while `_real_run_open` reads the row's NEEDS_REVISION ("did not pass"). Known ceiling, consistent with FR-2: a judge outage leaves that workflow id open until a revision. `real_run` itself raising (for example, the command not found) writes no row, but nothing ran then. |
+| R1-4 | verified fixed | `test_p46_real_srt_writes_only_the_plans_folder` (tests :4738) ran here under /opt/homebrew/bin/srt: the 5 real-srt tests pass. |
+| R1-5 | verified fixed | Folded into `_chain_blocked`. The deeds_fail and stage-gate cases name "W-1's real run has not run". |
+| R1-6 | verified fixed | The projection carries `approved` only when the row has it (j2_artifacts.py:776). E31 goes through port_j2_ui.py:318-321, and `port --check` is ok (57 anchors). The node test evaluates the page's own expression on 4 rows. New rows say "ran automatically"/"did not start", and old rows say "approved by you"/"not approved". No writer of `approved` on a real_run row (grep). |
+| R1-7 | verified fixed | `p32_card` and `p35_again` are gone. |
+| R1-8 | verified fixed | `test_d452_a_real_runs_checks_must_name_done_when_items` (tests :1393), 2 cases. |
+| R1-9 | verified fixed, test-only | rehydrate does `from . import j2, j2_types` (rehydrate.py:103), which reads the package attribute. The test fixture `fresh_j2` (tests :49-80) pops and re-imports j2 per module-scoped fixture, so with both `j2` and `j2ft` alive the package attribute is whichever copy was imported last. Production imports j2 once, so there is no registration bug there. The monkeypatch is test isolation only. The `_ran_real_run → False` mutation kills the test (developer's claim; consistent with the test body). |
+
+### Founder's six, re-checked
+| Item | Status |
+|---|---|
+| FR-40 + AC-28 | Met. 5 AC-28 cases, 5 chain endings and the chat test. Every guard is mutation-killed (above). |
+| No `approved: true`; kept keys have readers | Met. No real_run row writes `approved`. `ran`/`exit`/`audit`/`evidence` are now also read by `_real_run_open` (architecture table stale: R2-2). |
+| Once per workflow id incl. follow-ups | Met. `_real_run_row` reads receipts.jsonl, which rehydrate copies. The AC-29 test now goes through `J2Run.rehydrate`. |
+| No leftover Run/Don't run/Allow UI or dead code (E28, E29, P32, P42, P43, P44) | Met. E28/E29 appear only in port_j2_ui.py's history line (:18). The grep of ui/ and desktop/src found nothing. |
+| srt write limit + hosts syntax-only, secrets never printed | Met. `allowWrite: [folder]` (j2.py:876), `allowedDomains: real_hosts(rr)` (:873), `real_run_hosts_problems` checks syntax only (:923-932). Evidence uses `rr['command']`, never the `env k=v` wrapper. |
+| Lines deleted vs added (`git diff --numstat origin/main..HEAD`) | code (sutra_app + scripts, non-.md) +888 −1301, net −413; tests +716 −944, net −228; docs/.md +1092 −52; j2.py +282 −642. |
+| No flags, no hard coding, nothing Pulse-specific | Met. No added getenv/environ/Pulse in the diff of sutra_app and scripts. |
+
+### Tests run
+| command | result |
+|---|---|
+| `scripts/py -m pytest tests/engine/test_engine_patches.py tests/engine/test_engine_views.py tests/ui/test_port_edits.py tests/test_diagram_decisions.py tests/engine/test_engine_vendor.py tests/engine/test_engine_finish.py` | exit 0, 744 passed, 3 skipped |
+| `scripts/py -m pytest tests/engine/test_engine_patches.py -k real_srt` (srt installed) | 5 passed |
+| `scripts/py scripts/vendor_j2.py --source <extraction of ee659fb5> --commit ee659fb5... --check` | 527 files, ok |
+| `scripts/py scripts/port_j2_ui.py --j2 <extraction> --commit ee659fb5... --check` | ok, 57 anchors |
+| `node --test tests/ui/js/` | 1750: 1748 pass, 0 fail, 2 skipped |
+| 7 mutations on a scratchpad copy (test_engine_patches + test_engine_finish) | net_off 1 fail; chain_blocked rr=[] 5; no-stage branch 4; stage branch 1; `_tree` raise 1; finally→else 1; empty not-judged audit 1 |
+
+Not run: the full gate (the developer reports 13629 passed and 4 failed, the 4 also failing on main), live smoke, install_app and the beta install.

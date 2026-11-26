@@ -5333,6 +5333,8 @@ class J2Run:
                     resume = {"to": self.turn, "handoff": self.handoff} if self.turn else None
                     self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
         self.turn, self.done = None, True
+        if (self.outcome or "").startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for
+            self.outcome = "Done with open items: " + "; ".join(x) + "."      # every ending, before snapshot, export or chat
         self._board_tally()      # board/1 part C: what each document change reached, now that nothing is left to build
         if not self.paused:
             self.step = 8
@@ -5342,8 +5344,6 @@ class J2Run:
         where = " " if not noun or (self.folder and self.paused) else \
             f" The {self.out['noun']} is in {self.out['folder']}/ in the run folder. " if self.folder else \
             f" {noun} v{len(self.sites)} is in the preview. "
-        if (self.outcome or "").startswith("Done:") and (x := self._real_run_open()):      # P46 (D452, FR-40): the net for
-            self.outcome = "Done with open items: " + "; ".join(x) + "."      # every ending, before chat shows the outcome
         self.post("system", (self.outcome or "Stopped.") + where
                   + ("Answer Identity's question above to continue." if self.paused else
                      "Tell us if you want changes."))
