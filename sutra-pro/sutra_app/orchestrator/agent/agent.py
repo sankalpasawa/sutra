@@ -101,6 +101,13 @@ class PlanRequest:
     pending: Sequence[str] = ()
     node_id: str = ""            # the planner's node id (`nd_...`) when the request is planned inside a multi-agent project (D291); "" today
     cancel: Any = None           # an optional stop token for the planner's calls (`connectors.cancel.CancelToken`); None today
+    files_note: str = ""         # D451: the digest of the files that came with the request (names, kinds, the opening of text), fenced as data; "" for a request with no file
+
+    @property
+    def message(self) -> str:
+        """What the planner's prompts show as the owner's message: the owner's words, then (only when files came with them) the digest of the files. `text` stays the owner's words alone:
+        it is what each task is given as its request."""
+        return self.text + ("\n\n" + self.files_note if self.files_note else "")
 
     @property
     def request_id(self) -> str:
@@ -235,7 +242,7 @@ class ChatAgent:
         schema = REGISTRY.transport_schema("chat_turn", kind="decide")
         prompt = prompts.render(
             "decide", revision=chart.revision, digest=digest, conversation=prompts.conversation(request.history, limit=self.history),
-            pending=prompts.pending_lines(request.pending), message=request.text, notes=await run_blocking(self._notes),
+            pending=prompts.pending_lines(request.pending), message=request.message, notes=await run_blocking(self._notes),
             field_digest=prompts.field_digest(AssignmentDraft, ChatDecision), schema=_dump(schema))
 
         async def build(model: ChatDecision) -> tuple[Any, list[Violation]]:
@@ -255,7 +262,7 @@ class ChatAgent:
         prompt = prompts.render(
             "change", revision=chart.revision, digest=await run_blocking(lambda: self.chart.digest(request.text, max_chars=DIGEST_CHARS)),
             field_digest=prompts.field_digest(ChartChangeRequest, NewNode, AddOp, MoveOp, RenameOp, MergeOp, SplitOp, ChildMove),
-            message=request.text, decision=decision.model_dump_json(exclude={"assignments"}), kind=decision.change, schema=_dump(schema))
+            message=request.message, decision=decision.model_dump_json(exclude={"assignments"}), kind=decision.change, schema=_dump(schema))
 
         async def build(model: ChartChangeRequest) -> tuple[Any, list[Violation]]:
             try:
@@ -285,7 +292,7 @@ class ChatAgent:
     async def _assign(self, request: PlanRequest, chart: OrgChart, digest: str, budget: _Budget) -> list[AssignmentDraft]:
         schema = REGISTRY.transport_schema("chat_turn", kind="assignments")
         prompt = prompts.render("assign", digest=digest, field_digest=prompts.field_digest(AssignmentDraft, AssignmentPlan),
-                                message=request.text, notes=await run_blocking(self._notes), schema=_dump(schema))
+                                message=request.message, notes=await run_blocking(self._notes), schema=_dump(schema))
 
         async def build(model: AssignmentPlan) -> tuple[Any, list[Violation]]:
             found = await run_blocking(lambda: self.chart.check_assignments(model.assignments, chart))
@@ -300,7 +307,7 @@ class ChatAgent:
         from sutra_app.orchestrator.grants import GrantError, normalize_scope
         schema = REGISTRY.transport_schema("node_plan")
         steps = "\n".join(f"{d.ref}: {d.title} (team {d.dept}) - {clip(' '.join(d.brief.split()), 300)}" for d in drafts)
-        prompt = prompts.render("nodeplan", steps=steps, message=request.text, schema=_dump(schema))
+        prompt = prompts.render("nodeplan", steps=steps, message=request.message, schema=_dump(schema))
         refs = {d.ref for d in drafts}
 
         async def build(model: NodePlan) -> tuple[Any, list[Violation]]:
