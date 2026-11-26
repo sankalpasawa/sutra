@@ -134,7 +134,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_docs.py tests/test_ownership.py tests/test_traceability.py tests/engine/test_engine_vendor.py -q` passes
   - Covers: FR-36, FR-37, FR-38
 
-- [ ] T12: Full run, counts, hand-over
+- [x] T12: Full run, counts, hand-over
   - Files: `docs/ai/remove-real-run-gates/implementation.md` (new: results, deviations, line counts, what was not verified)
   - Change: none to code. Run, in this order: vendor check; patch tests; `SUTRA_SLOW=1` vendor tests; `scripts/py -m pytest tests/engine/test_engine_views.py tests/ui/test_port_edits.py tests/ui/test_dept_page.py tests/test_diagram_decisions.py tests/test_traceability.py tests/test_docs.py tests/test_ownership.py -q`; `node --test tests/ui/js/page_render.test.js tests/ui/js/result_view.test.js`; then `scripts/gate.sh` in the foreground once the owner has cleared it (if not cleared, say it was not run). Record `git diff --shortstat origin/main -- sutra_app/engine/j2.py scripts/vendor_j2.py scripts/port_j2_ui.py` and `wc -l sutra_app/engine/j2.py` before (6c79a1db) and after (NFR-1, Q-8). Scan `git diff origin/main -- sutra_app scripts` for an added `getenv`, `agent_setting(` name or host literal outside tests (NFR-2, NFR-3). Not run: browser tests unless asked (`SUTRA_BROWSER=1`), desktop tests outside the gate, live smoke.
   - Done when: every command above passes, or each failure is named in implementation.md with its cause
