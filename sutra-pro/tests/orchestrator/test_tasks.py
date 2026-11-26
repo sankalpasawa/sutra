@@ -15,6 +15,7 @@ from orchestrator.test_chart_store import Env
 
 from sutra_app.connectors.env import PASS_NAMES
 from sutra_app.engine.spec import TaskSpec
+from sutra_app.orchestrator.agent.ports import ConnectorFailure
 from sutra_app.orchestrator.atoms import AtomStore
 from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly
 from sutra_app.orchestrator.models import RunSpec
@@ -557,6 +558,124 @@ def test_orphaned_question_framing(tenv):
     assert row.title == tenv.row(task).title and dept_messages(tenv)[-1].text == "Green please"            # the chat line is the owner's words alone (FR-15)
     assert tenv.chats.messages(tenv.graph.get("web").chat_session_id)[0].id == question.id
     assert [m for m in dept_messages(tenv) if m.id == question.id][0].answered_by == result.message_id
+
+
+# ---- D454: the chat agent decides whether a team-chat line continues an earlier run ---------------------------------------------
+
+def ended_run(tenv, text="Build a landing page for my cafe", status="done", question=None) -> str:
+    task = tenv.started(text=text)
+    if question is not None:
+        ask(tenv, task, question)
+    tenv.projector.mark_ended(task, status, "ended")
+    return task
+
+
+def open_questions(tenv) -> list[str]:
+    return [m.text for m in dept_messages(tenv) if m.kind == "question" and m.answered_by is None]
+
+
+def test_an_unrelated_brief_after_a_finished_run_starts_clean(tenv):
+    first = ended_run(tenv)
+    calls = pick(tenv, None)
+    result = tenv.service.deliver_to_department("web", "A booking page for a yoga studio")
+    row = tenv.row(result.task_id)
+    assert (row.seed_from, row.parent_task_id, row.framing, row.user_text) == (None, None, "", "A booking page for a yoga studio")
+    assert [run[0] for run in calls[0][2]] == [first] and calls[0][:2] == ("web", "A booking page for a yoga studio")
+    tenv.run(tenv.service.start_ready())
+    spec = RunSpec.model_validate_json((tenv.run_dir(row.id) / "task.json").read_text())
+    assert (spec.seed_from, spec.parent_run_id, spec.framing) == (None, None, "") and not (tenv.run_dir(row.id) / "upstream").exists()
+
+
+@pytest.mark.parametrize("answer", [ConnectorFailure("timeout"), ConnectorFailure("unavailable"), asyncio.TimeoutError(), RuntimeError("a bug in the double"),
+                                    "tsk_000000000999", "other-team"])
+def test_a_failed_or_foreign_pick_starts_clean_and_keeps_the_line(tenv, answer):
+    first = ended_run(tenv, question="Which colours?")
+    if answer == "other-team":                                                  # a real task id, but of another team
+        answer = tenv.started(dept="sales", text="A sales deck")
+        tenv.projector.mark_ended(answer, "done", "ended")
+    calls = pick(tenv, answer)
+    result = tenv.service.deliver_to_department("web", "Green please")
+    row = tenv.row(result.task_id)
+    assert (row.seed_from, row.parent_task_id, row.framing, row.user_text) == (None, None, "", "Green please")
+    assert len(calls) == 1 and dept_messages(tenv)[-1].text == "Green please" and dept_messages(tenv)[-1].task_id == row.id
+    assert open_questions(tenv) == ["Which colours?"] and tenv.row(first).status == "done"
+
+
+def test_a_picked_finished_run_without_a_question_is_continued_with_the_owners_words(tenv):
+    first = ended_run(tenv)
+    pick(tenv, first)
+    row = tenv.row(tenv.service.deliver_to_department("web", "Make the header blue").task_id)
+    assert (row.seed_from, row.parent_task_id, row.framing, row.user_text) == (tenv.row(first).run_id, first, "", "Make the header blue")
+
+
+def test_the_framing_is_the_picked_runs_own_question_only(tenv):
+    r1 = ended_run(tenv, text="A page for a bike shop", status="stopped", question="Which bikes?")
+    r2 = ended_run(tenv, text="A page for a flower shop", status="stopped", question="Which flowers?")
+    pick(tenv, r1)
+    result = tenv.service.deliver_to_department("web", "Road bikes only")
+    row = tenv.row(result.task_id)
+    assert row.framing == "Earlier the team asked the owner: Which bikes?" and (row.seed_from, row.parent_task_id) == (tenv.row(r1).run_id, r1)
+    assert row.user_text == "A page for a bike shop\n\nThe owner now writes: Road bikes only" and open_questions(tenv) == ["Which flowers?"]
+    assert tenv.row(r2).status == "stopped"
+
+
+@pytest.mark.parametrize("picked", ["later", None])
+def test_another_runs_question_is_never_the_framing_and_stays_open(tenv, picked):
+    ended_run(tenv, text="A page for a bike shop", status="stopped", question="Which bikes?")
+    later = ended_run(tenv, text="A page for a flower shop")
+    pick(tenv, later if picked else None)
+    row = tenv.row(tenv.service.deliver_to_department("web", "Add a contact form").task_id)
+    assert "Which bikes?" not in row.framing and row.framing == "" and open_questions(tenv) == ["Which bikes?"]      # an agent-judged clean start closes nothing (Q-10)
+    assert row.seed_from == (tenv.row(later).run_id if picked else None)
+
+
+def test_the_agent_sees_the_newest_five_runs_with_their_brief_and_own_question(tenv):
+    tasks = [ended_run(tenv, text=f"Brief number {n}", question=f"Question {n}?" if n % 2 else None) for n in range(5)]
+    tasks.append(ended_run(tenv, text="b" * 3000, status="stopped", question="q" * 3000))
+    calls = pick(tenv, None)
+    tenv.service.deliver_to_department("web", "Something new")
+    runs = calls[0][2]
+    assert [r[0] for r in runs] == tasks[::-1][:5]
+    newest = runs[0]
+    assert newest == (tasks[-1], tenv.row(tasks[-1]).title, "stopped", "b" * 3000, "q" * 3000)       # the prompt clips them (prompts.run_lines)
+    assert runs[1] == (tasks[4], tenv.row(tasks[4]).title, "done", "Brief number 4", "") and runs[2][4] == "Question 3?"
+
+
+def test_a_chain_of_stopped_runs_keeps_the_first_brief(tenv):
+    r1 = ended_run(tenv, text="A page for a bike shop", status="stopped", question="Which bikes?")
+    pick(tenv, r1)
+    r2 = tenv.service.deliver_to_department("web", "Road bikes").task_id
+    tenv.run(tenv.service.start_ready())
+    ask(tenv, r2, "Which colours?")
+    tenv.projector.mark_ended(r2, "stopped", "ended")
+    pick(tenv, r2)
+    r3 = tenv.row(tenv.service.deliver_to_department("web", "Blue").task_id)
+    assert r3.user_text.startswith("A page for a bike shop") and "Road bikes" in r3.user_text and r3.user_text.endswith("The owner now writes: Blue")
+    assert r3.framing == "Earlier the team asked the owner: Which colours?"
+
+
+def test_a_team_with_no_run_or_waiting_on_the_owner_makes_no_call(tenv):
+    calls = pick(tenv, "tsk_000000000001")
+    first = tenv.row(tenv.service.deliver_to_department("web", "A page for a bike shop").task_id)
+    assert calls == [] and (first.seed_from, first.parent_task_id) == (None, None)
+    tenv.run(tenv.service.start_ready())
+    tenv.write_events(first.id, ev("run.started", pid=tenv.row(first.id).pid, schema="events/1", mock=True, seed="none"))
+    tenv.drain(first.id)
+    ask(tenv, first.id)
+    assert tenv.service.deliver_to_department("web", "Sweet Bean").delivered == "answer" and calls == []
+
+
+def test_a_second_line_while_the_agent_decides_is_busy(tenv):
+    first = ended_run(tenv)
+
+    def in_flight(calls):
+        tenv.new(text="Work that came in meanwhile")                       # a queued task of the team, made while the call ran
+        return first
+    pick(tenv, in_flight)
+    before = tenv.one("SELECT count(*) FROM tasks")
+    with pytest.raises(Busy):
+        tenv.service.deliver_to_department("web", "Make the header blue")
+    assert tenv.one("SELECT count(*) FROM tasks") == before + 1               # only the one made meanwhile
 
 
 def test_empty_text_and_unknown_team(tenv):
