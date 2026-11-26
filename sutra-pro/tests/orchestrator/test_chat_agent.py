@@ -206,8 +206,23 @@ def test_the_templates_say_what_the_design_says():
     assert "ref such as $web" in prompts.template("change")
     assert "CHART AFTER THE CHANGE" in prompts.template("assign")
     assert "attempt {n} of {max}" in prompts.template("retry")
-    for name in ("decide", "assign"):                                    # no reply sentence is asked for
+    for name in ("decide", "assign", "follows"):                         # no reply sentence is asked for
         assert "reply" not in prompts.template(name).lower().replace("one json object", "")
+    for name in ("decide", "assign", "follows"):                         # D454: `follows` only for a real continuation; unsure is a clean run (AC-7)
+        assert "when not sure, leave it empty" in prompts.template(name)
+    assert "{runs}" in prompts.template("follows")
+
+
+def test_run_lines_lists_each_run_and_clips():
+    assert prompts.run_lines([]) == "(none)"
+    text = prompts.run_lines([("tsk_000000000002", "Shop page", "done", "Make a  shop\npage", ""),
+                              ("tsk_000000000001", "Long one", "stopped", "b" * 3000, "q" * 3000)])
+    first, second = text.split("\n- ")
+    assert first.splitlines() == ["- tsk_000000000002 | Shop page | done", "  brief: Make a shop page", "  open question: -"]
+    lines = second.splitlines()
+    assert lines[0] == "tsk_000000000001 | Long one | stopped"
+    assert lines[1].startswith("  brief: bbb") and len(lines[1]) <= len("  brief: ") + 1000
+    assert lines[2].startswith("  open question: qqq") and len(lines[2]) <= len("  open question: ") + 1000
 
 
 def test_prompt_helpers():
