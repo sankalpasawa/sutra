@@ -384,10 +384,25 @@ def test_a_working_team_is_409_busy_and_nothing_is_written(tenv):
     assert tenv.one("SELECT count(*) FROM chat_messages") == before and inbox_line_count(tenv.run_dir(task)) == 0
 
 
+def pick(tenv, answer=None):
+    """The chat agent's `follows` decision for team-chat lines (D454), scripted: returns `answer` (a task id or None), or raises it
+    when it is an exception. Each call's (dept, words, runs) is recorded in the list returned."""
+    calls = []
+
+    async def follows_of(dept_id, text, runs):
+        calls.append((dept_id, text, list(runs)))
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer(calls) if callable(answer) else answer
+    tenv.service.follows_of = follows_of
+    return calls
+
+
 def test_no_live_task_makes_a_follow_up_that_continues_from_the_old_run(tenv):
     first = tenv.started()
     tenv.write_events(first, ev("run.ended", status="done", outcome="Done."))
     tenv.drain(first)
+    pick(tenv, first)                                                           # the chat agent says the line continues that run (D454)
     result = tenv.service.deliver_to_department("web", "Make the logo bigger", scope_id="menu", settings={"J2_OUTPUT": "prd"})
     assert result.delivered == "follow_up" and result.task_id != first
     new = tenv.row(result.task_id)
@@ -400,7 +415,7 @@ def test_no_live_task_makes_a_follow_up_that_continues_from_the_old_run(tenv):
     assert (spec.seed_from, spec.parent_run_id) == (tenv.row(first).run_id, tenv.row(first).run_id)
 
 
-def test_followup_seed_from_is_the_latest_run_that_has_a_folder(tenv):
+def test_a_run_without_a_folder_is_not_a_candidate(tenv):
     first = tenv.started()
     tenv.write_events(first, ev("run.ended", status="done", outcome="Done."))
     tenv.drain(first)
@@ -409,9 +424,11 @@ def test_followup_seed_from_is_the_latest_run_that_has_a_folder(tenv):
     tenv.write_events(second.id, ev("run.ended", status="stopped", outcome="stopped"))
     tenv.drain(second.id)
     import shutil
-    shutil.rmtree(tenv.run_dir(second.id))                                      # its folder is gone: seed from the one before
+    shutil.rmtree(tenv.run_dir(second.id))                                      # its folder is gone: it cannot be continued
+    calls = pick(tenv, second.id)
     result = tenv.service.deliver_to_department("web", "carry on")
-    assert tenv.row(result.task_id).seed_from == tenv.row(first).run_id and tenv.row(result.task_id).parent_task_id == second.id
+    assert (tenv.row(result.task_id).seed_from, tenv.row(result.task_id).parent_task_id) == (None, None)
+    assert [run[0] for run in calls[0][2]] == [first]
 
 
 def reset_after(tenv, run_id: str | None, raw: str | None = None) -> None:
@@ -432,9 +449,11 @@ def test_a_brief_written_after_a_reset_starts_a_fresh_run_not_a_change_request(t
     """QA dept-run P2: '+ New run' showed a blank page but the next brief was seeded from the run the owner had just left."""
     first = finished_run(tenv)
     reset_after(tenv, tenv.row(first).run_id)                                   # the engine's reset wrote the marker
+    calls = pick(tenv, first)
     result = tenv.service.deliver_to_department("web", "A brand new website for a dental clinic")
     new = tenv.row(result.task_id)
     assert result.delivered == "follow_up" and (new.seed_from, new.parent_task_id) == (None, None)
+    assert calls == []                                                          # nothing left to continue: the agent is not asked (FR-13, FR-14)
     tenv.run(tenv.service.start_ready())
     spec = RunSpec.model_validate_json((tenv.run_dir(new.id) / "task.json").read_text())
     assert (spec.seed_from, spec.parent_run_id) == (None, None) and spec.user_text == "A brand new website for a dental clinic"
@@ -448,15 +467,18 @@ def test_the_reset_marker_covers_only_the_runs_before_it(tenv):
     tenv.run(tenv.service.start_ready())
     tenv.write_events(second, ev("run.ended", status="done", outcome="Done."))
     tenv.drain(second)
+    calls = pick(tenv, second)
     third = tenv.row(tenv.service.deliver_to_department("web", "Make the header darker").task_id)
+    assert [run[0] for run in calls[0][2]] == [second]                                     # the run before the marker is not offered
     assert (third.seed_from, third.parent_task_id) == (tenv.row(second).run_id, second)      # a later message continues the new run
 
 
 def test_a_reset_by_the_chat_path_starts_fresh_too(tenv):
     first = finished_run(tenv)
     reset_after(tenv, tenv.row(first).run_id)
+    calls = pick(tenv, first)
     delivery = tenv.service.deliver(tenv.graph.get("web").chat_session_id, "A brand new website for a dental clinic")
-    assert (tenv.row(delivery.task_id).seed_from, tenv.row(delivery.task_id).parent_task_id) == (None, None)
+    assert (tenv.row(delivery.task_id).seed_from, tenv.row(delivery.task_id).parent_task_id) == (None, None) and calls == []
 
 
 def test_the_engines_own_reset_command_leaves_the_marker_this_service_reads(tenv):
@@ -468,16 +490,19 @@ def test_the_engines_own_reset_command_leaves_the_marker_this_service_reads(tenv
     services = SimpleNamespace(data_dir=tenv.settings.data_dir, stop_live=tenv.service.stop_live, resolve_run=tenv.service.resolve_run,
                                deliver_to_department=tenv.service.deliver_to_department)
     commands = DeptCommands(services, "web")
+    calls = pick(tenv, first)
     assert commands.reset() is True
     assert commands.say("A brand new website for a dental clinic") is True
     new = tenv.store.latest_in(tenv.db.conn(), "web")
     assert new.id != first and new.user_text == "A brand new website for a dental clinic" and (new.seed_from, new.parent_task_id) == (None, None)
+    assert calls == []
 
 
 @pytest.mark.parametrize("raw", ["{not json", "[]", '{"since_run": 7}', '{"since_run": null}', '{"next_settings": {}}'])
 def test_a_page_file_without_a_usable_marker_changes_nothing(tenv, raw):
     first = finished_run(tenv)
     reset_after(tenv, None, raw)
+    pick(tenv, first)
     new = tenv.row(tenv.service.deliver_to_department("web", "Make the logo bigger").task_id)
     assert (new.seed_from, new.parent_task_id) == (tenv.row(first).run_id, first)
 
@@ -488,9 +513,10 @@ def test_a_question_left_open_by_a_reset_is_closed_but_not_carried_into_the_fres
     tenv.projector.mark_ended(task, "stopped", "reset by you")
     reset_after(tenv, tenv.row(task).run_id)
     question = [m for m in dept_messages(tenv) if m.kind == "question"][0]
+    calls = pick(tenv, task)
     result = tenv.service.deliver_to_department("web", "A brand new website for a dental clinic")
     row = tenv.row(result.task_id)
-    assert (row.framing, row.seed_from, row.parent_task_id) == ("", None, None)
+    assert (row.framing, row.seed_from, row.parent_task_id) == ("", None, None) and calls == []
     assert [m for m in dept_messages(tenv) if m.id == question.id][0].answered_by == result.message_id
 
 
@@ -521,10 +547,14 @@ def test_orphaned_question_framing(tenv):
     ask(tenv, task, "Which colours?\nOption 1: Green\nOption 2: Blue")
     tenv.projector.mark_ended(task, "stopped", "the app was closed")                  # the team ended while it waited for the owner
     question = [m for m in dept_messages(tenv) if m.kind == "question"][0]
+    pick(tenv, task)                                                                  # the chat agent: the words answer that run's question (D454)
     result = tenv.service.deliver_to_department("web", "Green please")
     assert result.delivered == "follow_up"
     row = tenv.row(result.task_id)
     assert row.framing == "Earlier the team asked the owner: Which colours?\nOption 1: Green\nOption 2: Blue"
+    assert (row.seed_from, row.parent_task_id) == (tenv.row(task).run_id, task)
+    assert row.user_text == "Build a landing page for my cafe\n\nThe owner now writes: Green please"      # a stopped run's brief comes along (FR-9)
+    assert row.title == tenv.row(task).title and dept_messages(tenv)[-1].text == "Green please"            # the chat line is the owner's words alone (FR-15)
     assert tenv.chats.messages(tenv.graph.get("web").chat_session_id)[0].id == question.id
     assert [m for m in dept_messages(tenv) if m.id == question.id][0].answered_by == result.message_id
 
