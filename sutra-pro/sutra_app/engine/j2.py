@@ -605,8 +605,8 @@ AGENT_SETTINGS = tuple(AGENT_DEFAULTS)
 def agent_setting(k):
     return str(os.getenv(k) or "").strip() or AGENT_DEFAULTS[k]
 # No sandbox by default (J2_SANDBOX=1 turns it on): builders, the test rerun and a real run then run as plain processes.
-# The before/after check of the run folder (BuilderToolFault), the RUN <code> approval and receipts, the budget and time
-# limits and the builders' instruction stay either way.
+# The before/after check of the run folder (BuilderToolFault), the receipts, the budget and time limits and the builders'
+# instruction stay either way. P46 (D452): a real run runs unasked either way.
 SANDBOX_OFF_NOTE = "Builders run without a sandbox: they can change files outside their folder."
 
 
@@ -682,8 +682,7 @@ EXPECT_KEYS = ("created", "changed", "deleted")      # P35 (D438): a real run's 
 REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": {"created": [file paths or globs], "changed": [...], '
                         '"deleted": [...]}, each relative to folder, naming files, never a folder (pdf/a.pdf or pdf/*, not pdf/ '
                         'or ./a.pdf): exactly what running it on the folder creates, changes and deletes (an empty list: nothing '
-                        'of that kind). Code runs it on copies first and compares; anything else, or any change in a folder it '
-                        'only reads, sends it back.')
+                        'of that kind). Code compares the result after the run, and a difference fails the items it checks.')      # D452
 
 
 def real_run_expect_problems(rr):
@@ -769,14 +768,13 @@ SCRIPT_ENV_RULE = (" Scripts run with only PATH, HOME, USER, LOGNAME, SHELL, TZ,
                    "secret_files).")      # P41 (D446): the tools builder, beside its test runner
 REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM, the language and '
                      'the temp folder. When it needs '
-                     'more, the real_run also carries "settings": {"NAME": "value"} (plain values the Requester sees before '
-                     'approving and that the receipt keeps; never a password, key or token; never a name that changes how a '
+                     'more, the real_run also carries "settings": {"NAME": "value"} (plain values the receipt keeps; never a '
+                     'password, key or token; never a name that changes how a '
                      'program starts, such as LD_*, DYLD_*, NODE_OPTIONS, PYTHONSTARTUP, PYTHONPATH, PERL5OPT, RUBYOPT) and '
                      '"secret_files": {"NAME": "/absolute/path"} (a file holding a secret that the Requester named in the brief '
                      'or an answer; the script gets NAME=<path> and reads the file itself; never a sign-in folder of Claude, '
-                     'Codex or gh, nor the app\'s data). In the dry run each secret file name points at an empty placeholder '
-                     'file. If the brief needs a secret and names no file, ask the Requester for one. Leave both out when the '
-                     'script needs nothing.')
+                     'Codex or gh, nor the app\'s data). If the brief needs a secret and names no file, ask the Requester for '
+                     'one. Leave both out when the script needs nothing.')      # D452: no placeholder sentence
 
 
 def real_run_env_fields(rr):
@@ -847,10 +845,10 @@ def real_run_env_problems(rr, source, run_dir):
 
 
 def real_run(out_dir, rr, timeout):
-    """Run an approved real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
-    sandbox runtime (J2_SANDBOX_CMD): no network; reads the built folder, the stated folder and its read-only folders;
-    writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
-    and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
+    """Run a planned real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
+    sandbox runtime (J2_SANDBOX_CMD): only the plan's hosts (P46); reads the built folder, the stated folder and its
+    read-only folders; writes only the stated folder. Without it (the default) as a plain process; the receipt is the same
+    either way (P46, D452: no approval, no dry run). {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
     cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     if sandbox_on() and not cmd:
@@ -3317,7 +3315,7 @@ def workable(audit):
         return ["nothing has been built yet"]
     num = lambda r: r["id"][2:] if FINDING_ID.fullmatch(str(r["id"])) else r["item"]    # F-n is charter item n
     ok = set(audit.get("accepted") or [])     # what the Requester finished with (_accept_open): ids, and item texts
-    ok |= set(audit.get("after_real_run") or [])    # step 7: items only the approved real run meets; its receipt decides them
+    ok |= set(audit.get("after_real_run") or [])    # step 7: items only the real run meets; its receipt decides them (D452)
     out = [f"done-when item {num(r)} ({r['id']} {r['verdict']}): {r['criterion']}" for r in audit["results"]
            if not r["pass"] and r["criterion"] not in ok]
     if not is_page(audit.get("output", LEGACY_OUTPUT)):
@@ -5873,7 +5871,7 @@ class J2Run:
 
     def _real_run_pending(self):
         """Step 7: what stops "Done:" while a planned real run has no receipt (workable() leaves those items out, so
-        the run can be asked for once the rest is workable; finishing without it is never workable)."""
+        it runs once the rest is workable, P46; finishing without it is never workable)."""
         return [f"done-when item {self._no(t)}: {t} (its real run has not run)"
                 for t in dict.fromkeys(self._real_run_items(pending=True))]
 
@@ -5940,10 +5938,10 @@ class J2Run:
         if not nums:
             return ""
         return ("PLANNED REAL RUN: done-when items " + ", ".join(map(str, nums)) + " are decided only by the real "
-                "run's receipt. Code runs it after the build, once, only on the Requester's exact approval; no workflow "
-                "and no agent runs it or writes its receipt. Until the receipt exists these items are pending: a missing "
-                "run is not a failure, needs no workflow (none to record a receipt), and is no question for the "
-                "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
+                "run's receipt. Code runs it once, when everything else is workable; no workflow and no agent runs it or "
+                "writes its receipt. Until the receipt exists these items are pending: a missing run is not a failure, "
+                "needs no workflow (none to record a receipt), and is no question for the Requester. Declare done when "
+                "everything else is workable; code then runs it. Receipts "      # P46 (D452)
                 f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
 
     def _real_run_row(self, wid):

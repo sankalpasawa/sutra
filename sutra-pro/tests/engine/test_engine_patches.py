@@ -2863,6 +2863,17 @@ def p33_row(run):
     return next(x for x in run.audits[-1]["results"] if x["item"] == 3)
 
 
+def test_p46_the_note_and_the_audit_prompt_promise_no_question(p33):
+    """AC-25 (FR-34): _real_run_note of a run with a planned real run and the P33 Audit prompt hold none of FR-34's phrases."""
+    run, _, calls = p33
+    run._real_run_next({})
+    for text in (run._real_run_note(), calls[0][1]):
+        for phrase in ("RUN <code>", "RUN {code}", "Don't run", "Don't allow", "dry run", "on copies", "placeholder", "offline",
+                       "approval", "approved"):
+            assert phrase.lower() not in text.lower(), (phrase, text[:300])
+    assert "Code runs it once, when everything else is workable" in run._real_run_note()
+
+
 def test_p33_a_real_run_is_judged_by_audit_on_its_output(p33):
     run, _, calls = p33
     run._real_run_next({})
@@ -3942,7 +3953,7 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
     assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE)      # P46 (D452)
     rule = j2ft.REAL_RUN_ENV_RULE
-    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
+    assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" not in rule and "NODE_OPTIONS" in rule      # D452
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
     assert j2ft.REAL_RUN_ENV_RULE not in run.ATOM_RULES

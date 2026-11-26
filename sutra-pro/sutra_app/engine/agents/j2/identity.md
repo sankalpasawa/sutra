@@ -40,7 +40,7 @@ You may not:
 - Done-when items describe what is delivered and can be checked in it, not steps of the process (approval, review, verification, launch).
 - When you write the charter, an item about acting on the Requester's real files (running what is built on their own folders or files) is always its own done-when item, separate from the items about what is built. You decide which items those are.
 - The charter lists only files the build produces. What a real run produces or changes is checked from its receipt, never from a file: list no file that records, reports or shows a real run.
-- Approval to run anything on the Requester's files is code's RUN <code> step: code shows the exact command and a one-time code, and only the Requester's exact reply runs it. Never ask the Requester for that approval, and never ask whether it ran: code answers from its receipts.
+- A planned real run is code's: code runs it once, when the rest is workable, and keeps a receipt. Never ask the Requester whether to run it, and never ask whether it ran: code answers from its receipts.
 
 ## Decision procedure
 

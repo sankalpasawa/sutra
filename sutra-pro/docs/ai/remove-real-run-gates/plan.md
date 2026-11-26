@@ -120,7 +120,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests pass
   - Covers: FR-24, FR-25
 
-- [ ] T10: Prompt text and the two data files say what code now does
+- [x] T10: Prompt text and the two data files say what code now does
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/agents/j2/identity.md`, `sutra_app/engine/artifacts/real_run.md`, `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_vendor.py`
   - Change: P46 data edits: identity.md:43 per FR-31; real_run.md:1 per FR-32. P35's `REAL_RUN_EXPECT_RULE`: "exactly what running it on the folder creates, changes and deletes; code compares the result after the run, and a difference fails the items it checks". P41's `REAL_RUN_ENV_RULE`: drop "the Requester sees before approving" and the placeholder sentence. `_real_run_note`: code runs it once when the rest is workable; no approval. `real_run` docstring and the SANDBOX_OFF comment (j2.py:611-613). P46 note lists every prompt it changes (D249).
   - Tests: AC-25 in test_engine_vendor.py: the vendored identity.md, real_run.md, the constants `REAL_RUN_EXPECT_RULE`, `REAL_RUN_ENV_RULE`, `REAL_RUN_NET_RULE`, `SCRIPT_NET_RULE`, `_real_run_note()` of a run with a planned real run, the P33 prompt (captured from a mock call) and runenv.py's docstring hold none of FR-34's phrases (case-insensitive); VENDORED.md's Files table lists P46 for both data files with a vendored sha256 unlike J2's.

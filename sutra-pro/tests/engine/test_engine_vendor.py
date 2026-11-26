@@ -362,3 +362,28 @@ def test_d452_a_data_edit_for_a_file_that_is_not_vendored_stops_the_run(monkeypa
     module, src = _fake_build(monkeypatch, [("P46", "agents/j2/nosuch.md", "a", "b")])
     with pytest.raises(module.VendorError, match="not vendored"):
         module.build(src)
+
+
+FR34 = ("RUN <code>", "RUN {code}", "Don't run", "Don't allow", "dry run", "on copies", "placeholder", "offline", "approval", "approved")
+
+
+def test_d452_the_real_run_texts_promise_no_question_and_no_dry_run():
+    """AC-25 (FR-31 to FR-34): the two vendored data files, the prompt constants and runenv's docstring hold none of FR-34's
+    phrases; VENDORED.md lists P46 for both data files with a vendored sha256 unlike J2's. (_real_run_note and the P33 prompt:
+    test_engine_patches.py, test_p46_the_note_and_the_audit_prompt_promise_no_question.)"""
+    from sutra_app.engine import j2
+    # identity.md: its lines about running (J2's line 40 names "approval" as a process step a done-when item is not: unrelated)
+    texts = {"identity.md": "\n".join(x for x in (ENGINE / "agents" / "j2" / "identity.md").read_text(encoding="utf-8").splitlines()
+                                       if " run" in x.lower()),
+             "real_run.md": (ENGINE / "artifacts" / "real_run.md").read_text(encoding="utf-8"),
+             "runenv": (ENGINE / "runenv.py").read_text(encoding="utf-8").split('"""')[1]
+             .replace("`fix-real-run-approval`", ""),      # J2's branch name, where the module comes from
+             **{k: getattr(j2, k) for k in ("REAL_RUN_EXPECT_RULE", "REAL_RUN_ENV_RULE", "REAL_RUN_NET_RULE", "SCRIPT_NET_RULE")}}
+    for name, text in texts.items():
+        for phrase in FR34:
+            assert phrase.lower() not in text.lower(), (name, phrase)
+    assert "code runs it once, when the rest is workable, and keeps a receipt" in texts["identity.md"]
+    assert '"folder"' in texts["real_run.md"] and '"checks"' in texts["real_run.md"]
+    for vendored in ("sutra_app/engine/agents/j2/identity.md", "sutra_app/engine/artifacts/real_run.md"):
+        row = next(r for r in rows() if r[0] == vendored)
+        assert row[2] == "P46" and row[3] != row[4], row
