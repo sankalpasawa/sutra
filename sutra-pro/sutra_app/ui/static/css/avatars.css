@@ -3,7 +3,7 @@
 
    Tokens (dark is the base, light under :root[data-theme=light], as every sheet here; a team page copies every --av-* into its frames):
      --av-d1..5   the disc behind an illustrated avatar (Asha, Mira, Kabir, Dev, Nora)
-     --av-m1..5   the compact mark drawn on that disc below 32 px
+     --av-m1..5   the compact mark drawn on that disc below 20 px
      --av-c1..5   each person's ring: 3:1 or better on --s-bg, --s-surface and --s-surface2 in its theme
      --av-ask, --av-askbg, --av-askink   the amber of "needs your reply": the ring, the badge and its "?" (4.5:1 on the badge)
 

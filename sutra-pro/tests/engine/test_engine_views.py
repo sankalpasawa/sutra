@@ -529,7 +529,7 @@ def test_docs_shows_which_documents_were_asked_for(w):
         body = jbody(call(w, "docs", ctx))
         assert set(body) == {"prd"} and body["prd"]["asked"] is True and body["prd"]["text"].startswith("# QuickQueue")
         assert body["prd"]["workflows"] and set(body["prd"]) == {"asked", "text", "workflows", "label", "tag", "color"}
-        assert (body["prd"]["label"], body["prd"]["tag"]) == ("Product requirements", "PRD"), "the data's own words (D168)"
+        assert (body["prd"]["label"], body["prd"]["tag"]) == ("Website product requirements", "PRD"), "the data's own words (D168)"
     assert jbody(call(w, "docs", live_ctx(w, w.site))) == {}, "J2's docs_view lists only the documents a run has or asked for"
     live = live_ctx(w, w.site)
     live.extras = {**live.extras, "docset": ["hld"]}

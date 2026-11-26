@@ -1,0 +1,56 @@
+{
+  "_note": "Necessary conditions for an agent low-level design (design documents for an agent). Code checks each one on agent_lld.md after every build; the agent LLD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met().",
+  "output": "agent_lld",
+  "conditions": [
+    {
+      "id": "AL1",
+      "text": "All seven sections are present and not empty",
+      "check": "sections-present",
+      "min_words": 1
+    },
+    {
+      "id": "AL2",
+      "text": "Section headings are unique",
+      "check": "headings-unique"
+    },
+    {
+      "id": "AL3",
+      "text": "Tests have unique sequential ids (X1, X2, ...)",
+      "check": "ids-sequential",
+      "section": "Tests",
+      "prefix": "X"
+    },
+    {
+      "id": "AL4",
+      "text": "Every agent PRD requirement is proved by a test",
+      "check": "chain-ids",
+      "key": "agent_prd_ids",
+      "in": "Tests",
+      "label": "agent PRD requirements",
+      "plan": "\\bR\\d+\\b"
+    },
+    {
+      "id": "AL5",
+      "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the earlier documents, or sits in an Assumption: line",
+      "check": "no-invented-facts",
+      "names": true,
+      "severity": "warn"
+    },
+    {
+      "id": "AL6",
+      "text": "Nothing is \"to be confirmed\"",
+      "check": "nothing-to-be-confirmed",
+      "markers": [
+        "to be confirmed",
+        "TBC",
+        "TBD"
+      ]
+    },
+    {
+      "id": "AL7",
+      "text": "Every brief fact appears exactly",
+      "check": "facts-present-all",
+      "severity": "warn"
+    }
+  ]
+}

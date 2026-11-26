@@ -3,7 +3,7 @@
    Two things, kept apart on purpose:
 
    1. The STYLE (Settings & logs > Appearance > Team avatars). "classic" is the faces Sutra Pro has always drawn (front_door.js on Home, the page's
-      own `face` on a team page) and is the default everywhere. "illustrated" is the portrait artwork: a picture at 32 px and up, a simple mark
+      own `face` on a team page) and is the default everywhere. "illustrated" is the portrait artwork: a picture at 20 px and up, a simple mark
       below that. The choice is kept by the server for this app profile (GET/PUT /api/appearance, orchestrator/appearance.py) and reaches a page in
       its boot block, so it survives a restart and a new port. This file puts it on <html data-avatars> as soon as it loads.
    2. The ACTIVITY of one avatar, whatever the style: `data-act` is the ring (work: a turning arc; ask: a still amber arc; done: a full ring) and
@@ -29,7 +29,7 @@
 
   const STYLES = ["classic", "illustrated"];
   const DEFAULT = "classic";
-  const CUT = 32;                 // px: the portrait from here up, the compact mark below
+  const CUT = 20;                 // px: the portrait from here up, the compact mark below (20: the live view's tag is 20 px, its step row 26)
   const TURN_MS = 2400;           // one turn of the working arc (--dur-turn): slow enough to sit beside text for minutes
   const MSG_MS = 4000;            // how long a new message from Asha shows as a badge on a team page
   const MIRROR = "sutra:avatars"; // localStorage: only so the other open pages of this port hear a change; the server file is the truth

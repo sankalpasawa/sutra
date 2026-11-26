@@ -1,0 +1,76 @@
+{
+  "_note": "Necessary conditions for an agent product requirements (design documents for an agent). Code checks each one on agent_prd.md after every build; the agent PRD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met().",
+  "output": "agent_prd",
+  "conditions": [
+    {
+      "id": "AP1",
+      "text": "All sixteen sections are present and not empty",
+      "check": "sections-present",
+      "min_words": 1
+    },
+    {
+      "id": "AP2",
+      "text": "Requirement ids are unique and sequential (R1, R2, ...)",
+      "check": "ids-sequential",
+      "section": "Requirements",
+      "prefix": "R"
+    },
+    {
+      "id": "AP3",
+      "text": "Action ids are unique and sequential (A1, A2, ...)",
+      "check": "ids-sequential",
+      "section": "Actions and authority",
+      "prefix": "A"
+    },
+    {
+      "id": "AP4",
+      "text": "Must-never-do ids are unique and sequential (N1, N2, ...)",
+      "check": "ids-sequential",
+      "section": "Must never do",
+      "prefix": "N"
+    },
+    {
+      "id": "AP5",
+      "text": "Every goal has a matching success metric",
+      "check": "ids-covered",
+      "from": "Goals",
+      "prefix": "G",
+      "in": "Success metrics"
+    },
+    {
+      "id": "AP6",
+      "text": "Section headings are unique",
+      "check": "headings-unique"
+    },
+    {
+      "id": "AP7",
+      "text": "Every brief fact appears exactly",
+      "check": "facts-present-all",
+      "severity": "warn"
+    },
+    {
+      "id": "AP8",
+      "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line",
+      "check": "no-invented-facts",
+      "names": true,
+      "severity": "warn"
+    },
+    {
+      "id": "AP9",
+      "text": "Nothing is \"to be confirmed\"",
+      "check": "nothing-to-be-confirmed",
+      "markers": [
+        "to be confirmed",
+        "TBC",
+        "TBD"
+      ]
+    },
+    {
+      "id": "AP10",
+      "text": "Each numeric success metric states its measurement window, or says \"measurement window not set\"",
+      "check": "metric-window",
+      "section": "Success metrics",
+      "severity": "warn"
+    }
+  ]
+}

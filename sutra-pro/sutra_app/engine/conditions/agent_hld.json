@@ -1,0 +1,69 @@
+{
+  "_note": "Necessary conditions for an agent high-level design (design documents for an agent). Code checks each one on agent_hld.md after every build; the agent HLD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met().",
+  "output": "agent_hld",
+  "conditions": [
+    {
+      "id": "AH1",
+      "text": "All nine sections are present and not empty",
+      "check": "sections-present",
+      "min_words": 1
+    },
+    {
+      "id": "AH2",
+      "text": "Section headings are unique",
+      "check": "headings-unique"
+    },
+    {
+      "id": "AH3",
+      "text": "Steps have unique sequential ids (S1, S2, ...)",
+      "check": "ids-sequential",
+      "section": "Steps",
+      "prefix": "S"
+    },
+    {
+      "id": "AH4",
+      "text": "Components have unique sequential ids (C1, C2, ...)",
+      "check": "ids-sequential",
+      "section": "Components",
+      "prefix": "C"
+    },
+    {
+      "id": "AH5",
+      "text": "Every agent PRD requirement appears in a component",
+      "check": "chain-ids",
+      "key": "agent_prd_ids",
+      "in": "Components",
+      "label": "agent PRD requirements",
+      "plan": "\\bR\\d+\\b"
+    },
+    {
+      "id": "AH6",
+      "text": "Each component states its responsibility",
+      "check": "components-have-responsibility",
+      "severity": "warn"
+    },
+    {
+      "id": "AH7",
+      "text": "No invented facts: every number, email and proper name comes from the charter, the Requester's answers or the agent PRD, or sits in an Assumption: line",
+      "check": "no-invented-facts",
+      "names": true,
+      "severity": "warn"
+    },
+    {
+      "id": "AH8",
+      "text": "Nothing is \"to be confirmed\"",
+      "check": "nothing-to-be-confirmed",
+      "markers": [
+        "to be confirmed",
+        "TBC",
+        "TBD"
+      ]
+    },
+    {
+      "id": "AH9",
+      "text": "Every brief fact appears exactly",
+      "check": "facts-present-all",
+      "severity": "warn"
+    }
+  ]
+}

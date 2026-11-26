@@ -1,0 +1,938 @@
+{
+  "schema": "template-library/1",
+  "artifact": "agent_lld",
+  "kind": "generic",
+  "version": 1,
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
+  "assumptions_section": true,
+  "templates": [
+    {
+      "name": "Agent LLD/1 · Tools",
+      "artifact": "agent_lld",
+      "section": "Tools",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Tools template: the fixed layout of every Agent LLD Tools section, whatever the agent",
+      "model": "AgentLLDTools",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "tools",
+          "type": "list[Tool]",
+          "required": false,
+          "description": "the contract of every tool the agent calls, T1, T2, ...; \"Not needed for this agent: <why>\" as an assumption when it calls none",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Tool",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "T1, T2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the tool's name in code, e.g. \"slack_post_digest\"",
+              "nullable": false
+            },
+            {
+              "name": "component",
+              "type": "string",
+              "required": true,
+              "description": "the agent HLD component id it implements, e.g. \"C5\"",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what it does and when the agent uses it",
+              "nullable": false
+            },
+            {
+              "name": "input",
+              "type": "string",
+              "required": false,
+              "description": "what it takes, in one line; each parameter is in Tool inputs",
+              "nullable": false
+            },
+            {
+              "name": "returns",
+              "type": "string",
+              "required": true,
+              "description": "what it gives back",
+              "nullable": false
+            },
+            {
+              "name": "effect",
+              "type": "string",
+              "required": true,
+              "description": "read or write",
+              "enum": [
+                "read",
+                "write"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "on_error",
+              "type": "string",
+              "required": true,
+              "description": "what the caller gets back when it fails",
+              "nullable": false
+            },
+            {
+              "name": "idempotent",
+              "type": "boolean",
+              "required": false,
+              "description": "true when calling it twice with the same input has the effect of calling it once",
+              "nullable": false
+            },
+            {
+              "name": "timeout_seconds",
+              "type": "integer",
+              "required": false,
+              "description": "the most one call may take",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "tools",
+          "prefix": "T",
+          "name": "ids T1, T2, ... unique and in order",
+          "from": "AL1"
+        },
+        {
+          "rule": "enum",
+          "path": "tools[].effect",
+          "values": [
+            "read",
+            "write"
+          ],
+          "name": "effect is read or write",
+          "from": "AL1"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tools[].component",
+          "target": "agent_hld.components[].id",
+          "required_target": true,
+          "fail_text": "{id} names {bad}, which is not a component of the agent HLD",
+          "missing_text": "{id}: the agent HLD's ids are not recorded, so Names can't be checked",
+          "name": "component points at a component id of the agent HLD",
+          "from": "AL1"
+        }
+      ],
+      "render": [
+        {
+          "each": "tools",
+          "line": "- **{id}** `{name}` (on {component}, {effect}): {purpose:nodot}.[ Takes {input:nodot}.] Returns {returns:nodot}. On error: {on_error:nodot}.[ Idempotent: {idempotent:yesno}.][ Times out after {timeout_seconds} s.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "tools",
+        "input",
+        "idempotent",
+        "timeout_seconds",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Tool inputs",
+      "artifact": "agent_lld",
+      "section": "Tool inputs",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Tool inputs template: the fixed layout of every Agent LLD Tool inputs section, whatever the agent",
+      "model": "AgentLLDToolInputs",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "tool_inputs",
+          "type": "list[ToolInput]",
+          "required": false,
+          "description": "each parameter of each tool, I1, I2, ...",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "ToolInput",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "I1, I2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "tool",
+              "type": "string",
+              "required": true,
+              "description": "the tool id, e.g. \"T1\"",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the parameter name",
+              "nullable": false
+            },
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "description": "string, integer, number, boolean, array or object",
+              "enum": [
+                "string",
+                "integer",
+                "number",
+                "boolean",
+                "array",
+                "object"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "required",
+              "type": "boolean",
+              "required": true,
+              "description": "true when the tool can't run without it",
+              "nullable": false
+            },
+            {
+              "name": "meaning",
+              "type": "string",
+              "required": false,
+              "description": "what it means and its allowed values",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "tool_inputs",
+          "prefix": "I",
+          "name": "ids I1, I2, ... unique and in order",
+          "from": "AL1"
+        },
+        {
+          "rule": "enum",
+          "path": "tool_inputs[].type",
+          "values": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "array",
+            "object"
+          ],
+          "name": "type is a JSON Schema type",
+          "from": "AL1"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tool_inputs[].tool",
+          "target": "this.tools[].id",
+          "name": "tool points at a tool id of this document",
+          "from": "AL1"
+        }
+      ],
+      "render": [
+        {
+          "each": "tool_inputs",
+          "line": "- **{id}** {tool}: `{name}`, {type}, required {required:yesno}.[ {meaning:cap}]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "tool_inputs",
+        "meaning",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Prompts",
+      "artifact": "agent_lld",
+      "section": "Prompts",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Prompts template: the fixed layout of every Agent LLD Prompts section, whatever the agent",
+      "model": "AgentLLDPrompts",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "prompts",
+          "type": "list[Prompt]",
+          "required": false,
+          "description": "each model call, P1, P2, ...; \"Not needed for this agent: <why>\" as an assumption when the agent calls no model",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Prompt",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "P1, P2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "file",
+              "type": "string",
+              "required": true,
+              "description": "the file that holds the prompt, e.g. \"prompts/rank.md\"",
+              "nullable": false
+            },
+            {
+              "name": "component",
+              "type": "string",
+              "required": true,
+              "description": "the agent HLD component id it serves (a model_call or an agent), e.g. \"C3\"",
+              "nullable": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "required": false,
+              "description": "the model it is sent to, or \"the user's configured model\"",
+              "nullable": false
+            },
+            {
+              "name": "output",
+              "type": "string",
+              "required": true,
+              "description": "the fields of the reply, e.g. \"{id, score 1-5, reason}\"",
+              "nullable": false
+            },
+            {
+              "name": "variables",
+              "type": "list[string]",
+              "required": false,
+              "description": "what code fills into it",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "prompts",
+          "prefix": "P",
+          "name": "ids P1, P2, ... unique and in order",
+          "from": "AL1"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "prompts[].component",
+          "target": "agent_hld.components[].id",
+          "required_target": true,
+          "fail_text": "{id} names {bad}, which is not a component of the agent HLD",
+          "missing_text": "{id}: the agent HLD's ids are not recorded, so Names can't be checked",
+          "name": "component points at a component id of the agent HLD",
+          "from": "AL1"
+        }
+      ],
+      "render": [
+        {
+          "each": "prompts",
+          "line": "- **{id}** `{file}` (for {component}[, {model}]): replies {output:nodot}.[ Filled with {variables}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "prompts",
+        "model",
+        "variables",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Limits",
+      "artifact": "agent_lld",
+      "section": "Limits",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Limits template: the fixed layout of every Agent LLD Limits section, whatever the agent",
+      "model": "AgentLLDLimits",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "limits",
+          "type": "Limits",
+          "required": true,
+          "description": "the numbers that stop a unit of work",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Limits",
+          "fields": [
+            {
+              "name": "max_steps",
+              "type": "integer",
+              "required": true,
+              "description": "the most model calls or loop turns in one unit",
+              "nullable": false
+            },
+            {
+              "name": "run_timeout_seconds",
+              "type": "integer",
+              "required": true,
+              "description": "the most one unit may take",
+              "nullable": false
+            },
+            {
+              "name": "max_retries",
+              "type": "integer",
+              "required": true,
+              "description": "the most retries of one failed call",
+              "nullable": false
+            },
+            {
+              "name": "on_limit",
+              "type": "string",
+              "required": true,
+              "description": "what happens when a limit is reached",
+              "nullable": false
+            },
+            {
+              "name": "cost_cap_per_run",
+              "type": "string",
+              "required": false,
+              "description": "the most one unit may cost",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "limits.on_limit",
+          "name": "what happens at a limit is given",
+          "from": "AL1"
+        }
+      ],
+      "render": [
+        {
+          "text": "- At most {limits.max_steps} steps\n- At most {limits.run_timeout_seconds} s per unit\n- At most {limits.max_retries} retries per call[\n- At most {limits.cost_cap_per_run} per unit]\n- At a limit: {limits.on_limit}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · File structure",
+      "artifact": "agent_lld",
+      "section": "File structure",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · File structure template: the fixed layout of every Agent LLD File structure section, whatever the agent",
+      "model": "AgentLLDFiles",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "files",
+          "type": "list[FileEntry]",
+          "required": true,
+          "description": "every file of the build",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "FileEntry",
+          "fields": [
+            {
+              "name": "path",
+              "type": "string",
+              "required": true,
+              "description": "the file path inside the agent's folder, e.g. \"digest.py\"",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what it holds",
+              "nullable": false
+            },
+            {
+              "name": "states",
+              "type": "list[string]",
+              "required": false,
+              "description": "the agent PRD must-never-do ids this file states or enforces, e.g. [\"N1\"]",
+              "nullable": false
+            },
+            {
+              "name": "runs_tests",
+              "type": "boolean",
+              "required": false,
+              "description": "true on exactly one file: the one that, run with the test runner (python3 <path>), runs every test of the Tests section and exits 0 only when all pass",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "files[].path",
+            "files[].purpose"
+          ],
+          "name": "every file has a path and a purpose",
+          "from": "AL1"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "files[].states",
+          "target": "agent_prd.never[].id",
+          "required_target": true,
+          "fail_text": "{id} states {bad}, which is not a must-never-do rule of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so States can't be checked",
+          "name": "states points at a must-never-do id of the agent PRD",
+          "from": "AL1"
+        }
+      ],
+      "render": [
+        {
+          "each": "files",
+          "line": "- `{path}`: {purpose:nodot}.[ States {states}.][ Runs the tests: {runs_tests:yesno}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "files",
+        "states",
+        "runs_tests",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Tests",
+      "artifact": "agent_lld",
+      "section": "Tests",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Tests template: the fixed layout of every Agent LLD Tests section, whatever the agent",
+      "model": "AgentLLDTests",
+      "conditions": [
+        "AL1",
+        "AL3",
+        "AL4"
+      ],
+      "fields": [
+        {
+          "name": "tests",
+          "type": "list[TestCase]",
+          "required": true,
+          "description": "the cases the folder's test runs, X1, X2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "TestCase",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "X1, X2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "required": true,
+              "description": "tool (one tool alone), run (a whole unit of work) or never (a must-never-do rule)",
+              "enum": [
+                "tool",
+                "run",
+                "never"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "covers",
+              "type": "list[string]",
+              "required": false,
+              "description": "the agent PRD requirement ids it proves, e.g. [\"R3\"]",
+              "nullable": false
+            },
+            {
+              "name": "never",
+              "type": "list[string]",
+              "required": false,
+              "description": "the agent PRD must-never-do ids it proves, e.g. [\"N1\"]",
+              "nullable": false
+            },
+            {
+              "name": "setup",
+              "type": "string",
+              "required": true,
+              "description": "the faked systems and the scripted model reply it runs with",
+              "nullable": false
+            },
+            {
+              "name": "expected",
+              "type": "string",
+              "required": true,
+              "description": "the final state it asserts",
+              "nullable": false
+            },
+            {
+              "name": "grader",
+              "type": "string",
+              "required": false,
+              "description": "code or rubric",
+              "enum": [
+                "code",
+                "rubric"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "trials",
+              "type": "integer",
+              "required": false,
+              "description": "how many times it is run",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "tests",
+          "prefix": "X",
+          "name": "ids X1, X2, ... unique and in order",
+          "from": "AL3"
+        },
+        {
+          "rule": "enum",
+          "path": "tests[].kind",
+          "values": [
+            "tool",
+            "run",
+            "never"
+          ],
+          "name": "kind is tool, run or never",
+          "from": "AL3"
+        },
+        {
+          "rule": "one_of_present",
+          "path": [
+            "tests[].covers",
+            "tests[].never"
+          ],
+          "name": "every test names a requirement or a must-never-do rule",
+          "from": "AL4"
+        },
+        {
+          "rule": "not_empty",
+          "path": [
+            "tests[].setup",
+            "tests[].expected"
+          ],
+          "name": "every test states what it runs with and what it asserts",
+          "from": "AL3"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tests[].never",
+          "target": "agent_prd.never[].id",
+          "required_target": true,
+          "fail_text": "{id} tests {bad}, which is not a must-never-do rule of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so Tests can't be checked",
+          "name": "never points at a must-never-do id of the agent PRD",
+          "from": "AL4"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "tests[].covers",
+          "target": "agent_prd.requirements[].id",
+          "required_target": true,
+          "fail_text": "{id} covers {bad}, which is not a requirement of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so Covers can't be checked",
+          "name": "covers points at a requirement id of the agent PRD",
+          "from": "AL4"
+        }
+      ],
+      "render": [
+        {
+          "each": "tests",
+          "line": "- **{id}** ({kind}): with {setup:nodot}, expects {expected:nodot}.[ Covers {covers}.][ Proves {never}.][ Graded by {grader}.][ {trials} trials.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Config and secrets",
+      "artifact": "agent_lld",
+      "section": "Config and secrets",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 · Config and secrets template: the fixed layout of every Agent LLD Config and secrets section, whatever the agent",
+      "model": "AgentLLDConfig",
+      "conditions": [
+        "AL1"
+      ],
+      "fields": [
+        {
+          "name": "config",
+          "type": "list[ConfigKey]",
+          "required": false,
+          "description": "each setting and credential by name, never its value; \"Not needed for this agent: <why>\" as an assumption when there is none",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "ConfigKey",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the setting's name, e.g. \"SLACK_CHANNEL\"",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what it sets",
+              "nullable": false
+            },
+            {
+              "name": "secret",
+              "type": "boolean",
+              "required": true,
+              "description": "true for a credential, which is never written into a file of the folder",
+              "nullable": false
+            },
+            {
+              "name": "default",
+              "type": "string",
+              "required": false,
+              "description": "its default, when it has one and is not a secret",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [],
+      "render": [
+        {
+          "each": "config",
+          "line": "- `{name}`: {purpose:nodot}. Secret: {secret:yesno}.[ Default {default}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "config",
+        "default",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent LLD/1 · Document",
+      "artifact": "agent_lld",
+      "section": "Document",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent LLD/1 document template: the whole Agent LLD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "model": "AgentLLD",
+      "fields": [
+        {
+          "name": "tools",
+          "type": "list[Tool]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "tool_inputs",
+          "type": "list[ToolInput]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "prompts",
+          "type": "list[Prompt]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "limits",
+          "type": "Limits",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "files",
+          "type": "list[FileEntry]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "tests",
+          "type": "list[TestCase]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "config",
+          "type": "list[ConfigKey]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "reply_optional": [
+        "tools",
+        "tool_inputs",
+        "prompts",
+        "config",
+        "assumptions",
+        "input",
+        "idempotent",
+        "timeout_seconds",
+        "meaning",
+        "model",
+        "variables",
+        "cost_cap_per_run",
+        "states",
+        "runs_tests",
+        "covers",
+        "never",
+        "grader",
+        "trials",
+        "default"
+      ]
+    }
+  ]
+}

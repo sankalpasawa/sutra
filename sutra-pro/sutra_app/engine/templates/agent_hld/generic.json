@@ -1,0 +1,962 @@
+{
+  "schema": "template-library/1",
+  "artifact": "agent_hld",
+  "kind": "generic",
+  "version": 1,
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
+  "assumptions_section": true,
+  "templates": [
+    {
+      "name": "Agent HLD/1 · Purpose and scope",
+      "artifact": "agent_hld",
+      "section": "Purpose and scope",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Purpose and scope template: the fixed layout of every Agent HLD Purpose and scope section, whatever the agent",
+      "model": "AgentHLDPurpose",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": true,
+          "description": "what this design covers and what it leaves out",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "purpose",
+          "name": "the purpose is given",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "text": "{purpose}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Run shape",
+      "artifact": "agent_hld",
+      "section": "Run shape",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Run shape template: the fixed layout of every Agent HLD Run shape section, whatever the agent",
+      "model": "AgentHLDRunShape",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "shape",
+          "type": "RunShape",
+          "required": true,
+          "description": "how much the model controls the run: the first decision of the design",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "RunShape",
+          "fields": [
+            {
+              "name": "level",
+              "type": "string",
+              "required": true,
+              "description": "single_call (one model call), workflow (code fixes the steps, the model fills some), agent (the model picks its next step in a loop), multi_agent (several agents hand work to each other)",
+              "enum": [
+                "single_call",
+                "workflow",
+                "agent",
+                "multi_agent"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "pattern",
+              "type": "string",
+              "required": true,
+              "description": "fixed_sequence, classify_and_dispatch, fan_out, dynamic_delegation, generate_and_check or single_loop",
+              "enum": [
+                "fixed_sequence",
+                "classify_and_dispatch",
+                "fan_out",
+                "dynamic_delegation",
+                "generate_and_check",
+                "single_loop"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "why_not_simpler",
+              "type": "string",
+              "required": true,
+              "description": "what the next lower level could not do for this agent; for single_call, why one call is enough",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "enum",
+          "path": "shape.level",
+          "values": [
+            "single_call",
+            "workflow",
+            "agent",
+            "multi_agent"
+          ],
+          "name": "the level is single_call, workflow, agent or multi_agent",
+          "from": "AH1"
+        },
+        {
+          "rule": "enum",
+          "path": "shape.pattern",
+          "values": [
+            "fixed_sequence",
+            "classify_and_dispatch",
+            "fan_out",
+            "dynamic_delegation",
+            "generate_and_check",
+            "single_loop"
+          ],
+          "name": "the pattern is one of the six",
+          "from": "AH1"
+        },
+        {
+          "rule": "not_empty",
+          "path": "shape.why_not_simpler",
+          "name": "the design says why nothing simpler works",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "text": "- Level: {shape.level}\n- Pattern: {shape.pattern}\n- Why not simpler: {shape.why_not_simpler}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Steps",
+      "artifact": "agent_hld",
+      "section": "Steps",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Steps template: the fixed layout of every Agent HLD Steps section, whatever the agent",
+      "model": "AgentHLDSteps",
+      "conditions": [
+        "AH1",
+        "AH3"
+      ],
+      "fields": [
+        {
+          "name": "steps",
+          "type": "list[Step]",
+          "required": true,
+          "description": "the stages of one unit of work, S1, S2, ... in order; for level agent, the phases of its loop (e.g. plan, act, check)",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Step",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "S1, S2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the step name",
+              "nullable": false
+            },
+            {
+              "name": "purpose",
+              "type": "string",
+              "required": true,
+              "description": "what the step does",
+              "nullable": false
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "required": true,
+              "description": "code, model (a model call decides or writes) or human (a person approves or answers)",
+              "enum": [
+                "code",
+                "model",
+                "human"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "implements",
+              "type": "list[string]",
+              "required": false,
+              "description": "the agent PRD requirement ids this step carries",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "steps",
+          "prefix": "S",
+          "name": "ids S1, S2, ... unique and in order",
+          "from": "AH3"
+        },
+        {
+          "rule": "enum",
+          "path": "steps[].kind",
+          "values": [
+            "code",
+            "model",
+            "human"
+          ],
+          "name": "kind is code, model or human",
+          "from": "AH3"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "steps[].implements",
+          "target": "agent_prd.requirements[].id",
+          "required_target": true,
+          "fail_text": "{id} implements {bad}, which is not a requirement of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so Implements can't be checked",
+          "name": "implements points at a requirement id of the agent PRD",
+          "from": "AH4"
+        }
+      ],
+      "render": [
+        {
+          "each": "steps",
+          "line": "{#}. **{id}** {name} ({kind}): {purpose:nodot}.[ Implements {implements}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Components",
+      "artifact": "agent_hld",
+      "section": "Components",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Components template: the fixed layout of every Agent HLD Components section, whatever the agent",
+      "model": "AgentHLDComponents",
+      "conditions": [
+        "AH1",
+        "AH4",
+        "AH5"
+      ],
+      "fields": [
+        {
+          "name": "components",
+          "type": "list[Component]",
+          "required": true,
+          "description": "the parts, C1, C2, ... in order; each names the agent PRD requirement ids it covers",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Component",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "C1, C2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the component name",
+              "nullable": false
+            },
+            {
+              "name": "responsibility",
+              "type": "string",
+              "required": true,
+              "description": "its one responsibility, in one line",
+              "nullable": false
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "required": true,
+              "description": "trigger, orchestrator, agent, model_call, tool, store or guardrail",
+              "enum": [
+                "trigger",
+                "orchestrator",
+                "agent",
+                "model_call",
+                "tool",
+                "store",
+                "guardrail"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "covers",
+              "type": "list[string]",
+              "required": false,
+              "description": "the agent PRD requirement ids it covers, e.g. [\"R1\"]",
+              "nullable": false
+            },
+            {
+              "name": "step",
+              "type": "string",
+              "required": false,
+              "description": "the step id it works in, e.g. \"S2\"",
+              "nullable": false
+            },
+            {
+              "name": "action",
+              "type": "string",
+              "required": false,
+              "description": "for a tool: the agent PRD action id it performs, e.g. \"A2\"",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "components",
+          "prefix": "C",
+          "name": "ids C1, C2, ... unique and in order",
+          "from": "AH4"
+        },
+        {
+          "rule": "not_empty",
+          "path": "components[].responsibility",
+          "name": "every component states its responsibility",
+          "from": "AH4"
+        },
+        {
+          "rule": "enum",
+          "path": "components[].kind",
+          "values": [
+            "trigger",
+            "orchestrator",
+            "agent",
+            "model_call",
+            "tool",
+            "store",
+            "guardrail"
+          ],
+          "name": "kind is one of trigger, orchestrator, agent, model_call, tool, store, guardrail",
+          "from": "AH4"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "components[].step",
+          "target": "this.steps[].id",
+          "name": "step points at a step id of this document",
+          "from": "AH3"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "components[].action",
+          "target": "agent_prd.actions[].id",
+          "required_target": true,
+          "fail_text": "{id} performs {bad}, which is not an action of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so Performs can't be checked",
+          "name": "action points at an action id of the agent PRD",
+          "from": "AH5"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "components[].covers",
+          "target": "agent_prd.requirements[].id",
+          "required_target": true,
+          "fail_text": "{id} covers {bad}, which is not a requirement of the agent PRD",
+          "missing_text": "{id}: the agent PRD's ids are not recorded, so Covers can't be checked",
+          "name": "covers points at a requirement id of the agent PRD",
+          "from": "AH5"
+        }
+      ],
+      "render": [
+        {
+          "each": "components",
+          "line": "- **{id}** {name} ({kind}): {responsibility:nodot}.[ Covers {covers}.][ In {step}.][ Performs {action}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Data flow",
+      "artifact": "agent_hld",
+      "section": "Data flow",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Data flow template: the fixed layout of every Agent HLD Data flow section, whatever the agent",
+      "model": "AgentHLDDataFlow",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "data_flows",
+          "type": "list[DataFlow]",
+          "required": true,
+          "description": "what moves between systems and into the model, and what starts it",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "DataFlow",
+          "fields": [
+            {
+              "name": "from",
+              "type": "string",
+              "required": true,
+              "description": "where the data comes from",
+              "nullable": false
+            },
+            {
+              "name": "to",
+              "type": "string",
+              "required": true,
+              "description": "where it goes",
+              "nullable": false
+            },
+            {
+              "name": "data",
+              "type": "string",
+              "required": true,
+              "description": "what is sent",
+              "nullable": false
+            },
+            {
+              "name": "trigger",
+              "type": "string",
+              "required": true,
+              "description": "what starts it",
+              "nullable": false
+            },
+            {
+              "name": "untrusted",
+              "type": "boolean",
+              "required": false,
+              "description": "true when the data comes from outside and may carry instructions (email bodies, web pages, user text)",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "data_flows[].from",
+            "data_flows[].to",
+            "data_flows[].data",
+            "data_flows[].trigger"
+          ],
+          "name": "every flow has from, to, data and trigger",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "each": "data_flows",
+          "line": "- {from} to {to}: {data}, on {trigger}.[ Untrusted: {untrusted:yesno}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · State",
+      "artifact": "agent_hld",
+      "section": "State",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · State template: the fixed layout of every Agent HLD State section, whatever the agent",
+      "model": "AgentHLDState",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "state",
+          "type": "list[StateItem]",
+          "required": false,
+          "description": "what is kept within a unit and between units, and where; \"Not needed for this agent: <why>\" as an assumption when it keeps nothing",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "StateItem",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "what is kept, e.g. \"ids of emails already sent\"",
+              "nullable": false
+            },
+            {
+              "name": "holds",
+              "type": "string",
+              "required": false,
+              "description": "what it contains",
+              "nullable": false
+            },
+            {
+              "name": "where",
+              "type": "string",
+              "required": true,
+              "description": "where it is kept, e.g. \"a JSON file in the agent's folder\"",
+              "nullable": false
+            },
+            {
+              "name": "scope",
+              "type": "string",
+              "required": true,
+              "description": "run (within one unit) or across_runs",
+              "enum": [
+                "run",
+                "across_runs"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "retention",
+              "type": "string",
+              "required": false,
+              "description": "how long it is kept",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "enum",
+          "path": "state[].scope",
+          "values": [
+            "run",
+            "across_runs"
+          ],
+          "name": "scope is run or across_runs",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "each": "state",
+          "line": "- {name}: in {where} ({scope}).[ Holds {holds:nodot}.][ Kept {retention:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "state",
+        "holds",
+        "retention",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Safety",
+      "artifact": "agent_hld",
+      "section": "Safety",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Safety template: the fixed layout of every Agent HLD Safety section, whatever the agent",
+      "model": "AgentHLDSafety",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "safety",
+          "type": "Safety",
+          "required": true,
+          "description": "whether the agent combines the three risky properties, and the control when it does",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Safety",
+          "fields": [
+            {
+              "name": "untrusted_input",
+              "type": "boolean",
+              "required": true,
+              "description": "it reads content from outside that may carry instructions",
+              "nullable": false
+            },
+            {
+              "name": "private_data",
+              "type": "boolean",
+              "required": true,
+              "description": "it can read private data",
+              "nullable": false
+            },
+            {
+              "name": "external_effect",
+              "type": "boolean",
+              "required": true,
+              "description": "it can send data out or change something outside its folder",
+              "nullable": false
+            },
+            {
+              "name": "control",
+              "type": "string",
+              "required": true,
+              "description": "the structural limit that holds when all three are true (e.g. \"the only write is a post to one fixed channel, never taken from email content\"), or why fewer than three hold",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "safety.control",
+          "name": "the control is given",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "text": "- Reads untrusted input: {safety.untrusted_input:yesno}\n- Reads private data: {safety.private_data:yesno}\n- Acts outside its folder: {safety.external_effect:yesno}\n- Control: {safety.control}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Runtime",
+      "artifact": "agent_hld",
+      "section": "Runtime",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Runtime template: the fixed layout of every Agent HLD Runtime section, whatever the agent",
+      "model": "AgentHLDRuntime",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "runtime",
+          "type": "Runtime",
+          "required": true,
+          "description": "where the agent runs and how a unit is started",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Runtime",
+          "fields": [
+            {
+              "name": "kind",
+              "type": "string",
+              "required": true,
+              "description": "where it runs, e.g. \"a Python script on the user's computer, started by the scheduler\"",
+              "nullable": false
+            },
+            {
+              "name": "notes",
+              "type": "string",
+              "required": false,
+              "description": "how it is installed, started and replaced",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "runtime.kind",
+          "name": "where it runs is given",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "text": "{runtime.kind}[ {runtime.notes}]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Risks",
+      "artifact": "agent_hld",
+      "section": "Risks",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 · Risks template: the fixed layout of every Agent HLD Risks section, whatever the agent",
+      "model": "AgentHLDRisks",
+      "conditions": [
+        "AH1"
+      ],
+      "fields": [
+        {
+          "name": "risks",
+          "type": "list[Risk]",
+          "required": true,
+          "description": "each design risk with its mitigation",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Risk",
+          "fields": [
+            {
+              "name": "risk",
+              "type": "string",
+              "required": true,
+              "description": "the risk, one line",
+              "nullable": false
+            },
+            {
+              "name": "mitigation",
+              "type": "string",
+              "required": true,
+              "description": "what is done about it",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "risks[].risk",
+            "risks[].mitigation"
+          ],
+          "name": "every risk has a mitigation",
+          "from": "AH1"
+        }
+      ],
+      "render": [
+        {
+          "each": "risks",
+          "line": "- {risk:nodot}. Mitigation: {mitigation}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent HLD/1 · Document",
+      "artifact": "agent_hld",
+      "section": "Document",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent HLD/1 document template: the whole Agent HLD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "model": "AgentHLD",
+      "fields": [
+        {
+          "name": "purpose",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "shape",
+          "type": "RunShape",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "steps",
+          "type": "list[Step]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "components",
+          "type": "list[Component]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "data_flows",
+          "type": "list[DataFlow]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "state",
+          "type": "list[StateItem]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "safety",
+          "type": "Safety",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "runtime",
+          "type": "Runtime",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "risks",
+          "type": "list[Risk]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "reply_optional": [
+        "data_flows",
+        "risks",
+        "assumptions",
+        "implements",
+        "covers",
+        "step",
+        "action",
+        "untrusted",
+        "state",
+        "holds",
+        "retention",
+        "notes"
+      ]
+    }
+  ]
+}

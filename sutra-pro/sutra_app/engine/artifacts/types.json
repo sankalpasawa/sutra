@@ -64,7 +64,7 @@
     {
       "name": "prd",
       "kind": "type",
-      "label": "Product requirements",
+      "label": "Website product requirements",
       "tag": "PRD",
       "color": "--prd",
       "form": "document",
@@ -115,7 +115,7 @@
     {
       "name": "hld",
       "kind": "type",
-      "label": "High-level design",
+      "label": "Website high-level design",
       "tag": "HLD",
       "color": "--hld",
       "form": "document",
@@ -168,7 +168,7 @@
     {
       "name": "lld",
       "kind": "type",
-      "label": "Low-level design",
+      "label": "Website low-level design",
       "tag": "LLD",
       "color": "--lld",
       "form": "document",
@@ -267,6 +267,9 @@
       }
     },
     {"name": "business_report", "kind": "type", "label": "Report", "tag": "Report", "color": "--other", "form": "document", "template": "templates/business_report/generic.json", "file": "business_report.md", "noun": "report", "deliverable": true, "triggers": ["\\b(?:sales|monthly|weekly|quarterly|annual|business|status|progress)\\s+report\\b|\\breport\\s+on\\b"], "groups": [], "depends_on": []},
+    {"name": "agent_prd", "kind": "type", "label": "Agent product requirements", "tag": "Agent PRD", "color": "--other", "form": "document", "template": "templates/agent_prd/generic.json", "file": "agent_prd.md", "export": "docx", "output_label": "Agent PRD document", "noun": "agent PRD", "rubric": [{"id": "D-1", "text": "Every requirement is one checkable behaviour with its acceptance and how it is checked"}, {"id": "D-2", "text": "Every action the agent may take on an outside system is in the authority table, with read or write and who approves it"}, {"id": "D-3", "text": "Every must-never-do item of the charter is a rule with a pass/fail check"}, {"id": "D-4", "text": "The trigger says when a unit of work starts and what one unit reads"}, {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"}], "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"], "done": "Done: the agent PRD is workable. Every done-when item, rubric item and necessary condition passes.", "builder": "templates/agent_prd/builder.md", "intake": "templates/agent_prd/intake.md", "charter_format": "templates/agent_prd/charter.txt", "atom_rules": "templates/agent_prd/atom_rules.md", "deliverable": true, "triggers": ["\\bagent\\s+(?:PRDs?|product\\s+requirements?)\\b"], "groups": [], "depends_on": [], "conditions": "agent_prd.json", "workflow": {"template": "doc-sections", "refs": "^agent_prd\\.md(#|$)"}, "cost": {"card": "rates_prd", "section_part": "doc_section", "section_parts": {"Requirements": "requirements_section", "Actions and authority": "requirements_section"}, "parts": {"doc_section": 14, "requirements_section": 2}}},
+    {"name": "agent_hld", "kind": "type", "label": "Agent high-level design", "tag": "Agent HLD", "color": "--other", "form": "document", "template": "templates/agent_hld/generic.json", "file": "agent_hld.md", "export": "docx", "output_label": "Agent HLD document", "noun": "agent HLD", "rubric": [{"id": "D-1", "text": "The run shape is the lowest level that works, and the design says why nothing simpler does"}, {"id": "D-2", "text": "Every component has one clear responsibility, and every tool component performs an action of the agent PRD"}, {"id": "D-3", "text": "Consistent with the agent PRD: every requirement has a component"}, {"id": "D-4", "text": "Safety names a structural control when the agent reads untrusted input, reads private data and acts outside its folder"}, {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the agent PRD, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"}], "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"], "done": "Done: the agent HLD is workable. Every done-when item, rubric item and necessary condition passes.", "builder": "templates/agent_hld/builder.md", "intake": "templates/agent_hld/intake.md", "charter_format": "templates/agent_hld/charter.txt", "atom_rules": "templates/agent_hld/atom_rules.md", "deliverable": true, "triggers": ["\\bagent\\s+(?:HLDs?|high[- ]level\\s+design|architecture)\\b"], "groups": [], "depends_on": ["agent_prd"], "conditions": "agent_hld.json", "workflow": {"template": "doc-sections", "refs": "^agent_hld\\.md(#|$)"}, "cost": {"card": "rates_prd", "section_part": "doc_section", "section_parts": {"Components": "requirements_section"}, "parts": {"doc_section": 8, "requirements_section": 1}}},
+    {"name": "agent_lld", "kind": "type", "label": "Agent low-level design", "tag": "Agent LLD", "color": "--other", "form": "document", "template": "templates/agent_lld/generic.json", "file": "agent_lld.md", "export": "docx", "output_label": "Agent LLD document", "noun": "agent LLD", "rubric": [{"id": "D-1", "text": "Every tool has a contract: what it takes, what it returns and what it does on error"}, {"id": "D-2", "text": "The limits are numbers, and say what happens when one is reached"}, {"id": "D-3", "text": "Every agent PRD requirement is covered by a test, and every must-never-do rule is stated by a file and proved by a test"}, {"id": "D-4", "text": "The builder can write the agent from this document alone: every file, prompt and setting is named"}, {"id": "D-5", "text": "No invented facts: every fact comes from the brief or the Requester's answers or the earlier documents, or is labelled \"Assumption:\"; the evidence quotes each unlabelled claim not in them"}], "check_types": ["facts-present", "heading-present", "section-not-empty", "ids-unique"], "done": "Done: the agent LLD is workable. Every done-when item, rubric item and necessary condition passes.", "builder": "templates/agent_lld/builder.md", "intake": "templates/agent_lld/intake.md", "charter_format": "templates/agent_lld/charter.txt", "atom_rules": "templates/agent_lld/atom_rules.md", "deliverable": true, "triggers": ["\\bagent\\s+(?:LLDs?|low[- ]level\\s+design|detailed\\s+design)\\b"], "groups": [], "depends_on": ["agent_prd", "agent_hld"], "conditions": "agent_lld.json", "workflow": {"template": "doc-sections", "refs": "^agent_lld\\.md(#|$)"}, "cost": {"card": "rates_prd", "section_part": "doc_section", "section_parts": {"Tests": "requirements_section"}, "parts": {"doc_section": 6, "requirements_section": 1}}},
     {
       "name": "screenshots",
       "kind": "record",

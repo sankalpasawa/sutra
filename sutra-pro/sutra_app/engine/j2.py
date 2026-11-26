@@ -2946,7 +2946,40 @@ def doc_agent_output(kind, doc):
                                                            strip_md(body))]}
     if kind == "hld":
         return {"kind": "hld", "components": parse_hld(doc)}
+    if kind != "lld" and j2_types.id_prefixes(kind):      # any other document whose template numbers its items
+        return template_agent_output(kind, doc)
     return {"kind": "lld", **parse_lld(doc)}
+
+
+def template_agent_output(kind, doc):
+    """A document's agent_output read from its own template, no type named: for every list the template numbers (an
+    ids_sequential rule: its list field and id prefix), the items its section defines, as {id, text}. An id counts
+    where it starts a line, a list item or a table row, as in md_ids."""
+    out = {"kind": kind}
+    for t in j2_types.template(kind):
+        body = md_section(doc, t["section"]) or ""
+        for r in t.get("rules") or []:
+            if r.get("rule") != "ids_sequential":
+                continue
+            p = re.escape(r["prefix"])
+            out[r["path"]] = [{"id": f"{r['prefix']}{m[1]}", "text": strip_md(m[2]).strip(" |")} for m in re.finditer(
+                rf"(?m)^\s*(?:[-*+]\s+|\d+[.)]\s+|\|\s*)?(?:\*\*|__)?{p}-?(\d+)\b(?:\*\*|__)?\s*[:.|-]?\s*(.*)$", body)]
+    return out
+
+
+def doc_files(kind, doc):
+    """The files a document says the build holds, no type named: the entries of every section whose template lists
+    objects with a `path` field, read from the rendered lines ("- `path`: purpose"). [{path, text, test}]; test is true on
+    the entry that says it runs the tests."""
+    out = []
+    for t in j2_types.template(kind):
+        objs = {o.get("name") for o in t.get("objects") or [] if any(f.get("name") == "path" for f in o.get("fields") or [])}
+        if not any(f.get("type") in {f"list[{o}]" for o in objs} for f in t.get("fields") or []):
+            continue
+        for m in re.finditer(r"(?m)^\s*[-*+]\s+`([^`\n]+)`\s*:?\s*(.*)$", md_section(doc, t["section"]) or ""):
+            out.append({"path": m[1].strip().replace("\\", "/"), "text": m[2].strip(),
+                        "test": bool(re.search(r"\bRuns the tests: yes\b", m[2], re.I))})
+    return out
 
 
 def _no_dups(items):
@@ -3070,7 +3103,10 @@ def stage_goal(kind, base, chain):
             "item_checks": {t: {"type": "section-not-empty", "target": s, "expect": 1}      # P30 (D433): one item per section
                             for t, s in zip(items, output_def(kind)["sections"])},
             "to_be_confirmed": [],
-            "dropped_from_brief": [], "visitor_needs": [], "chain": {**chain, "prd_ids": reqs, "hld_ids": comps}}
+            "dropped_from_brief": [], "visitor_needs": [],
+            # every earlier document's ids under "<type>_ids" (a chain-ids condition's key), not only the PRD's and the HLD's
+            "chain": {**chain, **{f"{k}_ids": [x["id"] for x in v.get("requirements") or v.get("components") or []]
+                                  for k, v in chain.items() if isinstance(v, dict)}, "prd_ids": reqs, "hld_ids": comps}}
 
 
 # ---- what the department builds: one registry entry per output type. The flow, agents, budget, rulings, receipts
@@ -4226,9 +4262,26 @@ class J2Run:
             ' (section/element only, default 1)', ' (leave out)').replace(', "steps": [str] (behavior only)', '').replace('"R-6"', f'"{self.out["rubric"][0][0]}", "P2"').replace(
             '"outputs": [str], ', '"outputs": [str], "sections": [str] (the section(s) it writes, named exactly as in '
             'the section list), ')
-        self.WF_FMT = doc_fmt(J2Run.WF_FMT) if self.doc else J2Run.WF_FMT
-        self.GRANT_FMT = doc_fmt(J2Run.GRANT_FMT) if self.doc else J2Run.GRANT_FMT
+        # A folder's agents (code, scripts, configs) get the folder form's check types, and files where the page format
+        # says sections, class names and selectors: nothing of a web page is asked of a folder build.
+        folder_fmt = lambda f: f.replace(WF_TYPES, types).replace(WF_KINDS, kinds).replace(
+            ' (section/element only, default 1)', ' (leave out)').replace(', "steps": [str] (behavior only)', '').replace(
+            '"R-6"', f'"{self.out["rubric"][0][0]}"').replace(
+            'whose site section this one rewrites; null adds a new section)', 'whose files this one rewrites; null adds new files)').replace(
+            'naming every section id and class name it creates)', 'naming every file it writes, each a path inside the folder)').replace(
+            '"date_control": str|null (when it covers a done-when item whose rule depends on a date and its output is a '
+            'page: the selector of the control that sets the date, which its behavior steps set), "date_case": str|null '
+            '(the same with no page: the test case that covers the date), ',
+            '"date_case": str|null (when it covers a done-when item whose rule depends on a date: the test case that covers '
+            'the date), ')
+        fmt = doc_fmt if self.doc else folder_fmt if self.folder else (lambda f: f)
+        self.WF_FMT = fmt(J2Run.WF_FMT)
+        self.GRANT_FMT = fmt(J2Run.GRANT_FMT)
         self.ATOM_RULES = self.out.get("atom_rules") or J2Run.ATOM_RULES
+        if self.folder:      # one way to write a path, in the plan and in its checks: from inside the builder's folder
+            self.ATOM_RULES += ("\nPATHS: every path in outputs, steps, expected_output and verification is written from inside "
+                                f"the builder's folder, never with the folder's own name in front: \"run.py\", never "
+                                f"\"{self.out.get('folder') or 'folder'}/run.py\". Use the same path for a file everywhere.")
         if llm.tools_on() and self.out.get("tools"):      # the general path: builders with tools (builder_tools.atom_rules)
             self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("atom_rules") or "")
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
@@ -4605,8 +4658,9 @@ class J2Run:
         sections' agent_output are in its task. No chat, no other workflows, no audits, no budget. Mock runs keep the
         full context, so the mock goldens' prompts are unchanged."""
         s, w = json.loads(self.state(fn)), self._wf(fn) or {}
-        keep = ("requester_brief", "requester_feedback", "requester_decisions", "site_sections", "style_guide") \
-            + (() if self.doc else ("charter",))
+        keep = ("requester_brief", "requester_feedback", "requester_decisions") \
+            + (() if self.folder else ("site_sections", "style_guide")) \
+            + (() if self.doc else ("charter",))      # a folder build has no page sections and no style guide
         fixes, found = {str(f) for f in w.get("fixes") or []}, {}
         for a in reversed(self.audits):      # each finding as Audit last wrote it
             for r in a["results"]:
@@ -5794,7 +5848,13 @@ class J2Run:
                                                   'workflow implements, e.g. "S1"), "covers": [int]')
                 self.GRANT_FMT = self.GRANT_FMT.replace('"covers": [int]', '"lld_sections": [str], "covers": [int]')
             return self._handoff("identity", kind="intake")
-        self.goal = stage_goal(kind, self.stage_archive[0]["goal"], dict(self.chain))
+        if self.folder:      # a folder built after documents: its charter is what the documents say, never a document's charter
+            self.goal = self._folder_stage_goal(kind)
+            if self.goal is None:      # no document lists the files and their test: Identity asks, as for a folder asked for alone
+                self.post("system", f"The documents are done. Now the {self.out['label'].lower()}, built from them.")
+                return self._handoff("identity", kind="intake")
+        else:
+            self.goal = stage_goal(kind, self.stage_archive[0]["goal"], dict(self.chain))
         if self.intake:      # what the Requester told Identity before the first document (details, form fields) is in every stage's charter
             self.goal["requester_answers"] = [x["answer"] for x in self.intake]
         self.goal["charter_items"] = list(self.goal["done_when"])
@@ -5802,9 +5862,56 @@ class J2Run:
         self.goal.pop("core", None)
         self.save("goal.json", self.goal)
         self.stamped = True
-        self.post("system", f"Next: the {kind.upper()}, written from the {'PRD' if kind == 'hld' else 'HLD'}'s agent_output.")
+        # the website documents keep their words; any other stage names the documents it is really written from
+        earlier = and_list(f"the {output_def(k)['noun']}" for k in self.docs if k != kind)
+        self.post("system", f"Next: the {kind.upper()}, written from the {'PRD' if kind == 'hld' else 'HLD'}'s agent_output."
+                  if kind in ("hld", "lld") else
+                  f"Next: the {output_def(kind)['noun']}, {'built' if self.folder else 'written'} from {earlier or 'the charter'}.")
         self._handoff("adaptation", kind="propose", new_cycle=True,
                       why=f"The {self.stages[self.stage_i - 1].upper()} is done. Propose the first workflows for the {kind.upper()}.")
+
+    def _folder_stage_goal(self, kind):
+        """Code's charter for a folder (code, scripts, configs) built after documents, or None when no finished document
+        lists the build's files with one that runs the tests. The files and the test come from the latest document that
+        lists them (doc_files); what it may touch and what it must never do from the earlier documents' agent_output
+        (their `actions` and `never` lists); `design` holds that document's sections that carry no ids (its limits, its
+        settings), which the chain does not hand on. One done-when item per file and one for the test, each with its check."""
+        own = str(self.out.get("folder") or "").strip("/")
+        for d in reversed(list(self.docs)):
+            try:
+                with open(os.path.join(self.dir, self.docs[d]["file"]), encoding="utf-8") as f:
+                    text = f.read()
+            except (OSError, KeyError, TypeError):
+                continue
+            paths = {}
+            for e in doc_files(d, text):
+                p = re.sub(r"^(?:\./)+", "", e["path"])
+                p = p[len(own) + 1:] if own and p.startswith(own + "/") else p      # a path written with the folder's own name
+                if p and not p.startswith("/") and not re.match(r"[A-Za-z]:", p) and ".." not in p.split("/"):
+                    paths.setdefault(p, e)
+            test = next((p for p, e in paths.items() if e["test"]), None) or next(
+                (p for p in paths if os.path.basename(p).startswith("test")), None)
+            if paths and test:
+                break
+        else:
+            return None
+        goal = stage_goal(kind, self.stage_archive[0]["goal"], dict(self.chain))
+        lists = lambda key: [x for v in self.chain.values() if isinstance(v, dict) for x in v.get(key) or []]
+        items = [f"{p} is in the folder" for p in paths] + [f"The test {test} passes when code runs it"]
+        checks = {f"{p} is in the folder": {"type": "file-exists", "target": p, "expect": True} for p in paths}
+        checks[items[-1]] = {"type": "test-passed", "target": test, "expect": True}
+        made_from = and_list("the " + output_def(k)["noun"] for k in self.docs)
+        goal.update({
+            "statement": f"{self.out['label']} for {goal['product_name']}, built from {made_from}",
+            "audience": goal.get("audience") or goal.get("users") or "",
+            "standards": ["Every file traceable to the documents"],
+            "files": list(paths), "test": test,
+            "may_touch": [f"{x['id']}: {x['text']}" for x in lists("actions")],
+            "never_do": [re.split(r"\.?\s+Shown by:", x["text"])[0].strip() for x in lists("never")],
+            "design": {t["section"]: (md_section(text, t["section"]) or "")[:INPUT_LIMIT] for t in j2_types.template(d)
+                       if not any(r.get("rule") == "ids_sequential" for r in t.get("rules") or [])},
+            "done_when": items, "core": [True] * len(items), "item_kinds": {}, "item_checks": checks})
+        return goal
 
     def _deed_stage(self, kind):
         """A send deed after the documents: one workflow, one atom, no charter, plan, builder or audit. Code builds the
@@ -7262,7 +7369,7 @@ class J2Run:
                 out.setdefault(("rubric", r["id"]), r["criterion"])
         mech = (last or {}).get("mechanical") or {}
         for p in (j2_check.problems(mech) if mech.get("available") else ["the browser check didn't run"]) \
-                if last and not self.doc else []:
+                if last and not self.doc and not self.folder else []:      # a folder has no page: no browser check to miss
             out.setdefault(("check", p), p)
         for c in (last or {}).get("conditions") or [] if not self.doc else []:   # by their text (the Requester reads it)
             if blocks(c) and not (not self.doc and c.get("check") in RENDER_CONDITIONS):

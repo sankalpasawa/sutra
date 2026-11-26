@@ -1,0 +1,1664 @@
+{
+  "schema": "template-library/1",
+  "artifact": "agent_prd",
+  "kind": "generic",
+  "version": 1,
+  "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
+  "assumptions_section": true,
+  "templates": [
+    {
+      "name": "Agent PRD/1 · Problem",
+      "artifact": "agent_prd",
+      "section": "Problem",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Problem template: the fixed layout of every Agent PRD Problem section, whatever the agent",
+      "model": "AgentPRDProblem",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "statement",
+          "type": "string",
+          "required": true,
+          "description": "the problem the agent solves, in the charter's own words",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "statement",
+          "name": "the problem statement is given",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "text": "{statement}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Users",
+      "artifact": "agent_prd",
+      "section": "Users",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Users template: the fixed layout of every Agent PRD Users section, whatever the agent",
+      "model": "AgentPRDUsers",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "users",
+          "type": "list[UserGroup]",
+          "required": true,
+          "description": "who receives the agent's output, who approves its actions and who is told when a run fails",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "UserGroup",
+          "fields": [
+            {
+              "name": "group",
+              "type": "string",
+              "required": true,
+              "description": "the name of this group, as the charter names it",
+              "nullable": false
+            },
+            {
+              "name": "needs",
+              "type": "string",
+              "required": false,
+              "description": "what this group needs from the agent",
+              "nullable": false
+            },
+            {
+              "name": "actions",
+              "type": "list[string]",
+              "required": false,
+              "description": "what this group does with the agent (reads the output, approves, is notified); empty when it does nothing in this version",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "users[].group",
+          "name": "every group is named",
+          "from": "AP1"
+        },
+        {
+          "rule": "one_of_present",
+          "path": [
+            "users[].actions",
+            "users[].needs"
+          ],
+          "name": "every group says what it does or what it needs",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "users",
+          "line": "- {group}: {needs|receives the output}[; they {actions}]."
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Goals",
+      "artifact": "agent_prd",
+      "section": "Goals",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Goals template: the fixed layout of every Agent PRD Goals section, whatever the agent",
+      "model": "AgentPRDGoals",
+      "conditions": [
+        "AP1",
+        "AP5"
+      ],
+      "fields": [
+        {
+          "name": "goals",
+          "type": "list[Goal]",
+          "required": true,
+          "description": "the goals, G1, G2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Goal",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "G1, G2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "statement",
+              "type": "string",
+              "required": true,
+              "description": "the goal in one line",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "goals",
+          "prefix": "G",
+          "name": "ids G1, G2, ... unique and in order",
+          "from": "AP5"
+        }
+      ],
+      "render": [
+        {
+          "each": "goals",
+          "line": "- **{id}**: {statement}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "goals",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Success metrics",
+      "artifact": "agent_prd",
+      "section": "Success metrics",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Success metrics template: the fixed layout of every Agent PRD Success metrics section, whatever the agent",
+      "model": "AgentPRDSuccessMetrics",
+      "conditions": [
+        "AP1",
+        "AP5",
+        "AP10"
+      ],
+      "fields": [
+        {
+          "name": "success_metrics",
+          "type": "list[SuccessMetric]",
+          "required": true,
+          "description": "one metric per goal, written as a rate over a stated number of runs or items",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "SuccessMetric",
+          "fields": [
+            {
+              "name": "goal",
+              "type": "string",
+              "required": true,
+              "description": "the goal id this metric measures, e.g. \"G1\"",
+              "nullable": false
+            },
+            {
+              "name": "metric",
+              "type": "string",
+              "required": true,
+              "description": "what is measured, e.g. \"share of runs whose digest lists every urgent email\"",
+              "nullable": false
+            },
+            {
+              "name": "target",
+              "type": "string",
+              "required": false,
+              "description": "the number to reach, with its denominator, e.g. \"19 of 20 runs\"",
+              "nullable": false
+            },
+            {
+              "name": "window",
+              "type": "string",
+              "required": false,
+              "description": "the measurement window, e.g. \"over the first 100 runs\"; write \"measurement window not set\" when the brief doesn't say",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ref_exists",
+          "path": "success_metrics[].goal",
+          "target": "this.goals[].id",
+          "name": "every metric names a goal id of this document",
+          "from": "AP5"
+        }
+      ],
+      "render": [
+        {
+          "each": "success_metrics",
+          "line": "| {goal} | {metric} | {target|not set} | {window|measurement window not set} |",
+          "head": "| Goal | Metric | Target | Window |\n|---|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Approach",
+      "artifact": "agent_prd",
+      "section": "Approach",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Approach template: the fixed layout of every Agent PRD Approach section, whatever the agent",
+      "model": "AgentPRDApproach",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "approach",
+          "type": "string",
+          "required": true,
+          "description": "how the agent works, in a few sentences, with no design detail",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "approach",
+          "name": "the approach is given",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "text": "{approach}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Trigger",
+      "artifact": "agent_prd",
+      "section": "Trigger",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Trigger template: the fixed layout of every Agent PRD Trigger section, whatever the agent",
+      "model": "AgentPRDTrigger",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "trigger",
+          "type": "Trigger",
+          "required": true,
+          "description": "when the agent starts and what one unit of its work covers",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Trigger",
+          "fields": [
+            {
+              "name": "type",
+              "type": "string",
+              "required": true,
+              "description": "schedule, event, on_demand or conversation",
+              "enum": [
+                "schedule",
+                "event",
+                "on_demand",
+                "conversation"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "unit",
+              "type": "string",
+              "required": true,
+              "description": "one unit of work: a run, a turn of a conversation, or a whole session",
+              "enum": [
+                "run",
+                "turn",
+                "session"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "when",
+              "type": "string",
+              "required": false,
+              "description": "the schedule (e.g. \"every 15 minutes\") or the event that starts it (e.g. \"a new ticket\")",
+              "nullable": false
+            },
+            {
+              "name": "input",
+              "type": "string",
+              "required": true,
+              "description": "what one unit reads",
+              "nullable": false
+            },
+            {
+              "name": "already_processed",
+              "type": "string",
+              "required": false,
+              "description": "how items handled before are left out of the next unit; \"not applicable\" for a conversation",
+              "nullable": false
+            },
+            {
+              "name": "overlap",
+              "type": "string",
+              "required": false,
+              "description": "what happens when a unit starts while the last is still going: skip, queue or run_both",
+              "enum": [
+                "skip",
+                "queue",
+                "run_both"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "quiet",
+              "type": "string",
+              "required": false,
+              "description": "when a unit produces nothing, e.g. \"no new email\"",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "enum",
+          "path": "trigger.type",
+          "values": [
+            "schedule",
+            "event",
+            "on_demand",
+            "conversation"
+          ],
+          "name": "the trigger type is schedule, event, on_demand or conversation",
+          "from": "AP1"
+        },
+        {
+          "rule": "enum",
+          "path": "trigger.unit",
+          "values": [
+            "run",
+            "turn",
+            "session"
+          ],
+          "name": "the unit is run, turn or session",
+          "from": "AP1"
+        },
+        {
+          "rule": "not_empty",
+          "path": "trigger.input",
+          "name": "what one unit reads is given",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "text": "- Starts on: {trigger.type}[, {trigger.when}]\n- One unit of work: a {trigger.unit}, reading {trigger.input:nodot}[\n- Already handled: {trigger.already_processed:nodot}][\n- If a unit is still going: {trigger.overlap}][\n- Produces nothing when: {trigger.quiet:nodot}]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Key flows",
+      "artifact": "agent_prd",
+      "section": "Key flows",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Key flows template: the fixed layout of every Agent PRD Key flows section, whatever the agent",
+      "model": "AgentPRDKeyFlows",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "key_flows",
+          "type": "list[KeyFlow]",
+          "required": true,
+          "description": "the main ways the agent is used, most important first",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "KeyFlow",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "the flow's name",
+              "nullable": false
+            },
+            {
+              "name": "steps",
+              "type": "list[string]",
+              "required": true,
+              "description": "what happens, in order",
+              "nullable": false
+            },
+            {
+              "name": "failure",
+              "type": "string",
+              "required": false,
+              "description": "what the agent does when a step fails",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "key_flows[].name",
+            "key_flows[].steps"
+          ],
+          "name": "every flow has a name and steps",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "key_flows",
+          "line": "- **{name}**: {steps}.[ If a step fails: {failure:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Requirements",
+      "artifact": "agent_prd",
+      "section": "Requirements",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Requirements template: the fixed layout of every Agent PRD Requirements section, whatever the agent",
+      "model": "AgentPRDRequirements",
+      "conditions": [
+        "AP1",
+        "AP2"
+      ],
+      "fact_fields": true,
+      "fields": [
+        {
+          "name": "requirements",
+          "type": "list[Requirement]",
+          "required": true,
+          "description": "the requirements, R1, R2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Requirement",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "R1, R2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "statement",
+              "type": "string",
+              "required": true,
+              "description": "what the agent must do, as one checkable behaviour",
+              "nullable": false
+            },
+            {
+              "name": "priority",
+              "type": "string",
+              "required": true,
+              "description": "must, should or could",
+              "enum": [
+                "must",
+                "should",
+                "could"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "goals",
+              "type": "list[string]",
+              "required": false,
+              "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+              "nullable": false
+            },
+            {
+              "name": "acceptance",
+              "type": "string",
+              "required": true,
+              "description": "the observable result that shows it is met, e.g. \"one Slack message exists in the channel\"",
+              "nullable": false
+            },
+            {
+              "name": "checked_by",
+              "type": "string",
+              "required": true,
+              "description": "code (a check on the output), test_run (the folder's test) or rubric (a model-graded yes/no question)",
+              "enum": [
+                "code",
+                "test_run",
+                "rubric"
+              ],
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "requirements",
+          "prefix": "R",
+          "name": "ids R1, R2, ... unique and in order",
+          "from": "AP2"
+        },
+        {
+          "rule": "enum",
+          "path": "requirements[].priority",
+          "values": [
+            "must",
+            "should",
+            "could"
+          ],
+          "name": "priority is must, should or could",
+          "from": "AP2"
+        },
+        {
+          "rule": "enum",
+          "path": "requirements[].checked_by",
+          "values": [
+            "code",
+            "test_run",
+            "rubric"
+          ],
+          "name": "checked_by is code, test_run or rubric",
+          "from": "AP2"
+        },
+        {
+          "rule": "not_empty",
+          "path": "requirements[].acceptance",
+          "name": "every requirement states how it is accepted",
+          "from": "AP2"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "requirements[].goals",
+          "target": "this.goals[].id",
+          "name": "goals point at a goal id of this document",
+          "from": "AP5"
+        }
+      ],
+      "render": [
+        {
+          "each": "requirements",
+          "line": "{#}. **{id}**: {statement:nodot} ({priority|must}). Accepted when {acceptance:nodot}. Checked by {checked_by}.[ Serves {goals}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Actions and authority",
+      "artifact": "agent_prd",
+      "section": "Actions and authority",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Actions and authority template: the fixed layout of every Agent PRD Actions and authority section, whatever the agent",
+      "model": "AgentPRDActions",
+      "conditions": [
+        "AP1",
+        "AP3"
+      ],
+      "fields": [
+        {
+          "name": "actions",
+          "type": "list[Action]",
+          "required": true,
+          "description": "every action the agent may take on an outside system, A1, A2, ... in order; an action not listed is not allowed",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Action",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "A1, A2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "action",
+              "type": "string",
+              "required": true,
+              "description": "what the agent does, e.g. \"post the digest\"",
+              "nullable": false
+            },
+            {
+              "name": "system",
+              "type": "string",
+              "required": true,
+              "description": "the outside system it touches, e.g. \"the Slack channel #inbox-digest\"",
+              "nullable": false
+            },
+            {
+              "name": "access",
+              "type": "string",
+              "required": true,
+              "description": "read or write",
+              "enum": [
+                "read",
+                "write"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "authority",
+              "type": "string",
+              "required": true,
+              "description": "autonomous, or with_confirmation when a person approves each time",
+              "enum": [
+                "autonomous",
+                "with_confirmation"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "reversible",
+              "type": "boolean",
+              "required": true,
+              "description": "true when the action can be undone",
+              "nullable": false
+            },
+            {
+              "name": "requirements",
+              "type": "list[string]",
+              "required": false,
+              "description": "the requirement ids this action serves, e.g. [\"R3\"]",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "actions",
+          "prefix": "A",
+          "name": "ids A1, A2, ... unique and in order",
+          "from": "AP3"
+        },
+        {
+          "rule": "not_empty",
+          "path": [
+            "actions[].action",
+            "actions[].system"
+          ],
+          "name": "every action says what it does and to which system",
+          "from": "AP3"
+        },
+        {
+          "rule": "enum",
+          "path": "actions[].access",
+          "values": [
+            "read",
+            "write"
+          ],
+          "name": "access is read or write",
+          "from": "AP3"
+        },
+        {
+          "rule": "enum",
+          "path": "actions[].authority",
+          "values": [
+            "autonomous",
+            "with_confirmation"
+          ],
+          "name": "authority is autonomous or with_confirmation",
+          "from": "AP3"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "actions[].requirements",
+          "target": "this.requirements[].id",
+          "name": "requirements point at a requirement id of this document",
+          "from": "AP3"
+        }
+      ],
+      "render": [
+        {
+          "each": "actions",
+          "line": "| {id} | {action} | {system} | {access} | {authority} | {reversible:yesno} | {requirements|none} |",
+          "head": "| Id | Action | System | Access | Authority | Reversible | Serves |\n|---|---|---|---|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Must never do",
+      "artifact": "agent_prd",
+      "section": "Must never do",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Must never do template: the fixed layout of every Agent PRD Must never do section, whatever the agent",
+      "model": "AgentPRDNever",
+      "conditions": [
+        "AP1",
+        "AP4"
+      ],
+      "fields": [
+        {
+          "name": "never",
+          "type": "list[NeverRule]",
+          "required": true,
+          "description": "the rules with zero tolerance, N1, N2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "NeverRule",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "N1, N2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "statement",
+              "type": "string",
+              "required": true,
+              "description": "what the agent must never do, e.g. \"post to any channel other than the configured one\"",
+              "nullable": false
+            },
+            {
+              "name": "check",
+              "type": "string",
+              "required": false,
+              "description": "the one pass/fail check that shows a violation",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "never",
+          "prefix": "N",
+          "name": "ids N1, N2, ... unique and in order",
+          "from": "AP4"
+        },
+        {
+          "rule": "not_empty",
+          "path": "never[].statement",
+          "name": "every rule says what is never done",
+          "from": "AP4"
+        }
+      ],
+      "render": [
+        {
+          "each": "never",
+          "line": "- **{id}**: {statement:nodot}.[ Shown by: {check:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Failure behaviour",
+      "artifact": "agent_prd",
+      "section": "Failure behaviour",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Failure behaviour template: the fixed layout of every Agent PRD Failure behaviour section, whatever the agent",
+      "model": "AgentPRDFailures",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "failures",
+          "type": "list[Failure]",
+          "required": false,
+          "description": "what happens when a unit cannot finish and nobody is present, F1, F2, ...; write \"Not needed for this agent: <why>\" as an assumption when there is nothing to add",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Failure",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "F1, F2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "failure",
+              "type": "string",
+              "required": true,
+              "description": "what goes wrong, e.g. \"the mailbox can't be reached\"",
+              "nullable": false
+            },
+            {
+              "name": "shown",
+              "type": "string",
+              "required": false,
+              "description": "what the user sees",
+              "nullable": false
+            },
+            {
+              "name": "next",
+              "type": "string",
+              "required": true,
+              "description": "retry, skip_run or stop_and_notify",
+              "enum": [
+                "retry",
+                "skip_run",
+                "stop_and_notify"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "notify",
+              "type": "string",
+              "required": true,
+              "description": "who is told, and how",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "failures",
+          "prefix": "F",
+          "name": "ids F1, F2, ... unique and in order",
+          "from": "AP1"
+        },
+        {
+          "rule": "enum",
+          "path": "failures[].next",
+          "values": [
+            "retry",
+            "skip_run",
+            "stop_and_notify"
+          ],
+          "name": "next is retry, skip_run or stop_and_notify",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "failures",
+          "line": "- **{id}** {failure:nodot}: {next}; {notify:nodot}.[ The user sees: {shown:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "failures",
+        "shown",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Quality and constraints",
+      "artifact": "agent_prd",
+      "section": "Quality and constraints",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Quality and constraints template: the fixed layout of every Agent PRD Quality and constraints section, whatever the agent",
+      "model": "AgentPRDQuality",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "quality",
+          "type": "list[QualityNeed]",
+          "required": true,
+          "description": "what must hold however it is built: cost per unit, time per unit, privacy, what may appear in the output",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "QualityNeed",
+          "fields": [
+            {
+              "name": "area",
+              "type": "string",
+              "required": true,
+              "description": "e.g. Cost, Time, Privacy, Output",
+              "nullable": false
+            },
+            {
+              "name": "requirement",
+              "type": "string",
+              "required": true,
+              "description": "what must hold, with its number",
+              "nullable": false
+            },
+            {
+              "name": "check",
+              "type": "string",
+              "required": false,
+              "description": "how it is checked",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "quality[].area",
+            "quality[].requirement"
+          ],
+          "name": "every need names its area and what must hold",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "quality",
+          "line": "| {area} | {requirement} | {check|by reading the build} |",
+          "head": "| Area | What must hold | How it is checked |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Evaluation",
+      "artifact": "agent_prd",
+      "section": "Evaluation",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Evaluation template: the fixed layout of every Agent PRD Evaluation section, whatever the agent",
+      "model": "AgentPRDEvaluation",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "eval_set",
+          "type": "string",
+          "required": false,
+          "description": "the name and version of the case set, e.g. \"inbox-cases v1\"",
+          "nullable": false
+        },
+        {
+          "name": "cases",
+          "type": "list[EvalCase]",
+          "required": false,
+          "description": "the cases, V1, V2, ...; only when the problem is defined tightly enough to name them before the build, else \"Not needed for this agent: <why>\" as an assumption",
+          "nullable": false
+        },
+        {
+          "name": "trials",
+          "type": "integer",
+          "required": false,
+          "description": "how many times each case is run",
+          "nullable": false
+        },
+        {
+          "name": "pass_rule",
+          "type": "string",
+          "required": false,
+          "description": "what counts as a pass for the set, e.g. \"every case passes in 3 of 3 trials\"",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "EvalCase",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "V1, V2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "situation",
+              "type": "string",
+              "required": true,
+              "description": "the input or state the case starts from",
+              "nullable": false
+            },
+            {
+              "name": "expected",
+              "type": "string",
+              "required": true,
+              "description": "the result that must hold",
+              "nullable": false
+            },
+            {
+              "name": "covers",
+              "type": "list[string]",
+              "required": false,
+              "description": "the requirement ids it checks, e.g. [\"R2\"]",
+              "nullable": false
+            },
+            {
+              "name": "grader",
+              "type": "string",
+              "required": true,
+              "description": "code or rubric",
+              "enum": [
+                "code",
+                "rubric"
+              ],
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "cases",
+          "prefix": "V",
+          "name": "ids V1, V2, ... unique and in order",
+          "from": "AP1"
+        },
+        {
+          "rule": "enum",
+          "path": "cases[].grader",
+          "values": [
+            "code",
+            "rubric"
+          ],
+          "name": "the grader is code or rubric",
+          "from": "AP1"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "cases[].covers",
+          "target": "this.requirements[].id",
+          "name": "covers points at a requirement id of this document",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "text": "[Case set: {eval_set}.][ Each case runs {trials} time(s).][ Pass: {pass_rule:nodot}.]"
+        },
+        {
+          "each": "cases",
+          "line": "- **{id}** ({grader}): {situation:nodot}; expects {expected:nodot}.[ Covers {covers}.]",
+          "gap": true
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "eval_set",
+        "cases",
+        "trials",
+        "pass_rule",
+        "covers",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Dependencies",
+      "artifact": "agent_prd",
+      "section": "Dependencies",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Dependencies template: the fixed layout of every Agent PRD Dependencies section, whatever the agent",
+      "model": "AgentPRDDependencies",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "dependencies",
+          "type": "list[Dependency]",
+          "required": true,
+          "description": "the access, credentials, data and services the agent needs from outside",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Dependency",
+          "fields": [
+            {
+              "name": "needed",
+              "type": "string",
+              "required": true,
+              "description": "what is needed, e.g. \"read access to the mailbox\"",
+              "nullable": false
+            },
+            {
+              "name": "source",
+              "type": "string",
+              "required": true,
+              "description": "who or what provides it",
+              "nullable": false
+            },
+            {
+              "name": "state",
+              "type": "string",
+              "required": false,
+              "description": "given, asked for or not yet known",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "dependencies[].needed",
+            "dependencies[].source"
+          ],
+          "name": "every dependency says what is needed and from where",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "dependencies",
+          "line": "| {needed} | {source} | {state|not yet known} |",
+          "head": "| Needed | From | State |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Risks",
+      "artifact": "agent_prd",
+      "section": "Risks",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Risks template: the fixed layout of every Agent PRD Risks section, whatever the agent",
+      "model": "AgentPRDRisks",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "risks",
+          "type": "list[ProductRisk]",
+          "required": true,
+          "description": "what could stop the agent meeting its goals, mostly how it behaves",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "ProductRisk",
+          "fields": [
+            {
+              "name": "risk",
+              "type": "string",
+              "required": true,
+              "description": "the risk, one line",
+              "nullable": false
+            },
+            {
+              "name": "effect",
+              "type": "string",
+              "required": true,
+              "description": "what happens if it occurs",
+              "nullable": false
+            },
+            {
+              "name": "mitigation",
+              "type": "string",
+              "required": true,
+              "description": "what is done about it",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "risks[].risk",
+            "risks[].mitigation"
+          ],
+          "name": "every risk has a mitigation",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "risks",
+          "line": "| {risk} | {effect} | {mitigation} |",
+          "head": "| Risk | Effect | What is done about it |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Out of scope",
+      "artifact": "agent_prd",
+      "section": "Out of scope",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 · Out of scope template: the fixed layout of every Agent PRD Out of scope section, whatever the agent",
+      "model": "AgentPRDOutOfScope",
+      "conditions": [
+        "AP1"
+      ],
+      "fields": [
+        {
+          "name": "out_of_scope",
+          "type": "list[string]",
+          "required": true,
+          "description": "what the agent will not do, one line each",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "out_of_scope",
+          "name": "the out-of-scope lines are given",
+          "from": "AP1"
+        }
+      ],
+      "render": [
+        {
+          "each": "out_of_scope",
+          "line": "- {_}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ],
+      "reply_optional": [
+        "out_of_scope",
+        "assumptions"
+      ]
+    },
+    {
+      "name": "Agent PRD/1 · Document",
+      "artifact": "agent_prd",
+      "section": "Document",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic Agent PRD/1 document template: the whole Agent PRD as one object, every section in order, as the agent reads it and as the renderer writes it",
+      "model": "AgentPRD",
+      "fields": [
+        {
+          "name": "statement",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "users",
+          "type": "list[UserGroup]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "goals",
+          "type": "list[Goal]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "success_metrics",
+          "type": "list[SuccessMetric]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "approach",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "trigger",
+          "type": "Trigger",
+          "required": false,
+          "description": "",
+          "nullable": true
+        },
+        {
+          "name": "key_flows",
+          "type": "list[KeyFlow]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "requirements",
+          "type": "list[Requirement]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "actions",
+          "type": "list[Action]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "never",
+          "type": "list[NeverRule]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "failures",
+          "type": "list[Failure]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "quality",
+          "type": "list[QualityNeed]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "eval_set",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "cases",
+          "type": "list[EvalCase]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "trials",
+          "type": "integer",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "pass_rule",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "dependencies",
+          "type": "list[Dependency]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "risks",
+          "type": "list[ProductRisk]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "out_of_scope",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "reply_optional": [
+        "goals",
+        "out_of_scope",
+        "assumptions",
+        "needs",
+        "actions",
+        "target",
+        "window",
+        "goals",
+        "failures",
+        "shown",
+        "eval_set",
+        "cases",
+        "trials",
+        "pass_rule",
+        "covers",
+        "when",
+        "already_processed",
+        "overlap",
+        "quiet",
+        "failure",
+        "check",
+        "state",
+        "requirements"
+      ]
+    }
+  ]
+}

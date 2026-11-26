@@ -21,7 +21,7 @@ test("in node there is no page: the style is classic and nothing is touched", ()
   assert.deepEqual(A.KEYS, ["asha", "mira", "kabir", "dev", "nora"]);
 });
 
-test("the illustrated avatar is the portrait from 32 px up and the compact mark below, on that person's own disc", () => {
+test("the illustrated avatar is the portrait from 20 px up and the compact mark below, on that person's own disc", () => {
   for (const [i, key] of A.KEYS.entries()) {
     const big = A.svg(key, 40, {cls: "fdface"}), small = A.svg(key, 16, {cls: "av"});
     assert.match(big, new RegExp('^<svg class="fdface avill" data-face="' + key + '" width="40" height="40" viewBox="0 0 64 64" aria-hidden="true">'));
@@ -31,8 +31,10 @@ test("the illustrated avatar is the portrait from 32 px up and the compact mark 
     assert.ok(!/fill="D"/.test(small), "every cut-out got the disc colour");
     assert.ok(fs.statSync(path.join(STATIC, "img/avatars", key + ".webp")).size > 2000, key + ".webp is in the package");
   }
-  assert.ok(A.svg("asha", 32).includes("<image") && !A.svg("asha", 31).includes("<image"), "the cut is 32 px");
-  assert.equal(A.CUT, 32);
+  assert.ok(A.svg("asha", 20).includes("<image") && !A.svg("asha", 19).includes("<image"), "the cut is 20 px");
+  assert.ok(A.svg("asha", 26).includes("<image"), "the live view's step row (26 px) shows the face");
+  assert.ok(A.svg("mira", 22).includes("<image href=\"/ui/img/avatars/mira.webp\""), "a plan row (22 px) shows the face");
+  assert.equal(A.CUT, 20);
 });
 
 test("a label is opt-in, an unknown key is Asha, and nothing from the caller reaches the markup unescaped", () => {
