@@ -297,8 +297,13 @@ def _lines_html(lines, ids, tag="p", cls=""):
 
 
 # ------------------------------------------------------------------------------------------------------------- the body
-def _body(bl, ids, title_used, slug, toc):
-    parts, open_sec = [], False
+def _body(bl, ids, title_used, slug, toc, pics=None):
+    parts, open_sec, sec = [], False, ""
+    pics = dict(pics or {})
+
+    def close():      # a picture drawn from the text goes at the end of the section it belongs to (D457)
+        if sec in pics:
+            parts.append(pics.pop(sec))
     for k, b in enumerate(bl):
         t = b["t"]
         if t == "h":
@@ -306,6 +311,8 @@ def _body(bl, ids, title_used, slug, toc):
                 continue
             lvl, text = b["level"], b["text"]
             if lvl <= 2:
+                close()
+                sec = _plain(text)
                 if open_sec:
                     parts.append("</section>")
                 sid = slug(text)
@@ -319,9 +326,11 @@ def _body(bl, ids, title_used, slug, toc):
                     toc.append((3, sid, _plain(text)))
                 parts.append(f'<h{lvl} id="{sid}">{inline(text, ids)}</h{lvl}>')
         elif t == "p":
-            parts.append(_lines_html(b["lines"], ids))
+            fail = sec == FLOWS_SECTION and re.match(r"If\b[^:]{3,}:", b["lines"][0])
+            parts.append(_lines_html(b["lines"], ids, cls=' class="failpath"' if fail else ""))
         elif t == "list":
-            parts.append(_list_html(b, ids, slug, toc))
+            parts.append(_flow_html(b, ids) if sec == FLOWS_SECTION and b["ordered"] and not _has_diagram(bl, sec)
+                         else _list_html(b, ids, slug, toc))
         elif t == "table":
             parts.append(_table_html(b, ids))
         elif t == "code":
@@ -330,9 +339,133 @@ def _body(bl, ids, title_used, slug, toc):
             parts.append(_quote_html(b, ids, slug, toc))
         elif t == "hr":
             parts.append("<hr>")
+    close()
     if open_sec:
         parts.append("</section>")
     return "".join(parts)
+
+
+# ------------------------------------------------------------------------------------------------------------- pictures from the text
+# D457 (carries P36 of the PRD template change): what the reader draws from a document's own words where the document has no diagram
+# of its own. A numbered list under "Key flows" is a chain of steps, an "If ...:" line under it the failure path; a document with
+# "Users" and "Dependencies" gets a context picture at the end of "Approach" (the people, the product, what it depends on); a design
+# with "Components" (ids C1, C2, ...) and "Data flow" lines that say "X to Y" gets its architecture at the end of "Data flow".
+# Nothing is drawn that the text does not say; the Markdown, and so its download and the Word file, are unchanged.
+FLOWS_SECTION, PEOPLE_SECTION, NEEDS_SECTION, PICTURE_AFTER = "Key flows", "Users", "Dependencies", "Approach"
+COMPONENTS_SECTION, DATAFLOW_SECTION = "Components", "Data flow"
+PICTURE_MAX = 6
+COMP_ID = re.compile(r"^C\d{1,3}$")
+
+
+def _sections(bl):
+    """{h2 heading: [its blocks]}."""
+    out, cur = {}, None
+    for b in bl:
+        if b["t"] == "h" and b["level"] <= 2:
+            cur = _plain(b["text"])
+            out.setdefault(cur, [])
+        elif cur is not None:
+            out[cur].append(b)
+    return out
+
+
+def _has_diagram(bl, sec):
+    return any(b["t"] == "code" and b["lang"] in DIAGRAM_LANGS for b in _sections(bl).get(sec, []))
+
+
+def _bold_lead(text):
+    m = re.match(r"\*\*(.+?)\*\*", str(text).strip())
+    return _plain(m[1]).strip(" :.") if m else ""
+
+
+def _flow_html(b, ids):
+    """The numbered steps of Key flows as a chain, each step's words as written."""
+    steps = [f'<li><span class="fn">{n}</span><div>{_lines_html(it["lines"], ids, tag="")}</div></li>'
+             for n, it in enumerate(b["items"], b["start"])]
+    return f'<ol class="flowchain" start="{b["start"]}" aria-label="{FLOWS_SECTION}, as steps">{"".join(steps)}</ol>'
+
+
+def _context_html(bl, title):
+    """People, the product and what it depends on, from Users and Dependencies; "" without both."""
+    secs = _sections(bl)
+    people, needs = [], []
+    for b in secs.get(PEOPLE_SECTION, []):
+        if b["t"] == "p":
+            people += [x for x in [_bold_lead(b["lines"][0])] if x]
+        elif b["t"] == "list":
+            people += [x for x in (_bold_lead(it["lines"][0]) for it in b["items"]) if x]
+        elif b["t"] == "table":
+            people += [_plain(r[0]) for r in b["rows"] if r and r[0].strip()]
+    for b in secs.get(NEEDS_SECTION, []):
+        if b["t"] == "table":
+            needs += [_plain(r[0]) for r in b["rows"] if r and r[0].strip()]
+        elif b["t"] == "list":
+            needs += [x for x in (_bold_lead(it["lines"][0]) for it in b["items"]) if x]
+    if not (title and people and needs):
+        return ""
+
+    def side(label, xs):
+        more = f'<span class="more">+{len(xs) - PICTURE_MAX} more</span>' if len(xs) > PICTURE_MAX else ""
+        return (f'<div class="side"><span class="lbl">{label}</span>'
+                + "".join(f'<span class="node">{html.escape(x[:80])}</span>' for x in xs[:PICTURE_MAX]) + more + "</div>")
+    t = html.escape(title)
+    return (f'<figure class="context" aria-label="Context: who uses {t} and what it depends on">'
+            f'{side("People", people)}<span class="arr" aria-hidden="true">&#8644;</span><div class="core">{t}</div>'
+            f'<span class="arr" aria-hidden="true">&#8644;</span>{side("Depends on", needs)}'
+            f'<figcaption>Drawn from {PEOPLE_SECTION} and {NEEDS_SECTION}.</figcaption></figure>')
+
+
+ARCH_END = r"(?:C\d{1,3}(?:/C\d{1,3})*|[A-Z][\w.-]*(?: [A-Z][\w.-]*)?)"
+ARCH_CHAIN = re.compile(rf"({ARCH_END})(?:\s*\([^)]*\))?((?:\s+to\s+{ARCH_END}(?:\s*\([^)]*\))?)+)")
+ARCH_HOP = re.compile(rf"\s+to\s+({ARCH_END})")
+
+
+def _architecture_html(bl):
+    """The components and the data flow between them, from Components (C1, C2, ...) and Data flow ("C3 to C4", "Gmail to C3",
+    "C8 to C9/C10 to Slack"); "" when fewer than two flows are found."""
+    secs = _sections(bl)
+    comps = {}
+    for b in secs.get(COMPONENTS_SECTION, []):
+        if b["t"] == "list":
+            for it in b["items"]:
+                if (m := ID_LEAD.match(it["lines"][0])) and COMP_ID.match(m[1]):
+                    comps[m[1]] = _plain(m[2] or re.split(r"\s*[(:]", m[3], maxsplit=1)[0]).strip(" .")[:40]
+        elif b["t"] == "table":
+            for r in b["rows"]:
+                if r and COMP_ID.match(r[0].strip("* ")):
+                    comps[r[0].strip("* ")] = _plain(r[1] if len(r) > 1 else "")[:40]
+    edges, seen = [], set()
+    for b in secs.get(DATAFLOW_SECTION, []):
+        if b["t"] != "list":
+            continue
+        for it in b["items"]:
+            head = _plain(" ".join(it["lines"])).split(":")[0]
+            for m in ARCH_CHAIN.finditer(head):
+                hops = [m[1]] + ARCH_HOP.findall(m[2])
+                for a, c in zip(hops, hops[1:]):
+                    for x in a.split("/"):
+                        for y in c.split("/"):
+                            if x != y and (x, y) not in seen and (COMP_ID.match(x) or COMP_ID.match(y)):
+                                seen.add((x, y))
+                                edges.append((x, y, "", False))
+    if len(edges) < 2 or not comps:
+        return ""
+    order = list(dict.fromkeys(n for e in edges for n in e[:2]))
+    nodes = {n: {"label": f"{n} {comps[n]}".strip() if n in comps else n, "shape": "box" if COMP_ID.match(n) else "ext"} for n in order}
+    alt = "Architecture: " + "; ".join(f"{nodes[a]['label']} to {nodes[c]['label']}" for a, c, *_ in edges)
+    svg = draw_graph(nodes, order, edges, horiz=False, alt=alt[:600], cls="arch")
+    return (f'<figure class="diagram arch">{svg}<figcaption>Architecture, drawn from {COMPONENTS_SECTION} and {DATAFLOW_SECTION}. '
+            "Dashed boxes are outside the product.</figcaption></figure>")
+
+
+def _pictures(bl, title):
+    """{section: the picture that ends it}, for the sections that have no diagram of their own."""
+    out = {}
+    if (ctx := _context_html(bl, title)) and not _has_diagram(bl, PICTURE_AFTER):
+        out[PICTURE_AFTER] = ctx
+    if (arch := _architecture_html(bl)) and not _has_diagram(bl, DATAFLOW_SECTION):
+        out[DATAFLOW_SECTION] = arch
+    return out
 
 
 def _list_html(b, ids, slug, toc):
@@ -550,7 +683,12 @@ def diagram_svg(source):
         return None
     if not g:
         return None
-    nodes, order, edges = g
+    return draw_graph(*g, horiz)
+
+
+def draw_graph(nodes, order, edges, horiz=False, alt="", cls=""):
+    """The SVG of a graph: `nodes` {id: {"label", "shape": box|round|diamond|start|end|ext}}, `order` the ids in reading order, `edges`
+    [(from, to, label, dashed)]. Layered left to right (`horiz`) or top to bottom; labels wrap and keep off nodes and other labels."""
     # layers: longest path from the sources, with edges that close a cycle drawn back
     idx = {n: i for i, n in enumerate(order)}
     fwd = [(a, b) for a, b, *_ in edges if idx[a] < idx[b] or (idx[a] != idx[b] and not _reaches(edges, b, a))]
@@ -651,8 +789,8 @@ def diagram_svg(source):
         labels += [f'<text class="dgl" x="{lx:.1f}" y="{top + i * 15:.1f}" text-anchor="middle">{html.escape(t)}</text>' for i, t in enumerate(lab)]
     x0, y0 = min(xs) - 12, min(ys) - 12
     W, H = max(xs) + 12 - x0, max(ys) + 12 - y0
-    out = [f'<svg class="dg" viewBox="{x0:.0f} {y0:.0f} {W:.0f} {H:.0f}" width="{W:.0f}" style="min-width:{min(W, max(W * 0.85, 320)):.0f}px"'
-           f' role="img" aria-label="{html.escape(_diagram_alt(nodes, edges))}"'
+    out = [f'<svg class="dg{(" " + cls) if cls else ""}" viewBox="{x0:.0f} {y0:.0f} {W:.0f} {H:.0f}" width="{W:.0f}" style="min-width:{min(W, max(W * 0.85, 320)):.0f}px"'
+           f' role="img" aria-label="{html.escape(alt or _diagram_alt(nodes, edges))}"'
            ' xmlns="http://www.w3.org/2000/svg"><defs><marker id="dga" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7"'
            ' orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dgah"/></marker></defs>'] + lines
     for n, v in nodes.items():
@@ -668,7 +806,7 @@ def diagram_svg(source):
             out.append(f'<path class="dgn" d="M{x + w / 2:.1f} {y:.1f}L{x + w:.1f} {y + h / 2:.1f}L{x + w / 2:.1f} {y + h:.1f}L{x:.1f} {y + h / 2:.1f}Z"/>')
         else:
             rx = 14 if v["shape"] == "round" else 6
-            out.append(f'<rect class="dgn" x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx}"/>')
+            out.append(f'<rect class="dgn{" dgx" if v["shape"] == "ext" else ""}" x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx}"/>')
         ty = y + h / 2 - (len(lab) - 1) * 8.5 + 4.5
         for i, t in enumerate(lab):
             out.append(f'<text class="dgt" x="{x + w / 2:.1f}" y="{ty + i * 17:.1f}" text-anchor="middle">{html.escape(t)}</text>')
@@ -789,6 +927,21 @@ svg.dg .dge{stroke:var(--muted);stroke-width:1.5}
 svg.dg .dgah{fill:var(--muted)}
 svg.dg .dgt{fill:var(--ink);font-size:13px;font-weight:550}
 svg.dg .dgl{fill:var(--ink);font-size:12px;paint-order:stroke;stroke:var(--paper);stroke-width:5px;stroke-linejoin:round}
+svg.dg .dgx{fill:none;stroke-dasharray:5 4}
+figure figcaption{font:12.5px/1.5 var(--f-b);color:var(--muted);margin-top:8px}
+ol.flowchain{list-style:none;padding:0;margin:4px 0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 26px}
+ol.flowchain>li{position:relative;display:flex;gap:10px;margin:0;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;background:var(--paper);font-size:14px;line-height:1.5}
+ol.flowchain>li .fn{flex:none;font:700 12px/1.6 var(--f-m);color:var(--accent)}
+ol.flowchain>li:not(:last-child)::after{content:"";position:absolute;right:-18px;top:50%;width:9px;height:9px;border:solid var(--muted);border-width:2px 2px 0 0;transform:translateY(-50%) rotate(45deg)}
+p.failpath{border:1px solid var(--line2);border-left:4px solid var(--ask);border-radius:8px;padding:8px 12px;background:var(--asksoft)}
+figure.context{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(110px,170px) auto minmax(0,1fr);align-items:center;gap:12px;border:1px solid var(--line);border-radius:10px;padding:14px;background:var(--paper)}
+figure.context .side{display:flex;flex-direction:column;gap:6px;min-width:0}
+figure.context .lbl{font:650 11px/1.4 var(--f-b);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+figure.context .node{border:1px solid var(--line2);border-radius:8px;padding:6px 10px;background:var(--paper2);font-size:14px}
+figure.context .more{font-size:12.5px;color:var(--muted)}
+figure.context .core{text-align:center;font:700 15px/1.3 var(--f-d);background:var(--ink);color:var(--paper);border-radius:10px;padding:16px 12px}
+figure.context .arr{flex:none;font-size:20px;color:var(--muted)}
+figure.context figcaption{grid-column:1/-1}
 details.dsrc{margin-top:10px;font-size:13px}
 details.dsrc summary{cursor:pointer;color:var(--muted)}
 details.dsrc pre{background:var(--codebg);border-radius:6px;padding:10px 12px;margin-top:6px}
@@ -856,6 +1009,10 @@ html.js:not(.themed) body{visibility:hidden}
  table.stack td.id::before{display:none}
  table.stack tbody tr:nth-child(even){background:none}
  ol.ids>li{grid-template-columns:40px minmax(0,1fr);gap:0 8px}
+ ol.flowchain{grid-template-columns:1fr;gap:18px}
+ ol.flowchain>li:not(:last-child)::after{right:auto;left:22px;top:auto;bottom:-14px;transform:rotate(135deg)}
+ figure.context{grid-template-columns:1fr;align-items:stretch}
+ figure.context .arr{transform:rotate(90deg);align-self:center}
 }
 """
 
@@ -914,7 +1071,8 @@ def _body_and_toc(md, title):
     first = next((i for i, b in enumerate(bl) if b["t"] == "h"), -1)
     used = first if first >= 0 and bl[first]["level"] == 1 else -1
     toc = []
-    body = _body(bl, ids, used, _slugger(), toc)
+    shown_title = _plain(bl[used]["text"]) if used >= 0 else str(title or "Document")
+    body = _body(bl, ids, used, _slugger(), toc, _pictures(bl, shown_title))
     shown = _plain(bl[used]["text"]) if used >= 0 else str(title or "Document")
     return shown, body, toc
 

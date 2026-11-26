@@ -117,3 +117,46 @@ def test_downloads_are_the_existing_files():
     assert 'data-file="fixture_prd.md"' in h and 'data-file="fixture_prd.docx"' in h and "/api/artifact?" in h
     assert 'data-file="fixture_prd.docx"' not in page(name="fixture_prd.md"), "no Word file in the run: no Word item"
     assert 'id="dl"' not in page(), "no file name (a live site page): no Download menu"
+
+
+PICS = (Path(__file__).resolve().parents[1] / "fixtures" / "doc_reader" / "fixture_pictures.md").read_text(encoding="utf-8")
+
+
+def section_html(h, sid, nxt):
+    return h[h.index(f'id="{sid}"'):h.index(f'id="{nxt}"')]
+
+
+def test_key_flows_are_a_chain_of_their_own_steps_and_the_if_line_is_the_failure_path():
+    h = r.reader_html(PICS, "d")
+    flows = section_html(h, "key-flows", "dependencies")
+    assert '<ol class="flowchain" start="1"' in flows and flows.count("<li>") == 3
+    assert "The desk reads the new mail since the last run." in flows, "each step's words as written"
+    assert '<p class="failpath">If the inbox cannot be read: the summary says so' in flows
+
+
+def test_the_context_picture_ends_approach_from_users_and_dependencies():
+    h = r.reader_html(PICS, "d")
+    approach = section_html(h, "approach", "key-flows")
+    ctx = re.search(r'<figure class="context".*?</figure>', approach, re.S)[0]
+    assert re.findall(r'<span class="node">(.*?)</span>', ctx) == ["Team lead", "Support agent", "Inbox access", "Chat account"]
+    assert '<div class="core">Fixture — Picture Desk</div>' in ctx and "Drawn from Users and Dependencies." in ctx
+    assert "figure class=\"context\"" not in r.reader_html("# T\n\n## Users\n\n**A** b.\n\n## Approach\n\nx", "d"), "no Dependencies: no picture"
+
+
+def test_the_architecture_ends_data_flow_from_components_and_its_x_to_y_lines():
+    h = r.reader_html(PICS, "d")
+    flow = h[h.index('id="data-flow"'):]
+    arch = re.search(r'<figure class="diagram arch">.*?</figure>', flow, re.S)[0]
+    for label in (">C1 Mail reader<", ">C2 Sorter<", ">C3 Summary writer<", ">Mail<", ">Chat<"):
+        assert label in arch, label
+    assert 'aria-label="Architecture: Mail to C1 Mail reader; C1 Mail reader to C2 Sorter; C2 Sorter to C3 Summary writer; C3 Summary writer to Chat"' in arch
+    assert arch.count('class="dgn dgx"') == 2, "outside systems are dashed"
+    assert "Architecture, drawn from Components and Data flow." in arch
+
+
+def test_an_authored_diagram_wins_and_the_markdown_is_unchanged():
+    authored = PICS.replace("## Data flow\n", "## Data flow\n\n```mermaid\nflowchart LR\n  A --> B\n```\n")
+    h = r.reader_html(authored, "d")
+    assert "diagram arch" not in h and h.count('<svg class="dg"') == 1
+    src = re.search(r'<pre class="src" id="src"[^>]*>(.*?)</pre>', r.reader_html(PICS, "d"), re.S)[1]
+    assert "\n".join(html.unescape(x) for x in re.findall(r"<span>(.*?)</span>", src, re.S)) == PICS
