@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 58 edits (E1 to E13, E19 to E28, E30; no E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E28a and E28b, E30a to E30d count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 57 edits (E1 to E13, E19 to E27, E30, E31; no E28 or E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E30a to E30d count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 58 edits
+    pages/j2_ui.html            the page after the 57 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -307,14 +307,6 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # E27e (D422 R2-2): the ruling's dollar question is an approval card; it takes a typed amount too, above Approve / Not now
     Edit("E27e", '  if (ok) h += `<div class="acts"><button type="button" class="pri" data-approve="yes">',
          '  if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">', 1),
-    # E28 (D434): a live real-run card has Run (sends exactly RUN <code>, the snapshot's paused.code) and Don't run (the engine's
-    # REAL_RUN_DECLINE); any other reply is asked again by the engine (P31)
-    Edit("E28a", '  if (later) h += `<p class="qnote">Saved for later.',
-         _lines('  if (kind === "real_run" && live && (s.paused || {}).code) h += `<div class="acts"><button type="button" class="pri" data-run="RUN ${esc(s.paused.code)}">Run</button><button type="button" class="ghost" data-run="Don\'t run">Don\'t run</button></div>`;      // E28 (D434)',
-                '  if (later) h += `<p class="qnote">Saved for later.'), 1),
-    Edit("E28b", '  if (b.dataset.approve) return sendText(',
-         _lines("  if (b.dataset.run !== undefined) return sendText(b.dataset.run);      // E28 (D434): Run sends the exact RUN <code>; Don't run declines",
-                '  if (b.dataset.approve) return sendText('), 1),
     # E30 (D451): files where work starts. The start box and the follow-up box take files (start_files.js mounts the paperclip in `#lattach` / `#sattach`, the chips in `#lfiles` /
     # `#sfiles`, and holds a send while a chip uploads or failed); `sendText` carries them as `files` (E25c reads StartFiles.fields() in the same tick as the submit) and gives the server's
     # answer to StartFiles.answered, which clears the chips on success and, on a refusal, says why and puts the words back. A send with no file is exactly what it was.
@@ -323,6 +315,10 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E30c", '  if (!text) return;\n  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ',
          '  if (!text) return;\n  const said = await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ', 1),
     Edit("E30d", "  if (RTNEW.id) RTNEW.sent = true;\n}", "  if (RTNEW.id) RTNEW.sent = true;\n  if (window.StartFiles) StartFiles.answered(said);      // E30 (D451): the files of this send are cleared, or a refusal is said and the words come back\n}", 1),
+    # E31 (D452): a real run runs unasked, so the Deliverables' "Run for real" line says whether it ran automatically, never
+    # "approved by you" (the row has no `approved` any more)
+    Edit("E31", '      + ` · ${r.approved ? "approved by you" : "not approved"}</span>',
+         '      + ` · ${r.ran ? "ran automatically" : "did not start"}</span>', 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

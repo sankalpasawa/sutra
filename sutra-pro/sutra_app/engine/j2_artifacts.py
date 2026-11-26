@@ -772,7 +772,7 @@ def _deliverable_extras(d):
             if isinstance(r, dict) and "pass" in r:
                 recs.append(r)
             elif isinstance(r, dict) and r.get("type") == "real_run":      # step 7: a build run for real, or refused
-                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
+                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "ran", "exit",      # P46 (D452)
                                                    "evidence", "t")})
     last = {}
     for r in recs:      # receipts are in run order: the last one for an atom's check is its final attempt

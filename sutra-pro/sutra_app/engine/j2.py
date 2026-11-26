@@ -203,8 +203,7 @@ PAUSES = {"info": "J2.a: not enough information to work yet",
           "audit": "J2.h: a done-when item only the Requester can close",
           "fact": "J2.g: a fact only the Requester knows",
           "limit": "a safety limit was hit: add budget, drop the failing items or ship as is",
-          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
-          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
+          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run"}
 TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 
 # P8: the J2 step (STEPS) each turn sets before its first model call, told to the hooks when the turn starts.
@@ -232,9 +231,8 @@ def _ask(tag, *args, **kw):
 # Decide for me (the Simple view's switch, POST /api/settings): while it is on, an open question to the Requester is
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
-AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+AUTO_ASK = {"send_confirm", "limit"}      # P29 (D431; D452: a real run is never asked): a limit question (the same failure twice among them) is the Requester's own
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
-REAL_RUN_DECLINE = "Don't run"      # P31 (D434): the real-run card's decline, compared whole (stripped, any case)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
                "and list them as assumptions I can check later.")
 
@@ -783,7 +781,7 @@ REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, U
 
 def real_run_env_fields(rr):
     """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out and links
-    resolved, so the card, the env and srt's allowRead all name the real file), each only when stated."""
+    resolved, so the env and srt's allowRead name the real file), each only when stated."""
     out = {"settings": dict(rr.get("settings") or {}),
            "secret_files": {n: os.path.realpath(os.path.expanduser(p)) for n, p in (rr.get("secret_files") or {}).items()}}
     return {k: v for k, v in out.items() if v}
@@ -823,7 +821,7 @@ def real_run_env_problems(rr, source, run_dir):
                 out.append(f"real_run may not set {n}: it changes how a program starts or where it connects (a fixed guardrail list)")
             if "\0" in v:
                 out.append(f"real_run {key} {n} holds a NUL character")
-            if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own
+            if "\r" in v or "\n" in v:      # a value is one line (the receipt and the env keep it whole)
                 out.append(f"real_run {key} {n} holds a line break")
     out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
         {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
@@ -846,16 +844,6 @@ def real_run_env_problems(rr, source, run_dir):
             out.append(f"real_run secret file {f} may not be in a sign-in folder of Claude, Codex or gh, the app's data, "
                        "the repo or the run folder")
     return out
-
-
-def real_run_env_lines(rr):
-    """P41 (D446): the real-run card's lines, before approval: every setting as NAME=value, and every secret file by name
-    and real path only (the app never opens it)."""
-    s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
-    return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
-                                      or "none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)")
-            + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
-               if f else ""))
 
 
 def real_run(out_dir, rr, timeout):
@@ -2327,7 +2315,7 @@ DECIDE_RULE = ("Never offer adding budget, leaving items out or finishing as is 
 DECISION_FMT = ('"decision": "continue"|"drop"|"ship"|"stop"|null (null if the answer doesn\'t say), "add": int|null (work credits the '
                 'Requester asked to add, as they typed it), "drop_items": [int] (done-when item numbers they asked to '
                 'leave out)')
-DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm", "real_run")    # the Requester decides; info/fact/question only inform
+DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm")    # the Requester decides; info/fact/question only inform
 ONLY_PICK = re.compile(r"\s*(option\s*)?[1-9]\s*[.:)]?\s*", re.I)
 
 
@@ -3799,7 +3787,6 @@ class J2Run:
         self.deed_log, self.deed_seen = [], set()      # send deeds done (note, result) and the notices already given
         self.milestone_log = []      # milestone emails (J2_MILESTONE_EMAILS=1, or the brief asks for updates by email): one per goal reached
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
-        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
@@ -4276,9 +4263,7 @@ class J2Run:
                               "choices": self.paused["handoff"].get("choices"),
                               "suggested": self._auto_choice(self.paused)[2],      # the option Decide for me would take
                               "auto_waits": self.paused["kind"] in AUTO_ASK or bool(self.paused["handoff"].get("usd")),       # a question it never answers for you
-                              "workflow": self.paused["handoff"].get("wid"),
-                              "code": self.real_runs_asked.get(self.paused["handoff"].get("wid"))      # P31 (D434): the Run button's
-                              if self.paused["kind"] == "real_run" else None}) if self.paused else None,
+                              "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
                 "outcome": self.outcome,          # read-only, for the Simple view
                 "decide_for_me": self.auto, "auto_answers": self.auto_log,
                 "studio": self.studio_view(),     # the Simple view's parts, people and team stream (j2_studio.py, studio/1)
@@ -5382,8 +5367,7 @@ class J2Run:
         return {"intake": self._identity_intake, "stage_decision": self._stage_decision, "resolve": self._identity_resolve, "approval": self._identity_approval,
                 "audit": self._identity_audit, "requester_answered": self._identity_hears_requester,
                 "ruling_budget": self._identity_ruling_budget, "limit": self._identity_limit,
-                "send_confirm": self._identity_send_confirm,
-                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
+                "send_confirm": self._identity_send_confirm}.get(h.get("kind"), self._identity_question)(h)
 
     CHARTER_FMT = ('{"statement": str, "site_name": str, "audience": str, "standards": [str], "rules": [str], '
                    '"done_when": [str] (one outcome per item: one thing the site shows or lets a visitor do, that '
@@ -5883,9 +5867,8 @@ class J2Run:
             recs = []
         rec = next((x for x in reversed(recs) if x.get("type") == "real_run"
                     and n in {as_int(c) for c in x.get("checks") or []}), None)
-        return {"item": n, "receipt": f"{rec.get('workflow')}: {'approved' if rec.get('approved') else 'not approved'}, "
-                                      f"{rec.get('evidence')}" if rec else
-                "none yet: not run. Code asks the Requester for approval once the rest is workable, then runs it"}
+        return {"item": n, "receipt": f"{rec.get('workflow')}: {'ran' if rec.get('ran') else 'did not start'}, "
+                                      f"{rec.get('evidence')}" if rec else "none yet: code runs it once the rest is workable"}      # P46 (D452)
 
     def _real_run_pending(self):
         """Step 7: what stops "Done:" while a planned real run has no receipt (workable() leaves those items out, so
@@ -5962,59 +5945,41 @@ class J2Run:
                 "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
                 f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
 
-    def _ask_real_run(self, r):
-        """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
-        folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
+    def _ran_real_run(self, wid):
+        """P46 (D452): a real_run row for wid is in this run folder's receipts.jsonl. A follow-up copies that file, so a
+        parent's real run counts too: each workflow id's real run runs at most once."""
+        try:
+            with open(os.path.join(self.dir, "receipts.jsonl"), encoding="utf-8") as f:
+                return any(x.get("type") == "real_run" and x.get("workflow") == wid
+                           for x in (json.loads(line) for line in f if '"real_run"' in line))
+        except OSError:
+            return False
+
+    def _real_run_next(self, r):
+        """Step 7 (P46, D452: J2's step 7 without its question): the next done workflow with a planned real run that
+        has not run (_ran_real_run) runs it once, now: no card, no code, no pause (_real_run_once); then _goal_done goes on
+        (the next real run, or the run's end). True when it ran one or sent it back to the build."""
         w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
-                  and x["id"] not in self.real_runs_asked), None)
+                  and not self._ran_real_run(x["id"])), None)
         if w is None:
             return False
-        rr, code = w["real_run"], secrets.token_hex(3)
-        if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
+        if self._env_stops_real_run(w, w["real_run"]):      # P42 (D447): its packages or an import are missing: back to the build
             return True
-        self.real_runs_asked[w["id"]] = code
-        self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
-                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
-                            + f"\nWhy: {rr.get('why') or 'not given'}"      # P46 (D452): no dry run
-                            + f"\nTo run it, reply exactly: RUN {code}\n"
-                            "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
-        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
-                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        self._real_run_once(w)
+        self._goal_done(r)
         return True
 
-    def _identity_real_run(self, h):
-        """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
-        once (_real_run_once). Either way a receipt goes to receipts.jsonl and the run goes on to its end. P31 (D434): the
-        whole reply REAL_RUN_DECLINE declines; any other reply asks again, the same code; the run stays open."""
-        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
-        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
-        ans = str(h.get("answer") or "").strip()
-        ok = bool(w and code) and not last.get("auto") and ans == f"RUN {code}"
-        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()
-        if w and code and not ok and not declined:
-            self._event("identity", "real_run_unclear", f"{h.get('wid')}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
-            return self._ask_user(f"Not run. Press Run or type RUN {code}.", [{"question": "Run it for real?"}], "real_run",
-                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": h.get("wid")})
-        if w:
-            self._real_run_once(w, None if ok else {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run"
-                                                    if declined else "not run: the reply was not exactly RUN " + str(code)},
-                                code=code, approved=ok, answer_msg=last.get("id"))
-        self._goal_done(h.get("r") or {})
-
-    def _real_run_once(self, w, res=None, **row):
+    def _real_run_once(self, w):
         """P46 (D452): w's real run, once, on the folder itself (no copies). Code records every file under its folder (path
         and sha256; reads are not recorded) before and after the command; when it exited 0 and what it created, changed and
         deleted differs from its expect (P35's expect_mismatch), every item it checks is NEEDS_REVISION with that mismatch
         and no Audit call is made; else Audit reads its output and that diff (P33's _judge_real_run). One real_run row goes
-        to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts. res: a
-        run that did not start, given instead of running it; row: more keys for the row."""
-        rr, wid, diff, mm, judged = w["real_run"], w["id"], {}, "", {}
-        if res is None:
-            folder = os.path.realpath(rr["folder"])
-            before = _tree(folder)
-            res = real_run(self._out_dir(), rr, builder_timeout())
-            diff = _tree_diff(before, _tree(folder))
+        to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts."""
+        rr, wid, mm, judged = w["real_run"], w["id"], "", {}
+        folder = os.path.realpath(rr["folder"])
+        before = _tree(folder)
+        res = real_run(self._out_dir(), rr, builder_timeout())
+        diff = _tree_diff(before, _tree(folder))
         ran_ok = bool(res.get("ran") and res.get("exit") == 0)
         nums = {as_int(c) for c in rr.get("checks") or []}
         mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
@@ -6023,7 +5988,7 @@ class J2Run:
             judged = ({t: (False, "not what it said it would do: " + mm) for t in mine} if mm
                       else self._judge_real_run(w, res, diff, mine) if mine else {})
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **row, **res,
+            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **res,
                                 **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
                                               for t, v in judged.items()}} if judged else {}),
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
@@ -7007,7 +6972,7 @@ class J2Run:
         When the email is the first live send, the run pauses to ask the Requester and the answer comes back here."""
         if self._milestone(r):                 # a goal reached: its email (when milestone emails are on); never stops the run
             return
-        if self._ask_real_run(r):              # step 7: a planned real run waits for the Requester's exact approval
+        if self._real_run_next(r):             # step 7: a planned real run runs now, unasked (P46, D452)
             return
         if self.stages:                    # a design-document run: the next stage starts, or the last one is recorded
             self.post("system", f"The {self.out['noun']} is workable: every check passes.")
@@ -7269,8 +7234,8 @@ class J2Run:
                                              "budget_needed": need if need > 0 else None})
         tbc = {t["criterion"] for t in (self.goal or {}).get("to_be_confirmed") or []}
         held = workable({**last, "accepted": list(last.get("accepted") or []) + self._blocked_items()}) if last else fails
-        if not held and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
-            return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
+        if not held and self._real_run_next({}):     # step 7: the rest is workable, so the planned run runs now (D452:
+            return                                    # unasked), without waiting on Identity's done (runs/j2-20261114-123619)
         if fails and not held and (blocked := self._blocked_items()) and not self._open_items(skip=blocked) \
                 and not self._real_run_pending():
             # beta fix d (D433): everything else is built and passes, and what is left is blocked on what only the Requester
@@ -10997,13 +10962,13 @@ class J2Run:
         runners the work atoms' checks use."""
         t, folder = chk.get("type"), self._out_dir() if self.folder else None
         try:
-            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0) and Audit's reading of
+            if t == "real-run":      # decided by its real run's receipt (ran, exit 0, expect matched) and Audit's reading of
                 n = self._no(text)      # its output for this item (real_run_item_ok, P33; review R1-4), never by a builder
                 ok = any(self.real_runs_done.get(w["id"]) is True for w in self.workflows
                          if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []}) \
                     and self.real_run_item_ok.get(text, True)
-                return {"pass": ok, "evidence": "its real run was approved, exited 0 and Audit passed its output" if ok else
-                        "its real run did not pass (approved, exit 0 and Audit PASS)"}
+                return {"pass": ok, "evidence": "its real run exited 0 and Audit passed its output" if ok else
+                        "its real run did not pass"}
             if t == "render-check":
                 if not mech.get("available"):
                     return {"pass": None, "evidence": f"the render check didn't run: {mech.get('note')}"}

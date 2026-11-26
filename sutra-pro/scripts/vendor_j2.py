@@ -1915,7 +1915,7 @@ def build_failure(w):
                                          "needs fixing." if stuck else      # P29 (D431)
 '''),
     Edit("P29", "j2.py", r'''AUTO_ASK = {"send_confirm", "real_run"}
-''', r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+''', r'''AUTO_ASK = {"send_confirm", "limit"}      # P29 (D431; D452: a real run is never asked): a limit question (the same failure twice among them) is the Requester's own
 '''),
     Edit("P29", "j2.py", r'''        return ["no site has been audited yet"]
 ''', r'''        return ["no site has been audited yet"]
@@ -2235,13 +2235,13 @@ def mock_item_check(out):
         runners the work atoms' checks use."""
         t, folder = chk.get("type"), self._out_dir() if self.folder else None
         try:
-            if t == "real-run":      # decided by its real run's receipt (approved, ran, exit 0) and Audit's reading of
+            if t == "real-run":      # decided by its real run's receipt (ran, exit 0, expect matched) and Audit's reading of
                 n = self._no(text)      # its output for this item (real_run_item_ok, P33; review R1-4), never by a builder
                 ok = any(self.real_runs_done.get(w["id"]) is True for w in self.workflows
                          if n in {as_int(c) for c in (w.get("real_run") or {}).get("checks") or []}) \
                     and self.real_run_item_ok.get(text, True)
-                return {"pass": ok, "evidence": "its real run was approved, exited 0 and Audit passed its output" if ok else
-                        "its real run did not pass (approved, exit 0 and Audit PASS)"}
+                return {"pass": ok, "evidence": "its real run exited 0 and Audit passed its output" if ok else
+                        "its real run did not pass"}
             if t == "render-check":
                 if not mech.get("available"):
                     return {"pass": None, "evidence": f"the render check didn't run: {mech.get('note')}"}
@@ -2315,8 +2315,8 @@ def mock_item_check(out):
     Edit("P30", "j2.py", r'''        if not fails and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
             return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
 ''', r'''        held = workable({**last, "accepted": list(last.get("accepted") or []) + self._blocked_items()}) if last else fails
-        if not held and self._ask_real_run({}):     # step 7: the rest is workable, so the planned run is asked for now,
-            return                                    # without waiting on Identity's done (runs/j2-20261114-123619)
+        if not held and self._real_run_next({}):     # step 7: the rest is workable, so the planned run runs now (D452:
+            return                                    # unasked), without waiting on Identity's done (runs/j2-20261114-123619)
         if fails and not held and (blocked := self._blocked_items()) and not self._open_items(skip=blocked) \
                 and not self._real_run_pending():
             # beta fix d (D433): everything else is built and passes, and what is left is blocked on what only the Requester
@@ -2389,9 +2389,6 @@ def mock_item_check(out):
                             + (f" Still not workable: {'; '.join(lines).rstrip('.')}." if lines else ""))
 '''),
     # ---- P31 (D434): a failed dry run goes back to the build; only RUN <code> or Don't run answers the real-run question
-    Edit("P31", "j2.py", 'AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)\n',
-         'AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)\n'
-         'REAL_RUN_DECLINE = "Don\'t run"      # P31 (D434): the real-run card\'s decline, compared whole (stripped, any case)\n'),
     Edit("P31", "j2.py", r'''        at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
         return [crit[at[n] - 1] for w in self.workflows if w.get("real_run")
                 and not (pending and w["id"] in self.real_runs_done)
@@ -2401,20 +2398,6 @@ def mock_item_check(out):
                for n in w["real_run"].get("checks") or []} if pending else set()      # P31 (D434): any receipt decides it (a replacement)
         return [crit[at[n] - 1] for w in self.workflows if w.get("real_run")
                 for n in w["real_run"].get("checks") or [] if n not in ran and n in at and at[n] <= len(crit)]
-'''),
-    Edit("P31", "j2.py", r'''                            "Any other reply: it is not run.", real_run=w["id"])
-        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
-                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
-        return True
-''', r'''                            "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
-        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
-                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
-        return True
-'''),
-    Edit("P31", "j2.py", r'''                              "workflow": self.paused["handoff"].get("wid")}) if self.paused else None,
-''', r'''                              "workflow": self.paused["handoff"].get("wid"),
-                              "code": self.real_runs_asked.get(self.paused["handoff"].get("wid"))      # P31 (D434): the Run button's
-                              if self.paused["kind"] == "real_run" else None}) if self.paused else None,
 '''),
     # beta fix (D434): a real-run folder written ~/x is the folder it names: absolute, named in the brief as ~/x or written out
     Edit("P31", "j2.py", r'''def _repo_root():
@@ -2578,7 +2561,7 @@ REAL_RUN_ENV_RULE = ('\nREAL RUN ENVIRONMENT: the script gets only PATH, HOME, U
 
 def real_run_env_fields(rr):
     """P41 (D446): what _register stores of a checked real run: its settings and secret_files (~ written out and links
-    resolved, so the card, the env and srt's allowRead all name the real file), each only when stated."""
+    resolved, so the env and srt's allowRead name the real file), each only when stated."""
     out = {"settings": dict(rr.get("settings") or {}),
            "secret_files": {n: os.path.realpath(os.path.expanduser(p)) for n, p in (rr.get("secret_files") or {}).items()}}
     return {k: v for k, v in out.items() if v}
@@ -2618,7 +2601,7 @@ def real_run_env_problems(rr, source, run_dir):
                 out.append(f"real_run may not set {n}: it changes how a program starts or where it connects (a fixed guardrail list)")
             if "\0" in v:
                 out.append(f"real_run {key} {n} holds a NUL character")
-            if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own
+            if "\r" in v or "\n" in v:      # a value is one line (the receipt and the env keep it whole)
                 out.append(f"real_run {key} {n} holds a line break")
     out += [f"real_run names {n} in both settings and secret_files" for n in sorted(
         {n.upper() for n in maps.get("settings", {})} & {n.upper() for n in maps.get("secret_files", {})})]
@@ -2641,16 +2624,6 @@ def real_run_env_problems(rr, source, run_dir):
             out.append(f"real_run secret file {f} may not be in a sign-in folder of Claude, Codex or gh, the app's data, "
                        "the repo or the run folder")
     return out
-
-
-def real_run_env_lines(rr):
-    """P41 (D446): the real-run card's lines, before approval: every setting as NAME=value, and every secret file by name
-    and real path only (the app never opens it)."""
-    s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
-    return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
-                                      or "none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)")
-            + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
-               if f else ""))
 
 
 def real_run(out_dir, rr, timeout):
@@ -2686,10 +2659,6 @@ def real_run(out_dir, rr, timeout):
     Edit("P41", "j2.py", r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
 ''', r'''                self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
                 self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
-'''),
-    Edit("P41", "j2.py", r'''                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-''', r'''                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
-                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
 '''),
     # ---- P42 (D447): a build with a requirements.txt gets an environment of its own (Sutra's engine/runenv.py), installed only
     # after RUN <code> (with P41's clean environment, D446); the test rerun, the dry run and the real run use its python, never another; a real-run receipt keeps the
@@ -2753,16 +2722,9 @@ def env_missing(env):
 ''', r'''            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
         run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
 '''),
-    Edit("P42", "j2.py", r'''        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
-''', r'''        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
-        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-'''),
-    Edit("P42", "j2.py", r'''        rr, code = w["real_run"], secrets.token_hex(3)
-        self.real_runs_asked[w["id"]] = code
-''', r'''        rr, code = w["real_run"], secrets.token_hex(3)
-        if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
-            return True
-        self.real_runs_asked[w["id"]] = code
+    Edit("P42", "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+''', r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
+        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
 '''),
     Edit("P42", "j2.py", r'''
     def _real_run_note(self):
@@ -3083,11 +3045,41 @@ def real_paths_in(root, folders):
 def sandbox_rerun(folder, runner, target, timeout):
 ''', r'''def sandbox_rerun(folder, runner, target, timeout):
 '''),
-    Edit("P46", "j2.py", r'''        self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
-        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
-''', r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+    # ---- P46 (D452): the real run runs unasked, once per workflow id (a real_run row in receipts.jsonl); no card, code or pause;
+    # the rows and the page lose the approval
+    Edit("P46", "j2.py", r'''        self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
+        self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
+        self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
+''', r'''        self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
 '''),
-    Edit("P46", "j2.py", r'''        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
+    Edit("P46", "j2.py", r'''          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
+          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
+''', r'''          "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run"}
+'''),
+    Edit("P46", "j2.py", r'''DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm", "real_run")''', r'''DECISION_PAUSES = ("limit", "conflict", "ruling_budget", "send_confirm")'''),
+    Edit("P46", "j2.py", r'''                "send_confirm": self._identity_send_confirm,
+                "real_run": self._identity_real_run}.get(h.get("kind"), self._identity_question)(h)
+''', r'''                "send_confirm": self._identity_send_confirm}.get(h.get("kind"), self._identity_question)(h)
+'''),
+    Edit("P46", "j2.py", r'''        if self._ask_real_run(r):              # step 7: a planned real run waits for the Requester's exact approval
+''', r'''        if self._real_run_next(r):             # step 7: a planned real run runs now, unasked (P46, D452)
+'''),
+    Edit("P46", "j2.py", r'''        return {"item": n, "receipt": f"{rec.get('workflow')}: {'approved' if rec.get('approved') else 'not approved'}, "
+                                      f"{rec.get('evidence')}" if rec else
+                "none yet: not run. Code asks the Requester for approval once the rest is workable, then runs it"}
+''', r'''        return {"item": n, "receipt": f"{rec.get('workflow')}: {'ran' if rec.get('ran') else 'did not start'}, "
+                                      f"{rec.get('evidence')}" if rec else "none yet: code runs it once the rest is workable"}      # P46 (D452)
+'''),
+    Edit("P46", "j2.py", r'''    def _ask_real_run(self, r):
+        """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
+        folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
+        w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
+                  and x["id"] not in self.real_runs_asked), None)
+        if w is None:
+            return False
+        rr, code = w["real_run"], secrets.token_hex(3)
+        self.real_runs_asked[w["id"]] = code
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
@@ -3107,13 +3099,16 @@ def sandbox_rerun(folder, runner, target, timeout):
             self.turn, self.handoff = None, {}
             return True
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
-''', r'''        self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
-'''),
-    Edit("P46", "j2.py", r'''                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
+                            f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
+                            + f"\nWhy: {rr.get('why') or 'not given'}\nWhat it would do, from a {dry['evidence']}"
                             + show("created") + show("changed") + show("deleted")
-''', r'''                            + f"\nWhy: {rr.get('why') or 'not given'}"      # P46 (D452): no dry run
-'''),
-    Edit("P46", "j2.py", r'''    def _identity_real_run(self, h):
+                            + f"\nTo run it, reply exactly: RUN {code}\n"
+                            "Any other reply: it is not run.", real_run=w["id"])
+        self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
+                       [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
+        return True
+
+    def _identity_real_run(self, h):
         """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
         once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
@@ -3140,38 +3135,41 @@ def sandbox_rerun(folder, runner, target, timeout):
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
         self._goal_done(h.get("r") or {})
-''', r'''    def _identity_real_run(self, h):
-        """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
-        once (_real_run_once). Either way a receipt goes to receipts.jsonl and the run goes on to its end. P31 (D434): the
-        whole reply REAL_RUN_DECLINE declines; any other reply asks again, the same code; the run stays open."""
-        w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
-        last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
-        ans = str(h.get("answer") or "").strip()
-        ok = bool(w and code) and not last.get("auto") and ans == f"RUN {code}"
-        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()
-        if w and code and not ok and not declined:
-            self._event("identity", "real_run_unclear", f"{h.get('wid')}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
-            return self._ask_user(f"Not run. Press Run or type RUN {code}.", [{"question": "Run it for real?"}], "real_run",
-                                  handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": h.get("wid")})
-        if w:
-            self._real_run_once(w, None if ok else {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run"
-                                                    if declined else "not run: the reply was not exactly RUN " + str(code)},
-                                code=code, approved=ok, answer_msg=last.get("id"))
-        self._goal_done(h.get("r") or {})
+''', r'''    def _ran_real_run(self, wid):
+        """P46 (D452): a real_run row for wid is in this run folder's receipts.jsonl. A follow-up copies that file, so a
+        parent's real run counts too: each workflow id's real run runs at most once."""
+        try:
+            with open(os.path.join(self.dir, "receipts.jsonl"), encoding="utf-8") as f:
+                return any(x.get("type") == "real_run" and x.get("workflow") == wid
+                           for x in (json.loads(line) for line in f if '"real_run"' in line))
+        except OSError:
+            return False
 
-    def _real_run_once(self, w, res=None, **row):
+    def _real_run_next(self, r):
+        """Step 7 (P46, D452: J2's step 7 without its question): the next done workflow with a planned real run that
+        has not run (_ran_real_run) runs it once, now: no card, no code, no pause (_real_run_once); then _goal_done goes on
+        (the next real run, or the run's end). True when it ran one or sent it back to the build."""
+        w = next((x for x in self.workflows if x.get("real_run") and x["status"] == "done"
+                  and not self._ran_real_run(x["id"])), None)
+        if w is None:
+            return False
+        if self._env_stops_real_run(w, w["real_run"]):      # P42 (D447): its packages or an import are missing: back to the build
+            return True
+        self._real_run_once(w)
+        self._goal_done(r)
+        return True
+
+    def _real_run_once(self, w):
         """P46 (D452): w's real run, once, on the folder itself (no copies). Code records every file under its folder (path
         and sha256; reads are not recorded) before and after the command; when it exited 0 and what it created, changed and
         deleted differs from its expect (P35's expect_mismatch), every item it checks is NEEDS_REVISION with that mismatch
         and no Audit call is made; else Audit reads its output and that diff (P33's _judge_real_run). One real_run row goes
-        to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts. res: a
-        run that did not start, given instead of running it; row: more keys for the row."""
-        rr, wid, diff, mm, judged = w["real_run"], w["id"], {}, "", {}
-        if res is None:
-            folder = os.path.realpath(rr["folder"])
-            before = _tree(folder)
-            res = real_run(self._out_dir(), rr, builder_timeout())
-            diff = _tree_diff(before, _tree(folder))
+        to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts."""
+        rr, wid, mm, judged = w["real_run"], w["id"], "", {}
+        folder = os.path.realpath(rr["folder"])
+        before = _tree(folder)
+        res = real_run(self._out_dir(), rr, builder_timeout())
+        diff = _tree_diff(before, _tree(folder))
         ran_ok = bool(res.get("ran") and res.get("exit") == 0)
         nums = {as_int(c) for c in rr.get("checks") or []}
         mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
@@ -3180,7 +3178,7 @@ def sandbox_rerun(folder, runner, target, timeout):
             judged = ({t: (False, "not what it said it would do: " + mm) for t in mine} if mm
                       else self._judge_real_run(w, res, diff, mine) if mine else {})
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **row, **res,
+            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **res,
                                 **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
                                               for t, v in judged.items()}} if judged else {}),
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
@@ -3220,6 +3218,9 @@ def sandbox_rerun(folder, runner, target, timeout):
                           why=f"{w['id']}'s real run could not start ({detail}). Propose a workflow that revises {w['id']} "
                               "and keeps its real_run.")
         return True
+'''),
+    Edit("P46", "j2_artifacts.py", r'''                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
+''', r'''                runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "ran", "exit",      # P46 (D452)
 '''),
     # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json
     # (`unparsed`, each clipped to 20000 characters) with one system line; the plan and the stop are J2's
@@ -3475,11 +3476,11 @@ PATCH_NOTES = {
     "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
     "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
     "P29": "(D431) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left; a lone \"Stop here\" is asked, never applied without the Requester); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition the charter decides (`from_charter`, set by `_folder_condition` when the charter lists no files or no test) is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved: \"This condition comes from the charter, and building can't change it. The charter needs fixing.\" (any other condition goes back to Adaptation) (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
-    "P31": "(D434; amended by D448 and D452) step 7's question stays code's: `_identity_real_run` takes exactly `RUN <code>` (runs) or the whole reply `REAL_RUN_DECLINE` (\"Don't run\", any case: the not-run receipt, then `_goal_done`), and any other reply, or one Decide for me sent, is asked again with the same code (\"Not run. Press Run or type RUN <code>.\": no receipt, the run stays paused); the snapshot's `paused.code` gives the card's Run button its code (port edit E28); no word of a reply is read; a planned real run's item is no longer pending once any real run that checks it has a receipt (a replacement); a real-run folder written `~/x` is the folder it names (beta fix, run 8b10): `home_expanded` writes `~` out in its folder, reads and command arguments, `real_run_problems` judges that form and accepts the folder when the brief names it either way (`home_tilde`), and `_register` stores it written out; amended in D448: a path is named only whole (`named_whole`: no path character before it; after it the end, a space whose next word does not go on with a \"/\", a closing mark or a sentence's end, so `?`, `!` and a backtick end it), shared by the folder and the secret-file check, and read on each text of the source on its own (`_fact_source(pieces=True)`, review R1-1); amended in D452: no dry run, so no dry-run failure, `_dry_run_failed` or `dry_run_failure` brief (a real run that cannot start goes back through P46's `_real_run_back`)",
+    "P31": "(D434; amended by D448 and D452) a planned real run's item is no longer pending once any real run that checks it has a receipt (a replacement); a real-run folder written `~/x` is the folder it names (beta fix, run 8b10): `home_expanded` writes `~` out in its folder, reads and command arguments, `real_run_problems` judges that form and accepts the folder when the brief names it either way (`home_tilde`), and `_register` stores it written out; amended in D448: a path is named only whole (`named_whole`: no path character before it; after it the end, a space whose next word does not go on with a \"/\", a closing mark or a sentence's end, so `?`, `!` and a backtick end it), shared by the folder and the secret-file check, and read on each text of the source on its own (`_fact_source(pieces=True)`, review R1-1); amended in D452: no question (`REAL_RUN_DECLINE`, the exact `RUN <code>` reply, the snapshot's `paused.code` and the card are gone; P46 runs the real run unasked) and no dry run (`_dry_run_failed` and the `dry_run_failure` brief are gone; a real run that cannot start goes back through P46's `_real_run_back`)",
     "P33": "(D436, prompt-changing per D249: a new Audit prompt after a real run; no golden scenario reaches it) after a real run that ran, exited 0 and matched its `expect` (P35), one Audit call (`_judge_real_run`, a plain `self.call`, so calls.jsonl, budget and dollar accounting count it; its format has no `next`, and code reads no route from it) gets the Requester's brief, the items the run decides (its `real_run.checks`), the command, what the run did to its folder (`WHAT THE RUN DID TO THE FOLDER`: the created/changed/deleted paths code recorded before and after it, D452) and the run's output end; an item passes only when Audit filed PASS with evidence for it (no finding, or empty evidence, does not; no word of the output is read by code); the receipt's `audit` is `{item: {verdict, evidence}}`, the audit row's note gives the receipt evidence and Audit's, a judged failure is `NEEDS_REVISION`, and `real_runs_done` is true only when Audit passed every item the run decides (so P30's `real-run` item check requires it too); a run that did not start or did not exit 0 makes no Audit call and its items fail; without the real run the items stay pending (SUT-18: exit 0 alone passed the item). Called from P46's `_real_run_once`",
     "P35": "(D438, prompt-changing per D249: the real-run rule asks for expect; it joins `ATOM_RULES` only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run carries `expect` `{\"created\": [glob], \"changed\": [glob], \"deleted\": [glob]}` relative to its folder, set by whoever proposes the real run (Adaptation, next to `command`; `REAL_RUN_EXPECT_RULE` follows `artifacts/real_run.md` in the proposal rules); `_register` refuses a missing or malformed one (`real_run_expect_problems`: exactly the three lists, non-empty relative paths or globs, not all empty) with the P22 key `(\"real_run_expect\",)` (no `key_rules` entry: that list follows the reason chain only) and stores it; `expect_mismatch(expect, diff)` compares a run's created/changed/deleted paths with it (`fnmatchcase`, sorted, a glob that matched nothing or a path no glob matched; no word read); amended in D452: the diff is the real run's own (P46 records the folder before and after it), and a mismatch fails the items the run checks (no Audit call) instead of sending a dry run back to the build; a real run registered before P35 (no `expect`) skips the comparison",
     "P42": "(D447; amended by D452; no model prompt changes: the info lines are code's own words) a build with a `requirements.txt` gets an environment of its own, made by Sutra's `engine/runenv.py` (a copy of J2's `j2_runenv.py` from the branch `fix-real-run-approval`). `_run_tools` refuses lines that are not `name==version` back to the builder (`runenv.bad_lines`), then, before the checks (reused files too), `_env_install` installs it with no question (D452): `runenv.install`, a virtual environment kept by the hash of `requirements.txt` under `J2_DATA_DIR`/envs, `pip install --isolated --index-url https://pypi.org/simple`; with the sandbox on, the network is open to pypi.org and files.pythonhosted.org for that step alone; pip gets D446's clean environment. One info line names the packages and where they go; an `env_install` receipt is `type`, `workflow`, `requirements_sha256`, `packages`, the install's result (the interpreter, the installed versions, the exit code, the end of the output), `t`, `by`; a failed install goes back to the builder with pip's error, and the same requirements hash is not installed again in the run (`env_why`). `real_run` and `sandbox_rerun` look the environment up from the built folder (`runenv.plan`): its python runs the command (`run_command`), the sandbox may read it, and without an installed one nothing is run (`env_missing`: \"its packages are not installed yet\"), so the test rerun and the real run never use another python. Before the real run `_env_stops_real_run` sends a real run whose packages are not installed, or whose script has a top-level import that does not resolve (`runenv.missing_imports`), back to the build through P46's `_real_run_back`. A real-run receipt gains `stdout` and `stderr` (the last 2,000 characters of each) and, with an environment, `env`. A build without a `requirements.txt` runs as before",
-    "P41": "(D446, prompt-changing per D249: `REAL_RUN_ENV_RULE` joins `ATOM_RULES` right after P35's rule, and `SCRIPT_ENV_RULE` follows the tools builder's `Run a test with` line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a script the engine runs gets a clean environment from an allowlist, never the engine's own: `real_run` passes `env=llm.run_env(...)`, the `llm.RUN_PASS_NAMES` found (PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM, LANG, LC_ALL, LC_CTYPE, TMPDIR and the Windows start-up names) plus what the stored real run states: `settings` (`{NAME: value}`) and `secret_files` (`{NAME: absolute path}`, the script reads the file itself; the app never opens it); with no such keys only the base; the builder's test rerun (`sandbox_rerun`) passes `env=llm.run_env()`, the base only, nothing from the plan; `_register` checks the two fields by structure after P35's checks (`real_run_env_problems`, refused with the key `(\"real_run_env\",)`: each an object of strings; names match `ENV_NAME`, are not a base name, not a `llm.RUN_LOADER_NAMES` guardrail name and not in both; no NUL; values are never scanned; a secret file, `~` written out, is absolute, named in the brief or the Requester's answers as `real_run_problems` names a folder, an existing file once resolved, and not in the repo, the run folder or a `llm.login_homes()` location) and stores them on the real run only when stated (`real_run_env_fields`), so the receipts keep settings values and secret files by name and path; the real-run card lists them before approval (`real_run_env_lines`, after its `Reads only` line: `Settings it gets: NAME=value, ...` or `none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)`, and with secret files `Secret files it may read (the app never opens them): NAME = <real path>`); Adaptation is told the rule (`REAL_RUN_ENV_RULE`) and the tools builder that a script gets only the base and any other variable is named in the real run's settings (`SCRIPT_ENV_RULE`); `allowRead` of the sandbox settings also lists every secret path the run gets, so `denyRead: [\"~\"]` does not hide it (amended in D452: no dry run, so no placeholder files); defense in depth, on top of the fixed loader guardrail list (`llm.RUN_LOADER_NAMES`, a fixed safety guardrail, not a secret detector): under the sandbox runtime on macOS and Linux srt itself is started with the base only and the plan's names reach the script inside its `-c` command as `env NAME=value ... <command>`, so a name the guardrail list does not know never acts on srt; without srt, and on Windows (no `env` program), they are passed with `env=` (SUT-22: `J2_SMTP_PASSWORD`, proxy URLs, CLI-login pointers, `SUTRA_*` and `PYTHONPATH` reached every real run and test rerun); amended in D448: a path is named only whole (`named_whole`: no path character before it; after it the end, a space whose next word does not go on with a \"/\", a closing mark or a sentence's end, so `?`, `!` and a backtick end it), shared by the folder and the secret-file check, and read on each text of the source on its own (`_fact_source(pieces=True)`, review R1-1); amended in D449: the guardrail list also holds HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY, and the refusal says '... or where it connects'",
+    "P41": "(D446, prompt-changing per D249: `REAL_RUN_ENV_RULE` joins `ATOM_RULES` right after P35's rule, and `SCRIPT_ENV_RULE` follows the tools builder's `Run a test with` line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a script the engine runs gets a clean environment from an allowlist, never the engine's own: `real_run` passes `env=llm.run_env(...)`, the `llm.RUN_PASS_NAMES` found (PATH, HOME, USER, LOGNAME, SHELL, TZ, TERM, LANG, LC_ALL, LC_CTYPE, TMPDIR and the Windows start-up names) plus what the stored real run states: `settings` (`{NAME: value}`) and `secret_files` (`{NAME: absolute path}`, the script reads the file itself; the app never opens it); with no such keys only the base; the builder's test rerun (`sandbox_rerun`) passes `env=llm.run_env()`, the base only, nothing from the plan; `_register` checks the two fields by structure after P35's checks (`real_run_env_problems`, refused with the key `(\"real_run_env\",)`: each an object of strings; names match `ENV_NAME`, are not a base name, not a `llm.RUN_LOADER_NAMES` guardrail name and not in both; no NUL; values are never scanned; a secret file, `~` written out, is absolute, named in the brief or the Requester's answers as `real_run_problems` names a folder, an existing file once resolved, and not in the repo, the run folder or a `llm.login_homes()` location) and stores them on the real run only when stated (`real_run_env_fields`), so the receipts keep settings values and secret files by name and path, and no chat message shows them (D452: no card, so `real_run_env_lines` is gone); Adaptation is told the rule (`REAL_RUN_ENV_RULE`) and the tools builder that a script gets only the base and any other variable is named in the real run's settings (`SCRIPT_ENV_RULE`); `allowRead` of the sandbox settings also lists every secret path the run gets, so `denyRead: [\"~\"]` does not hide it (amended in D452: no dry run, so no placeholder files); defense in depth, on top of the fixed loader guardrail list (`llm.RUN_LOADER_NAMES`, a fixed safety guardrail, not a secret detector): under the sandbox runtime on macOS and Linux srt itself is started with the base only and the plan's names reach the script inside its `-c` command as `env NAME=value ... <command>`, so a name the guardrail list does not know never acts on srt; without srt, and on Windows (no `env` program), they are passed with `env=` (SUT-22: `J2_SMTP_PASSWORD`, proxy URLs, CLI-login pointers, `SUTRA_*` and `PYTHONPATH` reached every real run and test rerun); amended in D448: a path is named only whole (`named_whole`: no path character before it; after it the end, a space whose next word does not go on with a \"/\", a closing mark or a sentence's end, so `?`, `!` and a backtick end it), shared by the folder and the secret-file check, and read on each text of the source on its own (`_fact_source(pieces=True)`, review R1-1); amended in D449: the guardrail list also holds HTTP_PROXY, HTTPS_PROXY, ALL_PROXY and NO_PROXY, and the refusal says '... or where it connects'",
     "P34": "(D437) `_tool_record` first removes `<builder folder>/.claude` entirely (`shutil.rmtree`, errors ignored), whatever it holds: the Claude CLI makes it in its cwd (the output folder), with an empty `.cc-writes` staging folder inside; it runs after every tools call (a failed or stopped one too) and before `file_states`, so the files-written list, the P21/P28 outside-write check and the folder limits never see it; `_publish_out` copies the output folder into `site/` without `.claude` (`shutil.ignore_patterns`) (SUT-12: `.claude/.cc-writes` showed in output and `site/` folders)",
     "P30": "(D433, prompt-changing per D249: Identity's intake format and rule, every builder's reply format and brief) every done-when item has a runnable check and a status its builder sets, both by item text: Identity returns `item_checks` (one per item, the type one of the form's `check_types` or `real-run`; `_item_checks_from` keeps `type`, `target`, `expect`), code stores them in `goal[\"item_checks\"]` (a change request keeps those of kept items; `GATE_TEXT` gets code's `render-check`; `stage_goal`'s items `section-not-empty` on their section) and `_stamp_check` refuses an item without one; the intake prompt adds `BEHAVIOUR_RULE` (every required behaviour is its own item); a builder's brief lists its items (`_owned_items`: covered, and the items of the findings it fixes) with check and status, every builder reply format asks for `item_status` (`ITEM_STATUS_FMT`; the closed artifact reply schema takes `ITEM_STATUS_SCHEMA`), and `_store_item_status` keeps it on the workflow (missing or unknown: `not_built`; `blocked` without a reason: `not_built`; no word of the reply is read; the mock builders, and a section the content door serves unchanged, set every owned item built, `_built_status`; in mock mode a reply without `item_checks` gets `mock_item_check` per item; the scripted Identity reply carries one per item only when a scripted port serves a run outside mock mode; code fills none in a live run); a charter refused a second time while an item has no check never starts work: the run stops and Identity asks the Requester, naming the items; at every audit `_item_check_gate` runs each passed item's check (`_run_item_check`: the real run's receipt, the render check, the folder test rerun, or `run_check`) and makes a PASS whose check did not pass, did not run or does not exist BLOCKED_BY_EVIDENCE with code's evidence; `_goal_done` and `_ship_outcome` end \"Done with open items\" while an item's latest done owner did not set it built (`_open_items`; the no-errors gate, code's own `render-check`, needs no builder); an item its latest done owner set `blocked` (always with a reason, `_blocked_items`; never an item a planned real run decides, which only its receipt and Audit decide, review R3-1) does not hold back the planned real run: J2.h asks for it once everything else is workable, and `_goal_done` ends \"Done with open items\" naming the item once, with its reason, not \"the real run did not pass\" (beta fix, run 8b10); an item the latest audit marks TO_BE_CONFIRMED because the charter's `to_be_confirmed` (Identity's field) names it is blocked too, its reason that entry's `fact` (`_tbc_blocked`, never a real-run item; beta fix b), and `_ship_outcome` lists a blocked item once; `ITEM_STATUS_FMT` tells every builder that an item whose action was prepared but not performed (a message written but never sent, for lack of access or credentials) is `blocked` with that reason, never `built`, and that a blocked reason is the fact or access it needs (beta fix c, prompt-changing per D249; code reads no word of the reason); `not_built` still holds it back. With no real run left to ask, J2.h ends the run at once when every other item is built and passes and only blocked items are left: `_goal_done` with no Identity, Adaptation or Audit call (beta fix d); the outcome names each blocked item as \"<item> blocked: needs <reason or fact>. Send it as a follow-up to finish.\" (the reason an agent's field, the hint code's text); a follow-up to a charter with a `to_be_confirmed` entry goes through Identity's change-request intake (the J2_FIXES path) with the current charter, whose prompt then says a fact the follow-up gives leaves its entry, so Identity can drop it and the item is built again (the trigger is the entry, never the message's words; without one a follow-up goes to Adaptation as before); a design-document stage left with blocked items keeps their lines in its `stage_archive` entry (`blocked`, only when there are some), and the run's outcome names them by stage (`_stage_blocked`, in `_goal_done` and `_ship_outcome`; review R4-1); a reason's trailing \".\" is dropped before the hint, so no \"..\" (R4-3); the endings that write their own outcome (`_deeds_finished`, `_stages_finished`, `_run_tpl_stage_end`) name every stage's blocked lines too (`_chain_done`: \"Done with open items\", never \"Done:\", while one is left; review R5-1); a change intake whose charter leaves out only brief items the charter before it already left out does not ask the drop question again (review R5-2), and one whose charter has no `to_be_confirmed` key keeps the old entries of items still in it (an explicit list, even empty, replaces them; review R5-5); an earlier stage's blocked line ends \"Start a new run with it to finish.\" (a follow-up continues the last stage only), while the last stage's and a single output's keep \"Send it as a follow-up to finish.\" (review R5-3, owner's option i); the stage gate's \"finish as it is\" answer names the earlier stages' blocked lines after its \"Not made\" (review R6-1). A charter without `item_checks` behaves as before (SUT-18, run 01a2: scheduling had no item, and an item described as not yet built passed Audit); amended in D449 and D452: `_item_states` also reads a workflow sent back only because its real run could not start (`failure[0] == \"real_run_setup\"`, P46), so its builder's built items are never reported \"not built\"; a later done revision still wins, and the real run's own item stays open until its receipt (SUT-28, run 458e)",
     "P26": "(D421, D422, prompt-changing in dollar mode per D249: the raise question's text) dollar mode is on only when `J2_USD_BUDGET` is set (`USD_BUDGET`, `USD_CAP`, `USD_PER_CREDIT`, `USD_PER_MTOK_FALLBACK`, `USD_RAISE_SHARE`, `BIG_RAISE`, `USD_RATE_MIN_CALLS`); off, nothing changes. `_log_call` adds each call's API price to `usd_used` (`_count_usd`, `call_usd`: the usd it reported, else its tokens, or characters / 4, at the run's own rate, else the fallback rate) and writes `usd_counted` and `usd_estimated` on its `calls.jsonl` row; the summary's `budget.usd` (`_usd_metrics`). The starting credits are `ceil(USD_BUDGET / USD_PER_CREDIT)` (`J2_BUDGET` ignored) and follow the dollars left at the run's one rate (`_usd_rate`: its dollars per credit from its 8th call, else `USD_PER_CREDIT`; `_usd_credits`) (`_top_up`, a `code: true` raise, no question, no cap) at the cycle start, the envelope check (before Priority can hold an uncharged workflow), an over-envelope approval, a ruling over budget and a change that costs more than is left; between turns, `usd_used >= usd_limit` hands Identity the dollar limit; the limit question is code's (\"This run has used $X of $Y (API price). Add $Z? So far: $Y approved.\", `_usd_raise`, P25's `_so_far` returns `_usd_so_far`), its continue option and `[adds $Z]` tail are in dollars, the answer's amount is read by code (`parse_usd`, never the model's credits), a typed raise over `BIG_RAISE` times the limit is asked back once (`_usd_confirm`; the same amount sent again, `confirm_usd`, confirms it; `Add $0` is asked again), the raise goes to `_usd_add` (capped by `USD_CAP`), which adds the credits the added dollars buy at the rate the question was priced at (`usd_rate` in its handoff, R2-1); where the dollars left cannot fund an over-envelope approval (the dollar limit, resuming at the envelope check), a ruling over budget (its own question, in dollars, keeping its `budget` so the option says `[adds $Z]`; a typed amount is the raise when the Requester chose to add (the model's choice 1, or the card's own `USD_RAISE_TEXT`), `Add $0` and an amount that funds less than the ruling are asked again and over `BIG_RAISE` times the limit is asked back once, `_usd_ruling_reask`) or a document chain (`_stage_gate`, after a top-up) the question is in dollars; a stated `budget_needed` the dollars left fund is topped up, not asked for; Identity is told an `Out of budget` limit in dollars; Decide for me (`_auto_pick`) never answers it (`auto_waits`)",
@@ -3492,7 +3493,7 @@ PATCH_NOTES = {
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
     "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. When the answer gives such an item's fact (Identity's `confirmed`), its `to_be_confirmed` entry is dropped too (review R1-2): the item no longer waits on the Requester, so it is never blocked on that fact or asked for it again, is still never a confirmed fact, and passes only on its real run's receipt; an item Identity puts in `still_to_be_confirmed` keeps its entry. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers. When the paused question is one question with options and the Requester's own reply is a bare pick (`ONLY_PICK`, resolved by `option_picked`), `_run` records the option's full text as `picked` on the decision record; a pick Decide for me sent (its chat message is flagged `auto`) records nothing, so it never names a folder, a secret file or a charter fact. `_fact_source` (the source of `real_run_problems`, `real_run_env_problems`, `check_problems` and `requester_words`) and `_fact_problems` add every `picked` text; `real_run_problems` and `real_run_env_problems` get `_fact_source(pieces=True)`, each text squashed on its own, and `named_whole` accepts a path named whole in any one of them, so a path that ends one text is never read as going on into the next text's first word (review R1-1: a brief starting `CSV/Excel`). A typed bare option number or `Option n` from the Requester is their pick too (it is what a card click sends, and its message is not flagged `auto`); any other typed answer is never read as a pick",
-    "P46": "(D452, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run's `hosts` stay optional and are checked for their syntax only (`host_entry_ok`, key `real_run_hosts`), with no rule on where they come from and no question; they are stored (`real_hosts`) when listed, and the real run's srt settings allow exactly them (`[]` without). The planner's rule asks to list every host the script reaches and never to set the four proxy settings; the tools builder's line asks for tests that reach a fake local server, never the internet. The deliverables planner's replies that were not JSON are kept in `deliverables.json` under `unparsed` with one system line (moved from P44; `j2_realization.plan_goal` returns its calls only when asked). The two rules that existed only for the dry run on copies are gone: `real_run_problems` no longer requires the command to pass each folder as an argument, and `_real_path_leak`, `real_paths_in` and `real_folders` with their callers are deleted. No dry run on copies: J2's `real_run_dry`, `real_runs_dry` and the card's dry-run lines are deleted; `_real_run_once(w)` runs the command once on the folder itself, records every file under its folder (path and sha256) before and after it, and when it exited 0 compares what it created, changed and deleted with its `expect` (P35): a mismatch makes every item it checks `NEEDS_REVISION` (\"not what it said it would do: ...\", also in the row's `audit` key) with no Audit call, else P33's Audit call reads the output and that diff; the row has no `dry_run` key; `_real_run_back(w, detail)` (from P31's `_dry_run_failed`) sends a real run that cannot start back to the build with the failure `[\"real_run_setup\", detail]` and no row (P28's repeat stop applies).",
+    "P46": "(D452, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run's `hosts` stay optional and are checked for their syntax only (`host_entry_ok`, key `real_run_hosts`), with no rule on where they come from and no question; they are stored (`real_hosts`) when listed, and the real run's srt settings allow exactly them (`[]` without). The planner's rule asks to list every host the script reaches and never to set the four proxy settings; the tools builder's line asks for tests that reach a fake local server, never the internet. The deliverables planner's replies that were not JSON are kept in `deliverables.json` under `unparsed` with one system line (moved from P44; `j2_realization.plan_goal` returns its calls only when asked). Step 7 runs a planned real run unasked: `_real_run_next(r)` (from `_goal_done` and the audit path, once the rest is workable) runs the next done workflow's real run that has no `real_run` row in receipts.jsonl (`_ran_real_run`, so a follow-up, which copies the file, never runs a parent's again, and a failed run never runs again; a replacement, a new id, runs its own once), with no card, code or pause, then `_goal_done` goes on; `real_runs_asked`, `PAUSES[\"real_run\"]`, `real_run` in `AUTO_ASK` (P29's line) and `DECISION_PAUSES`, the `real_run` dispatch and J2's `_ask_real_run` and `_identity_real_run` are gone; the row is `type`, `workflow`, the stored plan, the result of `real_run`, `audit` when judged or mismatched, `t`, `by` (no `code`, `approved`, `answer_msg`, `dry_run`); `_real_run_answer` says `<id>: ran, <evidence>` or `did not start`, else \"none yet: code runs it once the rest is workable\"; P30's real-run item evidence no longer says approved; `j2_artifacts._deliverable_extras` no longer projects `approved` (page edit E31). The two rules that existed only for the dry run on copies are gone: `real_run_problems` no longer requires the command to pass each folder as an argument, and `_real_path_leak`, `real_paths_in` and `real_folders` with their callers are deleted. No dry run on copies: J2's `real_run_dry`, `real_runs_dry` and the card's dry-run lines are deleted; `_real_run_once(w)` runs the command once on the folder itself, records every file under its folder (path and sha256) before and after it, and when it exited 0 compares what it created, changed and deleted with its `expect` (P35): a mismatch makes every item it checks `NEEDS_REVISION` (\"not what it said it would do: ...\", also in the row's `audit` key) with no Audit call, else P33's Audit call reads the output and that diff; the row has no `dry_run` key; `_real_run_back(w, detail)` (from P31's `_dry_run_failed`) sends a real run that cannot start back to the build with the failure `[\"real_run_setup\", detail]` and no row (P28's repeat stop applies).",
 }
 
 

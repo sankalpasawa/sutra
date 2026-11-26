@@ -94,7 +94,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests and vendor tests pass
   - Covers: FR-7, FR-8, FR-9, FR-28, FR-34 (runenv)
 
-- [ ] T7: The real run runs unasked, once per workflow id; gate keys leave the row; E28 deleted, E31 added
+- [x] T7: The real run runs unasked, once per workflow id; gate keys leave the row; E28 deleted, E31 added
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/j2_artifacts.py`, `sutra_app/engine/VENDORED.md`, `scripts/port_j2_ui.py`, `sutra_app/ui/pages/j2_ui.html`, `tests/ui/test_port_edits.py`, `tests/engine/test_engine_patches.py`, `tests/engine/test_engine_vendor.py`, `tests/engine/test_engine_legacy.py`, `tests/engine/test_engine_views.py`, `sutra_app/library/records.py` (comment)
   - Change:
     1. P46 (and P31/P33 in place): `_ask_real_run` + `_identity_real_run` → `_real_run_next(r)` and `_ran_real_run(wid)` exactly as architecture.md "Interfaces" steps 1-10; `_goal_done` (j2.py:7331) and the audit path (:7595) call it. Delete `real_runs_asked`, `REAL_RUN_DECLINE`, `PAUSES["real_run"]`, `real_run` from `AUTO_ASK` and `DECISION_PAUSES`, the `"real_run"` dispatch, snapshot `paused.code` (:4455-4456), `real_run_env_lines` (Q-7), the card. `_real_run_answer`: "<wid>: ran, <evidence>" or "<wid>: did not start, <evidence>"; none: "none yet: code runs it once the rest is workable". P30's real-run evidence (:11358-11363): "its real run exited 0 and Audit passed its output" / "its real run did not pass". Row exactly spec FR-27.
