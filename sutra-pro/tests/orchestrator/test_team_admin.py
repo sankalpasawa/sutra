@@ -224,7 +224,7 @@ def test_deleted_name_fits_80():
 
 def test_migration_adds_hidden_at(built):
     assert "hidden_at" in [r[1] for r in built.sql("PRAGMA table_info(departments)")]
-    assert SCHEMA_VERSION == 9
+    assert SCHEMA_VERSION >= 9                                        # v9 added hidden_at; later migrations only add (v10: project files, D451)
 
 
 def test_a_deleted_projects_page_says_so(client, auth, built):

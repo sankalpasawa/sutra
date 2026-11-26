@@ -138,6 +138,6 @@ def test_a_note_to_a_function_agent_that_has_not_spoken_in_this_run_rolls_its_se
     r = client.post(f"/api/chats/{old}/steer", json={"text": "Be strict this time."}, headers=TOKEN)
     assert r.status_code == 200 and r.json()["session_id"] != old and session_of(tenv, "web.audit") == r.json()["session_id"]
     assert [m.text for m in tenv.chats.messages(old)] == ["Nothing wrong"] and tenv.chats.messages(r.json()["session_id"])[-1].steer is True
-    assert context(tenv, second) == {"audit": "Owner's note: Be strict this time."}
+    assert {k: v for k, v in context(tenv, second).items() if k != "*"} == {"audit": "Owner's note: Be strict this time."}          # "*" is the project block (D451), kept beside the notes
     again = client.post(f"/api/chats/{old}/steer", json={"text": "x"}, headers=TOKEN)                 # the old, archived chat is no longer the agent's
     assert code(again, 409) == "not_running"
