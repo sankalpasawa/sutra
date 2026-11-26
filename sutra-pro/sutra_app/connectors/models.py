@@ -235,6 +235,7 @@ class SessionState(M):
     workdir: str
     work_folder: str = ""          # the owner's working folder this provider session was started in ("" none); Claude keys a session by its cwd
     thread_mode: str = ""          # `ask` when this provider session was started by an Ask turn (DV-1): Codex keeps the system text of a thread's first turn, so a thread is one mode ("" otherwise)
+    context_sig: str = ""          # the hash of the project block this provider session's first prompt held (D451): a Codex thread is one project context; "" for a chat of no project
     turns: int = Field(0, ge=0)
     switches: int = Field(0, ge=0)
     pinned: Optional[Provider] = None
@@ -246,10 +247,12 @@ class SessionState(M):
 
     @model_serializer(mode="wrap")
     def _no_thread_mode_unless_ask(self, handler: Any) -> dict[str, Any]:
-        """session.json of a chat that never asked is what it always was: the key is left out when empty."""
+        """session.json of a chat that never asked, and never had a project block, is what it always was: the keys are left out when empty."""
         data = handler(self)
         if not data.get("thread_mode"):
             data.pop("thread_mode", None)
+        if not data.get("context_sig"):
+            data.pop("context_sig", None)
         return data
 
 

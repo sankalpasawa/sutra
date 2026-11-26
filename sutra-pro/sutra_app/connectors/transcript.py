@@ -28,11 +28,13 @@ ROLE_LABELS = {"user": "User", "assistant": "Assistant", "system": "System"}
 
 _RECORD = "\n(attached: "                  # the line the app stores after an owner's words that carried files (orchestrator/direct_turns.py attached_line)
 _FILE_BLOCK = "\n\n[Attached file: "        # where the text of the files begins in what the model is sent (connectors/attachments.py)
+_CONTEXT_BLOCK = "\n\nParts of the project files for this message"      # where a project's excerpts for this message begin (D451, orchestrator/project_context.py): never part of the owner's line
 
 
 def same_turn(stored: str, new: str) -> bool:
     """Whether the last stored owner line IS the message being sent now. Equal text, or: the stored line is the owner's words plus the record of their files (and, in a carry-over,
     the files' text), the new message is the words plus the files' text, and the words are the same. It is dropped from the history so it is not carried twice (D440)."""
+    new = new.split(_CONTEXT_BLOCK, 1)[0]                  # a project's excerpts for this message were added to what the model is sent, not to the owner's line (D451)
     if stored == new:
         return True
     if _RECORD not in stored:
