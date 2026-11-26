@@ -50,7 +50,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_docs.py tests/test_ownership.py -q` passes
   - Covers: FR-35
 
-- [ ] T2: vendor_j2.py applies edits to vendored data files
+- [x] T2: vendor_j2.py applies edits to vendored data files
   - Files: `scripts/vendor_j2.py`, `tests/engine/test_engine_vendor.py`
   - Change: in the role-file loop (vendor_j2.py:3767-3769) and the tree loop (:3770-3774), apply `[e for e in EDITS if e.file == <source rel path>]` with `apply_edits` (UTF-8 decode/encode, the same error as code files), record ranges and pass the patch ids to `add`. The `unknown` check (:3764) admits a file named `agents/j2/<ROLE_FILES name>` or a path under a `TREES` folder. No data edit yet, so the output is unchanged. Update the module docstring step 3 ("byte for byte, but for data edits").
   - Tests: a unit test that builds the tree from a small fake source with one data `Edit` and sees the edited bytes and the patch id in its row; an edit naming `agents/j2/nosuch.md` raises VendorError.

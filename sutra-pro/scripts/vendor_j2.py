@@ -14,7 +14,7 @@ What it does, in this order, and nothing else:
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
      instead of producing a silently different file (P1 is a counted rule over every import line, see `apply_p1`; P15 is a
      data patch: see `scrub_seed_index`);
-  3. copies the data files byte for byte: role files, the whole `conditions/` and `templates/` trees (types are data, D161:
+  3. copies the data files byte for byte (but for the edits a patch names for one, D452): role files, the whole `conditions/` and `templates/` trees (types are data, D161:
      no type name is listed here), the `artifacts/` tree (`types.json`, `real_run.md`), the seed template library (but for P15) and the reference docs;
   4. writes `sutra_app/engine/VENDORED.md`: the commit, the sha256 of every J2 file and of its vendored copy, and the patch
      list with the line ranges the patches ended up on.
@@ -3761,17 +3761,32 @@ def build(src: Source):
             ranges.setdefault(patch, []).extend(f"{name}:{a}-{b}" if a != b else f"{name}:{a}" for a, b in spans)
         add(f"sutra_app/engine/{name}", name, text.encode("utf-8"), raw,
             sorted({e.patch for e in mine} | ({"P1"} if p1 else set()), key=_pnum))
-    unknown = {e.file for e in EDITS} - set(CODE)
-    if unknown:
-        raise VendorError(f"edits for files that are not vendored: {sorted(unknown)}")
+    seen = set()
+
+    def data_file(dest: str, rel: str):      # D452: a data file takes the edits that name its J2 path, else a byte copy
+        raw = src.read(rel)
+        mine = [e for e in EDITS if e.file == rel]
+        if not mine:
+            return add(dest, rel, raw, raw)
+        seen.add(rel)
+        try:
+            text, found = apply_edits(raw.decode("utf-8"), mine, name=rel)
+        except UnicodeDecodeError as exc:
+            raise VendorError(f"{rel} is not UTF-8: {exc}") from None
+        for patch, spans in found.items():
+            short = dest[len("sutra_app/engine/"):]
+            ranges.setdefault(patch, []).extend(f"{short}:{a}-{b}" if a != b else f"{short}:{a}" for a, b in spans)
+        add(dest, rel, text.encode("utf-8"), raw, sorted({e.patch for e in mine}, key=_pnum))
+
     for name in ROLE_FILES:
-        data = src.read(f"agents/j2/{name}")
-        add(f"sutra_app/engine/agents/j2/{name}", f"agents/j2/{name}", data, data)
+        data_file(f"sutra_app/engine/agents/j2/{name}", f"agents/j2/{name}")
     for folder, vendored, excluded in TREES:      # D161: types are data; every file of the tree, no name listed
         for rel in src.tree(folder):
             if rel not in excluded:
-                data = src.read(rel)
-                add(f"{vendored}/{rel[len(folder) + 1:]}", rel, data, data)
+                data_file(f"{vendored}/{rel[len(folder) + 1:]}", rel)
+    missing = {e.file for e in EDITS} - set(CODE) - seen
+    if missing:
+        raise VendorError(f"edits for files that are not vendored: {sorted(missing)}")
     patched_index = False
     for rel in src.tree("library"):
         data = src.read(rel)

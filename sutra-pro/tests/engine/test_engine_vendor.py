@@ -321,3 +321,42 @@ def test_the_tree_is_exactly_what_the_vendoring_script_derives_from_the_extracti
                           text=True, env={**os.environ, "PYTHONPATH": str(REPO)}, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f"{FILES} files, ok" in done.stdout
+
+
+def _fake_build(monkeypatch, edits):
+    """build() over a tiny in-memory source: one role file, one artifacts file, the seed index, no code module."""
+    module = vendor_module()
+    files = {"agents/j2/identity.md": b"line one\nRun it after approval.\n", "artifacts/real_run.md": b"copied\n",
+             "library/index.json": b"{}\n"}
+
+    class Fake(module.Source):
+        def __init__(self):
+            self.commit, self.git = PIN, False
+
+        def read(self, rel):
+            return files.get(rel, b"")
+
+        def tree(self, rel):
+            return sorted(p for p in files if p.startswith(rel + "/"))
+
+    for name, value in (("CODE", ()), ("ROLE_FILES", ("identity.md",)), ("REF_TOP", ()), ("REF_DOCS", ()), ("REF_TREES", ()),
+                        ("EDITS", tuple(module.Edit(*e) for e in edits)), ("scrub_seed_index", lambda text: (text, [])),
+                        ("TREES", (("artifacts", "sutra_app/engine/artifacts", ()),))):
+        monkeypatch.setattr(module, name, value)
+    return module, Fake()
+
+
+def test_d452_a_data_edit_changes_the_vendored_file_and_names_its_patch(monkeypatch):
+    module, src = _fake_build(monkeypatch, [("P46", "agents/j2/identity.md", "after approval", "once, unasked")])
+    files, rows, ranges = module.build(src)
+    assert files["sutra_app/engine/agents/j2/identity.md"] == b"line one\nRun it once, unasked.\n"
+    row = next(r for r in rows if r[0] == "sutra_app/engine/agents/j2/identity.md")
+    assert row[2] == "P46" and row[3] != row[4]
+    assert ranges["P46"] == ["agents/j2/identity.md:2"]
+    assert next(r for r in rows if r[0] == "sutra_app/engine/artifacts/real_run.md")[2] == ""
+
+
+def test_d452_a_data_edit_for_a_file_that_is_not_vendored_stops_the_run(monkeypatch):
+    module, src = _fake_build(monkeypatch, [("P46", "agents/j2/nosuch.md", "a", "b")])
+    with pytest.raises(module.VendorError, match="not vendored"):
+        module.build(src)
