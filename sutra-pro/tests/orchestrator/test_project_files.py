@@ -87,9 +87,9 @@ def test_the_size_and_the_text_limits_name_themselves(tenv):
     add(tenv, pf, "a.txt", b"x" * 60)
     assert "size limit" in refused(lambda: add(tenv, pf, "b.txt", b"y" * 60))
     pf = files_of(tenv, max_chars=100)
-    add(tenv, pf, "c.txt", b"z" * 80)
-    assert "text limit" in refused(lambda: add(tenv, pf, "d.txt", b"w" * 80))
-    assert len(pf.list("web").files) == 2                                                             # the refused ones were not kept
+    add(tenv, pf, "c.txt", b"z" * 80, dept="sales")
+    assert "text limit" in refused(lambda: add(tenv, pf, "d.txt", b"w" * 80, dept="sales"))
+    assert len(pf.list("web").files) == 1 and len(pf.list("sales").files) == 1                        # the refused ones were not kept, and a limit is per project
 
 
 def test_the_limits_the_page_shows_are_the_ones_the_server_checks(tenv):

@@ -15,7 +15,7 @@ from sutra_app.orchestrator.db import Database, SchemaError, StoreContext, Store
 from sutra_app.orchestrator.errors import StoreBusy
 
 T = "tsk_aaaaaaaaaaaa"
-LATER_TABLES = {"chat_turn_checkpoint", "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions"}      # added by migrations v5 to v8
+LATER_TABLES = {"chat_turn_checkpoint", "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions", "project_files"}      # added by migrations v5 to v10
 T2 = "tsk_bbbbbbbbbbbb"
 
 
@@ -134,6 +134,27 @@ def test_a_v3_database_migrates_to_v4_with_every_row_intact(settings, events):
     with pytest.raises(sqlite3.IntegrityError):
         sql(old, "UPDATE chat_sessions SET pinned_effort = 'ultra' WHERE id = 'cs_aaaaaaaaaaaa'")
     assert old.migrate() == schema.SCHEMA_VERSION                                # again: a no-op
+    old.close()
+
+
+def test_a_v9_database_migrates_to_v10_keeping_every_task_and_giving_it_no_input_files(settings, events):
+    """Project files (D451): one new table and one defaulted column, DDL only. A database built at version 9 keeps its tasks and its meta rows; an old task has no files."""
+    old = Database(settings.data_dir / "v9.sqlite3", events)
+    old.migrate(schema.MIGRATIONS[:9])
+    seed(old)
+    sql(old, "INSERT INTO meta VALUES ('rules:web','{}')")
+    assert old.version() == 9 and "input_files_json" not in {r[1] for r in sql(old, "PRAGMA table_info(tasks)")} and "project_files" not in names(old)
+    assert old.migrate() == schema.SCHEMA_VERSION == 10
+    assert sql(old, "SELECT input_files_json FROM tasks WHERE id = ?", T).fetchone()[0] == "[]" and sql(old, "SELECT count(*) FROM project_files").fetchone()[0] == 0
+    assert sql(old, "SELECT value FROM meta WHERE key = 'rules:web'").fetchone()[0] == "{}" and "project_files_live" in names(old, "index")
+    sql(old, "INSERT INTO project_files(id, dept_id, sha, name, kind, size, added_at) VALUES ('pf_1','web',?, 'a.txt','text',1,1)", "a" * 64)
+    with pytest.raises(sqlite3.IntegrityError):
+        sql(old, "INSERT INTO project_files(id, dept_id, sha, name, kind, size, added_at) VALUES ('pf_2','web',?, 'b.txt','text',1,1)", "a" * 64)      # one live row per (project, content)
+    sql(old, "UPDATE project_files SET removed_at = 2 WHERE id = 'pf_1'")
+    sql(old, "INSERT INTO project_files(id, dept_id, sha, name, kind, size, added_at) VALUES ('pf_3','web',?, 'a.txt','text',1,3)", "a" * 64)          # after a remove the same content may be added again
+    with pytest.raises(sqlite3.IntegrityError):
+        sql(old, "INSERT INTO project_files(id, dept_id, sha, name, kind, size, added_at) VALUES ('pf_4','web','short','a.txt','text',1,1)")
+    assert old.migrate() == schema.SCHEMA_VERSION
     old.close()
 
 

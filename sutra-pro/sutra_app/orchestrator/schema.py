@@ -338,12 +338,26 @@ DDL_V9_HIDDEN_TEAMS: tuple[str, ...] = (
     "ALTER TABLE departments ADD COLUMN hidden_at INTEGER",
 )
 
+# Project files (D451; migration v10): a project (a team) keeps files, instructions and an earlier-context memory. The BYTES stay in the attachment store (`<data>/attachments/<sha256>.<ext>`, D440);
+# this table lists which stored files belong to which project and holds their flags. No foreign key to `departments`: rows outlive a hidden team (DL5), like `work_tags`. A remove sets `removed_at`
+# (the row stays for audit) and the bytes are released when nothing else names them. Instructions and memory are JSON documents in `meta` (`pinstr:<dept>`, `pmem:<dept>`), no table. `tasks.input_files_json`
+# is the snapshot of the files that came with one request (a list of {id, name, kind, size, chars}); older code ignores the column. DDL only: no data work, so a rollback that keeps the DDL is harmless.
+DDL_V10_PROJECT_FILES: tuple[str, ...] = (
+    """CREATE TABLE project_files (
+  id TEXT PRIMARY KEY, dept_id TEXT NOT NULL, sha TEXT NOT NULL CHECK (length(sha) = 64), name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  kind TEXT NOT NULL CHECK (kind IN ('text','image','pdf')), size INTEGER NOT NULL CHECK (size >= 0), chars INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)), added_at INTEGER NOT NULL, removed_at INTEGER)""",
+    "CREATE UNIQUE INDEX project_files_live ON project_files(dept_id, sha) WHERE removed_at IS NULL",
+    "CREATE INDEX project_files_dept ON project_files(dept_id, removed_at)",
+    "ALTER TABLE tasks ADD COLUMN input_files_json TEXT NOT NULL DEFAULT '[]'",
+)
+
 Migration = Sequence[str] | Callable[[Connection], None]
 MIGRATIONS: tuple[Migration, ...] = (DDL_V1, _v2, DDL_V3_RECURRING, DDL_V4_AGENT_SESSIONS, DDL_V5_TURN_CHECKPOINT, DDL_V6_NODES, DDL_V7_WORK, DDL_V8_RECIPES,
-                                     DDL_V9_HIDDEN_TEAMS)
+                                     DDL_V9_HIDDEN_TEAMS, DDL_V10_PROJECT_FILES)
 SCHEMA_VERSION = len(MIGRATIONS)
 TABLES = (
     "meta", "org_charts", "chart_changes", "org_nodes", "org_edges", "departments", "tasks", "graph_nodes", "graph_edges",
     "chat_sessions", "chat_messages", "chat_segments", "atoms", "atom_ledger", "usage_ledger", "recurring", "recurring_runs", "chat_turn_checkpoint",
-    "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions",
+    "projects", "agent_nodes", "node_messages", "node_audit", "approvals", "work_tags", "recipes", "recipe_versions", "project_files",
 )
