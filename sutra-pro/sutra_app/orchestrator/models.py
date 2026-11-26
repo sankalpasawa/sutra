@@ -32,7 +32,7 @@ __all__ = [
     "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "DoneReport", "AtomCard", "CardRow",
     "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX", "AnswerCard", "AnswerSource",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
-    "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "InputFile", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
+    "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "InputFile", "FileRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
     "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "SystemPermissionCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
@@ -555,6 +555,13 @@ class ChatChoice(Value):
     option: Annotated[str, StringConstraints(min_length=1, max_length=200)]       # the option's id or its label text
 
 
+class FileRef(Value):
+    """One file of the attachment store that goes with a message (D451): its content hash and the owner's name for it."""
+
+    id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    name: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+
+
 class ChatPost(Value):
     text: Annotated[str, StringConstraints(min_length=1, max_length=8000)]
     choice: ChatChoice | None = None
@@ -566,6 +573,8 @@ class ChatPost(Value):
     decide_for_me: bool | None = None
     # D423: the home screen's dollar budget (API price) for a new request; None: the team's own. The limits are EngineSettings.usd_budget's.
     usd_budget: Annotated[float, Field(ge=1, le=10_000, allow_inf_nan=False)] | None = None
+    # D451: stored files that go with this message: a team's chat gives them to the run it starts (`inputs/attached/`), the org chat's planner reads them and gives them to each task it makes
+    files: Annotated[list[FileRef], Field(max_length=10)] = []
 
     @field_validator("usd_budget")
     @classmethod

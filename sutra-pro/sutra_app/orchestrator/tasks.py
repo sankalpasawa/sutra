@@ -889,7 +889,7 @@ class TaskService:
 
     # ---- the owner writes to a department -------------------------------------------------------------------------------------
 
-    def deliver(self, session_id: str, text: str) -> Delivery:
+    def deliver(self, session_id: str, text: str, input_files: Sequence[dict] = ()) -> Delivery:
         """The owner's line in a department or division chat. Function, step, org and archived chats are read-only (403)."""
         found = self.db.conn().execute("SELECT kind, node_id, status FROM chat_sessions WHERE id = ?", (session_id,)).fetchone()
         if found is None:
@@ -897,11 +897,11 @@ class TaskService:
         if found["status"] != "active" or found["kind"] not in ("department", "division"):
             raise ReadOnly()
         if found["kind"] == "department":
-            return self.deliver_to_department(found["node_id"], text)
+            return self.deliver_to_department(found["node_id"], text, input_files=input_files)
         dept = self.db.conn().execute("SELECT department_id FROM graph_nodes WHERE id = ?", (found["node_id"],)).fetchone()
         if dept is None or dept["department_id"] is None:
             raise NotFound("that team")
-        return self.deliver_to_department(dept["department_id"], text, scope_id=found["node_id"])
+        return self.deliver_to_department(dept["department_id"], text, scope_id=found["node_id"], input_files=input_files)
 
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, input_files: Sequence[dict] = ()) -> Delivery:
         """`input_files` (D451): [{id, name}] of files in the attachment store that go with this request; they are copied into the run's folder. A team waiting for the owner takes words only."""

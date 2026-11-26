@@ -662,7 +662,8 @@
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
     const held = !choice && root.ChatComposer ? composer() : null;
-    if (held !== null && held.state().files.length > 0) { showBanner({text: root.ChatComposer.TEAM_FILES}); return false; }          // a file only goes to the model (D440, FR-3): never dropped unseen
+    const carried = held !== null ? held.teamFiles() : {ok: true, files: []};          // the files in the box go with the message (D451, which replaces D440's refusal); a chip that failed or still uploads holds the send
+    if (!carried.ok) { showBanner({text: carried.error}); return false; }
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
       pause: null, answered_by: null, task_id: null, state: "pending", at: ""}};
     S.pending.push(entry);
@@ -673,7 +674,8 @@
     renderComposer();
     try {
       const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D423: the Budget chip's dollars, a new request only
-      const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
+      const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget, ...(carried.files.length ? {files: carried.files} : {})});
+      if (held !== null && carried.files.length) held.clearFiles();
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
       clearBanner();

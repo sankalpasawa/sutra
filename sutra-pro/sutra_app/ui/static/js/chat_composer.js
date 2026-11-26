@@ -75,17 +75,18 @@
   const ENTITIES = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"};
   const esc = s => String(s).replace(/[&<>"']/g, c => ENTITIES[c]);
   const clean = v => text(v).replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
-  const FILES = {ChatDraft: "chat_draft", ChatPill: "chat_pill", ChatSearch: "chat_search", ChatLiveClient: "chat_live_client", ChatLiveStore: "chat_live_store"};
+  const FILES = {AttachBar: "attach_bar", ChatDraft: "chat_draft", ChatPill: "chat_pill", ChatSearch: "chat_search", ChatLiveClient: "chat_live_client", ChatLiveStore: "chat_live_store"};
   const need = name => {
     if (root[name]) return root[name];
     if (typeof module === "object" && module !== null && module.exports && typeof require === "function" && hasOwn(FILES, name)) return require("./" + FILES[name] + ".js");
     return null;
   };
   const pillOf = () => need("ChatPill");
+  const AB = need("AttachBar");                  // the chips, the paste and drop helpers and the upload controller every place that takes a file shares (D451, T8)
+  const {size, kindOf, chips, filesOf, hasFiles, nameFor, REMOVE_FAILED, WAIT_UPLOAD, IMAGE_EXT} = AB;
   const searchOf = () => need("ChatSearch");
-  const MAX_FILES = 10;
+  const MAX_FILES = AB.MAX_FILES;
   const MAX_MESSAGE = 8000;            // the longest message POST /direct takes (chat_v2.MAX_CHARS), counted in characters
-  const SIZE_UNITS = ["B", "KB", "MB"];
 
   const idle = () => ({active: false, stopping: false, text: "", messageId: null});
 
@@ -93,13 +94,6 @@
   const ASK_TITLE = "Ask: an answer about your folder. It only reads, it changes nothing, and Sutra checks every source it names.";
   const DO_TITLE = "Do: tell the team what to do, or ask the model, as before.";
   const ASK_NOTE = "Ask only reads your folder and changes nothing. Sutra checks every source the answer names.";
-
-  function size(n) {
-    let v = Number.isFinite(n) ? Math.max(0, n) : 0;
-    let i = 0;
-    while (v >= 1024 && i < SIZE_UNITS.length - 1) { v /= 1024; i += 1; }
-    return (i === 0 ? String(Math.round(v)) : v.toFixed(1)) + " " + SIZE_UNITS[i];
-  }
 
   /* ---------------------------------------------------------------- strings */
   const ready = providers => (Array.isArray(providers) ? providers.filter(p => isObj(p) && p.ready === true && (p.name === "claude" || p.name === "codex")) : []);
@@ -113,54 +107,6 @@
     // no provider listed at all is the offline demo (the stub answers the team's agent, but is not a model to choose): there is nothing to sign in to
     if (Array.isArray(providers) && providers.length === 0) return "This is the offline demo: there is no Claude or Codex to ask directly. Plan with Sutra (or tell the team) works here.";
     return "No model can answer right now. Sign in to Claude or Codex in Settings, then try again.";
-  }
-
-  // What a file is, from the server's kind once it is uploaded, else from its name: image, pdf or text.
-  const IMAGE_EXT = /\.(png|jpe?g|gif|webp)$/i;
-  const kindOf = f => (["image", "pdf", "text"].includes(clean(f.kind)) ? clean(f.kind) : (IMAGE_EXT.test(clean(f.name)) ? "image" : (/\.pdf$/i.test(clean(f.name)) ? "pdf" : "text")));
-  const REMOVE_FAILED = "Remove the file that was not attached, or it will not be read.";
-  const WAIT_UPLOAD = "Wait for the files to finish uploading.";
-  const TEAM_FILES = "Files go only to the model. Remove them, or ask the model.";
-  const TILE = Object.freeze({image: "IMG", pdf: "PDF", text: "TXT"});
-  const BLOB = /^blob:[A-Za-z0-9+.:\/_-]+$/;            // a thumbnail is only ever a blob: URL this page made
-
-  function chips(files) {
-    const list = (Array.isArray(files) ? files : []).filter(isObj);
-    if (list.length === 0) return "";
-    return '<ul class="ccfiles" aria-label="Attached files">' + list.map(f => {
-      const status = f.status === "ready" ? "ready" : (f.status === "failed" ? "failed" : "uploading");
-      const tail = status === "uploading" ? " (uploading…)" : (status === "failed" ? " (not attached: " + esc(clean(f.error) || "it failed") + ")" : " (" + esc(size(f.size)) + ")");
-      const preview = typeof f.preview === "string" && BLOB.test(f.preview) ? f.preview : "";
-      const look = preview !== "" ? '<img class="ccthumb" src="' + esc(preview) + '" alt=""/>' : '<span class="cctile" aria-hidden="true">' + TILE[kindOf(f)] + "</span>";
-      return '<li class="ccfile ' + status + '"><span class="ccname">' + esc(clean(f.name)) + "</span><small>" + tail + "</small>" + look + ' <button type="button" class="linkbtn" data-act="composer-remove" data-key="' +
-        esc(clean(f.key)) + '" aria-label="Remove ' + esc(clean(f.name)) + '">Remove</button></li>';
-    }).join("") + "</ul>";
-  }
-
-  // filesOf(clipboardData | dataTransfer) -> [File] | null. Null is "not a file paste": the page lets the text paste or the text drop happen.
-  function filesOf(transfer) {
-    if (transfer === null || typeof transfer !== "object") return null;
-    let list = [];
-    try { list = Array.from(transfer.files || []).filter(Boolean); } catch (e) { list = []; }
-    if (list.length === 0 && transfer.items) {
-      try { list = Array.from(transfer.items).filter(i => i && i.kind === "file" && typeof i.getAsFile === "function").map(i => i.getAsFile()).filter(Boolean); } catch (e) { list = []; }
-    }
-    return list.length ? list : null;
-  }
-
-  function hasFiles(transfer) {
-    if (transfer === null || typeof transfer !== "object") return false;
-    try { return Array.from(transfer.types || []).includes("Files"); } catch (e) { return false; }
-  }
-
-  // A pasted screenshot is called "image.png" by every browser (or has no name at all): it gets "pasted-image-<n>.<ext>", so two pastes differ.
-  const PASTE_EXT = Object.freeze({"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp"});
-  function nameFor(file, pasted, n) {
-    const name = clean(file && file.name);
-    if (!pasted || (name !== "" && !/^image\.(png|jpe?g|gif|webp)$/i.test(name))) return name;
-    const type = clean(file && file.type).toLowerCase();
-    const ext = hasOwn(PASTE_EXT, type) ? PASTE_EXT[type] : (IMAGE_EXT.exec(name) || [".png"])[0].toLowerCase();
-    return "pasted-image-" + n + ext;
   }
 
   // "" when `body` fits in one message, else the sentence the server would refuse it with. Characters are counted as the server counts them (a code
@@ -196,17 +142,16 @@
     const toggle = asking || o.toggle === false ? "" : '<div class="ccmode" role="group" aria-label="Where this message goes">' +
       '<button type="button" class="ccmode-opt' + (mode === "team" ? " on" : "") + '" data-act="composer-mode" data-mode="team" aria-pressed="' + (mode === "team") + '">' + esc(team) + "</button>" +
       '<button type="button" class="ccmode-opt' + (mode === "direct" ? " on" : "") + '" data-act="composer-mode" data-mode="direct" aria-pressed="' + (mode === "direct") + '">' + esc(direct) + "</button></div>";
-    // the team's route has no note of its own; with Ask available the page can say something there (a draft that could not be written), and only then
-    // a file is never hidden: the chips are drawn in "Tell the team" too (a file only ever goes to the model, FR-3), and so is the note that says why a send was refused
+    // a file is never hidden: the chips are drawn in "Tell the team" too, and so is the attach control (D451: the team takes files with its message), and the note that says why a send was refused
     const held = chips(s.files);
-    if (mode !== "direct") return askSwitch + toggle + held + ((askOn || held !== "") && clean(s.note) !== "" ? '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>" : "");
     const CS = searchOf();
     const limit = CS ? CS.limitsNote() : "";
-    const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' +
+    const where = mode === "direct" ? "" : '<small class="ccwhere">Files go to the team with your message.</small>';
+    const attach = '<div class="ccattach"><button type="button" class="linkbtn" data-act="composer-attach" title="' + esc(limit) + '">Attach files</button>' + where +
       '<input type="file" class="ccinput" multiple hidden tabindex="-1" aria-label="Choose files to attach"/><small>' + esc(limit) + "</small></div>";
     const note = clean(s.note) === "" ? "" : '<p class="ccnote" role="status">' + esc(clean(s.note)) + "</p>";
     const about = asking ? '<p class="ccnote ccasknote">' + esc(ASK_NOTE) + "</p>" : "";
-    return askSwitch + about + toggle + chips(s.files) + attach + note;
+    return askSwitch + about + toggle + held + attach + note;
   }
 
   function streamRow(state, provider) {
@@ -247,8 +192,8 @@
     const files = Array.isArray(s.files) ? s.files : [];
     const uploading = files.some(x => isObj(x) && x.status === "uploading");
     const failed = files.some(x => isObj(x) && x.status === "failed");
-    const why = s.mode !== "direct" ? "" : (failed ? REMOVE_FAILED : (uploading ? WAIT_UPLOAD : ""));          // FR-2: the reason is the button's title
-    const out = {label: s.ask === "ask" ? "Ask" : "Send", act: "send", disabled: f.disabled === true || (s.mode === "direct" && (uploading || failed || f.blocked === true))};
+    const why = failed ? REMOVE_FAILED : (uploading ? WAIT_UPLOAD : "");          // FR-2: the reason is the button's title; the same in "Tell the team", whose files go with it (D451)
+    const out = {label: s.ask === "ask" ? "Ask" : "Send", act: "send", disabled: f.disabled === true || uploading || failed || (s.mode === "direct" && f.blocked === true)};
     if (why !== "") out.title = why;
     return out;
   }
@@ -256,24 +201,12 @@
   /* ---------------------------------------------------------------- the controller */
   const asError = (e, fallback) => (isObj(e) && clean(e.message) !== "" ? clean(e.message) : fallback);
 
-  function defaultRead(file) {
-    return new Promise((resolve, reject) => {
-      const Reader = root.FileReader;
-      if (typeof Reader !== "function") { reject(new Error("This browser cannot read files.")); return; }
-      const r = new Reader();
-      r.onerror = () => reject(new Error("That file could not be read."));
-      r.onload = () => resolve(String(r.result).split(",").slice(1).join(","));
-      r.readAsDataURL(file);
-    });
-  }
-
   let limitsAsked = false;
 
   function create(options) {
     const o = isObj(options) ? options : {};
     const api = o.api;
     const sid = clean(o.sid);
-    const readFile = typeof o.readFile === "function" ? o.readFile : defaultRead;
     const changed = () => { if (typeof o.onChange === "function") o.onChange(); };
     const ended = () => { if (typeof o.onTurnEnd === "function") o.onTurnEnd(); };
     let downNote = "";                       // the note a transport failure ("The app is not responding.") put up: it goes when the page reads the session again
@@ -283,6 +216,10 @@
     const rememberedMode = (() => { try { return modes && typeof modes.loadMode === "function" ? modes.loadMode(sid) : ""; } catch (e) { return ""; } })();
     let modeNow = rememberedMode !== "" ? rememberedMode : (o.mode === "direct" ? "direct" : "team");
     const state = {files: [], note: ""};
+    // The chips and the upload are the shared controller's (attach_bar.js, D451): `state.files` is its live list, so everything below reads and writes it as it always did.
+    const base = "/api/chats/" + encodeURIComponent(sid);
+    const attach = AB.create({api, url: base + "/attachments", readFile: o.readFile, onChange: changed, objectUrl: o.objectUrl});
+    Object.defineProperty(state, "files", {enumerable: true, configurable: true, get: () => attach.files(), set: v => attach.replace(v)});
     // The page checks a file with the server's own lists (D440, A4): read once per page load, the built-in lists stay the offline default and a failed read changes nothing.
     if (!limitsAsked && api && typeof api.get === "function") {
       const CSL = searchOf();
@@ -318,32 +255,12 @@
       return {active: !LS.terminal(t.phase), stopping: t.phase === "stopping", text: t.blocks.filter(b => b.type === "text").map(b => b.text).join(""), messageId: t.messageId};
     };
     Object.defineProperty(state, "turn", {enumerable: true, configurable: true, get: () => (live ? project() : plain), set: v => { plain = v; }});
-    let seq = 0;
-    let pastes = 0;
     const sent = new Map();                 // owner line id -> the attachment refs this page sent with it (a Retry sends them again)
     const modes_ = new Map();               // owner line id -> "ask" | "do": how this page sent it, so that a Retry is the same kind of turn (an Ask stays read only)
     const remember = (id, asked) => { if (id !== null) { modes_.set(id, asked ? "ask" : "do"); while (modes_.size > 50) modes_.delete(modes_.keys().next().value); } };
     // How a Retry asks (D350): the server stores the mode with the owner's line and the page passes it (`opts.mode`, from the line's own `mode`); a server that does not say, and a line this page
     // sent itself, are told by what the page remembers; only then does the switch decide. The server never lets a Retry widen an Ask, whatever the page sends.
     const askedBefore = (lineId, told) => (told === "ask" ? true : told === "do" ? false : (modes_.has(lineId) ? modes_.get(lineId) === "ask" : asking()));
-    const base = "/api/chats/" + encodeURIComponent(sid);
-    const urls = isObj(o.objectUrl) ? o.objectUrl : {
-      create: file => (root.URL && typeof root.URL.createObjectURL === "function" ? root.URL.createObjectURL(file) : ""),
-      revoke: url => { if (root.URL && typeof root.URL.revokeObjectURL === "function") root.URL.revokeObjectURL(url); },
-    };
-    const previewOf = file => {
-      try {
-        const url = typeof urls.create === "function" ? urls.create(file) : "";
-        return typeof url === "string" && BLOB.test(url) ? url : "";
-      } catch (e) {
-        return "";                          // no thumbnail is no loss: the chip still names the file
-      }
-    };
-    const forget = entry => {
-      if (!entry || !entry.preview) return;
-      try { if (typeof urls.revoke === "function") urls.revoke(entry.preview); } catch (e) { /* already gone */ }
-      entry.preview = "";
-    };
 
     function setMode(mode) {
       if (asking()) leaveAsk();                                         // the toggle is not drawn while asking; a program that sets the mode means it
@@ -399,64 +316,27 @@
       return Array.from(text(value)).slice(0, MAX_MESSAGE).join("");
     }
 
-    function removeFile(key) {
-      state.files.filter(f => f.key === key).forEach(forget);
-      state.files = state.files.filter(f => f.key !== key);
-      changed();
-    }
-
-    async function upload(entry, file) {
-      try {
-        const b64 = await readFile(file);
-        const ref = await api.post(base + "/attachments", {name: entry.name, content_b64: b64});
-        if (!state.files.includes(entry)) return;                     // the owner removed it while it travelled
-        if (!isObj(ref) || !/^[0-9a-f]{64}$/.test(text(ref.id))) throw new Error("That file could not be attached.");
-        Object.assign(entry, {status: "ready", id: ref.id, kind: clean(ref.kind), size: Number.isFinite(ref.size) ? ref.size : entry.size});
-      } catch (e) {
-        Object.assign(entry, {status: "failed", error: asError(e, "it could not be sent")});
-      }
-      changed();
-    }
+    function removeFile(key) { attach.removeFile(key); }
 
     function addFiles(files, opts) {
-      const CS = searchOf();
-      const pasted = isObj(opts) && opts.pasted === true;
-      const list = Array.from(files || []);
-      const jobs = [];
       state.note = "";
-      list.forEach(file => {
-        const name = nameFor(file, pasted, pastes + 1);
-        const why = CS ? CS.checkFile(isObj(file) ? {name, size: file.size} : file) : "";
-        // a file that cannot go is a chip that says why and stays until the owner removes it (FR-1): a note alone is cleared by the next action and the file is lost unseen
-        const over = state.files.filter(f => f.status !== "failed").length >= MAX_FILES;
-        if (why !== "" || over) {
-          seq += 1;
-          state.files.push({key: "f" + seq, name: name || "file", size: Number.isFinite(file && file.size) ? file.size : 0, status: "failed", id: "", kind: "", preview: "",
-            error: why !== "" ? why : "Up to " + MAX_FILES + " files can go with one message."});
-          return;
-        }
-        if (pasted && name !== clean(file.name)) pastes += 1;
-        seq += 1;
-        const entry = {key: "f" + seq, name, size: file.size, status: "uploading", id: "", kind: "", error: "", preview: IMAGE_EXT.test(name) ? previewOf(file) : ""};
-        state.files.push(entry);
-        jobs.push(upload(entry, file));
-      });
-      changed();
-      return Promise.all(jobs);
+      return attach.addFiles(files, opts);
     }
 
+    // A paste or a drop on the box: false when it carries no file (a text paste pastes as text), else the files are attached and the upload's promise is returned. The box stays where it is:
+    // in "Tell the team" the files go to the team with the message (D451), in "Ask the model" to the model (D440).
     function take(transfer, opts) {
-      const files = filesOf(transfer);
-      if (files === null) return false;
-      const switched = state.mode !== "direct";
-      state.mode = "direct";
-      const jobs = addFiles(files, opts);
-      if (switched && state.note === "") {
-        state.note = "Files go only to the model, so this message now asks the model directly.";
-        changed();
-      }
-      return jobs;
+      return AB.filesOf(transfer) === null ? false : addFiles(AB.filesOf(transfer), opts);
     }
+
+    // What a "Tell the team" send carries (D451): the ready files as [{id, name}], or the sentence that says why the send waits (a chip failed, or one is still uploading). Nothing is sent here.
+    function teamFiles() {
+      const why = attach.blocked();
+      return why !== "" ? {ok: false, error: why} : {ok: true, files: attach.refs()};
+    }
+
+    // The team accepted the message: its files went with it, the chips go.
+    function clearFiles() { attach.clear(); }
 
     function refuse(error) {
       state.note = error;
@@ -466,7 +346,7 @@
 
     async function send(value) {
       const body = text(value).trim();
-      if (state.mode !== "direct") return state.files.length > 0 ? refuse(TEAM_FILES) : {ok: false, error: "This message goes to the team."};
+      if (state.mode !== "direct") return {ok: false, error: "This message goes to the team."};
       if (body === "") return {ok: false, error: "Write a message first."};
       const long = tooLong(body);
       if (long !== "") return refuse(long);                              // nothing is sent and the box keeps the words
@@ -476,9 +356,7 @@
       const ready = state.files.filter(f => f.status === "ready");
       const accepted = await ask(body, ready.map(f => f.id), ready.map(f => f.name));
       if (accepted.ok) {
-        state.files.forEach(forget);
-        state.files = [];
-        changed();
+        attach.clear();
       }
       return accepted;
     }
@@ -786,7 +664,7 @@
       return pending;
     }
 
-    return {state: () => state, setMode, enableAsk, setAsk, draft, say, addFiles, take, removeFile, send, retry, stop, partial, rejoin, reconcile, resync,
+    return {state: () => state, setMode, enableAsk, setAsk, draft, say, addFiles, take, removeFile, teamFiles, clearFiles, send, retry, stop, partial, rejoin, reconcile, resync,
       live: () => live !== null, frame: raw => { if (live) live.frame(raw); }, reconnect: () => (live && project().active ? live.reconnect() : Promise.resolve(false)), setPolling: on => { if (live) live.setPolling(on); },
       offer: rows => (live ? live.offer(rows) : (Array.isArray(rows) ? rows : [])), liveView: () => (live ? live.view() : null), pendingLine: messages => (live ? pendingLine(messages) : null),
       close: () => { if (live) live.close(); }};
@@ -807,7 +685,7 @@
     return true;
   }
 
-  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, fillBox, MAX_FILES, MAX_MESSAGE, TEAM_FILES};
+  const ChatComposer = {create, bar, chips, streamRow, streamParts, paintStreamRow, button, askBlock, providerOf, filesOf, hasFiles, sendKey, stopPress, tooLong, size, fillBox, MAX_FILES, MAX_MESSAGE};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ChatComposer;
   else root.ChatComposer = ChatComposer;
 })(globalThis);

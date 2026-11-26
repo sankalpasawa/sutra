@@ -189,10 +189,11 @@ test("a provider that cannot run is never the one shown, and with none runnable 
   assert.equal(button({mode: "direct", files: [], turn: {active: false}}, "x", {blocked: true}).disabled, true);
 });
 
-test("the bar shows the mode toggle always and the attach controls only in direct mode; labels are escaped", () => {
+test("the bar shows the mode toggle and the attach controls in both modes (D451: the team takes files with its message); labels are escaped", () => {
   const team = bar({mode: "team", files: []});
   assert.match(team, /data-mode="team" aria-pressed="true"/);
-  assert.doesNotMatch(team, /composer-attach/);
+  assert.match(team, /composer-attach/);
+  assert.match(team, /Files go to the team with your message\./);
   const direct = bar({mode: "direct", files: [{key: "f1", name: "<img src=x>.png", status: "ready", size: 2048}]}, {labels: {team: "Plan with Sutra", direct: "Ask directly"}});
   assert.match(direct, /Plan with Sutra/);
   assert.match(direct, /data-mode="direct" aria-pressed="true"/);
@@ -280,13 +281,14 @@ test("the 11th file of a paste is refused with the same note as the file chooser
   assert.match(c.state().files[10].error, /Up to 10 files/);
 });
 
-test("in team mode a pasted file switches the box to the model, with a one-line note", async () => {
+test("in team mode a pasted file is attached to the team's message and the box stays in team mode (D451 replaces the D440 switch to the model)", async () => {
   const {c} = rig({[UP]: () => ({id: ID, kind: "image", size: 5})}, {mode: "team", objectUrl: urlRig().objectUrl});
   assert.equal(c.state().mode, "team");
   await c.take({files: [image("image.png")]}, {pasted: true});
-  assert.equal(c.state().mode, "direct");
-  assert.equal(c.state().note, "Files go only to the model, so this message now asks the model directly.");
-  assert.match(bar(c.state()), /class="ccnote" role="status">Files go only to the model/);
+  assert.equal(c.state().mode, "team");                                     // no switch, no "Files go only to the model" note
+  assert.equal(c.state().note, "");
+  assert.equal(c.state().files.length, 1); assert.equal(c.state().files[0].status, "ready");
+  assert.doesNotMatch(bar(c.state()), /Files go only to the model/);
   const refused = rig({}, {mode: "team"});
   await refused.c.take({files: [file("tool.exe")]});
   assert.match(refused.c.state().files[0].error, /can be attached/);        // the refusal is what the owner needs to read, on the chip
@@ -680,24 +682,41 @@ test("FR-2: a failed upload is not dropped by a send of the others; the owner re
   assert.equal(c.state().files.length, 2, "nothing was erased");
 });
 
-test("FR-3: the file bar is drawn in Tell the team too, and a team send with a file is refused with a sentence", async () => {
+test("FR-2 (D451): a team send carries the ready files; a failed or uploading chip blocks it with a sentence; nothing goes to the model route", async () => {
   const {api, c} = rig({[UP]: () => ({id: ID, name: "notes.txt", kind: "text", size: 5})});
   await c.addFiles([file("notes.txt")]);
   c.setMode("team");
   assert.match(bar(c.state()), /class="ccfiles"/);
-  const out = await c.send("tell them");
-  assert.equal(out.ok, false);
-  assert.equal(out.error, "Files go only to the model. Remove them, or ask the model.");
+  assert.deepEqual(c.teamFiles(), {ok: true, files: [{id: ID, name: "notes.txt"}]});
+  const out = await c.send("tell them");                                    // the page's team route sends; the composer's own send is the model's
+  assert.equal(out.ok, false); assert.equal(out.error, "This message goes to the team.");
   assert.equal(api.calls.filter(x => x.p === DIRECT).length, 0);
+  c.clearFiles();
+  assert.equal(c.state().files.length, 0); assert.deepEqual(c.teamFiles(), {ok: true, files: []});
+  await c.addFiles([file("tool.exe")]);                                     // a refused type is a failed chip that stays
+  assert.equal(c.teamFiles().ok, false); assert.match(c.teamFiles().error, /Remove the file that was not attached/);
+  assert.equal(button({mode: "team", files: c.state().files}, "x").disabled, true);
+  assert.match(button({mode: "team", files: c.state().files}, "x").title, /Remove the file/);
+  c.removeFile(c.state().files[0].key);
+  let release; const slow = rig({[UP]: () => new Promise(r => { release = () => r({id: ID, kind: "text", size: 5}); })});
+  const pending = slow.c.addFiles([file("late.txt")]);
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(slow.c.teamFiles(), {ok: false, error: "Wait for the files to finish uploading."});
+  release(); await pending;
+  assert.equal(slow.c.teamFiles().ok, true);
 });
 
-test("FR-3: the panel and the home page refuse a team send while a file is held, with the composer's own sentence (source pin: the pages are not loadable in node)", () => {
+test("FR-2 (D451): the panel and the home page send a team message with its files and no longer refuse one (source pin: the pages are not loadable in node)", () => {
   const fs = require("node:fs");
   const panel = fs.readFileSync(path.join(JS, "node_panel.js"), "utf8");
   const home = fs.readFileSync(path.join(JS, "home.js"), "utf8");
-  assert.match(panel, /held\.state\(\)\.files\.length > 0\) \{ st\.banner = root\.ChatComposer\.TEAM_FILES;/);
-  assert.match(home, /held\.state\(\)\.files\.length > 0\) \{ showBanner\(\{text: root\.ChatComposer\.TEAM_FILES\}\)/);
-  assert.equal(ChatComposer.TEAM_FILES, "Files go only to the model. Remove them, or ask the model.");
+  for (const source of [panel, home]) {
+    assert.doesNotMatch(source, /TEAM_FILES/);
+    assert.match(source, /teamFiles\(\)/);
+    assert.match(source, /clearFiles\(\)/);
+  }
+  assert.match(panel, /\{text: body, \.\.\.\(sent\.files\.length \? \{files: sent\.files\} : \{\}\)\}/);
+  assert.equal(ChatComposer.TEAM_FILES, undefined);
 });
 
 test("A4: the composer asks the server for the attachment lists once and the check uses them; a failed read leaves the built-in lists", async () => {

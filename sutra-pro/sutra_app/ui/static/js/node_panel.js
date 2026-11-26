@@ -1362,9 +1362,10 @@
       if (directOn() && team !== true) return sendDirect(value, fromBox);
       const body = text(value).trim();
       if (body === "") return false;
-      // a file only ever goes to the model: a team send with a chip in the box would drop it unseen (D440, FR-3), so it is refused with the one sentence that says what to do
+      // the files in the box go with the team's message (D451, which replaces D440's refusal): a chip that failed or is still uploading holds the send with its sentence, never dropped unseen
       const held = st.tab === "chat" && root.ChatComposer ? composerOf() : null;
-      if (held !== null && held.state().files.length > 0) { st.banner = root.ChatComposer.TEAM_FILES; paintChat(); return false; }
+      const sent = held !== null ? held.teamFiles() : {ok: true, files: []};
+      if (!sent.ok) { st.banner = sent.error; paintChat(); return false; }
       const g = gen;
       const sid = st.sid;
       st.sending = true;
@@ -1372,8 +1373,9 @@
       paintComposer();
       let ok = false;
       try {
-        await api().post(msgPath(sid), {text: body});
+        await api().post(msgPath(sid), {text: body, ...(sent.files.length ? {files: sent.files} : {})});
         ok = true;
+        if (held !== null && sent.files.length) held.clearFiles();                // the team has them: the chips go
         if (draftStore()) draftStore().clearIf(sid, body);                 // only a send the server accepted clears the draft
       } catch (e) {
         if (g === gen && st) {

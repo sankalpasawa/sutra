@@ -127,3 +127,36 @@ def test_post_tasks_with_files_keeps_them_and_an_unknown_id_is_404_with_no_task(
     bad = world.client.post("/api/tasks", json={"dept_id": "web", "text": "again", "files": [{"id": "0" * 64, "name": "gone.txt"}]}, headers=world.auth)
     assert bad.status_code == 404 and counts(world) == before
     assert world.client.post("/api/tasks", json={"dept_id": "web", "text": "x", "files": [{"id": "short", "name": "n"}]}, headers=world.auth).status_code == 422
+
+
+# ---- a team chat's plain message takes the same files (E6) -----------------------------------------------------------------------------
+
+def chat_client(world) -> TestClient:
+    """The chat agent's router (POST /api/chats/{sid}/messages) over the same real services: the contract world does not mount it."""
+    from sutra_app.orchestrator.api import agent as agent_api
+    from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
+    from sutra_app.orchestrator.redact import Redactor
+    app = FastAPI()
+    app.state.services = world.services
+    install_error_handlers(app, redacted_response_class(Redactor(None, environ={})))
+    app.include_router(agent_api.build_router())
+    return TestClient(app, base_url="http://127.0.0.1:8780", raise_server_exceptions=False)
+
+
+def test_a_team_chat_message_with_files_starts_a_run_that_is_given_them(world):
+    sid = world.t.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'")
+    files = [stored(world, "spec.txt", b"the spec")]
+    got = chat_client(world).post(f"/api/chats/{sid}/messages", json={"text": "read this", "files": files}, headers=world.auth)
+    assert got.status_code == 200, got.text
+    (row,) = world.t.sql("SELECT input_files_json FROM tasks WHERE dept_id = 'web'").fetchall()
+    assert [f["name"] for f in json.loads(row["input_files_json"])] == ["spec.txt"]
+    world.t.run(world.t.service.start_ready())
+    task_id = got.json()["task_id"]
+    assert (world.t.run_dir(task_id) / "inputs" / "attached" / "spec.txt").read_text() == "the spec"
+
+
+def test_a_team_chat_message_with_an_unknown_file_is_404_and_stores_nothing(world):
+    sid = world.t.one("SELECT chat_session_id FROM graph_nodes WHERE id = 'web'")
+    before = counts(world)
+    got = chat_client(world).post(f"/api/chats/{sid}/messages", json={"text": "read this", "files": [{"id": "0" * 64, "name": "gone.txt"}]}, headers=world.auth)
+    assert got.status_code == 404 and counts(world) == before
