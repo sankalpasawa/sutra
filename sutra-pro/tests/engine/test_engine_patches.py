@@ -5375,7 +5375,11 @@ def test_p45_the_run_output_limits_hold_and_the_main_result_is_null_missing_or_w
     assert rec["stderr"]["lines_total"] == 300 and rec["stderr"]["truncated"] and rec["stderr"]["tail"].splitlines() == [f"err {i}" for i in range(250, 300)]
     assert rec["main_result"]["exists"] and rec["main_result"]["size"] == len(big) and "text" not in rec["main_result"]
     run, _, _, r, rec = p45_run_it(env_run, P45_PRINTS)      # the plan declares none, and the type's entry_file is a pattern
-    assert rec["main_result"] is None and r["result"] == run.out["entry_file"] == f"{FT}/*"
+    assert rec["main_result"] is None and run.out["entry_file"] == f"{FT}/*" and r["result"] is None      # a pattern is no result (SUT-27: resolved)
+    arts = importlib.import_module(f"{ENGINE}.j2_artifacts")
+    shown = [x for x in arts._deliverable_extras(run.dir)["real_runs"] if x.get("run_output")][-1]      # /api/artifacts/groups real_runs
+    assert {k: shown[k] for k in arts.RUN_OUTPUT_KEYS} == {k: r[k] for k in arts.RUN_OUTPUT_KEYS}
+    assert shown["run_output"] == f"run_output/{r['id']}.json" and "output" not in shown and "dry_run" not in shown
     assert p45_run_it(env_run, P45_PRINTS, result="never.json")[-1]["main_result"] == {"path": "never.json", "exists": False}
 
 

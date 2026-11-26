@@ -772,6 +772,10 @@ def _folder_row(d, tt, files, folder, by):
             "files": [{"name": rel(f), "file": f, "made_by": wf(f)} for f in files]}
 
 
+RUN_OUTPUT_KEYS = ("id", "run_output", "result", "created", "changed", "deleted", "files_truncated", "run_output_counts")      # P45 (D452): what an
+# approved real run's receipt row gains (run_output_record): the views read these, never "output", dry_run or expect
+
+
 def _deliverable_extras(d):
     """What every deliverable row's Summary shows: the necessary conditions (conditions.json, the sandboxed test's result
     among them when the form has one), the warnings (an advisory check's receipt, a validator guess in autofix.json) and
@@ -789,6 +793,7 @@ def _deliverable_extras(d):
             elif isinstance(r, dict) and r.get("type") == "real_run":      # step 7: a build run for real, or refused
                 runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
                                                    "evidence", "t")})
+                runs[-1].update({k: r[k] for k in RUN_OUTPUT_KEYS if k in r})      # P45 (D452): only on a row that has them
     last = {}
     for r in recs:      # receipts are in run order: the last one for an atom's check is its final attempt
         last[(r.get("atom"), r.get("check") or r.get("type"))] = r

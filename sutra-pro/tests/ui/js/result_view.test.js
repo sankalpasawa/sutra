@@ -554,8 +554,39 @@ test("finish bar: a real-run result (P45 rows from /api/artifacts/groups) has no
   assert.doesNotMatch(html, /data-share|class="pri"|data-view/);
   q.SV.pick = "result"; q.render(scriptRun());
   assert.match(q.html("rvbody"), /<b>report.txt<\/b>/);
-  assert.match(q.html("rvbody"), /This result is in your folder; it shows here once the run's output is recorded\./, "R1-4: its own reason");
+  await tick();
+  assert.ok(q.log.fetch.includes("/api/artifact?name=run_output%2FR-1.json&run=r1"), "P45: the record is asked for by its link");
+  assert.match(q.html("rvbody"), /This result is in your folder; it shows here once the run's output is recorded\./, "R1-4: its own reason (no record to read)");
   assert.doesNotMatch(q.html("rvbody"), /2 MB/);
+});
+
+const RECORD = {schema: "run-output/1", receipt: "R-1", workflow: "W-2", exit: 0,
+  main_result: {path: "report.txt", exists: true, size: 21, sha256: "0", text: "North 12 <b>\nSouth 7\n"},
+  files: {created: [{path: "report.txt", size: 21, sha256: "0"}, {path: "summary.json", size: 2, sha256: "1"}],
+    changed: [{path: "log.txt", before: {size: 1, sha256: "a"}, after: {size: 2, sha256: "b"}}], deleted: []},
+  files_truncated: false, stdout: {tail: "report written & done", lines_total: 1, truncated: false}, stderr: {tail: "", lines_total: 0, truncated: false}};
+
+test("P45: a real run's record shows its result text, the folder changes and what it printed", async () => {
+  const esc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const html = RV.record(RECORD, esc);
+  assert.match(html, /^<pre class="rvtext">North 12 &lt;b>\nSouth 7\n<\/pre>/, "the main result's text first, escaped");
+  assert.match(html, /<summary>What changed in your folder \(2 created, 1 changed\)<\/summary>/);
+  assert.match(html, /<li>report.txt<\/li><li>summary.json<\/li>/);
+  assert.match(html, /<li>log.txt<\/li>/);
+  assert.match(html, /<details class="rvmore"><summary>What the script printed<\/summary><pre class="rvtext">report written &amp; done<\/pre>/, "folded while the result shows");
+  assert.doesNotMatch(html, /Deleted|Errors and warnings|more files/);
+  assert.match(RV.record({...RECORD, main_result: {path: "x", exists: false}}, esc), /The run did not leave this file\..*<details class="rvmore" open><summary>What the script printed/s);
+  assert.match(RV.record({...RECORD, main_result: {path: "x", exists: true, size: 9}}, esc), /too large to show here/);
+  assert.match(RV.record({...RECORD, files_truncated: true, stderr: {tail: "warn", lines_total: 80, truncated: true}}, esc),
+    /more files than this list shows.*Errors and warnings it printed:.*<pre class="rvtext">warn<\/pre><p class="rvnote">The last lines of 80 lines\./s);
+  for (const bad of [null, 7, "x", {}, {schema: "run-output/2"}, []]) assert.equal(RV.record(bad, esc), "", JSON.stringify(bad));
+  const q = page({files: {"run_output/R-1.json": JSON.stringify(RECORD)}, groups: {groups: [{id: "documents", rows: [{id: "x", real_runs: RUNS.p45}]}]}});
+  q.SV.arts = {deliverables: [ARTS[1]]};
+  q.SV.akey = "k1"; q.SV.pick = "result";
+  q.render(scriptRun()); await tick(); q.render(scriptRun()); await tick(); await tick();
+  assert.match(q.html("rvbody"), /<b>report.txt<\/b>.*<pre class="rvtext">North 12 &lt;b&gt;/s, "on the page: the name, then the text");
+  assert.match(q.html("rvbody"), /What changed in your folder/);
+  assert.doesNotMatch(q.html("rvbody"), /it shows here once the run's output is recorded/);
 });
 
 test("finish bar: a website and a document set keep the page's own sFinish, byte for byte", () => {
