@@ -642,6 +642,37 @@ def env_missing(env):
     return "its packages are not installed (" + (env["problem"] or "the Requester has not approved them") + ")"
 
 
+def home_expanded(rr):
+    """P31 (D434, beta fix): rr with "~" and "~/..." in its folder, reads and command arguments (the value after "=" too)
+    written out as the home folder (os.path.expanduser): a brief says ~/x, and no shell expands it when code runs the
+    command. Anything else, and anything not a string, is left for real_run_problems to judge."""
+    if not isinstance(rr, dict):
+        return rr
+    ex = lambda v: os.path.expanduser(v) if isinstance(v, str) and (v == "~" or v.startswith("~/")) else v
+
+    def arg(x):
+        k, eq, v = x.partition("=") if isinstance(x, str) and "=" in x else ("", "", x)
+        return k + eq + ex(v)
+    return {**rr, "folder": ex(rr.get("folder")),
+            **({"reads": [ex(x) for x in rr["reads"]]} if isinstance(rr.get("reads"), list) else {}),
+            **({"command": [arg(x) for x in rr["command"]]} if isinstance(rr.get("command"), list) else {})}
+
+
+def home_tilde(f):
+    """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
+    h = os.path.expanduser("~").rstrip("/")
+    return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
+
+
+def named_whole(g, source):
+    """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
+    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end.
+    source may be a list of texts (_fact_source(pieces=True)): then g is named whole in one of them (review R1-1)."""
+    pat = (r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
+           + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))")
+    return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
+
+
 def _repo_root():
     p = HERE
     while p != os.path.dirname(p) and not os.path.exists(os.path.join(p, ".git")):
@@ -694,7 +725,7 @@ def real_run_problems(rr, source, runner, run_dir):
     """Why a planned real run may not be asked for ([] when it may): its command starts with the form's runner, every
     folder is absolute, exists, is named in the brief or the Requester's answers (source, squashed) and is not /, the
     home folder, the repo, the run folder or a folder holding one of them; no argument climbs out (..) or names an
-    absolute path outside its folders. A guardrail: code never runs anything the Requester has not approved."""
+    absolute path outside its folders."""
     if not isinstance(rr, dict):
         return ["real_run must be an object: command, folder, reads, why"]
     if not runner:
@@ -731,70 +762,6 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run argument {x!r} climbs out of its folder (..)")
         elif os.path.isabs(v) and not any(within(os.path.realpath(v), r) for r in roots):
             out.append(f"real_run argument {x!r} names a path outside its folders")
-    # every folder passed as an argument, exactly as stated: the dry run swaps these for the copies' paths, so a
-    # script that holds the folder itself would run on the real one (runs/j2-20261117-114654)
-    args = {x.split("=", 1)[-1].rstrip("/") for x in cmd[1:]}
-    for f in [folder] + reads:
-        if isinstance(f, str) and os.path.isabs(f) and f.rstrip("/") not in args:
-            out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
-                       "points that argument at a copy, so what you build must take the folder from its arguments")
-    return out
-
-
-def home_expanded(rr):
-    """P31 (D434, beta fix): rr with "~" and "~/..." in its folder, reads and command arguments (the value after "=" too)
-    written out as the home folder (os.path.expanduser): a brief says ~/x, and no shell expands it when code runs the
-    command. Anything else, and anything not a string, is left for real_run_problems to judge."""
-    if not isinstance(rr, dict):
-        return rr
-    ex = lambda v: os.path.expanduser(v) if isinstance(v, str) and (v == "~" or v.startswith("~/")) else v
-
-    def arg(x):
-        k, eq, v = x.partition("=") if isinstance(x, str) and "=" in x else ("", "", x)
-        return k + eq + ex(v)
-    return {**rr, "folder": ex(rr.get("folder")),
-            **({"reads": [ex(x) for x in rr["reads"]]} if isinstance(rr.get("reads"), list) else {}),
-            **({"command": [arg(x) for x in rr["command"]]} if isinstance(rr.get("command"), list) else {})}
-
-
-def home_tilde(f):
-    """P31 (D434, beta fix): f under the home folder written ~/..., as a brief writes it (f itself otherwise)."""
-    h = os.path.expanduser("~").rstrip("/")
-    return "~" + f[len(h):] if h and (f == h or f.startswith(h + "/")) else f
-
-
-def named_whole(g, source):
-    """P31 (D434), amended in D448: source (squashed) names the path g whole: no path character just before it, and after
-    it (a "/" allowed) the end, a space whose next word does not go on with a "/", a closing mark, or a sentence's end.
-    source may be a list of texts (_fact_source(pieces=True)): then g is named whole in one of them (review R1-1)."""
-    pat = (r"(?<![\w.~/\\-])" + re.escape(squash(g).rstrip("/"))
-           + r"/?(?=$|\s(?![^\s/~]\S*/)|[,;:)'\"`]|[.?!]+(?:\s|$))")
-    return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
-
-
-def real_folders(workflows):
-    """Every real folder the run's planned real runs state (their folder and reads), as stated."""
-    return list(dict.fromkeys(f.rstrip("/") for w in workflows or [] for rr in [w.get("real_run") or {}]
-                              for f in [rr.get("folder")] + list(rr.get("reads") or []) if isinstance(f, str) and f.strip("/")))
-
-
-def real_paths_in(root, folders):
-    """[(file, path)]: each text file under root that holds a real folder path, as stated or resolved, not followed by
-    another name character (so /a/test-A is not found in /a/test-AB). A built file must take its folders as arguments."""
-    pats = [(f, re.compile(re.escape(p) + r"(?![\w.-])")) for f in folders
-            for p in dict.fromkeys([f, os.path.realpath(f)])]
-    out = []
-    for r, ds, fs in os.walk(root):
-        ds.sort()
-        for n in sorted(fs):
-            p = os.path.join(r, n)
-            try:
-                with open(p, encoding="utf-8") as fh:
-                    text = fh.read()
-            except (OSError, UnicodeDecodeError):
-                continue
-            rel = os.path.relpath(p, root).replace(os.sep, "/")
-            out += [(rel, f) for f in dict.fromkeys(f for f, rx in pats if rx.search(text))]
     return out
 
 
@@ -10930,13 +10897,11 @@ class J2Run:
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
                     f"write into the files instead):\n{guide}" if guide else "")
                  + self._artifact_context(w))
-        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
+        attempt, evidence, r, failed, stop = 0, "", {}, [], None      # D452: no real-path leak check
         fault = None      # P28 (D431): the outside-write fault, for the failure's signature
         unmet = ""      # P42 (D447): a requirements.txt code will not install as written (j2_runenv.bad_lines)
         resume = w.pop("resume", None) or {}      # P42: its files waited for their packages, or a failed install sent it back
         reused = None if resume else self._reuse_folder(w, cwd)
-        if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
-            reused, evidence = None, leak
         if reused and self._env_ask(w, None, cwd):      # P42 (D447): the reused files need packages: asked before their checks
             return
         if reused:      # step 6: the run template's files are already here: code checks them before any builder call
@@ -10976,12 +10941,8 @@ class J2Run:
                 except RuntimeError as e:      # stopped at the time or cost limit, or the CLI failed
                     evidence = f"- your last call was stopped before it finished: {e}"
                     continue
-                leak = self._real_path_leak(cwd)
-                if leak:      # refused before its checks: the reason goes back to the builder
-                    evidence = leak
-                    continue
                 unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))      # P42 (D447)
-                if unmet:      # refused before its checks, like a leak
+                if unmet:      # refused before its checks
                     evidence = unmet
                     continue
                 if self._env_ask(w, attempt, cwd, r):      # its packages wait for the Requester: the run pauses here
@@ -10995,8 +10956,6 @@ class J2Run:
                                      f"{x['evidence']}" for x in failed)
         finally:
             self.tools_builder = None
-        if leak and not stop:
-            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
         if unmet and not stop:      # P42 (D447)
             stop = "its requirements.txt still can't be installed as written: " + unmet.removeprefix("- ")
         self.write_lock = self.atom = None
@@ -11004,9 +10963,9 @@ class J2Run:
         if stop or not self.sites:
             w["status"] = "failed"
             why = stop or f"no usable build after {attempt} attempt(s)"
-            # P28 (D431): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
-            # check always published a build first, so it never ends here)
-            w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
+            # P28 (D431): code's own failure: every outside file, else the last evidence (a failed check always published a
+            # build first, so it never ends here)
+            w["failure"] = ["outside_write", fault.files] if fault else ["no_build", evidence]
             self.post("system", f"{fn} failed: {why}.", warning=True)
             self._say(fn, f"@Coordination {fn} failed: {why}.", "coordination", None, workflow=fn)
             self._event(fn, "limit_fail", f"{fn}: {why}")
@@ -11027,17 +10986,6 @@ class J2Run:
                                 "to Adaptation, which decides whether the check or the build is wrong.")
             return self._handoff("adaptation", kind="atom_failed", wid=fn, atoms=bad, attempt=attempt, owner_note="")
         self._handoff("coordination", kind="schedule")
-
-    def _real_path_leak(self, cwd):
-        """Evidence for the builder when a file in its folder holds a real folder the run's real runs state ("" when
-        none): code refuses that build, since a dry run on copies cannot redirect a path written into a file."""
-        hits = real_paths_in(cwd, real_folders(self.workflows))
-        if not hits:
-            return ""
-        self._event("code", "real_path_in_build", "; ".join(f"{f}: {p}" for f, p in hits))
-        return ("- refused: " + "; ".join(f"{f} holds the Requester's real folder {p}" for f, p in hits)
-                + ". Never write a real folder path into a file, not even as a default: take each folder as a "
-                "command-line argument. Code runs it on copies first by passing the copies' paths.")
 
     def _human_output(self, w, meta, sid):
         """1 to 3 plain sentences saying what the builder built. Code fixes an unusable one itself, with no re-ask

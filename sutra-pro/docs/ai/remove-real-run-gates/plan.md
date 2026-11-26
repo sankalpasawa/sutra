@@ -69,7 +69,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests, vendor tests, `scripts/py -m pytest tests/ui/test_port_edits.py -q`, `scripts/py scripts/port_j2_ui.py --j2 "$J2SRC" --commit <pin> --check` pass
   - Covers: FR-11, FR-19, FR-20, FR-21 (network), FR-22 (net rules), FR-23, FR-29, FR-4 (E29), FR-38 (part)
 
-- [ ] T4: The two rules that existed only for the dry run go
+- [x] T4: The two rules that existed only for the dry run go
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_patches.py`, `tests/engine/test_engine_legacy.py`
   - Change: P46 edits delete the folder-argument rule in `real_run_problems` (j2.py:731-737) and its docstring's last sentence; delete `_real_path_leak` (j2.py:11188-11196), its two callers (:11096-11097, the `leak` lines at :11134-11137 and the `leak` variable), `real_paths_in` and `real_folders` (:777-800). P28's `real_path` failure kind: drop it from the P28 note if nothing else sets it (grep `"real_path"`).
   - Tests: AC-11 (no folder argument, registers), AC-12 (a built file holding the real folder path is neither refused nor rebuilt). Delete tests of those two rules; legacy J2 flow blocks on them (`dry_run_real_folders`, impact §4) skipped with "D452: the rule existed only for the dry run".

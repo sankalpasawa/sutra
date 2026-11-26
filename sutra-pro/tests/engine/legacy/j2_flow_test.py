@@ -16548,6 +16548,13 @@ for _name in ("rubric_and_credits", "detail_stays_open", "plain_words", "general
         globals()[_name] = known_upstream_failure(globals()[_name])
     globals()[_name] = skippable(globals()[_name])
 
+# Sutra D452: a planned real run runs once, unasked, with no dry run on copies; these J2 blocks test the approval, the dry run or a
+# rule that existed only for the dry run, so each prints why and runs nothing (tests/engine/test_engine_patches.py holds the new tests)
+D452_GONE = {"run_for_real": "no approval, no dry run and no folder-argument rule",
+             "dry_run_real_folders": "the folder-argument and real-path rules existed only for the dry run"}
+for _name, _why in D452_GONE.items():
+    globals()[_name] = (lambda n, w: lambda *a, **k: print(f"  skipped the rest of {n}: D452: {w}"))(_name, _why)
+
 
 if __name__ == "__main__":
     DEMOS = ("--template-demo", "--schema-demo", "--schema-fail-demo", "--board-doc-demo", "--board-demo")

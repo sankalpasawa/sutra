@@ -1762,7 +1762,7 @@ def build_failure(w):
             w["failure"] = ["no_artifact", evidence]      # P28 (D431): code's last evidence
 '''),
     Edit("P28", "j2.py", r'''        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
-''', r'''        attempt, evidence, r, failed, stop, leak = 0, "", {}, [], None, ""
+''', r'''        attempt, evidence, r, failed, stop = 0, "", {}, [], None      # D452: no real-path leak check
         fault = None      # P28 (D431): the outside-write fault, for the failure's signature
 '''),
     Edit("P28", "j2.py", r'''                        stop = f"it changed files outside its folder ({e})"
@@ -1770,9 +1770,9 @@ def build_failure(w):
 '''),
     Edit("P28", "j2.py", r'''            why = stop or f"no usable build after {attempt} attempt(s)"
 ''', r'''            why = stop or f"no usable build after {attempt} attempt(s)"
-            # P28 (D431): code's own failure: every outside file, the real-path refusal, else the last evidence (a failed
-            # check always published a build first, so it never ends here)
-            w["failure"] = (["outside_write", fault.files] if fault else ["real_path", leak] if leak else ["no_build", evidence])
+            # P28 (D431): code's own failure: every outside file, else the last evidence (a failed check always published a
+            # build first, so it never ends here)
+            w["failure"] = ["outside_write", fault.files] if fault else ["no_build", evidence]
 '''),
     Edit("P28", "j2.py", r'''            remaining -= c
             env = {k: (w.get("envelope") or {}).get(k) for k in ("money_limit", "model_call_limit", "time_limit_minutes",
@@ -2476,7 +2476,7 @@ def mock_item_check(out):
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
 '''),
     # beta fix (D434): a real-run folder written ~/x is the folder it names: absolute, named in the brief as ~/x or written out
-    Edit("P31", "j2.py", r'''def real_folders(workflows):
+    Edit("P31", "j2.py", r'''def _repo_root():
 ''', r'''def home_expanded(rr):
     """P31 (D434, beta fix): rr with "~" and "~/..." in its folder, reads and command arguments (the value after "=" too)
     written out as the home folder (os.path.expanduser): a brief says ~/x, and no shell expands it when code runs the
@@ -2508,7 +2508,7 @@ def named_whole(g, source):
     return any(re.search(pat, s) for s in ([source] if isinstance(source, str) else source))
 
 
-def real_folders(workflows):
+def _repo_root():
 '''),
     Edit("P31", "j2.py", r'''    out, cmd, folder, reads = [], rr.get("command"), rr.get("folder"), rr.get("reads") or []
 ''', r'''    rr = home_expanded(rr)      # P31 (D434, beta fix): ~/x is the folder it names (absolute; named in the brief either way)
@@ -3030,10 +3030,10 @@ def env_missing(env):
         resume = w.pop("resume", None) or {}      # P42: its files waited for their packages, or a failed install sent it back
         reused = None if resume else self._reuse_folder(w, cwd)
 '''),
-    Edit("P42", "j2.py", r'''            reused, evidence = None, leak
-''', r'''            reused, evidence = None, leak
-        if reused and self._env_ask(w, None, cwd):      # P42 (D447): the reused files need packages: asked before their checks
+    Edit("P42", "j2.py", r'''        if reused:      # step 6: the run template's files are already here: code checks them before any builder call
+''', r'''        if reused and self._env_ask(w, None, cwd):      # P42 (D447): the reused files need packages: asked before their checks
             return
+        if reused:      # step 6: the run template's files are already here: code checks them before any builder call
 '''),
     Edit("P42", "j2.py", r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
 ''', r'''            evidence = "\n".join(f"- {x['check']} ({x['type']} {x['target']}, expect {x['expect']}): {x['evidence']}" for x in failed)
@@ -3051,17 +3051,19 @@ def env_missing(env):
                 text = self._out_text()
 ''', r'''                    continue
                 unmet = j2_runenv.bad_lines(j2_runenv.plan(cwd))      # P42 (D447)
-                if unmet:      # refused before its checks, like a leak
+                if unmet:      # refused before its checks
                     evidence = unmet
                     continue
                 if self._env_ask(w, attempt, cwd, r):      # its packages wait for the Requester: the run pauses here
                     return
                 text = self._out_text()
 '''),
-    Edit("P42", "j2.py", r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
-''', r'''            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
-        if unmet and not stop:      # P42 (D447)
+    Edit("P42", "j2.py", r'''        self.write_lock = self.atom = None
+        meta = r if isinstance(r, dict) else {}
+''', r'''        if unmet and not stop:      # P42 (D447)
             stop = "its requirements.txt still can't be installed as written: " + unmet.removeprefix("- ")
+        self.write_lock = self.atom = None
+        meta = r if isinstance(r, dict) else {}
 '''),
     Edit("P41", "j2.py", r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." if runner else "")
 ''', r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
@@ -3169,6 +3171,84 @@ def _tree(root):
     Edit("P46", "j2.py", r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
 ''', r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
                  + (SCRIPT_NET_RULE if runner else "")      # P46 (D452)
+'''),
+    # ---- P46 (D452): the two rules that existed only for the dry run on copies go: a command need not pass its folders as
+    # arguments, and a built file may hold a real folder path
+    Edit("P46", "j2.py", r'''    absolute path outside its folders. A guardrail: code never runs anything the Requester has not approved."""
+''', r'''    absolute path outside its folders."""
+'''),
+    Edit("P46", "j2.py", r'''            out.append(f"real_run argument {x!r} names a path outside its folders")
+    # every folder passed as an argument, exactly as stated: the dry run swaps these for the copies' paths, so a
+    # script that holds the folder itself would run on the real one (runs/j2-20261117-114654)
+    args = {x.split("=", 1)[-1].rstrip("/") for x in cmd[1:]}
+    for f in [folder] + reads:
+        if isinstance(f, str) and os.path.isabs(f) and f.rstrip("/") not in args:
+            out.append(f"real_run command must pass the folder {f} as an argument, exactly as written here: the dry run "
+                       "points that argument at a copy, so what you build must take the folder from its arguments")
+    return out
+
+
+def real_folders(workflows):
+    """Every real folder the run's planned real runs state (their folder and reads), as stated."""
+    return list(dict.fromkeys(f.rstrip("/") for w in workflows or [] for rr in [w.get("real_run") or {}]
+                              for f in [rr.get("folder")] + list(rr.get("reads") or []) if isinstance(f, str) and f.strip("/")))
+
+
+def real_paths_in(root, folders):
+    """[(file, path)]: each text file under root that holds a real folder path, as stated or resolved, not followed by
+    another name character (so /a/test-A is not found in /a/test-AB). A built file must take its folders as arguments."""
+    pats = [(f, re.compile(re.escape(p) + r"(?![\w.-])")) for f in folders
+            for p in dict.fromkeys([f, os.path.realpath(f)])]
+    out = []
+    for r, ds, fs in os.walk(root):
+        ds.sort()
+        for n in sorted(fs):
+            p = os.path.join(r, n)
+            try:
+                with open(p, encoding="utf-8") as fh:
+                    text = fh.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = os.path.relpath(p, root).replace(os.sep, "/")
+            out += [(rel, f) for f in dict.fromkeys(f for f, rx in pats if rx.search(text))]
+    return out
+''', r'''            out.append(f"real_run argument {x!r} names a path outside its folders")
+    return out
+'''),
+    Edit("P46", "j2.py", r'''        reused = None if resume else self._reuse_folder(w, cwd)
+        if reused and (leak := self._real_path_leak(cwd)):      # reused files that hold a real folder are rebuilt
+            reused, evidence = None, leak
+''', r'''        reused = None if resume else self._reuse_folder(w, cwd)
+'''),
+    Edit("P46", "j2.py", r'''                    evidence = f"- your last call was stopped before it finished: {e}"
+                    continue
+                leak = self._real_path_leak(cwd)
+                if leak:      # refused before its checks: the reason goes back to the builder
+                    evidence = leak
+                    continue
+''', r'''                    evidence = f"- your last call was stopped before it finished: {e}"
+                    continue
+'''),
+    Edit("P46", "j2.py", r'''        finally:
+            self.tools_builder = None
+        if leak and not stop:
+            stop = "its files still hold the Requester's real folder paths: " + leak.removeprefix("- ")
+''', r'''        finally:
+            self.tools_builder = None
+'''),
+    Edit("P46", "j2.py", r'''    def _real_path_leak(self, cwd):
+        """Evidence for the builder when a file in its folder holds a real folder the run's real runs state ("" when
+        none): code refuses that build, since a dry run on copies cannot redirect a path written into a file."""
+        hits = real_paths_in(cwd, real_folders(self.workflows))
+        if not hits:
+            return ""
+        self._event("code", "real_path_in_build", "; ".join(f"{f}: {p}" for f, p in hits))
+        return ("- refused: " + "; ".join(f"{f} holds the Requester's real folder {p}" for f, p in hits)
+                + ". Never write a real folder path into a file, not even as a default: take each folder as a "
+                "command-line argument. Code runs it on copies first by passing the copies' paths.")
+
+    def _human_output(self, w, meta, sid):
+''', r'''    def _human_output(self, w, meta, sid):
 '''),
     # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json
     # (`unparsed`, each clipped to 20000 characters) with one system line; the plan and the stop are J2's
@@ -3422,7 +3502,7 @@ PATCH_NOTES = {
     "P24": "(D250, prompt-changing per D249) Priority's move is each workflow's id and its envelope: both pricing turns ask for `PRICE_FMT` (`[{id, envelope}]`) and `_carry` expands the reply to Adaptation's proposal (the table Priority was shown, then the proposals, by id then name) plus the envelope; a field the move sends with another value than Adaptation proposed is not taken, and the validator posts Adaptation a visible note naming the field and the value (no `carried` autofix); `granted` charges `envelope.money_limit`, also with the rate card on; `_register` rejects a COUNTER without a money limit (\"a counter must state its money limit\") and, with the rate card on, a limit below the rate-card price (the floor); J2's mock Priority sends `{id, name, envelope}`, its cycle-1 COUNTER sets the animations' limit to 10, and the mock Adaptation answers by revising their parts (runs/j2-20261118-090053-4a9c: a COUNTER's terms were logged as \"kept as Adaptation proposed it\")",
     "P25": "(D251, prompt-changing per D249: the raise question's text) `BUDGET_CAP` comes from `J2_BUDGET_CAP` only when it is set; unset means no cap (`budget_room` is unbounded, `_raise_budget` adds the whole approval, and a raise option says \"Or type your own number\" without \"up to N\", `own_number`); Decide for me (`_auto_pick`) waits for the Requester instead of answering an approval, a ruling_budget question or a limit option that adds credits; a question that asks for more credits ends with the credits approved so far (`_so_far`: \"So far: 100 + 30 = 130 work credits approved.\")",
     "P27": "(main `c9d4e662`) `rows()` in `j2_artifacts.py` lists only the files a type's `*` pattern matches, never a folder: Windows refuses to open a folder to hash it (PermissionError, Errno 13), which made every page that lists a run's files fail",
-    "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `real_path`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
+    "P28": "(D431) every build failure records a code-made `failure` on its workflow (`[kind, detail]`: `outside_write` with every outside file, `BuilderToolFault.files`; `unusable_reply`; `no_artifact`; `no_build`), and `build_failure(w)` gives a finished build's signature (that, or `checks` with the sorted (type, evidence) of its atoms' failed receipts, never a name or a check's words; None for a pass)",
     "P29": "(D431) with nothing built (`self.sites` empty): `workable()` gives \"nothing has been built yet\" for an audit at `version` 0 (an audit without `version` is unchanged), so Identity's done goes back to Adaptation; `_identity_limit` offers no \"Leave out\" that leaves no done-when item but the gate (`GATE_TEXT`) to build (a partial one stays, and \"Stop here\" is added when fewer than two options are left; a lone \"Stop here\" is asked, never applied without the Requester); `_identity_hears_requester` applies a typed answer that leaves out everything still to build as a stop (\"Stopped on the Requester's decision (...): nothing was built.\"); Decide for me never answers a limit question (`AUTO_ASK` holds `limit`, so `_auto_pick` waits and the snapshot's `auto_waits` says so, as for P26's dollar question): run 17e1's second limit question took its last option, which left out every item; `_identity_audit` asks the Requester (the limit question) when a necessary condition the charter decides (`from_charter`, set by `_folder_condition` when the charter lists no files or no test) is unmet for the same code-made reason (its id and evidence) in two audits in a row, whatever else moved: \"This condition comes from the charter, and building can't change it. The charter needs fixing.\" (any other condition goes back to Adaptation) (runs/j2-20261123-103238-3429: C1 \"the charter lists no files\", C2 \"the test '' is not a file in the folder\")",
     "P31": "(D434) a real run's dry run on copies that ran and did not exit 0 (a timeout too) is a build failure, never a question: `_dry_run_failed(w, dry, detail)` sets the workflow `failed` with the code-made `failure` `[\"dry_run\", \"exit <n>: <last output line>\"]` (`real_run_dry` returns its output's end with the temp root written `<copy>`, so P28's signature is the same across temp folders, and every real-run receipt keeps it in `dry_run.output`), keeps the output on the workflow (`dry_run_output`, shown as `dry_run_failure` to the builder of the next workflow whose real run checks one of its items, by item number, because a folder run drops `revises`), writes a not-run receipt, forgets its code (`real_runs_asked`), posts a system note (not to the Requester), and hands Adaptation a `propose` unless `_repeat_build_stop` stops the cycle (a passing build between two dry-run failures keeps P28's memory); a planned real run's item is no longer pending once any real run that checks it has a receipt (a replacement after a failed dry run); `_identity_real_run` takes exactly `RUN <code>` (runs) or the whole reply `REAL_RUN_DECLINE` (\"Don't run\", any case: the not-run receipt, then `_goal_done`), and any other reply, or one Decide for me sent, is asked again with the same code (\"Not run. Press Run or type RUN <code>.\": no receipt, the run stays paused); the snapshot's `paused.code` gives the card's Run button its code (port edit E28); no word of a reply is read; a real-run folder written `~/x` is the folder it names (beta fix, run 8b10: refused as not absolute, then, written out, as not named in the brief): `home_expanded` writes `~` out in its folder, reads and command arguments, `real_run_problems` judges that form and accepts the folder when the brief names it either way (`home_tilde`), and `_register` stores it written out, so the dry run and the approved run get absolute paths; amended in D448: a path is named only whole (`named_whole`: no path character before it; after it the end, a space whose next word does not go on with a \"/\", a closing mark or a sentence's end, so `?`, `!` and a backtick end it), shared by the folder and the secret-file check, and read on each text of the source on its own (`_fact_source(pieces=True)`, review R1-1)",
     "P32": "(D435) the dry run on copies always runs inside the sandbox runtime (`J2_SANDBOX_CMD`, network `allowedDomains: []`), whatever `J2_SANDBOX` says: `real_run_dry` passes `fence` in the run it hands `real_run` (code sets it there only; a stored `real_run` keeps `command`, `folder`, `reads`, `why`), and `real_run` with `fence` and no sandbox runtime (the program not on PATH, as on Windows, or an offline run without `J2_SANDBOX`) returns `ran` false (\"no sandbox runtime here: ...\") and runs nothing; both dry-run results carry `fenced` (it ran, so fenced); the real-run card says \"The dry run had no network access: results may differ.\" after a fenced dry run, else \"No dry run: this computer has no sandbox, so it wasn't tested first\", and the Requester is still asked; the approved real run is unchanged (it follows `J2_SANDBOX`); the environment is not scrubbed (a follow-up)",

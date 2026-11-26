@@ -4777,8 +4777,10 @@ def test_p46_proxy_settings_are_refused_with_or_without_hosts(p46_reg, name, hos
     assert f"real_run may not set {name}" in refused[0] and "where it connects (a fixed guardrail list)" in refused[0], refused
 
 
-def p46_builder_prompt(j2ft, tmp_path, runner):
-    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none."""
+def p46_builder_prompt(j2ft, tmp_path, runner, body="print('made-up')\n", real_folder=None, out=None):
+    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none.
+    body: what the builder writes into fetch.py; real_folder: the workflow's real-run folder; out: a dict that gets the run,
+    the workflow and every prompt."""
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0903{'01' if runner else '02'}-5e12")
     run._apply_output(FT)
     if not runner:
@@ -4789,17 +4791,21 @@ def p46_builder_prompt(j2ft, tmp_path, runner):
          "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
          "atoms": [{"id": "W-1.a1", "goal": "fetch", "expected_output": [],
                     "verification": [{"text": "fetch.py exists", "type": "file-exists", "target": "fetch.py", "expect": True}]}]}
+    if real_folder:
+        w["real_run"] = {"command": ["python3", "fetch.py", real_folder], "folder": real_folder, "reads": [], "checks": [1]}
     run.workflows = [w]
     j2ft.add_workflow_agent("W-1")
     prompts = []
 
     def call(fn, fmt, prompt, mock, **kw):
         prompts.append(prompt)
-        (Path(run._out_dir()) / "fetch.py").write_text("print('made-up')\n")
+        (Path(run._out_dir()) / "fetch.py").write_text(body)
         return {"say": "@Coordination built", "human_output": "I built it.", "atom_human_output": "The fetcher."}
     run.call = call
     run._run_tools(w, {"id": "W-1", "name": "fetcher", "outputs": w["outputs"]}, 3)
     assert prompts
+    if out is not None:
+        out.update(run=run, w=w, prompts=prompts)
     return prompts[0]
 
 
@@ -4826,6 +4832,25 @@ def test_p46_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
     told = p46_builder_prompt(j2ft, tmp_path, runner=True)
     assert j2ft.SCRIPT_ENV_RULE + hint in told, told[:2000]
     assert hint not in p46_builder_prompt(j2ft, tmp_path, runner=False)
+
+
+# ---- P46 (D452): the two rules that existed only for the dry run on copies are gone -------------------------------------------
+def test_p46_a_command_that_passes_no_folder_argument_registers(p46_reg):
+    """AC-11 (FR-12): the script may take its folder any way; nothing points it at a copy any more."""
+    run, reg, refused = p46_reg.register(command=["python3", "fetch.py", P46_URL])
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["command"] == ["python3", "fetch.py", P46_URL]
+
+
+def test_p46_a_built_file_may_hold_the_real_folder_path(j2ft, tmp_path, monkeypatch):
+    """AC-12 (FR-13): a build whose file holds its real run's folder is neither refused nor rebuilt."""
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    real, got = tmp_path / "made-up-folder", {}
+    real.mkdir()
+    p46_builder_prompt(j2ft, tmp_path, runner=True, body=f"FOLDER = {str(real)!r}\nprint(FOLDER)\n", real_folder=str(real), out=got)
+    assert len(got["prompts"]) == 1 and got["w"]["status"] == "done", (got["prompts"][1:], got["w"].get("failure"))
+    assert not [e for e in got["run"].events if e.get("type") == "real_path_in_build"]
+    assert not hasattr(j2ft, "real_paths_in") and not hasattr(j2ft, "real_folders") and not hasattr(j2ft.J2Run, "_real_path_leak")
 
 
 # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json --------
