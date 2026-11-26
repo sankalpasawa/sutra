@@ -37,6 +37,11 @@ def tree_sha(folder: Path) -> str:
     return digest.hexdigest()
 
 
+def follows(task_id: str) -> dict:
+    """The chat agent's reply to the `follows` question of a team-chat line (D454): it continues `task_id`."""
+    return {"kind": "assignments", "assignments": [draft("a1", "web", follows=task_id)]}
+
+
 def answer_when_asked(live: LiveApp, task: str, text: str, timeout: float = 60.0) -> None:
     live.until(f"{task} to ask", lambda: live.task_status(task) in ("waiting_user", *TERMINAL), timeout)
     if live.task_status(task) == "waiting_user":
@@ -53,10 +58,12 @@ def chain_of_tasks(tmp_path_factory):
         mid = live.say("Also write a menu page.", decide(change="reuse", reuse=("web",),
                                                         assignments=[draft("a1", "web", title="Menu page", brief="Write the menu page.")]))
         second = live.task_of_message(mid)
+        menu_calls = len(live.connector.calls) - calls_before
         answer_when_asked(live, second, ANSWER)
         live.ended(second)
         old_run = live.task_row(second)["run_id"]
         old_sha = tree_sha(live.run_dir(second))
+        live.connector.push(follows(second))                                       # the chat agent: the line continues the menu run (D454)
         response = live.write(live.session_of("web"), FOLLOW_UP)
         assert response.status_code == 200, response.text
         third = response.json()["task_id"]
@@ -64,7 +71,7 @@ def chain_of_tasks(tmp_path_factory):
         question = [m["text"] for m in live.messages(live.session_of("web")) if m["kind"] == "question"][-1]
         assert live.write(live.session_of("web"), "Option 2").status_code == 200           # the team asks 'keep going or finish as it is'
         live.ended(third)
-        yield {"live": live, "first": first, "second": second, "third": third, "mid": mid, "calls_before": calls_before,
+        yield {"live": live, "first": first, "second": second, "third": third, "mid": mid, "menu_calls": menu_calls,
                "response": response.json(), "old_run": old_run, "old_sha": old_sha, "question": question}
     finally:
         try:
@@ -76,7 +83,7 @@ def chain_of_tasks(tmp_path_factory):
 def test_step1_also_write_a_menu_page_reuses_the_team_and_runs_a_second_task(chain_of_tasks):
     c = chain_of_tasks
     live = c["live"]
-    assert len(live.connector.calls) - c["calls_before"] == 1                                       # one decide call: reuse needs no chart stage
+    assert c["menu_calls"] == 1                                                                     # one decide call: reuse needs no chart stage
     reuse = live.rows("SELECT * FROM chart_changes ORDER BY seq DESC LIMIT 1")[0]
     assert (reuse["seq"], reuse["kind"], reuse["status"]) == (3, "reuse", "applied") and reuse["before_sha"] == reuse["after_sha"]
     assert live.one("SELECT count(*) FROM departments") == 1 and live.one("SELECT count(*) FROM org_nodes") == 2
@@ -121,6 +128,7 @@ def test_the_follow_up_run_holds_the_old_runs_files_and_the_old_folder_is_untouc
     assert new_chat[1:len(old_chat)] == old_chat[1:] and len(new_chat) > len(old_chat)               # the transcript continues (header differs)
     summary = json.loads((new / "summary.json").read_text())
     assert summary["status"] == "done" and summary["change_requests"] == [FOLLOW_UP]
+    assert summary["brief"] == json.loads((old / "summary.json").read_text())["brief"]                 # the continued run's brief is the recorded brief (AC-9)
     assert live.task_row(c["third"])["pid"] != live.task_row(c["second"])["pid"]                     # a new process each time
 
 
@@ -149,6 +157,7 @@ def test_step6_a_document_chain_follow_up_rehydrates_the_chain(tmp_path):
         run = live.run_dir(first)
         assert {"documents.json", "stage-prd.json", "stage-hld.json", "stage-lld.json", "prd.md", "hld.md", "lld.md"} <= {p.name for p in run.iterdir()}
         sha = tree_sha(run)
+        live.connector.push({"kind": "assignments", "assignments": [draft("a1", "docs", follows=first)]})
         delivered = live.write(live.session_of("docs"), "make the HLD mention a CDN")
         assert delivered.status_code == 200 and delivered.json()["delivered"] == "follow_up"
         second = delivered.json()["task_id"]
@@ -172,9 +181,14 @@ def test_a_follow_up_after_a_stopped_run_starts_fresh_with_the_old_files_as_upst
         stopped = live.post(f"/api/tasks/{first}/stop")
         assert stopped.status_code == 200 and stopped.json()["status"] == "stopped"
         old_run = live.task_row(first)["run_id"]
+        old_sha = tree_sha(live.run_dir(first))
+        live.connector.push(follows(first))
         delivered = live.write(live.session_of("web"), "Please start the page again")
         assert delivered.status_code == 200 and delivered.json()["delivered"] == "follow_up"
         second = delivered.json()["task_id"]
+        brief = live.task_row(first)["user_text"]
+        assert live.task_row(second)["user_text"] == f"{brief}\n\nThe owner now writes: Please start the page again"      # the stopped run's brief comes along (AC-8)
+        assert [m["text"] for m in live.messages(live.session_of("web")) if m["who"] == "user"][-1] == "Please start the page again"
         live.until("the fresh run to speak", lambda: any(e["t"] == "say" for e in live.events_of(second)))
         line = [e["text"] for e in live.events_of(second) if e["t"] == "say"][0]
         assert line == fresh_line(old_run, "the earlier run was stopped before it finished")
@@ -183,3 +197,8 @@ def test_a_follow_up_after_a_stopped_run_starts_fresh_with_the_old_files_as_upst
         assert live.task_row(second)["framing"].startswith("Earlier the team asked the owner: ")         # the question the stop left open
         assert (live.run_dir(second) / "upstream" / old_run).is_dir()                                   # the old files, for reference
         assert not any(e["t"] == "say" and e["text"].startswith("Continuing") for e in live.events_of(second))
+        answer_when_asked(live, second, ANSWER)
+        live.ended(second)
+        recorded = json.loads((live.run_dir(second) / "summary.json").read_text())["brief"]
+        assert brief in recorded and "Please start the page again" in recorded
+        assert tree_sha(live.run_dir(first)) == old_sha                                                  # the stopped run's folder is never written

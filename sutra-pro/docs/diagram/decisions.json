@@ -2173,5 +2173,10 @@
   "id": "D453",
   "label": "the Map and chat say who works now and what, from agent_live.json (.env secrets redacted before the cut); fixed crew sentences removed",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D454",
+  "label": "team chat: the chat agent decides whether a line continues an earlier run; else a clean run",
+  "anchor": "Department records"
  }
 ]

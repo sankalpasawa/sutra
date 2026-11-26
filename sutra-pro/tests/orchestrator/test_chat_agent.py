@@ -206,8 +206,23 @@ def test_the_templates_say_what_the_design_says():
     assert "ref such as $web" in prompts.template("change")
     assert "CHART AFTER THE CHANGE" in prompts.template("assign")
     assert "attempt {n} of {max}" in prompts.template("retry")
-    for name in ("decide", "assign"):                                    # no reply sentence is asked for
+    for name in ("decide", "assign", "follows"):                         # no reply sentence is asked for
         assert "reply" not in prompts.template(name).lower().replace("one json object", "")
+    for name in ("decide", "assign", "follows"):                         # D454: `follows` only for a real continuation; unsure is a clean run (AC-7)
+        assert "when not sure, leave it empty" in prompts.template(name)
+    assert "{runs}" in prompts.template("follows")
+
+
+def test_run_lines_lists_each_run_and_clips():
+    assert prompts.run_lines([]) == "(none)"
+    text = prompts.run_lines([("tsk_000000000002", "Shop page", "done", "Make a  shop\npage", ""),
+                              ("tsk_000000000001", "Long one", "stopped", "b" * 3000, "q" * 3000)])
+    first, second = text.split("\n- ")
+    assert first.splitlines() == ["- tsk_000000000002 | Shop page | done", "  brief: Make a shop page", "  open question: -"]
+    lines = second.splitlines()
+    assert lines[0] == "tsk_000000000001 | Long one | stopped"
+    assert lines[1].startswith("  brief: bbb") and len(lines[1]) <= len("  brief: ") + 1000
+    assert lines[2].startswith("  open question: qqq") and len(lines[2]) <= len("  open question: ") + 1000
 
 
 def test_prompt_helpers():
@@ -617,3 +632,32 @@ def test_choice_plan_builds_a_reuse_change_without_a_model_call(aenv):
     assert (draft_.dept, draft_.scope) == ("sales", "quotes") and len(draft_.brief) <= 2000 and len(draft_.title) <= 60
     with pytest.raises(Exception, match="not a team"):
         aenv.run(aenv.agent.choice_plan(aenv.request(), "root"))
+
+
+# ============================================ follows (D454) ===================================================================
+
+RUNS = [("tsk_000000000002", "Shop page", "done", "Make a page for a bike shop", ""),
+        ("tsk_000000000001", "Cafe page", "stopped", "Build a landing page for my cafe", "Which colours?")]
+
+
+def test_follows_returns_the_picked_run_with_one_call(aenv):
+    with_script(aenv, assignments(draft(follows="tsk_000000000001")))
+    assert aenv.run(aenv.agent.follows("web", "Green please", RUNS)) == "tsk_000000000001"
+    [call] = aenv.connector.calls
+    assert call.step == "follows" and call.context["atom_id"] == overhead_atom_id("follows-web")
+    for text in ("Green please", "tsk_000000000002", "Shop page", "done", "Make a page for a bike shop", "Build a landing page for my cafe", "Which colours?"):
+        assert text in call.prompt, text
+
+
+@pytest.mark.parametrize("reply", [assignments(draft(follows=None)), {"x": 1}, ConnectorFailure("timeout")])
+def test_follows_is_none_for_no_pick_or_an_unusable_reply_and_never_asks_twice(aenv, reply):
+    with_script(aenv, reply)
+    assert aenv.run(aenv.agent.follows("web", "A page for a bakery", RUNS)) is None
+    assert aenv.steps() == ["follows"]
+
+
+def test_follows_lets_an_unreachable_model_go_up(aenv):
+    with_script(aenv, ConnectorFailure("unavailable"))
+    with pytest.raises(ConnectorFailure):
+        aenv.run(aenv.agent.follows("web", "Green please", RUNS))
+    assert aenv.steps() == ["follows"]

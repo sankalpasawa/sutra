@@ -1,9 +1,10 @@
-"""The chat agent's prompts: template files in `templates/` (four for the plan, a fifth, `nodeplan`, for a project's step requests, D306) read with `str.format` (orchestrator 5.3, S4-fnodes-12).
+"""The chat agent's prompts: template files in `templates/` (four for the plan, a fifth, `nodeplan`, for a project's step requests, D306; a sixth, `follows`, for whether a team-chat line continues an earlier run, D454) read with `str.format` (orchestrator 5.3, S4-fnodes-12).
 
     render("decide", revision=..., digest=..., ...)    the text of one prompt
     PLACEHOLDERS                                       template name -> the placeholders it has (exactly these are passed)
     field_digest(*models)                              names and one-line docs of the library models a reply nests
     conversation(history) / pending_lines(pending)     the CONVERSATION and PENDING blocks of the decide prompt
+    run_lines(runs)                                    the RUNS block of `follows` (D454): a team's earlier runs, each brief and question clipped
     violation_lines(violations)                        the "- path: code: message" lines of retry.md
     changed_keys(previous, current)                    the "Changed since your last try" part
 
@@ -21,17 +22,18 @@ from pydantic import BaseModel
 
 from sutra_app.library.types import FUNCTIONS, Violation, clip
 
-__all__ = ["TEMPLATES", "PLACEHOLDERS", "PromptError", "template", "render", "field_digest", "conversation", "pending_lines",
+__all__ = ["TEMPLATES", "PLACEHOLDERS", "PromptError", "template", "render", "field_digest", "conversation", "pending_lines", "run_lines",
            "violation_lines", "changed_keys"]
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
-TEMPLATES = ("decide", "change", "assign", "retry", "nodeplan")
+TEMPLATES = ("decide", "change", "assign", "retry", "nodeplan", "follows")
 PLACEHOLDERS: dict[str, frozenset[str]] = {
     "decide": frozenset({"revision", "digest", "conversation", "pending", "message", "notes", "field_digest", "schema"}),
     "change": frozenset({"revision", "digest", "field_digest", "message", "decision", "kind", "schema"}),
     "assign": frozenset({"digest", "field_digest", "message", "notes", "schema"}),
     "retry": frozenset({"n", "max", "violations", "delta"}),
     "nodeplan": frozenset({"steps", "message", "schema"}),
+    "follows": frozenset({"dept", "runs", "message", "schema"}),
 }
 
 
@@ -94,6 +96,13 @@ def conversation(history: Sequence[tuple[str, str]], *, limit: int = 12, width: 
 
 def pending_lines(pending: Sequence[str]) -> str:
     return "\n".join(pending) if pending else "(nothing is waiting for a yes or no)"
+
+
+def run_lines(runs: Sequence[tuple[str, str, str, str, str]], *, width: int = 1000) -> str:
+    """Per run (task id, title, status, brief, open question or ""), newest first: `- id | title | status`, then its brief and question, each cut to `width` characters."""
+    def cut(text: str) -> str:
+        return clip(" ".join((text or "").split()), width) or "-"
+    return "\n".join(f"- {tid} | {title} | {status}\n  brief: {cut(brief)}\n  open question: {cut(question)}" for tid, title, status, brief, question in runs) or "(none)"
 
 
 def violation_lines(violations: Sequence[Violation | Mapping[str, str]]) -> str:

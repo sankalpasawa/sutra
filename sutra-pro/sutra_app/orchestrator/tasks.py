@@ -243,11 +243,6 @@ class TaskStore:
             f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()      # lane '': the team's own task, not a step in a lane (MAN-10)
         return _row_of(found) if found is not None else None
 
-    def latest_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
-        found = conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", (dept_id,)).fetchone()
-        return _row_of(found) if found is not None else None
-
     def counts_in(self, conn: sqlite3.Connection) -> tuple[int, int]:
         """(tasks starting or running, tasks starting, running or waiting for the owner)."""
         working = conn.execute("SELECT count(*) FROM tasks WHERE status IN ('starting','running')").fetchone()[0]
@@ -470,6 +465,9 @@ class TaskService:
         self.spawn_guard: Callable[[sqlite3.Connection, TaskRow], str] | None = None
         # called in the transaction of any change of a task's state that is made here (starting, cancelled): the project service moves the node of a task with it (MAN-5); None while off
         self.node_sync: Callable[[Tx, str], None] | None = None
+        # the chat agent's decision whether a team-chat line continues one of the team's earlier runs (D454): (dept, words, runs) -> task id or None.
+        # Set by wiring; None starts every team-chat follow-up clean.
+        self.follows_of: Callable[[str, str, Sequence[tuple[str, str, str, str, str]]], Awaitable[str | None]] | None = None
 
     # ---- loop plumbing -----------------------------------------------------------------------------------------------------
 
@@ -922,6 +920,7 @@ class TaskService:
         said = self.clean(body)                          # the answer, the follow-up and the team's chat line; the override is read from `body`
         snapshot = self._snapshot(input_files)           # a file that is gone is a 404 here, before anything is stored
         refusal: AppError | None = None
+        pick = None if answer_only or self._override_command(body) is not None else self._pick_follows(dept_id, said)      # before the transaction (D454)
         with self.db.tx() as tx:
             team = tx.conn.execute("SELECT d.hidden_at FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone()
             if team is None:
@@ -951,7 +950,7 @@ class TaskService:
             elif tx.conn.execute("SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
                 raise Busy("The team has work waiting to start. You can write again when it is done")
             else:
-                result = self._follow_up(tx, dept_id, sid, said, scope_id, settings, snapshot)
+                result = self._follow_up(tx, dept_id, sid, said, scope_id, settings, snapshot, pick)
         if refusal is not None:
             raise refusal
         if result.delivered == "follow_up":
@@ -1001,9 +1000,7 @@ class TaskService:
         run_dir = self.store.run_dir_of(live)
         n = self.launcher.send(run_dir, {**line, "at": iso_z(tx.now())})
         if answered:
-            for q in tx.conn.execute(
-                    "SELECT id FROM chat_messages WHERE session_id = ? AND kind = 'question' AND answered_by IS NULL AND task_id = ? ORDER BY id",
-                    (sid, live.id)).fetchall():
+            for q in self._open_questions(tx.conn, sid, live.id):
                 self.chats.mark_answered(tx, q["id"], posted.id)
         row = self.store.update(tx, live.id, status="running", inbox_seq=n) if live.status == "waiting_user" else live
         identity = tx.ctx.get("node", f"{live.dept_id}.identity")
@@ -1013,42 +1010,79 @@ class TaskService:
         self.graph.aggregate(tx)
         return Delivery(message_id=posted.id, delivered="answer", task_id=live.id)
 
-    def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None, input_files: Sequence[dict] = ()) -> Delivery:
-        """No live task: a NEW task (new run id, folder and process; the old folder is never written again). It continues from the
-        department's latest run that has a folder; a question left open by an ended task becomes its framing. After the owner's reset
-        ('+ New run', `page.json.since_run`) a run at or before the marker is not continued: the page was blank, so the brief starts a
-        fresh run (no seed, no parent, no framing from the old question); a run made after the reset is continued again."""
-        conn = tx.conn
-        latest = self.store.latest_in(conn, dept_id)
-        seed = None
-        for r in conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND run_id IS NOT NULL ORDER BY created_at DESC, rowid DESC", (dept_id,)):
-            prior = _row_of(r)
-            if (self.store.runs_dir_in(conn, dept_id) / prior.run_id).is_dir():
-                seed = prior
-                break
+    @staticmethod
+    def _open_questions(conn: sqlite3.Connection, sid: str, task_id: str) -> list[sqlite3.Row]:
+        """The task's unanswered questions in the team's chat, oldest first (id, text)."""
+        return conn.execute("SELECT id, text FROM chat_messages WHERE session_id = ? AND kind = 'question' AND answered_by IS NULL AND task_id = ? ORDER BY id",
+                            (sid, task_id)).fetchall()
+
+    def _candidates(self, conn: sqlite3.Connection, dept_id: str, sid: str) -> list[tuple[TaskRow, str]]:
+        """D454: the team's newest 5 ended tasks with a run folder made after the reset marker, each with its newest open question ("" when none)."""
         marker = self._reset_marker(dept_id)
-        fresh = marker is not None and seed is not None and seed.run_id <= marker          # the engine's own test: engine/api/ctx.py current_ref
-        if fresh:
-            seed, latest = None, None
-        framing, orphan = "", None
-        q = conn.execute(
-            "SELECT m.id, m.text, m.task_id FROM chat_messages m JOIN tasks t ON t.id = m.task_id WHERE m.session_id = ? AND m.kind = 'question'"
-            " AND m.answered_by IS NULL AND t.status IN ('stopped','crashed','done','done_with_open_items','cancelled') ORDER BY m.id DESC LIMIT 1",
-            (sid,)).fetchone()
-        if q is not None:
-            orphan = q["id"]
-            framing = "" if fresh else clip(f"Earlier the team asked the owner: {q['text']}", 20_000)
+        found: list[tuple[TaskRow, str]] = []
+        for r in conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND run_id IS NOT NULL"
+                              " AND status IN ('stopped','crashed','done','done_with_open_items','cancelled') ORDER BY created_at DESC, rowid DESC", (dept_id,)):
+            prior = _row_of(r)
+            if marker is not None and prior.run_id <= marker:          # the engine's own test: engine/api/ctx.py current_ref
+                continue
+            if not (self.store.runs_dir_in(conn, dept_id) / prior.run_id).is_dir():
+                continue
+            questions = self._open_questions(conn, sid, prior.id)
+            found.append((prior, questions[-1]["text"] if questions else ""))
+            if len(found) == 5:
+                break
+        return found
+
+    def _pick_follows(self, dept_id: str, said: str) -> str | None:
+        """D454, outside any transaction: the earlier run the chat agent says the words continue, or None (no call when there is nothing to ask; any failure is None)."""
+        if self.follows_of is None:
+            return None
+        follows_of = self.follows_of
+        try:
+            conn = self.db.conn()
+            if conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active' AND d.hidden_at IS NULL", (dept_id,)).fetchone() is None:
+                return None                                  # a deleted project or an inactive team: the transaction refuses the line, no call is spent
+            if self.store.live_in(conn, dept_id) is not None or conn.execute(
+                    "SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
+                return None
+            runs = [(r.id, r.title, r.status, r.user_text, q) for r, q in self._candidates(conn, dept_id, self._dept_session(conn, dept_id))]
+            if not runs:
+                return None
+            return self._run_async(lambda: follows_of(dept_id, said, runs))
+        except Exception as exc:                     # noqa: BLE001  model trouble of any kind is a clean start, never a lost line
+            log.info("team %s: the follows decision could not be made (%s): a clean run", dept_id, type(exc).__name__)
+            return None
+
+    def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None, input_files: Sequence[dict] = (),
+                   pick: str | None = None) -> Delivery:
+        """No live task: a NEW task (new run, folder and process; the old folder is never written). D454: the agent's `pick`, if still a candidate, is the seed and parent,
+        its newest open question the framing, its questions are answered, and a stopped, crashed or cancelled one hands on its brief. Else a clean run that answers no
+        question, except that after '+ New run' with nothing made since it closes the question the reset left open, as before."""
+        conn = tx.conn
+        found = self._candidates(conn, dept_id, sid)
+        seed, question = next(((r, q) for r, q in found if r.id == pick), (None, ""))
+        framing = clip(f"Earlier the team asked the owner: {question}", 20_000) if question else ""
+        text = f"{clip(seed.user_text, 20_000)}\n\nThe owner now writes: {body}" if seed is not None and seed.status in BAD_END else body
         row = self._insert(
-            tx, dept_id=dept_id, text=body, title=None, scope_id=scope_id, framing=framing, depends_on=(), follows=None, request=None,
-            change_id=None, settings=settings, seed_run=seed.run_id if seed is not None else None,
-            parent_task_id=latest.id if latest is not None else None, input_files=input_files)
+            tx, dept_id=dept_id, text=text, title=seed.title if text != body else None, scope_id=scope_id, framing=framing, depends_on=(), follows=None,
+            request=None, change_id=None, settings=settings, seed_run=seed.run_id if seed is not None else None,
+            parent_task_id=seed.id if seed is not None else None, input_files=input_files)
         if input_files:                                       # the owner's line says which files went with it, and the receipt records what the team was given (FR-5)
             shown = self.clean(attached_line([f["name"] for f in input_files], [f["kind"] for f in input_files]))
             posted = self._post(tx, sid, role="user", who="user", kind="text", text=body + "\n" + shown, task_id=row.id, attachments=[_receipt_of(f) for f in input_files])
         else:
             posted = self._post(tx, sid, role="user", who="user", kind="text", text=body, task_id=row.id)
-        if orphan is not None:
-            self.chats.mark_answered(tx, orphan, posted.id)
+        if seed is not None:
+            closing = self._open_questions(conn, sid, seed.id)
+        elif not found and self._reset_marker(dept_id) is not None:       # '+ New run' closes the newest question left open, as it did before D454
+            closing = conn.execute(
+                "SELECT m.id FROM chat_messages m JOIN tasks t ON t.id = m.task_id WHERE m.session_id = ? AND m.kind = 'question'"
+                " AND m.answered_by IS NULL AND t.status IN ('stopped','crashed','done','done_with_open_items','cancelled') ORDER BY m.id DESC LIMIT 1",
+                (sid,)).fetchall()
+        else:
+            closing = []
+        for q in closing:
+            self.chats.mark_answered(tx, q["id"], posted.id)
         return Delivery(message_id=posted.id, delivered="follow_up", task_id=row.id)
 
     def _reset_marker(self, dept_id: str) -> str | None:
