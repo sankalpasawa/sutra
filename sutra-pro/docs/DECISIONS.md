@@ -3187,3 +3187,10 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Rollback: revert the commits and keep `DDL_V10_PROJECT_FILES` (the table and the column are harmless to older code, which cannot open a v10 database anyway); `SUTRA_PROJECT_CONTEXT=0` neutralises delivery without a revert.
 - Follow-ups: files on `POST /api/projects` and in an answer to a team's question (release after 0.9.0); an optional owner-pressed "Summarise with the model" is NOT planned (the owner said no); deleting a chat does not delete its stored files (the orphan sweep); a per-chat "do not remember" switch; the chip "3 files · memory on" under the start box (the panel and the project menu entry are in); the beta prerelease checklist of PRD 9 is the owner's.
 - Diagram: label "a project keeps files, instructions and earlier-work memory; every start box takes files; delivered by the system addendum (0.9.0)", pill on band:EXPERIENCE.
+
+## D452 — A planned real run runs without approval, a dry run or internet rules (P46, E31)
+- Sources: the founder's brief and answers of 2026-11-26; `docs/ai/remove-real-run-gates/{impact,spec,architecture}.md`.
+- Decided: a real run in an accepted plan runs once per workflow id when the rest is workable, unasked; package installs run unasked; no dry run, copies, placeholder files or `offline`; the planner lists hosts (syntax only) and srt allows exactly them; `expect` is checked against the real run's own diff and a mismatch fails its items (no Audit call), recorded in the row's `audit`; the `real_run` and `env_install` rows lose the gate keys nobody reads; a run never ends "Done:" while a required real run has not passed. P46 new; P32 and P44 retired; P31, P33, P35, P41, P42, P43 amended; E28, E29 deleted, E31 new.
+- Why: fewer questions and less code; the gates come back if something goes wrong.
+- Rejected: fixed values for the old keys (Q-2); running without srt; an allow-all wrapper (srt's CLI has none); a flag for the old behaviour.
+- Diagram: label "a planned real run runs once, unasked; no dry run, no host question; expect checked after the run (P46, E31)", pill on band:DEPARTMENT RUNTIME.
