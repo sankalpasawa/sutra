@@ -13,42 +13,45 @@ Branch `live-view`, base 6c79a1db (= origin/main on 2026-11-26). Not pushed, no 
 | T6 | 91d7563d | E32b: sCrew's fixed sentences, `sNum` and `sCap` deleted (sCrew 21 lines down to 11). A person whose part's agent is live is busy and shows the what; anyone else shows their last live what of this page session, else their last stream line, else the run's last stream line, else the step name. The question, parked and handoff lines are kept. Parity: J2's three crew lines are mapped to the page's lines in `E32_CREW` (page_render.test.js) and still compared |
 | T7 | skipped | Owner change 3: no P47, no vendor_j2.py, j2_studio.py or VENDORED.md change |
 | T8 | 3d1115d5 | Trim: E32a anchors inline (no `SNUM` constant) and one comment block fewer. Full gate run (results below) |
+| Fix-up | ce457a0e | Owner fix-ups 1 and 2: names come from the existing tables (deviation 3), so Asha and Nora show busy. The Map chip falls back through the crew's chain via one helper, `liveSaid` (deviation 7). The fixture gains an `identity` entry ("Reading brief.md"). D453's text follows |
+| Docs | e68938d3 | spec.md, architecture.md, plan.md, impact.md committed. docs/ai/analysis.md stays uncommitted (owner) |
 
 ## Deviations from plan.md and architecture.md
 | # | Deviation | Why |
 |---|---|---|
 | 1 | No rebase onto remove-real-run-gates | Owner: that branch has no commits yet. Built on origin/main. **Later**: once the removal lands, rebase live-view onto it and regenerate j2_ui.html with `scripts/port_j2_ui.py` (never a hand merge); expect conflicts in port_j2_ui.py's header and `EDIT_IDS` in test_port_edits.py |
 | 2 | Page pin is ee659fb54aec75bf7f5139516791aee20a0474fa, not 00efb179 | `port_j2_ui.py --check` fails at 00efb179 (19 drifted anchors) and passes at ee659fb5, the pin the sut-27 implementation.md names |
-| 3 | The who has no person table (architecture.md:83 rejected, owner change 2) | A `W-n` key takes its part's person from `studio.parts` (j2_studio.py:96-116). A function key takes the Map's persona for its box, `MAPLABEL.persona` (j2_ui.html, the `persona:` row of `MAPLABEL`, read by `mapFn`): "Strategist" for adaptation, "Quality Reviewer" for audit, "Client Lead" for identity. Any other key (`agent`, `validator`, an unmapped W-n) is the key itself. Result: the Simple view never marks Asha or Nora busy (no existing data names a Simple-view person for a function) |
+| 3 | The who: no new table, the existing ones reused (owner change 2, fix-up 1) | The "Your team" panel draws `PEOPLE` and `SKEYS` (j2_ui.html:1034-1040, panel at :1905). Those hold names and roles but no function keys. The UI's one function-to-person table is `PEOPLE` in ui/static/js/raw_chat.js:20 (identity: Asha, audit: Nora, the backstage functions: Planner, Budget lead, Scheduler, Gatekeeper). dept_ext.js loads it on every team page (`rawChat()`, dept_ext.js:209-215, called at :475). `liveLines` calls `RawChat.helpers.personOf(k)`, keeps the name only when the table knows that function, and maps it onto the panel's `PEOPLE` by name to get the person key (so the crew can mark Asha or Nora busy). Order: a W-n is its part's person (studio.parts); a function is raw_chat's person (Asha, Nora), else its role title (Planner, ...); before raw_chat.js has loaded, the Map's `MAPLABEL.persona`; else the key. Nothing is copied |
 | 4 | Crew lines stay in the golden comparison (owner change 4) | No blanking. `E32_CREW` replaces J2's `<small>` texts with the exact expected ones ("Mira finished item 5.", "Nora checked everything on your list: all 5 good."), in both the golden loop and the opt-in J2 test. There is no time part in a crew line, so nothing is blanked |
-| 5 | An idle crew line is never empty (owner change 5) | Fallback chain: last live what of this page session, then the person's last line in `studio.stream` (via the existing `sTalk`), then the run's last stream line, then the step name. The chat line and the Map chip still follow FR-9 (last live line, else the step name) |
+| 5 | An idle crew line is never empty (owner change 5) | Fallback chain: last live what of this page session, then `liveSaid(s, k)`: the person's last line in `studio.stream` (via the existing `sTalk`), else the run's last stream line, else the step name. The chat line still follows FR-9 (last live line, else the step name) |
 | 6 | Existing entry test expects `"step": 0`, not `None` | `CallTag.step` defaults to 0 (port.py:35) |
-| 7 | `mapChip` returns status `running` between calls too (architecture said `idle`) | The run is running; one value instead of two |
+| 7 | Map chip between calls (fix-up 2) | `LIVE.line || liveSaid(CTX, LIVE.p)`: the last live line, else the last live person's stream line, else the run's last stream line, else the step name. It is the same helper the crew uses. Its status is `running` while the run runs (architecture said `idle`). The person step only applies when no live line exists yet, and then `LIVE.p` is empty, so on a fresh page the chip shows the run's last stream line. Test: the Map test checks the chip text after the agents stop, on a fresh page, and with an empty stream |
 | 8 | `scripts/record_api_shapes.py` changed (not in the Components table) | test_engine_views compares the state's keys with J2's recorded shape; `live` is engine-only, like `host` and `run_id` |
 | 9 | The 300-char tool test, FR-7 "no addMsg", NFR-4 line count | All covered as planned; `liveLines` returns `[]` unless the status is running (an explicit test) |
 
 ## Test results
 | Command | Result |
 |---|---|
-| `scripts/gate.sh` (foreground in the harness's background mode, 15 min 21 s) | 13660 passed, 4 failed, 389 skipped. JS suites inside the gate passed |
+| `scripts/gate.sh`, first run (15 min 21 s) | 13660 passed, 4 failed, 389 skipped |
+| `scripts/gate.sh`, full rerun after ce457a0e and e68938d3 (15 min 25 s) | 13660 passed, 4 failed (the same 4 below), 389 skipped |
 | The 4 failures, rerun on a clean worktree of 6c79a1db with its own `scripts/py` | the same 4 fail there, so they were already failing: `tests/contracts/test_contract_route_table.py::test_every_path_the_view_scripts_call_is_served_by_some_router` (`/api/appearance`), `tests/release/test_workflows_yaml.py::test_ci_is_named_ci_and_runs_on_push_to_main_pull_requests_and_manual_dispatch`, `tests/ui/test_fake_backend.py::test_the_pages_come_from_the_real_ui_router_with_the_fakes_token_and_version`, `tests/ui/test_shared_css.py::test_each_page_links_its_own_sheet_and_the_frozen_one_is_for_home_and_the_console_only` |
-| `node --test tests/ui/js/` | 1753 pass, 0 fail, 2 skipped |
+| `node --test tests/ui/js/` (after the fix-up) | 1753 pass, 0 fail, 2 skipped |
 | `node --test tests/ui/js/page_render.test.js` with `SUTRA_J2_CHECKOUT` set to the ee659fb5 extraction | 60 pass, 0 fail (the opt-in J2 comparison included) |
 | `tests/ui/test_port_edits.py`, plain and with `SUTRA_J2_CHECKOUT` | pass |
 | `port_j2_ui.py --j2 <ee659fb5 extraction> --commit ee659fb5... --check` | "ok: the 64 anchors ... equal a fresh port" |
 | Targeted engine tests (agent_live, rawchat, api_redact, views, api_scope, runs_watcher_partials, diagram_decisions, lib_records, lib_wire) | pass |
-| Re-run after the T8 trim | port `--check`, test_port_edits and page_render pass. The full gate was not re-run after the trim (port script only, generated page unchanged) |
+| After the fix-up | port `--check` clean (64 edits); test_port_edits and page_render pass with and without the J2 opt-in |
 
 Review checks: `git diff 6c79a1db..HEAD` touches no j2*.py, j2_map.py, j2_realization.py, events.py, host/, engine/api/ or vendor_j2.py; E28 and E29 are unchanged. No new route, poll timer, event type or stored file.
 
-Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`): port_j2_ui.py +41/-2, agents.py +15/-6, views.py +3/-2, rawchat.py +1/-1, record_api_shapes.py +1/-1, which is +49 net in source written by hand. The generated j2_ui.html is +28/-19 (+9 net). The +49 is over the ~35 the owner accepted. Most of it is the E32 JavaScript as port-script string lines (about 30) and its two edit anchors.
+Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`): port_j2_ui.py +43/-2, agents.py +15/-6, views.py +3/-2, rawchat.py +1/-1, record_api_shapes.py +1/-1, which is **+51 net** in source written by hand. The generated j2_ui.html is +30/-19 (+11 net). The +51 is over the ~35 the owner accepted. Most of it is the E32 JavaScript as port-script string lines and its two edit anchors.
 
 ## Follow-ups
 | # | Item |
 |---|---|
 | F1 | Change-request calls (`purpose="change"`) are not in `LIVE_PURPOSES`, so they never show live (owner change 7). Not built |
 | F2 | Rebase onto remove-real-run-gates after it lands, then regenerate j2_ui.html with the port script (deviation 1) |
-| F3 | Asha and Nora are never busy in the Simple view. Fixing that needs a function-to-person mapping in the run's data first (deviation 3) |
+| F3 | The person comes from raw_chat.js, which loads asynchronously. Until it has loaded (the first moments of a page), functions show the Map's words ("Strategist") and Asha and Nora are not marked busy |
 | F4 | plan.md's `J2PAGE` pin (00efb179, taken from test_port_edits.py's miniature PIN) does not port this page; the page pin is ee659fb5 |
 | F5 | The Q-1 runtime check (key `adaptation` during "What I build") is only proven by the unit test until the owner's beta run |
 
@@ -57,11 +60,11 @@ What changes on screen:
 | Where | Before | Now |
 |---|---|---|
 | Agent view, the line under the messages (`#typing`) | `Working…` or `<Function> is working…` | one line per agent at work, "<who>: <what>", oldest first, at most 3 then `+N`. Between calls it keeps the last line. On a fresh load it shows the step name |
-| Map tab, status chip | `Running` | the line of the agent that started most recently |
+| Map tab, status chip | `Running` | the line of the agent that started most recently; between calls the last live line, else the run's last team-stream line, else the step |
 | Map tab, boxes | lit only while `thinking` matches | the function box (`fn:<key>`) or the team box that holds the `W-n` shows running while its call runs |
 | Simple view, crew | fixed sentences ("Planning the parts", "Finished 6 parts") | the maker of a live part is busy and shows the tool line. Everyone else shows their last live line, else their last team-stream line, else the run's last one, else the step |
 
-Who and what: W-n → the part's person (Mira, Kabir, Dev); adaptation → "Strategist", audit → "Quality Reviewer", identity → "Client Lead" (the Map's own words); anything else → its key. The what is the tool line (e.g. "Reading index.html"), else the part's name, else the call's step name. It is never the agent's own text.
+Who and what: W-n → the part's person (Mira, Kabir, Dev); identity → Asha, audit → Nora (busy in the crew); adaptation → "Planner", priority → "Budget lead", coordination → "Scheduler", validator → "Gatekeeper"; anything else → its key. The what is the tool line (e.g. "Reading index.html"), else the part's name, else the call's step name. It is never the agent's own text.
 
 Data it reads: `GET /api/state` (the page's existing 700 ms poll), which now carries `live` from `<run>/agent_live.json` (redacted before it is cut, and redacted again by the API), plus `studio.parts` and `studio.stream` already in the state. Nothing new is stored, and nothing is added to chat.jsonl.
 
@@ -69,7 +72,7 @@ Steps in the beta app:
 1. `scripts/py scripts/install_app.py beta` (the owner, or with the owner's word). It refuses (exit 3) while the beta has a run going.
 2. In Sutra Pro Beta open a team, use the Agent view, and start a run, e.g. "A one-page website for a small bakery: menu with prices, opening hours, a pre-order form".
 3. During "What I build", run `python3 -m json.tool ~/.sutra-pro-beta/departments/<team>/runs/<run>/agent_live.json` once. Expect key `adaptation` with `"step": 2`. A key `agent` means the FR-1 fallback is needed. Read nothing else there, and never `.env`.
-4. Watch: the chat line says "Strategist: Adaptation proposes workflows", and the Map's Adaptation box is lit with the same line in its chip. While building it says e.g. "Mira: Reading index.html", that part's team box is lit, and Mira is busy in the Simple view.
+4. Watch: the chat line says "Planner: Adaptation proposes workflows" (while Identity reads, "Asha: Reading …" with Asha busy in the Simple view), and the Map's Adaptation box is lit with the same line in its chip. While building it says e.g. "Mira: Reading index.html", that part's team box is lit, and Mira is busy in the Simple view.
 5. Compare with Settings & logs → Raw AI chat: a new tool line should reach the chat line and the Map within about 2 s.
 6. Reload mid-run: there are no live rows in the chat history, and the line shows the step name until the next live entry.
 7. Open the finished run: no live line, the Map chip says how it ended, and the crew shows last stream lines (never empty).
