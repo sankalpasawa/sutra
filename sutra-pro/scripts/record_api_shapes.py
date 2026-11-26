@@ -65,7 +65,7 @@ OPAQUE = frozenset({"reply", "proposal", "adaptation_final", "priority_final", "
 # Keys that exist on the engine's side only, on purpose (engine design 4.6): the live state's host, run_id and dept_id, and the
 # provider and usd that calls.jsonl records gain (`call_log[]` in the state, the record of /api/call). Everything else is equal.
 _CALL_LOG = {"call_log[].provider", "call_log[].usd"}
-_LIVE_STATE = {"host", "host.pid", "host.alive", "run_id", "dept_id"}
+_LIVE_STATE = {"host", "host.pid", "host.alive", "run_id", "dept_id", "live"}      # live: D453, the run's agent_live.json entries
 # D433: engine-only, on purpose: each done-when item's runnable check and its builder-set status (the J2 the golden is recorded from has neither)
 _DONE_BUILT = {"goal.item_checks", "goal.item_checks.*", "goal.item_checks.*.type", "goal.item_checks.*.target", "goal.item_checks.*.expect",
                "workflows[].item_status", "workflows[].item_status.*", "workflows[].item_status.*.status", "workflows[].item_status.*.reason"}
