@@ -216,6 +216,8 @@ def test_a_file_is_read_once_when_added_and_never_again_to_list_or_to_choose(ten
     pf = files_of(tenv)
     add(tenv, pf, "a.txt", b"alpha beta")
     assert seen == ["a.txt"]
+    add(tenv, pf, "again.txt", b"alpha beta")                                                         # the same content: found by its hash, never read again
+    assert seen == ["a.txt"]
     pf.list("web")
     pf.enabled("web")
     pf.list("web")

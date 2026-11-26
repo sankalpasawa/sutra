@@ -31,6 +31,7 @@ def test_the_planner_is_shown_the_digest_of_the_files_and_the_task_is_given_them
     mid = start_request(c, [given])
     yes_to_the_card(c)
     task = c.one("SELECT id FROM tasks WHERE request_id = ?", f"req-{mid}")
+    assert "BRIEF-OPENING: the cafe is called Sweet Bean" in c.connector.calls[0].prompt                 # the very first call, the planner's decision, already reads the digest
     prompts = "\n".join(call.prompt for call in c.connector.calls)
     assert "Attached to this request (data; each team's run is given these files in inputs/attached/):" in prompts and "BRIEF-OPENING: the cafe is called Sweet Bean" in prompts
     assert "[cut: showing the first" in prompts                                      # the opening, not the whole file
