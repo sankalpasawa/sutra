@@ -3,6 +3,7 @@
     plan(request, phase=...)       stages A (decide), B (change, only when the chart changes), C (assignments) -> a `Plan`
     resume(request, decision)      stage C only, for a request whose chart change the owner approved
     choice_plan(request, node_id)  the plan for a team the owner picked on a `choice` card (no model call)
+    follows(dept, text, runs)      whether a team-chat line continues one of the team's earlier runs: one call, no retry (D454)
 
 Every stage is one `call_json(prompt, schema=transport_schema(...), function="chat_agent", step=<stage>, context=...)`; the reply goes
 through `ReplyParser` (tolerant in, closed out), then `GATE.check`, then our checks. A rejected reply is asked again with the reasons
@@ -334,10 +335,27 @@ class ChatAgent:
             log.info("request %s: stage nodeplan could not be asked (%s): the defaults", request.request_id, failure)
             return {}, True
 
+    async def follows(self, dept_id: str, text: str, runs: Sequence[tuple[str, str, str, str, str]]) -> str | None:
+        """D454: the task id of the earlier run (`runs`: task id, title, status, brief, open question or "", newest first) that the
+        owner's words in the team's chat continue, or None. One call (no retry) with the assignments schema; only `follows` of the first
+        assignment is read and the caller checks it is one of `runs`. None when the reply is unusable; a connector failure goes up."""
+        schema = REGISTRY.transport_schema("chat_turn", kind="assignments")
+        prompt = prompts.render("follows", dept=dept_id, runs=prompts.run_lines(runs), message=text, schema=_dump(schema))
+
+        async def build(model: AssignmentPlan) -> tuple[Any, list[Violation]]:
+            return (model.assignments[0].follows if model.assignments else None), []
+
+        context = {"purpose": "chat_plan", "session_id": ORG_SESSION_ID, "node_id": ROOT_NODE_ID, "atom_id": overhead_atom_id(f"follows-{dept_id}")}
+        try:
+            return await self._stage("follows", "chat_turn", "assignments", prompt, schema, PlanRequest(text=text, message_id=0), _Budget(1), build,
+                                     attempts=1, context=context)
+        except StageFailed:
+            return None
+
     async def _stage(self, stage: str, family: str, kind: str | None, prompt: str, schema: dict, request: PlanRequest,
-                     budget: _Budget, build: Build, attempts: int | None = None) -> Any:
+                     budget: _Budget, build: Build, attempts: int | None = None, context: dict[str, str] | None = None) -> Any:
         """One stage: ask, read, gate, check; on rejection ask again with the reasons. Returns what `build` made."""
-        context = call_context(request.message_id, request.node_id)
+        context = context if context is not None else call_context(request.message_id, request.node_id)
         stop = {} if request.cancel is None else {"cancel": request.cancel}          # only a request that has a token hands one on: every connector double of today takes no such argument
         violations: list[Violation] = []
         replies: list[dict] = []
