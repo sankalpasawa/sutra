@@ -113,7 +113,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests pass; `scripts/py -m pytest tests/engine/test_engine_views.py -q` passes
   - Covers: FR-40
 
-- [ ] T9: An answer can confirm a real-run item (P43 trimmed)
+- [x] T9: An answer can confirm a real-run item (P43 trimmed)
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_patches.py`
   - Change: delete the P43 edits behind j2.py:7061-7076 (`rr2`, `held`, "Noted. This part is checked ...", the appended sentence). Keep `picked` (:5436-5438, :5591, :9085-9092) and `named_whole`. P43 note says only what it still does.
   - Tests: delete `test_p43_an_answer_never_confirms_a_real_run_item`; add AC-20; keep `test_p43_an_answer_still_confirms_an_item_that_is_not_real_run`, the pick tests (AC-21), `test_p31_d448_*`, `test_p41_d448_*`; check `test_p30_a_to_be_confirmed_real_run_item_is_never_blocked` still holds.

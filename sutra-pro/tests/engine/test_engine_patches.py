@@ -4234,10 +4234,9 @@ def test_p42_runenv_is_j2s_module_below_its_docstring():
     assert code(theirs) == code(Path(__file__).resolve().parents[2] / "sutra_app" / "engine" / "runenv.py")
 
 
-# ---- P43 (D448): an answer never confirms a real-run item; a picked option counts with its full text, the Requester's only
+# ---- P43 (D448, D452): an answer confirms a real-run item like any other; a picked option counts with its full text, the Requester's only
 P43_RR, P43_DOC = "The tool tidies the made-up folder for real", "A README explains how to run it"
 P43_ANSWER = "It runs on ~/Documents/Made Up/Tool"
-P43_LATER = "This part is checked when the real run actually happens, not from an answer."
 
 
 def p43_answer(make_run, confirmed, planned=False, still=()):
@@ -4254,22 +4253,22 @@ def p43_answer(make_run, confirmed, planned=False, still=()):
     return run
 
 
-@pytest.mark.parametrize("planned", [False, True], ids=["unplanned", "planned"])
-def test_p43_an_answer_never_confirms_a_real_run_item(make_run, planned):
-    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned)
+def test_p46_an_answer_confirms_a_real_run_item(make_run):
+    """AC-20 (FR-24): the charter marks item 1 real-run; the Requester's answer confirms it, as any other item."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
     texts = [m["text"] for m in run.chat]
-    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
-    assert not any(t.startswith("Confirmed by the Requester") for t in texts)
-    # review R1-2 (owner, option 1): an item not planned yet leaves to_be_confirmed, the fact is known; a planned one is J2's
-    assert (P43_RR in {t["criterion"] for t in run.goal["to_be_confirmed"]}) is planned
+    assert P43_RR in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert f"Confirmed by the Requester: {P43_RR} = {P43_ANSWER}" in texts
+    assert not any(t.startswith("Noted.") or "checked when the real run actually happens" in t for t in texts), texts
     assert P43_ANSWER in run.handoff["why"], "the answer still reaches Adaptation"
-    assert "~/documents/made up/tool" in run._fact_source()
-    noted = [t for t in texts if t == "Noted. " + P43_LATER]
-    planned_note = [t for t in texts if t.startswith("Not taken from the answer: whether a real run happened")]
-    if planned:
-        assert not noted and len(planned_note) == 1 and planned_note[0].endswith(". " + P43_LATER)
-    else:
-        assert len(noted) == 1 and not planned_note
+
+
+def test_p46_a_planned_real_runs_item_keeps_j2s_own_note_without_p43s_sentence(make_run):
+    """J2's own rule stays: whether a planned real run happened is answered by code from its receipts, never by an answer."""
+    run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}], planned=True)
+    note = [m["text"] for m in run.chat if m["text"].startswith("Not taken from the answer: whether a real run happened")]
+    assert len(note) == 1 and "checked when the real run actually happens" not in note[0], note
+    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
 
 
 def test_p43_an_answer_still_confirms_an_item_that_is_not_real_run(make_run):
@@ -4328,12 +4327,12 @@ def test_p43_a_typed_answer_is_never_a_pick(p43_pick):
     assert run.decisions[-1]["answer"] == "use 2 folders" and "picked" not in run.decisions[-1]
 
 
-def test_p43_r1_2_a_held_answer_clears_its_to_be_confirmed_entry_and_the_item_still_needs_a_receipt(make_run):
-    """Review R1-2 (owner, option 1): the held answer gives the fact, so the item is no longer waiting on the Requester (never
-    blocked, never asked again as a follow-up); it is still not confirmed and passes only on a real run's receipt."""
+def test_p43_r1_2_a_confirmed_real_run_item_clears_its_to_be_confirmed_entry_and_still_needs_a_receipt(make_run):
+    """Review R1-2, amended in D452: the answer confirms the fact, so the item is no longer waiting on the Requester (never
+    blocked, never asked again as a follow-up); it passes only on a real run's receipt."""
     run = p43_answer(make_run, [{"item": 1, "fact": P43_ANSWER}])
     assert P43_RR not in {t["criterion"] for t in run.goal["to_be_confirmed"]}
-    assert P43_RR not in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
+    assert P43_RR in {t["criterion"] for t in run.goal.get("confirmed_facts") or []}
     run.audits = [{"results": [{"id": "F-1", "item": 1, "criterion": P43_RR, "verdict": "TO_BE_CONFIRMED", "pass": False},
                                {"id": "F-2", "item": 2, "criterion": P43_DOC, "verdict": "PASS", "pass": True}]}]
     assert run._blocked_items() == [] and run._tbc_blocked() == {}
