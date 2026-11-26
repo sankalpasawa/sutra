@@ -62,6 +62,7 @@ Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`,
 | R1-9 | skipped | | Not in the approved list. The PIN line predates the branch and is only a label |
 | Cuts C1, C2, C3, C4, C5, C7 | done | 47082c84 | C1 = R1-6, C2 = R1-5. C3: the JS header comment is gone, and the rule "tool lines may be shown, the agents' free text may not" moved into E32a's edit-table comment. C4: the anchor comment is gone. C5: `rc` folded. C7: agents.py lines joined |
 | Cut C6 | skipped | | The owner said to skip it: it would leave unused variables in the generated page |
+| R2-1 | fixed | (this commit) | `sCrew` calls `liveLines(s)` once at its top (a new run clears `LIVE` before the crew reads it) and reuses the rows. Test: `sCrew` alone on a new run's first state shows nothing of the last run; it failed before the fix. tests/ui/js 1755 pass, page_render with the J2 opt-in 62 pass, test_port_edits 183 passed + 1 skipped (184 with the opt-in), port `--check` clean; full gate not rerun (coordinator) |
 
 ## Follow-ups
 | # | Item |

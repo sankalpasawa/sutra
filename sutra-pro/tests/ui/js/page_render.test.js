@@ -515,3 +515,12 @@ test("E32 (R1-1): a run that ended, or another run in the same tab, shows its ow
   assert.equal(call(page, `liveTyping(${JSON.stringify(other)})`), "Is the site workable?");   // another run: no line of the first one
   assert.equal(crew(other).mira.line, "Mira finished item 5.");
 });
+
+test("E32 (R2-1): sCrew alone on a new run's first state shows nothing of the last run", () => {
+  const page = livePage();
+  call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), run_id: "j2-a"})})`);
+  const s = {...RUNNING({}), run_id: "j2-c"}, T = call(page, `(() => { const s = ${JSON.stringify(s)}; return sCrew(s, sModel(s)); })()`);
+  const old = Object.values(LIVEFIX).map(e => e.tool).filter(Boolean);
+  for (const [k, v] of Object.entries(T)) assert.ok(!old.includes(v.line), `${k}: ${v.line}`);
+  assert.equal(T.mira.line, "Mira finished item 5.");
+});

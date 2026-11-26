@@ -161,11 +161,11 @@ _E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
 SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \(open\)\{.*?\n).*?    if \(qp && qp\.person === k\)\{ const b = (.*?\n)'
                       r'.*?(?=  \["mira", "kabir", "dev", "nora"\]\.forEach)', re.S)
 SCREW = _lines(
-    '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};',
+    '  const L = liveLines(s), open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};      // liveLines first: a new run clears LIVE (R2-1)',
     "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
     '    line: (s.status === "running" && LIVE.last[k]) || liveSaid(s, k)});',
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
-    "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json",
+    "  L.forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json",
     "")
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),

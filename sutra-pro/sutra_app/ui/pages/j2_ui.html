@@ -1100,13 +1100,13 @@ const liveTyping = s => { const L = liveLines(s).map(l => l.line), r = L.length 
 const mapLive = m => { const L = liveLines(CTX);      // a copy of the map: a live agent's box shows running
   return {...m, nodes: (m.nodes || []).map(n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k)) ? {...n, status: "running"} : n)}; };
 function sCrew(s, M){
-  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};
+  const L = liveLines(s), open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};      // liveLines first: a new run clears LIVE (R2-1)
   SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty
     line: (s.status === "running" && LIVE.last[k]) || liveSaid(s, k)});
   const qp = M.parts.find(p => p.st === "ask");
   if (open){ t.asha.line = APPROVE.includes((s.paused || {}).kind) ? "Needs your OK" : "Has a question for you"; t.asha.ask = true; }
   if (qp){ const m = t[qp.person], b = SV.bat && SV.bat.park, mn = b && b.sec === qp.sec ? Math.floor((Date.now() - b.at) / 6e4) : 0; m.line = "Parked on your answer" + (mn >= 1 ? ` · ${mn < 60 ? mn + "m" : Math.floor(mn / 60) + "h"}` : ""); m.ask = true; m.cls = "park"; }
-  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json
+  L.forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json
   ["mira", "kabir", "dev", "nora"].forEach(k => { const b = !t[k].ask && sBatLine(k); if (b) Object.assign(t[k], b); });      // a handoff or a resume, for a few seconds
   return t;
 }
