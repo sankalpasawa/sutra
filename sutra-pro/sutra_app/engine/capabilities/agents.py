@@ -124,7 +124,7 @@ class AgentLiveCapability(Capability):
         router, run_dir = router_of(ctx), run_dir_of(ctx)
         if router is None or run_dir is None or not hasattr(router, "finish_hooks"):
             return                                         # mock mode: nothing runs a tool, nothing to show
-        if self._redact is None:      # D453: redact before the cut (a cut can split a secret the API's whole-value Redactor then misses); the server's .env and environment
+        if self._redact is None:      # D453: redact before the cut; the host knows the .env values only (no secret-named environment), the API redacts the rest whole
             from sutra_app.config import default_env_file
             from sutra_app.orchestrator.redact import Redactor
             self._redact = Redactor(default_env_file())

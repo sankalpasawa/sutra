@@ -2171,7 +2171,7 @@
  },
  {
   "id": "D453",
-  "label": "the Map and chat say who works now and what, from agent_live.json; fixed crew sentences removed",
+  "label": "the Map and chat say who works now and what, from agent_live.json (.env secrets redacted before the cut); fixed crew sentences removed",
   "anchor": "band:EXPERIENCE"
  }
 ]
