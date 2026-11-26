@@ -43,6 +43,11 @@ Branch: `sut-26-context` (worktree `~/Downloads/sutra-sut26`), from `origin/main
 
 New failures against the baseline: 0. The full gate was not rerun after 3a3ed22e. Only `tests/live` was rerun, because that commit touches only `scripts/live_smoke.py`.
 
+## Rebase onto origin/main b5a9bdf9 (live-view, D453, merged)
+- The rebase conflicted only in `docs/DECISIONS.md` and `docs/diagram/decisions.json`, both at the end of the file. Resolved by keeping both, in order: D453, then D454. `python -m json.tool` accepts the JSON. No code file conflicted.
+- `scripts/gate.sh` after the rebase: 4 failed, 13675 passed, 389 skipped. The 4 failures are exactly the ones that also fail on main: the route table (`/api/appearance`), `test_workflows_yaml::test_ci_is_named_ci...`, `test_fake_backend::test_the_pages_come_from_the_real_ui_router...` and `test_shared_css::test_each_page_links_its_own_sheet...`. The live-smoke dry run now passes.
+- Commit hashes in the table above are from before the rebase. The rebased commits are d86f5c26 (T1), 31d208e7 (T2), ae13972f (T3), fc085985 (T4), 5f26ffc7 (T5), 562c1095 (T6), a41b5e4a (T7), 55010547 (T8).
+
 ## Size (NFR-4, reported only)
 | Part | Added | Deleted | Net |
 |---|---|---|---|
