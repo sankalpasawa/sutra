@@ -10,7 +10,7 @@ chat session of its own for the run (it returns None).
 """
 from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Sequence
 
 __all__ = ["DeptLike", "RunRefLike", "DeliveryLike", "EngineServices", "AgentChatTurn", "AskFailed", "LIVE_STATUSES", "BUSY_NAMES",
            "is_busy"]
@@ -45,7 +45,7 @@ class EngineServices(Protocol):
 
     def resolve_run(self, run_id: Optional[str], dept_id: str) -> Optional[RunRefLike]: ...     # run_id wins, else live, else latest
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: Optional[str] = None,
-                              settings: Optional[dict] = None) -> DeliveryLike: ...             # raises Busy
+                              settings: Optional[dict] = None, input_files: Optional[Sequence[dict]] = None) -> DeliveryLike: ...      # raises Busy; `input_files=[{id, name}]` (D451) is passed only when the request carries files
     def stop_live(self, dept_id: str) -> bool: ...          # True: nothing of the team is starting or running afterwards
     def department(self, dept_id: str) -> Optional[DeptLike]: ...
 

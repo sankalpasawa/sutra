@@ -40,6 +40,12 @@ def start(t, text="Build the page", dept="web", files=(), settings=None):
     return result, RunSpec.model_validate_json((t.run_dir(result.task_id) / "task.json").read_text()), t.run_dir(result.task_id)
 
 
+def context_of(folder) -> str:
+    """The text the engine host appends to the system prompt of every agent call of the run (`node_context.json["*"]`, T2: the framing alone never reaches a builder in a real run); "" when there is none."""
+    path = folder / "node_context.json"
+    return json.loads(path.read_text())["*"] if path.exists() else ""
+
+
 def refs(t, **named: bytes) -> list[dict]:
     store = store_of(t)
     return [{"id": store.save(name.replace("_", ".", 1), blob).id, "name": name.replace("_", ".", 1)} for name, blob in named.items()]
@@ -57,13 +63,14 @@ def test_a_request_with_files_is_stored_on_the_task_and_the_run_folder_holds_the
     assert (folder / "inputs" / "attached" / "sheet.csv").read_bytes() == b"item,price\nbeans,4\n"
 
 
-def test_the_brief_names_each_file_and_holds_the_opening_of_text(tenv):
+def test_the_brief_names_each_file_and_the_system_context_holds_the_opening_of_text(tenv):
     given = refs(tenv, spec_txt=b"OPENING of the spec " + b"z" * 5000)
-    _, spec, _ = start(tenv, files=given)
-    assert "Attached to this request (data; in inputs/attached/):" in spec.framing and "spec.txt" in spec.framing
-    assert "OPENING of the spec" in spec.framing and "[cut: showing the first" in spec.framing        # the rest is in the folder, and the brief says so
-    assert len(spec.framing) <= 20_000
-    assert spec.inputs and spec.inputs[0].name == "spec.txt"                                          # `task.json` lists the files for the host
+    _, spec, folder = start(tenv, files=given)
+    assert "spec.txt" in spec.framing and "inputs/attached/" in spec.framing and len(spec.framing) <= 20_000          # the framing says the file exists and where
+    context = context_of(folder)
+    assert "Attached to this request (data; in inputs/attached/):" in context and "OPENING of the spec" in context
+    assert "[cut: showing the first" in context and "the rest is in inputs/attached/spec.txt" in context              # the rest is in the folder, and the context says so
+    assert spec.inputs and spec.inputs[0].name == "spec.txt"                                                          # `task.json` lists the files for the host
 
 
 def test_a_word_file_is_copied_and_read_into_a_text_copy_beside_it(tenv):
@@ -71,14 +78,15 @@ def test_a_word_file_is_copied_and_read_into_a_text_copy_beside_it(tenv):
     ref = store.save("spec.docx", docx_bytes("Word paragraph one", "Word paragraph two"))
     _, spec, folder = start(tenv, files=[{"id": ref.id, "name": "spec.docx"}])
     assert (folder / "inputs" / "attached" / "spec.docx").is_file()
-    assert "Word paragraph one" in (folder / "inputs" / "attached" / "spec.docx.txt").read_text() and "Word paragraph two" in spec.framing
+    assert "Word paragraph one" in (folder / "inputs" / "attached" / "spec.docx.txt").read_text() and "Word paragraph two" in context_of(folder)
 
 
 def test_an_image_and_a_pdf_are_copied_and_named_but_never_pasted(tenv):
     given = refs(tenv, shot_png=b"\x89PNG\r\n\x1a\n" + b"0" * 40, spec_pdf=b"%PDF-1.4\n" + b"SECRET-PDF-BYTES" * 3)
     _, spec, folder = start(tenv, files=given)
     assert (folder / "inputs" / "attached" / "shot.png").is_file() and (folder / "inputs" / "attached" / "spec.pdf").is_file()
-    assert "shot.png" in spec.framing and "spec.pdf" in spec.framing and "SECRET-PDF-BYTES" not in spec.framing
+    assert "shot.png" in spec.framing and "spec.pdf" in spec.framing and "SECRET-PDF-BYTES" not in spec.framing + context_of(folder)
+    assert "reference only" in context_of(folder)
 
 
 def test_a_file_gone_from_the_store_between_send_and_start_ends_the_task_naming_the_file(tenv):
@@ -139,11 +147,12 @@ def test_a_run_of_a_project_with_files_instructions_and_memory_is_given_them_in_
     pm.put_instructions("web", "Answer in plain words.", pm.instructions("web").rev)
     pm.add_entry("web", "Owner fact: the shop is in Leeds")
     _, spec, folder = start(tenv)
-    f = spec.framing
-    order = [f.index(m) for m in ("Standing rules from the owner", "From the owner, for this project:", "Earlier in this project (data):", "Project files (data; opened in inputs/knowledge/):")]
-    assert order == sorted(order) and "Answer in plain words." in f and "the shop is in Leeds" in f and "BRAND-GUIDE: the colour is teal" in f
+    assert spec.framing.startswith("Standing rules from the owner") and "inputs/knowledge/" in spec.framing and "brand.md" in spec.framing and len(spec.framing) <= 20_000
+    c = context_of(folder)
+    order = [c.index(m) for m in ("From the owner, for this project:", "Earlier in this project (data):", "Project files (data; opened in inputs/knowledge/):")]
+    assert order == sorted(order) and "Answer in plain words." in c and "the shop is in Leeds" in c and "BRAND-GUIDE: the colour is teal" in c
     assert (folder / "inputs" / "knowledge" / "brand.md").is_file() and (folder / "inputs" / "knowledge" / "shot.png").is_file()
-    assert len(f) <= 20_000
+    assert [i.where for i in spec.inputs] == ["knowledge", "knowledge"]
 
 
 def test_a_file_switched_off_is_not_given_to_the_run(tenv):
@@ -151,7 +160,7 @@ def test_a_file_switched_off_is_not_given_to_the_run(tenv):
     row = pf.add("web", store.save("old.md", b"OLD-NOTES"))
     pf.patch("web", row.id, enabled=False)
     _, spec, folder = start(tenv)
-    assert "OLD-NOTES" not in spec.framing and not (folder / "inputs" / "knowledge").exists()
+    assert "OLD-NOTES" not in spec.framing + context_of(folder) and not (folder / "inputs" / "knowledge").exists() and not (folder / "node_context.json").exists()
 
 
 def test_a_project_with_nothing_adds_nothing_and_a_kill_switch_neutralises_delivery(tenv, monkeypatch):
@@ -163,11 +172,11 @@ def test_a_project_with_nothing_adds_nothing_and_a_kill_switch_neutralises_deliv
     monkeypatch.setenv("SUTRA_PROJECT_CONTEXT", "0")
     tenv.projector.mark_ended(spec.task_id, "done", "finished")
     _, off, folder = start(tenv, text="Another one")
-    assert off.framing == "" and not (folder / "inputs").exists()
+    assert off.framing == "" and not (folder / "inputs").exists() and not (folder / "node_context.json").exists()
     monkeypatch.delenv("SUTRA_PROJECT_CONTEXT")
     tenv.projector.mark_ended(off.task_id, "done", "finished")
-    _, on, _ = start(tenv, text="And another")
-    assert "BRAND-GUIDE" in on.framing and "Be brief." in on.framing
+    _, on, on_folder = start(tenv, text="And another")
+    assert "BRAND-GUIDE" in context_of(on_folder) and "Be brief." in context_of(on_folder)
 
 
 def test_a_project_file_removed_while_a_run_is_running_does_not_touch_that_runs_copy(tenv):

@@ -32,7 +32,7 @@ __all__ = [
     "ChatCard", "ChartChangeCard", "TaskCard", "ApprovalCard", "ChoiceCard", "NeedsYouCard", "DoneCard", "DoneReceipt", "DoneReport", "AtomCard", "CardRow",
     "DeliverableCard", "DeliverableChanges", "ChangedFile", "DELIVERABLE_TEXT_MAX", "DELIVERABLE_FILES_MAX", "AnswerCard", "AnswerSource",
     "ChatChoice", "ChatPost", "Accepted", "Delivery", "TaskOut", "RunRef", "FunctionChip", "DepartmentOut", "DeptRow", "AtomOut",
-    "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
+    "AtomLogRow", "UsageOut", "NeedsYouOut", "NodeDetail", "TaskSettings", "UpstreamRef", "InputFile", "RunSpec", "RunEvent", "RUN_EVENT_TYPES",
     "RUN_EVENT_VARIANTS", "EventParseError", "parse_event", "RunStarted", "RunSay", "RunNode", "RunStep", "RunAtom", "RunUsage",
     "RunHeartbeat", "RunEnded", "ChangeContext", "NodeInit", "ResumeInfo", "TASK_STATUSES", "LIVE_STATUSES", "TERMINAL_STATUSES",
     "STEP_ID_RE", "ProjectId", "AgentNodeId", "GrantId", "ApprovalId", "AgentNodeState", "NodeCaps", "NodeBlock", "ProjectOut", "NodeOut", "NodeApprovalCard", "SystemPermissionCard", "PROJECT_STATUSES", "NODE_STATES", "NODE_ROLES",
@@ -897,6 +897,18 @@ class UpstreamRef(Value):
     files: Annotated[list[Annotated[str, StringConstraints(min_length=1, max_length=400)]], Field(max_length=200)] = []
 
 
+class InputFile(Value):
+    """A file a run is given (D451): copied into the run folder under `inputs/<where>/` before the engine starts. `id` is the content hash the attachment store keeps it under; `where` is `attached` (it came with this request) or
+    `knowledge` (a file of the project). Text and Word files also get a `<name>.txt` beside the copy."""
+
+    id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    kind: Literal["text", "image", "pdf"]
+    size: Annotated[int, Field(ge=0)]
+    chars: Annotated[int, Field(ge=0)] = 0
+    where: Literal["attached", "knowledge"]
+
+
 class RunSpec(Value):
     """`task.json` ("run-spec/1"): the strict writer of a document the engine's `TaskSpec` reads. `user_text` is the owner's
     words verbatim (Identity starts from them); `framing` is the chat agent's paragraph, context only. `node` is the optional identity block of a project's node (D283)."""
@@ -916,13 +928,16 @@ class RunSpec(Value):
     settings: TaskSettings = TaskSettings()
     connector: Literal["auto", "claude", "codex", "stub"] = "auto"
     node: NodeBlock | None = None            # who this run is inside a multi-agent project (D283): only for a node, and only while SUTRA_NODES_V1 is on
+    inputs: Annotated[list[InputFile], Field(max_length=70)] = []      # the files of this run (D451): the request's own and the project's; the server copies them into `inputs/` before the start
 
     @model_serializer(mode="wrap")
     def _no_node_unless_there_is_one(self, handler: Any) -> dict[str, Any]:
-        """`task.json` is byte-identical to what it was before nodes existed whenever the run is not a node: the key is left out, not written as null."""
+        """`task.json` is byte-identical to what it was before nodes existed whenever the run is not a node (the key is left out, not written as null) and before files existed whenever it has none (D451)."""
         data = handler(self)
         if data.get("node") is None:
             data.pop("node", None)
+        if not data.get("inputs"):
+            data.pop("inputs", None)
         return data
 
 

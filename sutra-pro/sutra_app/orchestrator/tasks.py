@@ -38,6 +38,7 @@ from pydantic import ValidationError
 
 from sutra_app.config import Settings
 from sutra_app.connectors.agent_picks import CHOICES_FILE, build_choices, write_choices
+from sutra_app.connectors.attachments import AttachmentStore
 from sutra_app.connectors.egress import scan, scrubbed
 from sutra_app.connectors.models import Pick
 from sutra_app.engine.paths import DataPaths
@@ -54,12 +55,15 @@ from sutra_app.orchestrator.errors import AppError, Busy, NotFound, ReadOnly, fr
 from sutra_app.orchestrator.graph import GraphStore, _task_out
 from sutra_app.orchestrator.ids import Clock, IdFactory, SystemClock, iso_z
 from sutra_app.orchestrator.models import (
-    LIVE_STATUSES, TERMINAL_STATUSES, Delivery, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
+    LIVE_STATUSES, TERMINAL_STATUSES, Delivery, InputFile, RunRef, RunSpec, TaskOut, TaskSettings, UpstreamRef,
 )
 from sutra_app.orchestrator.nodes import ensure_node, node_init
 from sutra_app.orchestrator.nodes_store import is_node_task, node_block_of
+from sutra_app.orchestrator import project_context as ctx
 from sutra_app.orchestrator.pathwords import machine_roots, shorten
+from sutra_app.orchestrator.run_inputs import MAX_REQUEST_FILES, Given, InputsError, given_for, materialize, snapshot_of, write_context
 from sutra_app.orchestrator.runs import stderr_tail
+from sutra_app.orchestrator.direct_turns import attached_line
 from sutra_app.orchestrator.textutil import one_line_title
 from sutra_app.orchestrator.headsup import STOP_KEY
 from sutra_app.orchestrator.standing_rules import framing_for
@@ -88,7 +92,7 @@ NODE_STATE_OF_TASK = {
 }
 _COLUMNS = ("id, dept_id, scope_node_id, title, user_text, framing, status, run_id, parent_task_id, depends_on, request_id,"
             " origin_message_id, change_id, settings_json, pid, events_offset, inbox_seq, outcome, created_at, started_at, ended_at,"
-            " last_event_at")
+            " last_event_at, input_files_json")
 _UPDATABLE = frozenset({
     "title", "framing", "status", "run_id", "pid", "events_offset", "inbox_seq", "outcome", "started_at", "ended_at", "last_event_at",
     "settings_json",
@@ -126,6 +130,7 @@ class TaskRow:
     started_at: int | None
     ended_at: int | None
     last_event_at: int | None
+    input_files: tuple[dict, ...] = ()          # the files that came with this request (D451): [{id, name, kind, size, chars}]
 
     @property
     def live(self) -> bool:
@@ -144,7 +149,15 @@ def _row_of(r: sqlite3.Row) -> TaskRow:
         request_id=r["request_id"], origin_message_id=r["origin_message_id"], change_id=r["change_id"],
         settings={k: v for k, v in stored.items() if not k.startswith("_")}, seed_from=stored.get(SEED_KEY), pid=r["pid"],
         events_offset=r["events_offset"], inbox_seq=r["inbox_seq"], outcome=r["outcome"], created_at=r["created_at"], started_at=r["started_at"],
-        ended_at=r["ended_at"], last_event_at=r["last_event_at"])
+        ended_at=r["ended_at"], last_event_at=r["last_event_at"], input_files=_files_of_json(r["input_files_json"]))
+
+
+def _files_of_json(text: str | None) -> tuple[dict, ...]:
+    try:
+        found = json.loads(text or "[]")
+    except ValueError:
+        return ()
+    return tuple(f for f in found if isinstance(f, dict)) if isinstance(found, list) else ()
 
 
 def _payload(row: TaskRow) -> dict[str, Any]:
@@ -304,18 +317,18 @@ class TaskStore:
 
     # ---- writes ----------------------------------------------------------------------------------------------------------
 
-    def insert(self, tx: Tx, checked: Checked[WorkTask], *, seed_from: str | None = None, attempt: int | None = None) -> TaskRow:
+    def insert(self, tx: Tx, checked: Checked[WorkTask], *, seed_from: str | None = None, attempt: int | None = None, input_files: Sequence[dict] = ()) -> TaskRow:
         """Insert a new row from a Checked `work_task` (the only way in). `seed_from` is the run a follow-up continues from; `attempt`
-        the number of a retry (2, 3, ...; `attempts.ATTEMPT_KEY`)."""
+        the number of a retry (2, 3, ...; `attempts.ATTEMPT_KEY`); `input_files` the snapshot of the files that came with the request (D451)."""
         if not isinstance(checked, Checked) or checked.family != "work_task":
             raise TypeError("TaskStore.insert takes a Checked work_task from GATE.check")
         t: WorkTask = checked.model
         settings = t.settings.model_dump()
         tx.conn.execute(
-            f"INSERT INTO tasks({_COLUMNS}) VALUES ({_marks(22)})",
+            f"INSERT INTO tasks({_COLUMNS}) VALUES ({_marks(23)})",
             (t.id, t.dept_id, t.scope_node_id, t.title, t.user_text, t.framing, t.status, t.run_id, t.parent_task_id, json.dumps(list(t.depends_on)),
              t.request_id, t.origin_message_id, t.change_id, _settings_json(settings, seed_from, attempt), t.pid, t.events_offset, t.inbox_seq, t.outcome,
-             t.created_at, t.started_at, t.ended_at, t.last_event_at))
+             t.created_at, t.started_at, t.ended_at, t.last_event_at, json.dumps(list(input_files), separators=(",", ":"))))
         return self.row_in(tx.conn, t.id)
 
     def update(self, tx: Tx, task_id: str, **changes: Any) -> TaskRow:
@@ -442,6 +455,7 @@ class TaskService:
         self.clock = clock or SystemClock()
         self.ids = ids or IdFactory(self.clock)
         self.redact = redact or (lambda text: text)
+        self.attachments = AttachmentStore(settings.data_dir)          # the one byte store (D440): a request's files are looked up here and copied into the run folder (D451)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock: asyncio.Lock | None = None
         # limits.py (gap routines-limits): called as gate(conn, now, dept_id) for a queued task that may otherwise start; a non-empty answer
@@ -487,16 +501,25 @@ class TaskService:
         a task row, a team's chat line, a run's inbox and the files of a run keep. Replacing twice changes nothing."""
         return scrubbed(text, self.redact)
 
+    def _snapshot(self, input_files: Sequence[dict]) -> list[dict]:
+        """The files that come with a request, looked up in the store NOW (a gone file is a 404 before anything is stored). At most MAX_REQUEST_FILES."""
+        if not input_files:
+            return []
+        if len(input_files) > MAX_REQUEST_FILES:
+            raise validation_error([violation("files", "too_many", f"Up to {MAX_REQUEST_FILES} files can go with one request.")], f"Up to {MAX_REQUEST_FILES} files can go with one request.")
+        return snapshot_of(input_files, self.attachments)
+
     # ---- create ------------------------------------------------------------------------------------------------------------
 
     def create(self, tx: Tx, *, dept_id: str, text: str, title: str | None = None, scope_id: str | None = None, framing: str = "",
                depends_on: Sequence[str] = (), follows: str | None = None, request: str | None = None, change_id: str | None = None,
-               settings: dict[str, Any] | None = None) -> TaskOut:
+               settings: dict[str, Any] | None = None, input_files: Sequence[dict] = ()) -> TaskOut:
         """One task row. Status: `queued`, or `blocked` while a dependency has not finished, or `cancelled` when one ended badly.
         `settings`: the seven allowed keys with valid values, else 422 `validation`. `follows`: a task of the same department
-        that has a run; sets the parent and the run to continue from. `request`: the owner's request id (`req-<n>`)."""
+        that has a run; sets the parent and the run to continue from. `request`: the owner's request id (`req-<n>`). `input_files`: [{id, name}] of files in the attachment store that come with this task (D451); a file that is gone is 404."""
         row = self._insert(tx, dept_id=dept_id, text=text, title=title, scope_id=scope_id, framing=framing, depends_on=depends_on,
-                           follows=follows, request=request, change_id=change_id, settings=settings, seed_run=None, parent_task_id=None)
+                           follows=follows, request=request, change_id=change_id, settings=settings, seed_run=None, parent_task_id=None,
+                           input_files=self._snapshot(input_files))
         return self.store.out_in(tx.conn, row.id)
 
     def create_scheduled(self, tx: Tx, *, dept_id: str, text: str, title: str, note: str) -> TaskOut:
@@ -517,7 +540,7 @@ class TaskService:
 
     def _insert(self, tx: Tx, *, dept_id: str, text: str, title: str | None, scope_id: str | None, framing: str, depends_on: Sequence[str],
                 follows: str | None, request: str | None, change_id: str | None, settings: dict[str, Any] | None, seed_run: str | None,
-                parent_task_id: str | None, status_override: str | None = None, attempt: int | None = None) -> TaskRow:
+                parent_task_id: str | None, status_override: str | None = None, attempt: int | None = None, input_files: Sequence[dict] = ()) -> TaskRow:
         conn = tx.conn
         problems = []
         body = self.clean((text or "").strip())
@@ -570,7 +593,7 @@ class TaskService:
             origin_message_id=origin, change_id=change_id, settings=clean, seed_from=seed_run, pid=None, events_offset=0, inbox_seq=0,
             outcome=outcome, created_at=now, started_at=None, ended_at=now if status == "cancelled" else None, last_event_at=None)
         try:
-            row = self.store.insert(tx, GATE.check("work_task", _payload(row), ctx=tx.ctx), seed_from=seed_run, attempt=attempt)
+            row = self.store.insert(tx, GATE.check("work_task", _payload(row), ctx=tx.ctx), seed_from=seed_run, attempt=attempt, input_files=input_files)
         except GateError as exc:
             raise from_gate_error(exc) from None
         self.taskgraph.sync(tx, row)
@@ -690,8 +713,11 @@ class TaskService:
         if run_dir is None:
             raise AppError("internal", "could not allocate a run id")
         try:
-            spec = self._run_spec(conn, row, run_id)
+            given = given_for(self.db, self.attachments, conn, row.dept_id, row.input_files, scrub=lambda text: scan(self.redact(text), replace=True)[0])      # D451: empty for a run with nothing to say
+            spec = self._run_spec(conn, row, run_id, given)
             _write_atomic(run_dir / "task.json", spec.model_dump_json(indent=2) + "\n")
+            if given.block.text:
+                write_context(run_dir, given.block.text)                          # the engine host appends it to the system prompt of every agent call (T2); the files themselves are copied at the launch
             for name in ("inbox.jsonl", "events.jsonl"):
                 os.close(os.open(run_dir / name, os.O_WRONLY | oslayer.O_BINARY | os.O_CREAT | os.O_EXCL, 0o600))
             self.write_choices_in(conn, row.dept_id, row.id, run_dir)            # the engine reads it beside task.json from its first call (D131)
@@ -706,7 +732,7 @@ class TaskService:
             raise
         return spec, run_dir
 
-    def _run_spec(self, conn: sqlite3.Connection, row: TaskRow, run_id: str) -> RunSpec:
+    def _run_spec(self, conn: sqlite3.Connection, row: TaskRow, run_id: str, given: Given | None = None) -> RunSpec:
         dept = conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.dept_id,)).fetchone()
         scope = conn.execute("SELECT name FROM org_nodes WHERE id = ?", (row.scope_node_id,)).fetchone() if row.scope_node_id else None
         parent = self.store.row_in(conn, row.parent_task_id) if row.parent_task_id else None
@@ -745,9 +771,9 @@ class TaskService:
         return RunSpec(
             run_id=run_id, task_id=row.id, dept_id=row.dept_id, dept_label=clip(dept["name"] if dept else row.dept_id, 200),
             scope_id=row.scope_node_id, scope_label=clip(scope["name"], 200) if scope is not None else None, user_text=row.user_text,
-            framing=framing_for(conn, row.dept_id, row.framing),                  # the team's standing rules in front, read now (GAP2 rules-notes)
+            framing=framing_for(conn, row.dept_id, f"{given.pointer}\n\n{row.framing}" if given is not None and given.pointer and row.framing else (given.pointer if given is not None and given.pointer else row.framing)),   # the team's standing rules in front, read now (GAP2 rules-notes); then where the files are (D451)
             parent_run_id=parent.run_id if parent is not None else None, seed_from=row.seed_from, upstream=upstream,
-            settings=TaskSettings.model_validate(settings), connector=connector, node=node)
+            settings=TaskSettings.model_validate(settings), connector=connector, node=node, inputs=list(given.inputs) if given is not None else [])
 
     def _files_of(self, conn: sqlite3.Connection, dep: TaskRow) -> list[str]:
         """The files an upstream run left at the top of its folder (the engine's own plumbing is left out), up to 200."""
@@ -769,6 +795,8 @@ class TaskService:
             await run_blocking(self.projector.mark_ended, task_id, "stopped", refused)
             return
         try:
+            if spec.inputs:                              # D451: the files are in the run folder before the engine process exists; one that cannot be copied ends the start, naming it
+                await run_blocking(materialize, run_dir, spec.inputs, self.attachments)
             pid = await self.launcher.start(spec, run_dir)
         except Exception as exc:                          # noqa: BLE001  (a spawn failure ends this task only)
             log.warning("could not start task %s: %s", task_id, exc)
@@ -875,15 +903,16 @@ class TaskService:
             raise NotFound("that team")
         return self.deliver_to_department(dept["department_id"], text, scope_id=found["node_id"])
 
-    def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None) -> Delivery:
-        return self._deliver(dept_id, text, scope_id=scope_id, settings=settings)
+    def deliver_to_department(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, input_files: Sequence[dict] = ()) -> Delivery:
+        """`input_files` (D451): [{id, name}] of files in the attachment store that go with this request; they are copied into the run's folder. A team waiting for the owner takes words only."""
+        return self._deliver(dept_id, text, scope_id=scope_id, settings=settings, input_files=input_files)
 
     def answer_waiting(self, dept_id: str, text: str) -> Delivery:
         """An ANSWER to the team's open question and nothing else (D415): when the team has no task that waits for the owner this raises Busy ("not open any more") and makes no task, where
         `deliver_to_department` would make a follow-up. The engine's protocol keeps its own signature."""
         return self._deliver(dept_id, text, answer_only=True)
 
-    def _deliver(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, answer_only: bool = False) -> Delivery:
+    def _deliver(self, dept_id: str, text: str, *, scope_id: str | None = None, settings: dict | None = None, answer_only: bool = False, input_files: Sequence[dict] = ()) -> Delivery:
         """What the engine's `POST /api/say` calls. Strips the text. A team waiting for the owner gets it as an answer (or as an
         override when it starts with the override key); a working team is 409 `busy`; with no live task a follow-up is created
         and scheduled. Raises `Busy`."""
@@ -891,6 +920,7 @@ class TaskService:
         if not body:
             raise validation_error([violation("text", "empty", "write something first")])
         said = self.clean(body)                          # the answer, the follow-up and the team's chat line; the override is read from `body`
+        snapshot = self._snapshot(input_files)           # a file that is gone is a 404 here, before anything is stored
         refusal: AppError | None = None
         with self.db.tx() as tx:
             team = tx.conn.execute("SELECT d.hidden_at FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active'", (dept_id,)).fetchone()
@@ -910,6 +940,9 @@ class TaskService:
                 else:
                     result = self._answer(tx, live, sid, "Owner override sent", {"kind": "override", "cmd": override}, answered=False)
             elif live is not None and live.status == "waiting_user":
+                if snapshot:                                 # an answer takes words only in this release (D451, OQ-6): never dropped silently, refused whole
+                    said_no = "Files cannot go with an answer to a team's question yet. Add the file to the project (Files), then answer."
+                    raise validation_error([violation("files", "no_files_in_answers", said_no)], said_no)
                 result = self._answer(tx, live, sid, said, {"kind": "user", "text": said}, answered=True)
             elif answer_only:
                 raise Busy("That question is not open any more")                  # an answer is never turned into a new task (D415)
@@ -918,7 +951,7 @@ class TaskService:
             elif tx.conn.execute("SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
                 raise Busy("The team has work waiting to start. You can write again when it is done")
             else:
-                result = self._follow_up(tx, dept_id, sid, said, scope_id, settings)
+                result = self._follow_up(tx, dept_id, sid, said, scope_id, settings, snapshot)
         if refusal is not None:
             raise refusal
         if result.delivered == "follow_up":
@@ -980,7 +1013,7 @@ class TaskService:
         self.graph.aggregate(tx)
         return Delivery(message_id=posted.id, delivered="answer", task_id=live.id)
 
-    def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None) -> Delivery:
+    def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None, input_files: Sequence[dict] = ()) -> Delivery:
         """No live task: a NEW task (new run id, folder and process; the old folder is never written again). It continues from the
         department's latest run that has a folder; a question left open by an ended task becomes its framing. After the owner's reset
         ('+ New run', `page.json.since_run`) a run at or before the marker is not continued: the page was blank, so the brief starts a
@@ -1008,8 +1041,12 @@ class TaskService:
         row = self._insert(
             tx, dept_id=dept_id, text=body, title=None, scope_id=scope_id, framing=framing, depends_on=(), follows=None, request=None,
             change_id=None, settings=settings, seed_run=seed.run_id if seed is not None else None,
-            parent_task_id=latest.id if latest is not None else None)
-        posted = self._post(tx, sid, role="user", who="user", kind="text", text=body, task_id=row.id)
+            parent_task_id=latest.id if latest is not None else None, input_files=input_files)
+        if input_files:                                       # the owner's line says which files went with it, and the receipt records what the team was given (FR-5)
+            shown = self.clean(attached_line([f["name"] for f in input_files], [f["kind"] for f in input_files]))
+            posted = self._post(tx, sid, role="user", who="user", kind="text", text=body + "\n" + shown, task_id=row.id, attachments=[_receipt_of(f) for f in input_files])
+        else:
+            posted = self._post(tx, sid, role="user", who="user", kind="text", text=body, task_id=row.id)
         if orphan is not None:
             self.chats.mark_answered(tx, orphan, posted.id)
         return Delivery(message_id=posted.id, delivered="follow_up", task_id=row.id)
@@ -1149,7 +1186,7 @@ class TaskService:
         return self._insert(
             tx, dept_id=old.dept_id, text=old.user_text, title=old.title, scope_id=old.scope_node_id, framing=framing, depends_on=old.depends_on if force else (),
             follows=None, request=old.request_id, change_id=old.change_id, settings=old.settings, seed_run=None, parent_task_id=old.id,
-            attempt=number)         # a node's retry (`force`) keeps what the node waited for, so the new attempt is given the same upstream (G4, D310); the owner's own retry stays as it was
+            attempt=number, input_files=old.input_files)         # a node's retry (`force`) keeps what the node waited for, so the new attempt is given the same upstream (G4, D310); the owner's own retry stays as it was
 
     # ---- reads the engine plug-in needs ---------------------------------------------------------------------------------------
 
@@ -1181,6 +1218,15 @@ class TaskService:
         if self.watcher is not None:
             await self.watcher.close()
         await run_blocking(self.db.checkpoint)
+
+
+def _receipt_of(f: dict) -> dict:
+    """What the team was given of one file, as the owner's line records it (the D440 receipt shape): a text file is given whole in the run folder and by its opening in the brief; an image or a PDF is a reference file."""
+    if f.get("kind") != "text":
+        return {"id": f["id"], "name": f["name"], "kind": f["kind"], "sent": "reference", "chars": 0, "cut": False, "total": 0}
+    total = int(f.get("chars") or 0)
+    shown = min(total, ctx.ATTACHED_OPENING_CHARS)
+    return {"id": f["id"], "name": f["name"], "kind": "text", "sent": "given", "chars": shown, "cut": shown < total, "total": total}
 
 
 def _write_atomic(path: Path, text: str) -> None:

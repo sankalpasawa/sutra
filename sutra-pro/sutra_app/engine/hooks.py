@@ -28,7 +28,7 @@ from .events import EventWriter, say_event
 
 __all__ = [
     "TurnInfo", "CallInfo", "TurnOutcome", "EngineHooks", "NullHooks", "EventHooks", "is_fatal", "load_validator",
-    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING", "AGENT_PURPOSES",
+    "DEFAULT_RECORDS_HOOK", "RECORD_MODES", "ADDENDUM_HEADING", "PROJECT_ADDENDUM_HEADING", "AGENT_PURPOSES",
 ]
 
 # The purposes (the `purpose` of a `CallTag`, patch P7) that are an agent's own work: its turn, the plan Adaptation makes, the judge's score. Every other
@@ -36,6 +36,7 @@ __all__ = [
 # workspace (helpers get no folder) and the live view (a helper is not shown as the agent's work).
 AGENT_PURPOSES = ("agent_turn", "plan", "judge")
 ADDENDUM_HEADING = "\n\n## Node context\n"
+PROJECT_ADDENDUM_HEADING = "\n\n## Project context\n"       # D451: the node-context file's `"*"` entry, for every agent call (a builder's too)
 DEFAULT_RECORDS_HOOK = "sutra_app.library.records:gate_record"
 RECORD_MODES = ("log", "strict")
 _TARGET_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*")
@@ -164,7 +165,8 @@ class EventHooks(NullHooks):
     None for no checking). It returns a list of warnings or None; a warning, or an exception that is not fatal, becomes a
     `record.warning` trace line and never changes an outcome. A fatal exception (`is_fatal`: the strict mode of the
     library) is traced and raised again. `node_context_file` is JSON `{function: text}`, re-read on every call like the
-    role files; its text for a function is appended to that function's system prompt."""
+    role files; its text for a function is appended to that function's system prompt, and its `"*"` entry (D451: a project's block, the files that came
+    with a request) to the system prompt of every agent call, builders included."""
 
     def __init__(self, writer: EventWriter, notify: Callable[[], None], validator: Optional[Callable[[str, Any], Any]] = None,
                  node_context_file=None):
@@ -236,8 +238,11 @@ class EventHooks(NullHooks):
                 self._addendum_seen.add(note)
                 self.trace("addendum.error", {"file": str(path), "error": note})
             return ""
-        text = texts.get(fn)
-        return ADDENDUM_HEADING + text if isinstance(text, str) and text.strip() else ""
+        text, every = texts.get(fn), texts.get("*")
+        found = ADDENDUM_HEADING + text if isinstance(text, str) and text.strip() else ""
+        if isinstance(every, str) and every.strip():      # D451: the project's block and the request's files, for EVERY agent call: a function agent also reads the chat, but a builder in a real run does not (T2)
+            found += PROJECT_ADDENDUM_HEADING + every
+        return found
 
     def review_enabled(self) -> bool:
         """Patch P19: J2's `_make_report` asks before it starts the reviewer. Only an explicit False (the team's `reviewer` setting is off) switches

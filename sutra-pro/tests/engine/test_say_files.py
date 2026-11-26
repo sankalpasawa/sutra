@@ -114,3 +114,16 @@ def test_files_with_an_answer_to_a_teams_question_are_refused_in_a_sentence_not_
     got = world.client.post("/api/say?dept=web", json={"text": "my answer", "files": files}, headers=world.auth)
     assert got.status_code == 422 and "answer" in got.json()["error"]["message"] and "project" in got.json()["error"]["message"]
     assert counts(world) == before and world.t.status(row["id"]) == "waiting_user"
+
+
+# ---- the task route takes the same files -----------------------------------------------------------------------------------------------
+
+def test_post_tasks_with_files_keeps_them_and_an_unknown_id_is_404_with_no_task(world):
+    files = [stored(world, "spec.txt", b"the spec")]
+    got = world.client.post("/api/tasks", json={"dept_id": "web", "text": "read this", "files": files}, headers=world.auth)
+    assert got.status_code == 201, got.text
+    assert [f["name"] for f in json.loads(world.t.one("SELECT input_files_json FROM tasks WHERE id = ?", got.json()["id"]))] == ["spec.txt"]
+    before = counts(world)
+    bad = world.client.post("/api/tasks", json={"dept_id": "web", "text": "again", "files": [{"id": "0" * 64, "name": "gone.txt"}]}, headers=world.auth)
+    assert bad.status_code == 404 and counts(world) == before
+    assert world.client.post("/api/tasks", json={"dept_id": "web", "text": "x", "files": [{"id": "short", "name": "n"}]}, headers=world.auth).status_code == 422

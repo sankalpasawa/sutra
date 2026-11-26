@@ -99,11 +99,12 @@ class DeptCommands:
         return ctxmod.current_ref(self.services, self.dept_id)
 
     def say(self, text: str, template: Optional[str] = None, workflows: Any = None, budget: Optional[str] = None,
-            usd_budget: Optional[str] = None) -> bool:
+            usd_budget: Optional[str] = None, files: Optional[list] = None) -> bool:
         """Deliver the owner's words. `template` is a run template's id and `workflows` `all`, a comma list or a list of workflow keys (already
         checked by the route); both go to this delivery's task as `J2_RUN_TEMPLATE` and `J2_RUN_TEMPLATE_WORKFLOWS` (D182). `workflows` without
         a template is dropped: there is nothing to select from. `budget` (D251, checked by the route) is this delivery's J2_BUDGET: the start
-        page's Budget field, sent with the start page's first message only (never kept in page.json)."""
+        page's Budget field, sent with the start page's first message only (never kept in page.json). `files` (D451, checked for shape by the route): `[{id, name}]` of the
+        attachment store's files that go with the words; the orchestrator looks them up, copies them into the run and refuses the whole send when one is gone."""
         page = ctxmod.read_page(self.services.data_dir, self.dept_id)
         settings = dict(page.next_settings)
         if budget:
@@ -116,7 +117,7 @@ class DeptCommands:
                 settings["J2_RUN_TEMPLATE_WORKFLOWS"] = workflows if isinstance(workflows, str) else ",".join(str(key) for key in workflows)
         settings = settings or None
         try:
-            delivery = self.services.deliver_to_department(self.dept_id, text, settings=settings)
+            delivery = self.services.deliver_to_department(self.dept_id, text, settings=settings, **({"input_files": files} if files else {}))     # D451: the port is handed files only when there are some
         except Exception as exc:        # noqa: BLE001 - only the orchestrator's busy refusal is an answer, the rest is a bug
             if is_busy(exc):
                 return False

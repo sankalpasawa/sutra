@@ -5,7 +5,7 @@
 
 The run's deliverables (each deliverable row's file, the `.docx` beside a document, every file of a folder output) are copied into the team's
 OWN folder (`departments/<id>/workdir.json`, never the app-wide fallback: results never land in another project's folder) under the same
-relative paths. Sutra's records stay in the run: `*.json`, `*.jsonl`, `site/`, `out/`, dotfiles. A Read only folder gets nothing (the owner
+relative paths. Sutra's records stay in the run: `*.json`, `*.jsonl`, `site/`, `out/`, `inputs/` (the files the run was given, D451), dotfiles. A Read only folder gets nothing (the owner
 capped what Sutra may do there).
 
 `<folder>/.sutra/manifest.json` = {"version": 1, "run_id", "files": {path: sha256}} is what Sutra last wrote there. A target that exists and is
@@ -35,7 +35,7 @@ MANIFEST_PARTS = (".sutra", "manifest.json")
 RECORD = "export.json"
 NAMED = 10                                         # files named one by one in the chat; the rest are counted
 _RECORD_SUFFIXES = (".json", ".jsonl")
-_RECORD_TOPS = ("site", "out")
+_RECORD_TOPS = ("site", "out", "inputs")             # `inputs/` holds the files the run was GIVEN (D451): the project's and the request's own, never a result
 
 
 @dataclass(frozen=True)

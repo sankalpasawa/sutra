@@ -7,6 +7,7 @@ host's `system_addendum` path (the node-context file), which `call()` appends to
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -53,3 +54,37 @@ def test_a_long_chat_summarises_the_framing_line_away_even_for_a_function_agent(
     for n in range(60):
         run.post("identity", f"message number {n} " + "padding " * 10)
     assert LINE not in run.chat_view()                                                  # messages 1..N are a model's summary; the first line is the first to go
+
+
+# ---- T5: the answer to the spike (the host's system addendum carries the project block to every call) -----------------------------------------------------
+
+MARK = "PROJECT-BLOCK-MARK"
+
+
+def test_the_star_entry_of_the_node_context_file_reaches_the_system_prompt_of_every_call_builders_included(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    (run_dir / "node_context.json").write_text(json.dumps({"*": MARK}))
+    assert Running(run_dir, "--mock").wait() == 0
+    rows = calls_of(run_dir)
+    builders = [r for r in rows if str(r["fn"]).startswith("W-")]
+    assert builders and {r["fn"] for r in rows} & set(FUNCTIONS)
+    assert all(f"## Project context\n{MARK}" in r["system"] for r in rows if r["fn"] in FUNCTIONS or str(r["fn"]).startswith("W-")), "an agent call had no project block"
+
+
+def test_a_function_text_and_the_star_text_both_arrive_the_functions_own_first(j2, make_run_dir):
+    run_dir = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    (run_dir / "node_context.json").write_text(json.dumps({"identity": "OWNER-NOTE-TO-IDENTITY", "*": MARK}))
+    assert Running(run_dir, "--mock").wait() == 0
+    identity = [r for r in calls_of(run_dir) if r["fn"] == "identity"][0]["system"]
+    assert identity.index("OWNER-NOTE-TO-IDENTITY") < identity.index(MARK)
+    other = [r for r in calls_of(run_dir) if r["fn"] == "adaptation"][0]["system"]
+    assert MARK in other and "OWNER-NOTE-TO-IDENTITY" not in other
+
+
+def test_a_node_context_file_with_no_star_entry_is_exactly_what_it_was(j2, make_run_dir):
+    plain = make_run_dir(user_text=BREW_LAB, settings=QUIET)
+    Running(plain, "--mock").wait()
+    noted = make_run_dir(run_id="j2-20261104-100005-7f3a", user_text=BREW_LAB, settings=QUIET)
+    (noted / "node_context.json").write_text(json.dumps({"identity": "NOTE"}))
+    Running(noted, "--mock").wait()
+    assert not any("## Project context" in r["system"] for r in calls_of(plain) + calls_of(noted))

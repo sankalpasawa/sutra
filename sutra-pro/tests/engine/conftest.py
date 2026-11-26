@@ -227,8 +227,8 @@ class FakeServices:
         return self.departments.get(dept_id)
 
     def deliver_to_department(self, dept_id: str, text: str, *, scope_id: Optional[str] = None,
-                              settings: Optional[dict] = None) -> FakeDelivery:
-        self.deliveries.append({"dept_id": dept_id, "text": text, "scope_id": scope_id, "settings": settings})
+                              settings: Optional[dict] = None, input_files: Optional[list] = None) -> FakeDelivery:
+        self.deliveries.append({"dept_id": dept_id, "text": text, "scope_id": scope_id, "settings": settings, **({"input_files": input_files} if input_files else {})})
         if self.busy:
             raise FakeBusy(dept_id)
         live = [r for r in self.runs if r.dept_id == dept_id and r.status == "waiting_user"]

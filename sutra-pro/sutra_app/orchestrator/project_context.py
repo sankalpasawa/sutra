@@ -343,9 +343,7 @@ def _digest(files: Sequence[KFile], head: str, limit: int, opening: int, folder:
 def compose_run_block(*, instructions: str = "", memory: Sequence[str] = (), files: Sequence[KFile] = (), attached: Sequence[KFile] = (), scrub: Callable[[str], str] | None = None) -> Block:
     """What a run's agents are given about the project (at most RUN_BLOCK_CHARS) and about the files that came with the request (at most ATTACHED_CHARS). The cut order is the digest of
     the files, then the memory, then the instructions."""
-    if switched_off():
-        return Block()
-    scrub = scrub or _identity
+    scrub = scrub or _identity                  # the caller leaves the project's parts out when the kill switch is on; the request's own files are always delivered
     clean = [KFile(f.name, f.kind, f.size, scrub(f.text)) for f in files]
     came = [KFile(f.name, f.kind, f.size, scrub(f.text)) for f in attached]
     instr, p_instr = _instructions_section(scrub(instructions or ""), RUN_INSTRUCTIONS_CHARS)
