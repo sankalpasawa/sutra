@@ -418,6 +418,18 @@ def _context_html(bl, title):
 ARCH_END = r"(?:C\d{1,3}(?:/C\d{1,3})*|[A-Z][\w.-]*(?: [A-Z][\w.-]*)?)"
 ARCH_CHAIN = re.compile(rf"({ARCH_END})(?:\s*\([^)]*\))?((?:\s+to\s+{ARCH_END}(?:\s*\([^)]*\))?)+)")
 ARCH_HOP = re.compile(rf"\s+to\s+({ARCH_END})")
+ARCH_STEP = re.compile(r"^(?:the next run's |then |and )?(C\d{1,3})\b(?! to\b)")      # a clause that starts with a component: a step
+ARCH_TO_ID = re.compile(r"\bto (C\d{1,3})\b")
+ARCH_FROM = re.compile(r"\bfrom the ((?:[a-z][\w-]*)(?: [a-z][\w-]*){0,3})\b")
+ARCH_READS = re.compile(r"\b(?:reads|receives|fetches|pulls|loads|downloads|collects|polls|lists)\b")
+ARCH_SENDS = re.compile(r"\b(?:sends|posts|delivers|emails|notifies|publishes|pushes|messages)\b")
+ARCH_TO_EXT = re.compile(r"\bto the ((?:[a-z][\w-]*)(?: [a-z][\w-]*){0,2}?)(?: only)?$")
+
+
+def _ext(words):
+    """An outside party named in a flow ("the shared support inbox"), as a node label."""
+    w = words.strip()
+    return w[:1].upper() + w[1:]
 
 
 def _architecture_html(bl):
@@ -435,19 +447,41 @@ def _architecture_html(bl):
                 if r and COMP_ID.match(r[0].strip("* ")):
                     comps[r[0].strip("* ")] = _plain(r[1] if len(r) > 1 else "")[:40]
     edges, seen = [], set()
-    for b in secs.get(DATAFLOW_SECTION, []):
-        if b["t"] != "list":
-            continue
-        for it in b["items"]:
-            head = _plain(" ".join(it["lines"])).split(":")[0]
-            for m in ARCH_CHAIN.finditer(head):
-                hops = [m[1]] + ARCH_HOP.findall(m[2])
-                for a, c in zip(hops, hops[1:]):
-                    for x in a.split("/"):
-                        for y in c.split("/"):
-                            if x != y and (x, y) not in seen and (COMP_ID.match(x) or COMP_ID.match(y)):
-                                seen.add((x, y))
-                                edges.append((x, y, "", False))
+
+    def add(x, y):
+        if x != y and (x, y) not in seen and (COMP_ID.match(x) or COMP_ID.match(y)):
+            seen.add((x, y))
+            edges.append((x, y, "", False))
+    units = [" ".join(it["lines"]) for b in secs.get(DATAFLOW_SECTION, []) if b["t"] == "list" for it in b["items"]]
+    units += [" ".join(b["lines"]) for b in secs.get(DATAFLOW_SECTION, []) if b["t"] == "p"]
+    for unit in map(_plain, units):
+        for m in ARCH_CHAIN.finditer(unit.split(":")[0]):      # "C3 to C4", "Gmail (read-only) to C3", "C8 to C9/C10 to Slack"
+            hops = [m[1]] + ARCH_HOP.findall(m[2])
+            for a, c in zip(hops, hops[1:]):
+                for x in a.split("/"):
+                    for y in c.split("/"):
+                        add(x, y)
+        # the same flow written as steps: "Daily run: C1 starts the run; C2 reads new emails from the shared inbox; C3 classifies
+        # each email; C5 sends it to the team lead only." Each clause that starts with a component is a step, in its order; "from
+        # the <source>" and "to the <destination>" outside the product, and "... to C6" inside it, are flows of that step.
+        body = unit.split(":", 1)[1] if re.match(r"^[A-Z][\w ]{0,30}:\s", unit) else unit
+        prev = None
+        for clause in re.split(r";\s*|\.\s+", body):
+            clause = clause.strip(" .")
+            m = ARCH_STEP.match(clause)
+            if not m:
+                prev = None
+                continue
+            me = m[1]
+            if prev:
+                add(prev, me)
+            for y in ARCH_TO_ID.findall(clause):
+                add(me, y)
+            if ARCH_READS.search(clause) and (src := ARCH_FROM.search(clause)):      # only a reading step has an outside source
+                add(_ext(src[1]), me)
+            if ARCH_SENDS.search(clause) and (dst := ARCH_TO_EXT.search(clause)):      # only a sending step an outside destination
+                add(me, _ext(dst[1]))
+            prev = me
     if len(edges) < 2 or not comps:
         return ""
     order = list(dict.fromkeys(n for e in edges for n in e[:2]))
@@ -701,6 +735,11 @@ def draw_graph(nodes, order, edges, horiz=False, alt="", cls=""):
                 changed = True
         if not changed:
             break
+    has_in = {b for _, b in fwd}
+    for n in order:      # a node nothing flows into sits just above the first node it feeds, so its line crosses no other box
+        outs = [layer[b] for a, b in fwd if a == n]
+        if n not in has_in and outs:
+            layer[n] = max(0, min(outs) - 1)
     rows = {}
     for n in order:
         rows.setdefault(layer[n], []).append(n)

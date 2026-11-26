@@ -160,3 +160,13 @@ def test_an_authored_diagram_wins_and_the_markdown_is_unchanged():
     assert "diagram arch" not in h and h.count('<svg class="dg"') == 1
     src = re.search(r'<pre class="src" id="src"[^>]*>(.*?)</pre>', r.reader_html(PICS, "d"), re.S)[1]
     assert "\n".join(html.unescape(x) for x in re.findall(r"<span>(.*?)</span>", src, re.S)) == PICS
+
+
+def test_a_data_flow_written_as_steps_is_drawn_too():
+    """The Inbox Triage HLD of 27 Nov 2026 wrote its data flow as one paragraph of steps, not as "X to Y" lines."""
+    md = PICS.split("## Data flow")[0] + ("## Data flow\n\nDaily run: C1 reads new mail from the shared inbox; C2 sorts each message; "
+                                          "C3 sends the summary to the team lead only.\n\nMarks: the lead marks an item; C3 writes the mark to C1.\n")
+    arch = re.search(r'<figure class="diagram arch">.*?</figure>', r.reader_html(md, "d"), re.S)[0]
+    assert ('aria-label="Architecture: Shared inbox to C1 Mail reader; C1 Mail reader to C2 Sorter; C2 Sorter to C3 Summary writer; '
+            'C3 Summary writer to Team lead; C3 Summary writer to C1 Mail reader"') in arch
+    assert arch.count('class="dgn dgx"') == 2
