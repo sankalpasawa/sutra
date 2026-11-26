@@ -215,7 +215,7 @@ def test_the_orchestrators_answers_drive_the_engines_say_and_reset(world):
     """The three calls the engine makes of the server, over the real task service: a follow-up, busy, and reset refusing a live team."""
     first = world.client.post("/api/say", params={"dept": "web"}, json={"text": "A site for my cafe"}, headers=world.auth)
     assert (first.status_code, first.json()) == (200, {"ok": True})
-    task = world.t.service.store.latest_in(world.t.db.conn(), "web")
+    task = world.t.service.store.row(world.t.db.conn().execute("SELECT id FROM tasks WHERE dept_id = 'web' ORDER BY created_at DESC, rowid DESC").fetchone()[0])
     assert task is not None and task.status in ("queued", "starting", "running")
     second = world.client.post("/api/say", params={"dept": "web"}, json={"text": "and a menu"}, headers=world.auth)
     assert (second.status_code, second.json()) == (409, {"ok": False})

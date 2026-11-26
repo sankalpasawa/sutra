@@ -80,7 +80,7 @@ def test_a_locked_switch_cannot_come_in_by_the_say_route_either(world):
     """`POST /api/say` carries no settings from the page; `POST /api/output` carries the output word only."""
     r = world.client.post("/api/say", params={"dept": "web"}, json={"text": "hi", "settings": {"J2_SEND_MODE": "live"}}, headers=world.auth)
     assert r.status_code == 200
-    task = world.t.service.store.latest_in(world.t.db.conn(), "web")
+    task = world.t.service.store.row(world.t.db.conn().execute("SELECT id FROM tasks WHERE dept_id = 'web' ORDER BY created_at DESC, rowid DESC").fetchone()[0])
     assert task.settings == {}
     assert world.client.post("/api/output", params={"dept": "web"}, json={"type": "prd"}, headers=world.auth).status_code in (200, 409)
 

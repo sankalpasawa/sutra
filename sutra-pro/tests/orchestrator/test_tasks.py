@@ -494,7 +494,7 @@ def test_the_engines_own_reset_command_leaves_the_marker_this_service_reads(tenv
     calls = pick(tenv, first)
     assert commands.reset() is True
     assert commands.say("A brand new website for a dental clinic") is True
-    new = tenv.store.latest_in(tenv.db.conn(), "web")
+    new = tenv.row(tenv.one("SELECT id FROM tasks WHERE dept_id = 'web' ORDER BY created_at DESC, rowid DESC"))
     assert new.id != first and new.user_text == "A brand new website for a dental clinic" and (new.seed_from, new.parent_task_id) == (None, None)
     assert calls == []
 

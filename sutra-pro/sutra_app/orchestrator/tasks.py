@@ -80,7 +80,6 @@ _BUILDER = re.compile(r"W-[0-9]+")
 OPEN_STATUSES = ("blocked", "queued", "starting", "running", "waiting_user")
 GOOD_END = ("done", "done_with_open_items")
 BAD_END = ("stopped", "crashed", "cancelled")
-CONTINUES = "{brief}\n\nThe owner now writes: {words}"       # a continuation of a run that did not finish keeps its brief (D454)
 OVERRIDE_BUSY_NOTE = "Owner override needs a team that is waiting for you."
 RUN_FOLDER_INTERNALS = frozenset({
     "handoff.json",                         # a node's own hand-off is never offered to a dependant: only what the server checked and scrubbed (`handoff.accepted.json`, MAN-6)
@@ -242,11 +241,6 @@ class TaskStore:
     def live_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
         found = conn.execute(
             f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND lane = '' AND status IN ({_marks(len(LIVE_STATUSES))}) LIMIT 1", (dept_id, *LIVE_STATUSES)).fetchone()      # lane '': the team's own task, not a step in a lane (MAN-10)
-        return _row_of(found) if found is not None else None
-
-    def latest_in(self, conn: sqlite3.Connection, dept_id: str) -> TaskRow | None:
-        found = conn.execute(
-            f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1", (dept_id,)).fetchone()
         return _row_of(found) if found is not None else None
 
     def counts_in(self, conn: sqlite3.Connection) -> tuple[int, int]:
@@ -1023,13 +1017,11 @@ class TaskService:
                             (sid, task_id)).fetchall()
 
     def _candidates(self, conn: sqlite3.Connection, dept_id: str, sid: str) -> list[tuple[TaskRow, str]]:
-        """The runs a team-chat line may continue (D454): the team's newest 5 ended tasks with a run folder, made after the owner's
-        reset ('+ New run', `page.json.since_run`), newest first, each with the text of its own newest open question ("" when none)."""
+        """D454: the team's newest 5 ended tasks with a run folder made after the reset marker, each with its newest open question ("" when none)."""
         marker = self._reset_marker(dept_id)
         found: list[tuple[TaskRow, str]] = []
-        ended = GOOD_END + BAD_END
-        for r in conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND run_id IS NOT NULL AND status IN ({_marks(len(ended))})"
-                              " ORDER BY created_at DESC, rowid DESC", (dept_id, *ended)):
+        for r in conn.execute(f"SELECT {_COLUMNS} FROM tasks WHERE dept_id = ? AND run_id IS NOT NULL"
+                              " AND status IN ('stopped','crashed','done','done_with_open_items','cancelled') ORDER BY created_at DESC, rowid DESC", (dept_id,)):
             prior = _row_of(r)
             if marker is not None and prior.run_id <= marker:          # the engine's own test: engine/api/ctx.py current_ref
                 continue
@@ -1042,9 +1034,7 @@ class TaskService:
         return found
 
     def _pick_follows(self, dept_id: str, said: str) -> str | None:
-        """Outside any transaction: ask the chat agent once whether the owner's words continue one of the team's earlier runs (D454).
-        None, with no call, when no agent is wired, the team works or has work waiting, or nothing can be continued; None as well
-        when the call fails in any way: the line then starts a clean run."""
+        """D454, outside any transaction: the earlier run the chat agent says the words continue, or None (no call when there is nothing to ask; any failure is None)."""
         if self.follows_of is None:
             return None
         follows_of = self.follows_of
@@ -1063,17 +1053,14 @@ class TaskService:
 
     def _follow_up(self, tx: Tx, dept_id: str, sid: str, body: str, scope_id: str | None, settings: dict | None, input_files: Sequence[dict] = (),
                    pick: str | None = None) -> Delivery:
-        """No live task: a NEW task (new run id, folder and process; the old folder is never written again). It continues an earlier
-        run only when the chat agent picked one (`pick`, D454, amends D21) and that run is still a candidate: the seed is that run, its
-        task the parent, its own newest open question the framing, and its open questions are answered by this line. A run that ended
-        stopped, crashed or cancelled also hands on its brief (`CONTINUES`); a finished one is rehydrated with its brief. Otherwise the
-        run starts clean and answers no question, except after the owner's reset ('+ New run') with nothing made since: that line
-        closes the question the reset left open, as before, without carrying it."""
+        """No live task: a NEW task (new run, folder and process; the old folder is never written). D454: the agent's `pick`, if still a candidate, is the seed and parent,
+        its newest open question the framing, its questions are answered, and a stopped, crashed or cancelled one hands on its brief. Else a clean run that answers no
+        question, except that after '+ New run' with nothing made since it closes the question the reset left open, as before."""
         conn = tx.conn
         found = self._candidates(conn, dept_id, sid)
         seed, question = next(((r, q) for r, q in found if r.id == pick), (None, ""))
         framing = clip(f"Earlier the team asked the owner: {question}", 20_000) if question else ""
-        text = CONTINUES.format(brief=clip(seed.user_text, 20_000), words=body) if seed is not None and seed.status in BAD_END else body
+        text = f"{clip(seed.user_text, 20_000)}\n\nThe owner now writes: {body}" if seed is not None and seed.status in BAD_END else body
         row = self._insert(
             tx, dept_id=dept_id, text=text, title=seed.title if text != body else None, scope_id=scope_id, framing=framing, depends_on=(), follows=None,
             request=None, change_id=None, settings=settings, seed_run=seed.run_id if seed is not None else None,

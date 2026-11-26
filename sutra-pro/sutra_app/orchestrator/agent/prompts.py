@@ -100,12 +100,9 @@ def pending_lines(pending: Sequence[str]) -> str:
 
 def run_lines(runs: Sequence[tuple[str, str, str, str, str]], *, width: int = 1000) -> str:
     """Per run (task id, title, status, brief, open question or ""), newest first: `- id | title | status`, then its brief and question, each cut to `width` characters."""
-    if not runs:
-        return "(none)"
-
     def cut(text: str) -> str:
         return clip(" ".join((text or "").split()), width) or "-"
-    return "\n".join(f"- {tid} | {title} | {status}\n  brief: {cut(brief)}\n  open question: {cut(question)}" for tid, title, status, brief, question in runs)
+    return "\n".join(f"- {tid} | {title} | {status}\n  brief: {cut(brief)}\n  open question: {cut(question)}" for tid, title, status, brief, question in runs) or "(none)"
 
 
 def violation_lines(violations: Sequence[Violation | Mapping[str, str]]) -> str:

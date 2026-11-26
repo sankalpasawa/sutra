@@ -336,9 +336,7 @@ class ChatAgent:
             return {}, True
 
     async def follows(self, dept_id: str, text: str, runs: Sequence[tuple[str, str, str, str, str]]) -> str | None:
-        """D454: the task id of the earlier run (`runs`: task id, title, status, brief, open question or "", newest first) that the
-        owner's words in the team's chat continue, or None. One call (no retry) with the assignments schema; only `follows` of the first
-        assignment is read and the caller checks it is one of `runs`. None when the reply is unusable; a connector failure goes up."""
+        """D454: the id of the run in `runs` (id, title, status, brief, open question; newest first) the words continue, or None; one call, a connector failure goes up."""
         schema = REGISTRY.transport_schema("chat_turn", kind="assignments")
         prompt = prompts.render("follows", dept=dept_id, runs=prompts.run_lines(runs), message=text, schema=_dump(schema))
 
