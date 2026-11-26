@@ -876,3 +876,15 @@ test("FR-5: under the owner's line the page says what the model received of each
   assert.equal(ChatView.fileReceiptHtml([]), "");
   assert.equal(select(one(dom(transcript(writable(), [owner(11, "plain")])), "div.nmsg.me"), "ul.creceipt").length, 0);
 });
+
+test("FR-5 (D451): under the owner's line to a team the receipt says what the TEAM was given: the file whole in the folder, its opening, or a reference file", () => {
+  const line = Object.assign(owner(12, "read these\n(attached: notes.txt, big.csv, shot.png)"), {attachments: [
+    {name: "notes.txt", kind: "text", sent: "given", chars: 12000, cut: false, total: 12000},
+    {name: "big.csv", kind: "text", sent: "given", chars: 1500, cut: true, total: 90000},
+    {name: "shot.png", kind: "image", sent: "reference", chars: 0, cut: false, total: 0}]});
+  const html = transcript(writable(), [line]);
+  const items = select(one(dom(html), "div.nmsg.me"), "ul.creceipt li").map(textOf);
+  assert.deepEqual(items, ["Given to the team: notes.txt (all 12,000 characters)", "Given to the team: big.csv (opening 1,500 of 90,000 characters; the whole file is in the run folder)", "Kept as a reference file: shot.png"]);
+  assert.match(html, /aria-label="What the team was given"/);
+  assert.match(ChatView.fileReceiptHtml([{name: "a.txt", sent: "text", chars: 1, total: 1}]), /aria-label="What the model received"/);           // a model's receipt is as it was
+});
