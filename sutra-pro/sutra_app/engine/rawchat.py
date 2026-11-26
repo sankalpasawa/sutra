@@ -119,7 +119,7 @@ def live_tail(run_dir: Optional[str]) -> dict:
         if not isinstance(name, str) or not isinstance(entry, dict):
             continue
         text = entry.get("text") if isinstance(entry.get("text"), str) else ""
-        agents[name] = {"call": entry.get("call"), "since": _num(entry.get("since")),
+        agents[name] = {"call": entry.get("call"), "since": _num(entry.get("since")), "step": _num(entry.get("step")),
                         "text": text[-LIVE_TEXT_CHARS:], "tool": entry.get("tool") if isinstance(entry.get("tool"), str) else "",
                         "tools": _num(entry.get("tools")) or 0}
     return {"at": _num(doc.get("at")), "agents": agents}

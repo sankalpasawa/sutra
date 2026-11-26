@@ -23,6 +23,7 @@ from sutra_app.connectors.stub import StubConnector
 from sutra_app.engine import llm
 from sutra_app.engine.capabilities.agents import LIVE_FILE, LIVE_SCHEMA, LIVE_TAIL, AgentLiveCapability
 from sutra_app.engine.port import CallTag, CompletionRequest
+from sutra_app.orchestrator.redact import Redactor
 
 
 def tag(function="W-3", purpose="agent_turn", call_no=7):
@@ -49,7 +50,7 @@ def test_an_agent_is_listed_with_its_text_its_last_tool_and_the_tool_count(live,
     assert live.write_now() is True
     doc = read(tmp_path)
     assert doc["schema"] == LIVE_SCHEMA == "agent-live/1" and doc["at"] == 1000.0
-    assert doc["agents"] == {"W-3": {"call": 7, "since": 1000.0, "text": "Hello", "tool": "Grep main", "tools": 2}}
+    assert doc["agents"] == {"W-3": {"call": 7, "since": 1000.0, "step": 0, "text": "Hello", "tool": "Grep main", "tools": 2}}
 
 
 def test_the_text_keeps_its_tail_and_each_event_replaces_it(live, tmp_path):
@@ -173,6 +174,26 @@ def test_a_planner_and_a_judge_call_are_keyed_by_their_function(live, role, purp
     assert live.snapshot()["agents"] == {}
 
 
+SECRET = "fake-token-0123456789"
+
+
+def test_a_secret_is_redacted_before_either_cut(tmp_path):
+    """D453 (FR-5): the writer redacts first, then cuts; a cut through a secret would leave a piece the whole-value Redactor cannot find."""
+    cap = AgentLiveCapability(threaded=False, clock=lambda: 1000.0, redact=Redactor(environ={"DEMO_API_TOKEN": SECRET}))
+    cap.attach(tmp_path / LIVE_FILE)
+    cap.progress(tag(), {"tool": "x" * 195 + SECRET})
+    cap.progress(tag(), {"text": SECRET + "y" * 3995})
+    entry = cap.snapshot()["agents"]["W-3"]
+    for i in range(len(SECRET) - 4):
+        assert SECRET[i:i + 5] not in entry["tool"] and SECRET[i:i + 5] not in entry["text"], SECRET[i:i + 5]
+    assert len(entry["tool"]) == 200 and len(entry["text"]) == LIVE_TAIL
+
+
+def test_an_entry_records_the_step_of_its_call(live):
+    live.progress(CallTag(function="W-3", purpose="agent_turn", call_no=7, step=6), {"tool": "Read"})
+    assert live.snapshot()["agents"]["W-3"]["step"] == 6
+
+
 # ---- through a router -----------------------------------------------------------------------------------------------------------------
 
 def make_port(tmp_path):
@@ -198,6 +219,13 @@ def test_install_wires_the_progress_hook_and_the_finish_hook_through_a_router(tm
     port.complete(CompletionRequest(system="s", user="u", scripted=lambda: "the reply", tag=tag("W-3")), on_progress)
     assert seen["while"] == "the reply"                                      # listed while the call was going
     assert cap.snapshot()["agents"] == {}                                    # and gone when it ended
+
+
+def test_install_gives_the_writer_the_apps_redactor(tmp_path):
+    """D453: the engine's one import of the orchestrator (orchestrator.redact, inside install) works in the host."""
+    cap = AgentLiveCapability(threaded=False)
+    cap.install(SimpleNamespace(port=make_port(tmp_path), paths=SimpleNamespace(run_dir=tmp_path), data_dir=tmp_path))
+    assert isinstance(cap._redact, Redactor)
 
 
 def test_in_mock_mode_install_changes_nothing(tmp_path):

@@ -80,11 +80,11 @@ def test_answers_are_redacted(api):
 
 def test_the_live_tail_reads_agent_live_and_ignores_a_foreign_file(api):
     svc, client = api
-    live = {"schema": "agent-live/1", "at": 5, "agents": {"W-1": {"call": 4, "since": 1.0, "text": "so far", "tool": "Read", "tools": 2},
+    live = {"schema": "agent-live/1", "at": 5, "agents": {"W-1": {"call": 4, "since": 1.0, "step": 6, "text": "so far", "tool": "Read", "tools": 2},
                                                          "bad": "x"}}
     ref = svc.add_run("web", files={"agent_live.json": live})
     body = client.get(f"/api/agent-live?dept=web&run={ref.run_id}").json()
-    assert body["agents"] == {"W-1": {"call": 4, "since": 1.0, "text": "so far", "tool": "Read", "tools": 2}} and body["at"] == 5
+    assert body["agents"] == {"W-1": {"call": 4, "since": 1.0, "step": 6, "text": "so far", "tool": "Read", "tools": 2}} and body["at"] == 5
     other = svc.add_run("web", files={"agent_live.json": {"schema": "else", "agents": {"W-1": {}}}})
     assert client.get(f"/api/agent-live?dept=web&run={other.run_id}").json()["agents"] == {}
 
