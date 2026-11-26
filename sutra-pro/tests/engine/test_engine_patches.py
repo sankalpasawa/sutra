@@ -3913,8 +3913,8 @@ def test_p41_card_lists_every_setting_before_approval(j2ft, p41_reg, monkeypatch
     assert P41_CRED not in json.dumps(r) and P41_CRED not in json.dumps(run.chat)
 
 
-# ---- P42 (D447): a build with a requirements.txt gets an environment of its own, installed only after RUN <code>; its test, its dry
-# run and its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
+# ---- P42 (D447): a build with a requirements.txt gets an environment of its own, installed with no question (D452); its test and
+# its real run use that python. No network: a fake python stands in for the interpreter, its venv module and pip, and a fake
 # sandbox runtime records its settings. The fakes hold their log's path: D446's clean environment passes them no variable ---------------------------------------------------------------------------------------------
 # TEST ONLY: "-m venv" makes a folder holding a copy of this file, "-m pip install" writes one module per requirements line into it,
 # "-m pip list" lists them, and anything else runs with the real python, which sees those modules only through the environment's copy.
@@ -4042,50 +4042,37 @@ def p42_system(run):
     return [m["text"] for m in run.chat if m["who"] == "system"]
 
 
-def p42_code(run):
-    """The one-time code of the open install question: kept under "env:<hash>", where the snapshot reads it for the Run button."""
-    key = run.paused["handoff"]["wid"]
-    assert key.startswith("env:") and run.paused["handoff"]["kind"] == "env_install" and run.paused["kind"] == "real_run"
-    assert run.snapshot()["paused"]["code"] == run.real_runs_asked[key]
-    return run.real_runs_asked[key]
-
-
 @p42_posix
-def test_p42_requirements_get_an_environment_only_after_run_code_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+def test_p42_packages_install_without_a_question_and_a_cached_one_is_reused(j2env, env_run, monkeypatch):
+    """AC-6: installed once with no pause and no code; one info line names the packages; the env_install row has FR-28's keys."""
     made, real = env_run
     runenv = j2env.j2_runenv
+    venvs, pips = len(j2env.p42_log("venv")), len(j2env.p42_log("pip install"))
     run, w = made({}, status="running", attempts=0, test="test_s.py")
     prompts = p42_builder(run, P42_FILES)
     run._turn_workflow_agent({"wid": "W-1"})
-    plan, card, code = runenv.plan(run._out_dir()), p42_system(run)[-1], p42_code(run)
-    assert run._auto_pick() is None and run.paused["handoff"]["build"] == "W-1" and run.paused["handoff"]["hash"] == plan["hash"]
-    assert "pulsedep==1.2.0" in card and "from PyPI only" in card and f"RUN {code}" in card and "Nothing is installed until you approve" in card
-    assert "Or press Run. To decline, press Don't run." in card
-    assert plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
-    # nothing is installed without approval
-    assert not j2env.p42_log("venv") and not j2env.p42_log("pip install") and not os.path.exists(plan["dir"]) and not p42_receipts(run, "env_install")
-    assert not any(x.get("check") == "its test passes" for x in run.receipts), "the test is not rerun before its packages are there"
-    for text, meta in (("yes install", {}), (f"run {code}", {}), (f"RUN {code}", {"auto": True})):      # as D434: only the exact code
-        p42_reply(run, text, **meta)
-        assert run.paused and run.chat[-1]["who"] == "identity" and f"Not installed. Press Run or type RUN {code}." in run.chat[-1]["text"]
-        assert p42_code(run) == code and not j2env.p42_log("pip install") and not p42_receipts(run, "env_install")
-    p42_reply(run, f"RUN {code}")
-    assert len(j2env.p42_log("venv")) == 1 and len(j2env.p42_log("pip install")) == 1 and not run.paused
-    assert not [k for k in run.real_runs_asked if k.startswith("env:")], "the code is forgotten once it is answered"
-    argv = j2env.p42_log("pip install")[0]["argv"]
+    plan = runenv.plan(run._out_dir())
+    assert not run.paused and run._auto_pick() is None and not run.real_runs_asked, run.paused
+    assert len(j2env.p42_log("venv")) == venvs + 1 and len(j2env.p42_log("pip install")) == pips + 1
+    assert plan["ready"] and plan["dir"].startswith(os.path.realpath(os.environ["J2_DATA_DIR"])) and str(run.dir) not in plan["dir"]
+    said = [x for x in p42_system(run) if "pulsedep==1.2.0" in x]
+    assert said == [f"Installed pulsedep==1.2.0 in {plan['dir']} for W-1."], p42_system(run)
+    assert not [m for m in run.chat if "RUN " in m["text"] or m.get("pause")], "no question, no code"
+    argv = j2env.p42_log("pip install")[-1]["argv"]
     assert argv[argv.index("--index-url") + 1] == "https://pypi.org/simple" and "--isolated" in argv and "--extra-index-url" not in argv
     e = p42_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"}
+    assert list(e)[:4] == ["type", "workflow", "requirements_sha256", "packages"] and list(e)[-2:] == ["t", "by"], list(e)
+    assert not {"code", "approved", "declined", "answer_msg"} & set(e), list(e)
+    assert e["exit"] == 0 and e["requirements_sha256"] == plan["hash"] and e["installed"] == {"pulsedep": "1.2.0"} and e["by"] == "code"
     assert e["python"] == runenv.env_python(plan["dir"]) and e["python_version"] and e["packages"] == ["pulsedep==1.2.0"] and e["workflow"] == "W-1"
     from sutra_app.library.records import _p_receipt
     assert [k for k, _ in _p_receipt("receipts.jsonl", e)] == ["run_file.object"], "the install receipt is open JSON for the catalogue"
-    run._turn_workflow_agent(run.handoff)
     test = next(x for x in run.receipts if x["check"] == "its test passes")
-    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True and "resume" not in w
-    assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat), "the builder's reply from before the question is kept"
+    assert len(prompts) == 1 and w["status"] == "done" and test["pass"] is True
+    assert any(m.get("human_output") == "I built the reader script and its test for the folder." for m in run.chat)
     assert [r for r in j2env.p42_log("run") if r["python"] == runenv.env_python(plan["dir"]) and r["argv"] == ["test_s.py"]], \
         "the test rerun used the environment's python (the system one has no pulsedep)"
-    # the approved real run uses the environment's python too
+    # the real run uses the environment's python too
     monkeypatch.setenv("J2_SANDBOX", "1")
     monkeypatch.setenv("J2_SANDBOX_CMD", j2env.p42_srt)
     assert run._ask_real_run({}) and run.paused["handoff"]["kind"] == "real_run"
@@ -4093,50 +4080,40 @@ def test_p42_requirements_get_an_environment_only_after_run_code_and_a_cached_on
     p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
     r = p42_receipts(run)[-1]
     want = {"python": runenv.env_python(plan["dir"]), "requirements_sha256": plan["hash"], "installed": {"pulsedep": "1.2.0"}}
-    assert r["approved"] and r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
+    assert r["exit"] == 0 and {k: r["env"].get(k) for k in want} == want and r["env"]["python_version"]
     assert (real / "out.txt").read_text() == "1.2.0"
     monkeypatch.delenv("J2_SANDBOX")
-    # a second run with the same requirements.txt reuses the environment: no question, no install
+    # a second run with the same requirements.txt reuses the environment: no install, no receipt
     n = len(j2env.p42_log("pip install"))
     run2, w2 = made({}, status="running", attempts=0, test="test_s.py")
     p42_builder(run2, P42_FILES)
     run2._turn_workflow_agent({"wid": "W-1"})
-    assert not run2.paused and w2["status"] == "done" and not run2.real_runs_asked
-    assert len(j2env.p42_log("pip install")) == n and len(j2env.p42_log("venv")) == 1
+    assert not run2.paused and w2["status"] == "done" and not p42_receipts(run2, "env_install")
+    assert len(j2env.p42_log("pip install")) == n and len(j2env.p42_log("venv")) == venvs + 1
     assert next(x for x in run2.receipts if x["check"] == "its test passes")["pass"] is True
-    # Don't run: nothing installed, the test is not rerun with another python, and the real run goes back to the build (D434)
-    run3, w3 = made({}, status="running", attempts=0, test="test_s.py")
-    p42_builder(run3, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nextra-lib==0.3\n"})
-    run3._turn_workflow_agent({"wid": "W-1"})
-    assert run3.paused and "extra-lib==0.3" in p42_system(run3)[-1]
-    p42_reply(run3, "don't run")
-    d = p42_receipts(run3, "env_install")[-1]
-    assert d["declined"] and not d["approved"] and d["evidence"] == "not installed: the Requester chose Don't run"
-    run3._turn_workflow_agent(run3.handoff)
-    t3 = [x for x in run3.receipts if x["check"] == "its test passes"][-1]
-    assert len(j2env.p42_log("pip install")) == n and t3["pass"] is None and "its packages are not installed" in t3["evidence"]
-    assert not run3.paused, "a declined requirements.txt is not asked about again in the run"
-    w3["status"] = "done"
-    assert run3._ask_real_run({}) is True and not run3.paused and "W-1" not in run3.real_runs_asked
-    assert w3["status"] == "failed" and w3["failure"] == ["real_run_setup", "its packages are not installed: the Requester chose not to install them"]
-    assert run3.turn == "adaptation" and not p42_receipts(run3), "it did not run: no row"
 
 
 @p42_posix
 def test_p42_a_failed_install_goes_back_to_the_builder_with_pips_error(j2env, env_run, monkeypatch):
+    """AC-7: pip's error goes to the builder; the same requirements.txt is not installed again in the run."""
     made, real = env_run
     run, w = made({}, status="running", attempts=0, test="test_s.py")
-    prompts = p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}, P42_FILES)
-    run._turn_workflow_agent({"wid": "W-1"})
+    bad = {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nnosuch==9.9\n"}
+    prompts = p42_builder(run, bad, P42_FILES)
     j2env.p42_pip_fail.write_text("nosuch==9.9")
     try:
-        p42_reply(run, f"RUN {p42_code(run)}")
+        run._turn_workflow_agent({"wid": "W-1"})
     finally:
         j2env.p42_pip_fail.unlink()
-    e = p42_receipts(run, "env_install")[-1]
-    assert e["approved"] and e["exit"] == 1 and "No matching distribution found for nosuch==9.9" in e["stderr"]
-    run._turn_workflow_agent(run.handoff)
+    e = [x for x in p42_receipts(run, "env_install") if x["exit"] != 0]
+    assert len(e) == 1 and "No matching distribution found for nosuch==9.9" in e[0]["stderr"], e
     assert len(prompts) == 2 and "No matching distribution found for nosuch==9.9" in prompts[1] and "ATTEMPT 2 OF 3" in prompts[1]
+    assert not run.paused and w["status"] == "done"
+    for name, text in bad.items():      # the same requirements.txt again: not installed again in this run
+        Path(run._out_dir(), name).write_text(text)
+    n, rows = len(j2env.p42_log("pip install")), len(p42_receipts(run, "env_install"))
+    assert run._env_install(w, run._out_dir()) == ""
+    assert len(j2env.p42_log("pip install")) == n and len(p42_receipts(run, "env_install")) == rows
 
 
 def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_are_refused(j2env, env_run, monkeypatch, tmp_path):
@@ -4157,7 +4134,7 @@ def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_a
     assert "requests>=2" in prompts[1] and "exact version" in prompts[1] and "--extra-index-url" in prompts[2]
     monkeypatch.setenv("J2_RUN_PYTHON", str(tmp_path / "no-such-python"))      # no interpreter: nothing is asked, nothing is run
     run, w = made({"s.py": P42_NEEDS, "requirements.txt": "pulsedep==7.0.0\n"})
-    assert run._env_ask(w, 1, run._out_dir()) is False and run._ask_real_run({}) is True and not run.paused
+    assert run._env_install(w, run._out_dir()) == "" and run._ask_real_run({}) is True and not run.paused
     assert "which is not a Python that runs" in w["failure"][1] and "J2_RUN_PYTHON" in w["failure"][1]
     assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
 
@@ -4171,8 +4148,6 @@ def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_
     p42_builder(run, {**P42_FILES, "requirements.txt": "pulsedep==1.2.0\nsandboxed==2.0\n"})
     before = len(j2env.p42_log("sandbox"))
     run._turn_workflow_agent({"wid": "W-1"})
-    p42_reply(run, f"RUN {p42_code(run)}")
-    run._turn_workflow_agent(run.handoff)
     run._ask_real_run({})
     p42_reply(run, f"RUN {run.real_runs_asked['W-1']}")
     rows = j2env.p42_log("sandbox")[before:]

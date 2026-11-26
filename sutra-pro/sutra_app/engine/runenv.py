@@ -4,9 +4,9 @@ Sutra's own module, not a vendored file: J2's `j2_runenv.py` from the branch `fi
 pinned commit, so the file can't come from the extraction; when a sync moves the pin past it, this copy goes and P42's import
 becomes P1's). Everything below the imports is J2's code unchanged; `tests/engine/test_engine_patches.py` compares the two.
 
-A built folder that holds a requirements.txt gets a virtual environment of its own, and the test rerun, the dry run on
-copies and the real run all use that environment's python, never the system one. Nothing here asks the Requester:
-j2.py asks (RUN <code>) and calls install() only after the approval.
+A built folder that holds a requirements.txt gets a virtual environment of its own, and the test rerun and the real run
+both use that environment's python, never the system one. j2.py calls install() before the build's checks, with no
+question to the Requester (D452).
 
   interpreter()        J2_RUN_PYTHON when it is set, else the first python3.13, 3.12, 3.11 or 3.10 found (on the
                        PATH, then the interpreter this engine itself runs on when it is one of those versions: in the

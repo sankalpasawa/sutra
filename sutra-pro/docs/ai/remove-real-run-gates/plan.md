@@ -87,7 +87,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests and vendor tests pass; `SUTRA_SLOW=1` vendor tests pass
   - Covers: FR-9 (wording), FR-10, FR-14, FR-15, FR-16, FR-17, FR-18, FR-21 (filesystem), FR-30, NFR-4, NFR-5, NFR-8, FR-38 (part)
 
-- [ ] T6: Packages install without a question (P42 amended)
+- [x] T6: Packages install without a question (P42 amended)
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `sutra_app/engine/runenv.py` (docstring lines 7-9 only), `tests/engine/test_engine_patches.py`, `tests/engine/test_engine_vendor.py`
   - Change: P42 edits: `_env_ask` + `_identity_env_install` → `_env_install(w, cwd)` per architecture.md "Interfaces"; callers at j2.py:11098 (`reused, evidence = None, bad`) and :11145 (`evidence = bad; continue`); delete `w["resume"]` (:11094, :11108-11116, and the setters), the `real_runs_asked["env:..."]` code, the `"env_install"` dispatch; `env_install` row per spec FR-28; `env_missing`/`_run_env` say "not installed yet"; one info line naming packages and folder. runenv.py docstring: code installs with no question (no `RUN <code>`, no dry run). Vendor test mark `P42` → `def _env_install`.
   - Tests: rewrite `test_p42_*` (4195-4355): AC-6 (installed once, no pause, row keys exactly FR-28's), AC-7 (pip error to the builder; same hash not installed again), a cached environment is reused, AC-8 import check still sends back without "dry run" in any message. The runenv-equals-J2 comparison test still passes.

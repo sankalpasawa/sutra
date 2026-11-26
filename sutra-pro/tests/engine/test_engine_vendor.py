@@ -176,7 +176,7 @@ def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_p32_sut19s_p36_to_p40_
     no dry run; P33 has Audit read a real run's output and what it did to its folder against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and code compares it after
     the real run (D438, D452); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
     the engine runs a clean environment from an allowlist plus what its plan states, with secrets by file path (D446); P42 gives a build with a requirements.txt an
-    environment of its own, installed only after RUN <code> (D447); P43 keeps an answer from confirming a real-run item and
+    environment of its own, installed with no question (D447, D452); P43 keeps an answer from confirming a real-run item and
     counts a picked option's text (D448); P44 (D449, hosts the Requester named, an offline dry run) is retired by D452, which
     keeps its `unparsed` diagnostic in P46; P45 is another developer's, not on this base yet; P46 lets the planner list a real
     run's hosts, checked for their syntax only, and srt allows exactly them (D452)."""
@@ -189,7 +189,7 @@ def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_p32_sut19s_p36_to_p40_
 
 
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
-    marks = {"P46": ("j2.py", "def real_run_hosts_problems(rr)"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def real_run_env_problems"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P31": ("j2.py", "def home_expanded"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
+    marks = {"P46": ("j2.py", "def real_run_hosts_problems(rr)"), "P42": ("j2.py", "def _env_install"), "P41": ("j2.py", "def real_run_env_problems"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P31": ("j2.py", "def home_expanded"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "def _mark_run_template_used"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", '(self.out or {}).get("single")'),
              "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),
