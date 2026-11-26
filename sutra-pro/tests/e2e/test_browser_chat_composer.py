@@ -198,10 +198,12 @@ def test_the_direct_chat_composer_in_the_node_panel_and_on_home(app, browser, tm
     browser.js(f"""(() => {{ const bytes = Uint8Array.from(atob({json.dumps(PNG_B64)}), c => c.charCodeAt(0));
                   const dt = new DataTransfer(); dt.items.add(new File([bytes], 'image.png', {{type: 'image/png'}}));
                   document.getElementById('sbox').dispatchEvent(new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}})); }})()""")
-    browser.wait_for("document.querySelector('#sbar .ccmode-opt.on').textContent === 'Ask directly'")
     present(browser, "#sbar .ccfile.ready .ccthumb")
+    assert label(browser, "#sbar .ccmode-opt.on") == "Plan with Sutra"                         # D451: the box stays where it was; in "Plan with Sutra" the file goes to the team with the message
     assert label(browser, "#sbar .ccfile .ccname") == "pasted-image-1.png" and browser.js("document.querySelector('#sbar .ccthumb').src.startsWith('blob:')")
-    assert "Files go only to the model" in label(browser, "#sbar .ccnote")
+    assert not browser.exists("#sbar .ccnote")
+    browser.click('#sbar [data-mode="direct"]')                                              # this test asks the model about the picture
+    browser.wait_for("document.querySelector('#sbar .ccmode-opt.on').textContent === 'Ask directly'")
     browser.type("#sbox", "What is in this picture?")
     browser.click("#ssend")
     live.until("the pasted line and its reply", lambda: [m["role"] for m in live.messages(ORG)][-2:] == ["user", "agent"] and len(live.messages(ORG)) >= 4
