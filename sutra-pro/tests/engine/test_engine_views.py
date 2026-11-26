@@ -64,7 +64,8 @@ def fresh_engine(base: Path):
             if name.startswith(("J2_", "STUDIO_")):
                 mp.delenv(name)
         for key, value in {**rec.SCENARIO_ENV, "J2_RUNS_DIR": base / "runs", "J2_MEMORY_FILE": base / "memory" / "lessons.jsonl",
-                           "J2_PLAYBOOK_FILE": base / "memory" / "playbooks.jsonl", "J2_LIBRARY_DIR": base / "library"}.items():
+                           "J2_PLAYBOOK_FILE": base / "memory" / "playbooks.jsonl", "J2_LIBRARY_DIR": base / "library",
+                           "J2_BUDGET": 200}.items():      # D457: an eleven-section PRD costs 148 on the rate card
             mp.setenv(key, str(value))
         for name in ("_PORT", "_DEFAULT_PORT", "_BASE_TAG", "_BOUND_ATOM", "MOCK", "PROVIDER", "MODEL"):
             mp.setattr(llm, name, getattr(llm, name))          # put back when the module is done

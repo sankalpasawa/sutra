@@ -2852,7 +2852,17 @@ def mock_doc_section(w, goal):
                                       for i, f in enumerate(feats, 1)),
             "Success metrics": "| Goal | Metric |\n|---|---|\n" + "\n".join(f"| G{i} | {s} |" for i, s in enumerate(succ, 1)),
             "Out of scope": "\n".join(f"- Anything outside this constraint: {c}" for c in g.get("constraints") or [])
-                            or f"- Features beyond the listed requirements of {name}"}[sec]
+                            or f"- Features beyond the listed requirements of {name}",
+            # D457: the PRD's other sections, from the charter's own words only (mock)
+            "Approach": f"{name} gives {g.get('users') or 'its users'} what the brief asks for: "
+                        + ("; ".join(str(f) for f in feats) or "the listed requirements") + ".",
+            "Key flows": f"- **Main use**: {'; '.join(str(f) for f in feats[:4]) or 'the listed requirements'}.",
+            "Quality and constraints": "| Area | What must hold | How it is checked |\n|---|---|---|\n"
+                                       + ("\n".join(f"| Constraint | {c} | not set in the brief |" for c in g.get("constraints") or [])
+                                          or "| Scope | only what the brief asks for | not set in the brief |"),
+            "Dependencies": "| Needed | From | State |\n|---|---|---|\n| the facts in the brief | the Requester | available |",
+            "Risks": "| Risk | Effect | What is done about it |\n|---|---|---|\n"
+                     "| a requirement is read differently than meant | the product misses a goal | the Requester reviews this document |"}[sec]
     return f"## {sec}\n\n{body}\n"
 
 
@@ -12738,6 +12748,19 @@ class J2Run:
                    "Out of scope": lambda: {"out_of_scope": [f"Anything outside this constraint: {c}"
                                                              for c in g.get("constraints") or []]
                                             or [f"Features beyond the listed requirements of {name}"]},
+                   # D457: the PRD's other sections, from the charter and the chain only (mock)
+                   "Approach": lambda: {"approach": f"{name} gives {g.get('users') or 'its users'} what the brief asks for: "
+                                                    + ("; ".join(feat(r) for r in reqs) or "the listed requirements") + "."},
+                   "Key flows": lambda: {"key_flows": [{"name": "Main use", "steps": [feat(r) for r in reqs][:4]
+                                                        or ["the listed requirements"]}]},
+                   "Quality and constraints": lambda: {"quality": [{"area": "Constraint", "requirement": str(c)}
+                                                                   for c in g.get("constraints") or []]
+                                                       or [{"area": "Scope", "requirement": "only what the brief asks for"}]},
+                   "Dependencies": lambda: {"dependencies": [{"needed": "the facts in the brief", "source": "the Requester",
+                                                             "state": "available"}]},
+                   "Risks": lambda: {"risks": [{"risk": "a requirement is read differently than meant",
+                                                "effect": "the product misses a goal",
+                                                "mitigation": "the Requester reviews this document"}]},
                    }[section]()
         elif kind == "hld":
             prob = g.get("problem") or "the problem in the brief"
