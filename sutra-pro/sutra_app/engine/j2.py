@@ -691,7 +691,7 @@ REAL_RUN_EXPECT_RULE = ('\nREAL RUN EXPECT: the real_run also carries "expect": 
 def real_run_expect_problems(rr):
     """P35 (D438): why a planned real run's "expect" is not usable ([] when it is): exactly the three lists of EXPECT_KEYS,
     each of non-empty relative file paths or globs (no absolute path, no .., no leading ./, no trailing / that names a
-    folder: the dry run lists file paths, so such a glob never matches; review R1-8), not all empty. Structure only."""
+    folder: the run's diff lists file paths, so such a glob never matches; review R1-8), not all empty. Structure only."""
     ex = rr.get("expect")
     if ex is None:
         return ['real_run expect is missing: say what running it does to folder, {"created": [...], "changed": [...], '
@@ -708,14 +708,14 @@ def real_run_expect_problems(rr):
     return out
 
 
-def expect_mismatch(expect, dry):
-    """P35 (D438): "" when the dry run's created/changed/deleted paths match expect, else what differs, sorted: per kind, a
+def expect_mismatch(expect, diff):
+    """P35 (D438): "" when a run's created/changed/deleted paths (diff) match expect, else what differs, sorted: per kind, a
     glob no path matched ("expected <glob>, got none") and a path no glob matched ("unexpected <path>"). An empty list
     means nothing of that kind. fnmatchcase: "*" also matches across "/"."""
     from fnmatch import fnmatchcase
     out = []
     for k in EXPECT_KEYS:
-        globs, got = sorted(expect.get(k) or []), sorted(dry.get(k) or [])
+        globs, got = sorted(expect.get(k) or []), sorted(diff.get(k) or [])
         out += [f"{k}: expected {g}, got none" for g in globs if not any(fnmatchcase(p, g) for p in got)]
         out += [f"{k}: unexpected {p}" for p in got if not any(fnmatchcase(p, g) for g in globs)]
     return "; ".join(out)
@@ -762,16 +762,6 @@ def real_run_problems(rr, source, runner, run_dir):
             out.append(f"real_run argument {x!r} climbs out of its folder (..)")
         elif os.path.isabs(v) and not any(within(os.path.realpath(v), r) for r in roots):
             out.append(f"real_run argument {x!r} names a path outside its folders")
-    return out
-
-
-def dry_secret_files(rr, tmp):
-    """P41 (D446): {NAME: placeholder} for the dry run: one empty file per secret file, made in the dry run's own temp folder
-    (tmp/secrets/s<n>, outside the copies, so never diffed; removed with tmp). The real path never reaches the dry run."""
-    out = {n: os.path.join(tmp, "secrets", f"s{i}") for i, n in enumerate(rr.get("secret_files") or {})}
-    for p in out.values():
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        open(p, "w").close()
     return out
 
 
@@ -860,12 +850,12 @@ def real_run_env_problems(rr, source, run_dir):
 
 def real_run_env_lines(rr):
     """P41 (D446): the real-run card's lines, before approval: every setting as NAME=value, and every secret file by name
-    and real path only (the app never opens it), then what the dry run got instead."""
+    and real path only (the app never opens it)."""
     s, f = rr.get("settings") or {}, rr.get("secret_files") or {}
     return ("\nSettings it gets: " + (", ".join(f"{n}={v}" for n, v in s.items())
                                       or "none beyond the basics (PATH, HOME, user, shell, time zone, terminal, language, temp folder)")
             + ("\nSecret files it may read (the app never opens them): " + ", ".join(f"{n} = {p}" for n, p in f.items())
-               + "\nThe dry run got the settings and an empty placeholder file for each secret file." if f else ""))
+               if f else ""))
 
 
 def real_run(out_dir, rr, timeout):
@@ -874,11 +864,7 @@ def real_run(out_dir, rr, timeout):
     writes only the stated folder. Without it (the default) as a plain process; the approval (RUN <code>), the dry run
     and the receipt are the same either way. {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
-    fence = rr.get("fence") is True      # P32 (D435): the dry run (real_run_dry) always goes through the sandbox runtime
-    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() or fence else None
-    if fence and (shutil.which(shlex.split(cmd)[0]) is None or (llm.MOCK and not os.getenv("J2_SANDBOX"))):      # none here
-        return {"ran": False, "exit": None, "evidence": "no sandbox runtime here: the dry run was not run, because it never "
-                                                        "runs with network"}      # (or offline without J2_SANDBOX): never unfenced
+    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
     out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
@@ -898,11 +884,9 @@ def real_run(out_dir, rr, timeout):
     t0 = time.time()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [] if fence else real_hosts(rr),      # P46 (D452): exactly the
-                                   "deniedDomains": []},      # plan's hosts; fence (P32) always holds in the dry run
-                       "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
-                                      "allowRead": [out_dir, folder] + reads
-                                      + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
+            json.dump({"network": {"allowedDomains": real_hosts(rr), "deniedDomains": []},      # P46 (D452): the plan's hosts
+                       "filesystem": {"denyRead": ["~"], "allowRead": [out_dir, folder] + reads
+                                      + list((rr.get("secret_files") or {}).values()),      # P41 (D446): the secret files' paths
                                       "allowWrite": [folder],
                                       "denyWrite": list(SANDBOX_DENY_WRITE)}}, f)
         extra = {**(rr.get("settings") or {}), **(rr.get("secret_files") or {})}      # P41 (D446): only what the plan states
@@ -977,52 +961,6 @@ def _tree_diff(before, after):
     """{created, deleted, changed}: relative paths, from two _tree() snapshots."""
     return {"created": sorted(set(after) - set(before)), "deleted": sorted(set(before) - set(after)),
             "changed": sorted(k for k in set(before) & set(after) if before[k] != after[k])}
-
-
-def real_run_dry(out_dir, rr, timeout):
-    """The real run, first on copies: the stated folder and its read-only folders copied beside the run's output
-    folder, the command's paths pointed at the copies, run once in the sandbox (real_run) writing only the copy of
-    the folder. What it would do to the folder: {"ran", "exit", "created", "changed", "deleted" (paths in the folder),
-    "evidence"}. The copies are removed after. The real folders are read before and after: anything changed there is
-    "real_changed" ({folder: {created, deleted, changed}}; {} when none), and the evidence says so instead of the
-    copy's counts. "command": the command as run, on the copies' paths."""
-    tmp = tempfile.mkdtemp(prefix=".dryrun-", dir=os.path.dirname(os.path.realpath(out_dir)))
-    try:
-        roots = [rr["folder"]] + list(rr.get("reads") or [])
-        real_before = {r: _tree(r) for r in roots}
-        copies = [os.path.join(tmp, f"f{i}") for i in range(len(roots))]
-        for r, c in zip(roots, copies):
-            shutil.copytree(r, c, symlinks=True)
-        swap = sorted(((p, c) for r, c in zip(roots, copies) for p in {r.rstrip("/"), os.path.realpath(r)}),
-                      key=lambda x: -len(x[0]))      # the longest prefix first
-
-        def moved(x):
-            k, eq, v = x.partition("=") if "=" in x and not os.path.isabs(x) else ("", "", x)
-            for p, c in swap:
-                if v == p or v.startswith(p + "/"):
-                    v = c + v[len(p):]
-                    break
-            return k + eq + v
-        before, reads_before = _tree(copies[0]), [_tree(c) for c in copies[1:]]      # P35 (D438): the read-only copies too
-        cmd = [moved(x) for x in rr["command"]]
-        rr = {**rr, "fence": True}      # P32 (D435): set by code here only (a stored real_run keeps command, folder, reads, why)
-        rr = {**rr, "secret_files": dry_secret_files(rr, tmp),      # P41 (D446): empty placeholders, never the real paths,
-              "deny_read": list((rr.get("secret_files") or {}).values())}      # which srt hides (set by code here only)
-        res = real_run(out_dir, {**rr, "folder": copies[0], "reads": copies[1:], "command": cmd}, timeout)
-        out = (res.get("output") or "").replace(tmp, "<copy>")      # P31 (D434): its output's end, no temp path (P28 signs it)
-        d = _tree_diff(before, _tree(copies[0]))
-        reads_changed = {str(i): x for i, (c, b) in enumerate(zip(copies[1:], reads_before), 1)      # P35 (D438): {n: diff}
-                         if any((x := _tree_diff(b, _tree(c))).values())}      # of the n-th read-only copy, when it changed
-        real = {r: x for r in roots if any((x := _tree_diff(real_before[r], _tree(r))).values())}
-        counts = ", ".join(f"{len(v)} {k}" for k, v in d.items())
-        if real:
-            return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": real, "reads_changed": reads_changed,
-                    "evidence": "the dry run changed the real folders, not only the copies: " + "; ".join(
-                        f"{r}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items()) for r, x in real.items())}
-        return {"ran": res.get("ran"), "fenced": res.get("ran") is True, "exit": res.get("exit"), "output": out, "command": cmd, **d, "real_changed": {}, "reads_changed": reads_changed,
-                "evidence": (f"dry run on a copy: exit {res.get('exit')}; {counts}" if res.get("ran") else res["evidence"])}
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def sandbox_rerun(folder, runner, target, timeout):
@@ -3863,7 +3801,6 @@ class J2Run:
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-        self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
@@ -5968,18 +5905,17 @@ class J2Run:
                                                             or "the Requester has not approved them")
 
     def _env_stops_real_run(self, w, rr):
-        """P42 (D447): before the dry run. A real run whose packages are not installed, or whose script imports a module
-        that does not resolve in the python that runs it (only looked up, nothing is run), is a build failure like a
-        failed dry run (D434's _dry_run_failed: never a question): True. Else False; with an environment, one info line
-        names its packages."""
+        """P42 (D447): before the real run. A real run whose packages are not installed, or whose script imports a module
+        that does not resolve in the python that runs it (only looked up, nothing is run), is a build failure (P46's
+        _real_run_back: never a question): True. Else False; with an environment, one info line names its packages."""
         env, why = self._run_env()
         if why:
-            return self._dry_run_failed(w, {}, why)
+            return self._real_run_back(w, why)
         script = j2_runenv.script_of(rr["command"], self._out_dir()) if j2_runenv.is_python(rr["command"][0]) else None
         missing = (j2_runenv.missing_imports(run_command(rr["command"], env)[0], script) if script else None) or []
         if missing:
-            return self._dry_run_failed(
-                w, {}, f"{os.path.basename(script)} imports {and_list(missing)}, not installed in the Python that runs it: "
+            return self._real_run_back(
+                w, f"{os.path.basename(script)} imports {and_list(missing)}, not installed in the Python that runs it: "
                        "name each one's PyPI package in requirements.txt with its exact version (name==1.2.3, one per "
                        "line), or take the import out")
         if env:
@@ -6087,131 +6023,109 @@ class J2Run:
         if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
             return True
         self.real_runs_asked[w["id"]] = code
-        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
-        show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
-                                 + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
-        if dry.get("ran") and dry.get("exit") == 0 and not dry.get("real_changed"):      # P35 (D438): after the stop and P31's
-            if dry.get("reads_changed"):      # exit check (both below): a write into a read-only copy, then a result unlike expect
-                return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
-                    f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
-                    for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
-            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # P35 (D438)
-                dry["expect_mismatch"] = mm
-                return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
-        if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
-            self.post("system", f"{w['id']}'s dry run changed your real folders, not only the copies, before any "
-                                f"approval.\nCommand: {shlex.join(rr['command'])}" + "".join(
-                                    f"\nIn {f}:" + show("created", x) + show("changed", x) + show("deleted", x)
-                                    for f, x in dry["real_changed"].items())
-                      + "\nThe run stops here: nothing else is run. Check these files.", warning=True, real_run=w["id"])
-            self.real_runs_done[w["id"]] = False
-            with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-                f.write(json.dumps({"type": "real_run", "workflow": w["id"], **rr, "code": code, "approved": False,
-                                    "ran": False, "exit": None, "evidence": dry["evidence"],
-                                    "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
-                                    "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
-            self._event("code", "real_run", f"{w['id']}: {dry['evidence']}")
-            self.outcome = f"Stopped: {w['id']}'s dry run changed the Requester's real folders ({dry['evidence']})."
-            self.turn, self.handoff = None, {}
-            return True
-        if dry.get("ran") and dry.get("exit") != 0:      # P31 (D434): a failed dry run goes back to the build, never to the Requester
-            last = next((x.strip() for x in reversed((dry.get("output") or "").splitlines()) if x.strip()), "no output")
-            return self._dry_run_failed(w, dry, (f"exit {dry['exit']}" if dry["exit"] is not None else "stopped at the time limit")
-                                        + f": {last[:160]}")
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
-                            + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
-                                                                            "dry run had no network access: results may differ."
-                                                                            if dry.get("fenced") else      # P32 (D435)
-                                                                            "No dry run: this computer has no sandbox, so it wasn't tested first")
-                            + show("created") + show("changed") + show("deleted")
+                            + f"\nWhy: {rr.get('why') or 'not given'}"      # P46 (D452): no dry run
                             + f"\nTo run it, reply exactly: RUN {code}\n"
                             "Or press Run. To decline, press Don't run.", real_run=w["id"])      # P31 (D434)
         self._ask_user("One of the workflows wants to run what it built on your files. The exact command is above.",
                        [{"question": "Run it for real?"}], "real_run", handoff={"kind": "real_run", "r": r, "wid": w["id"]})
         return True
 
-    def _dry_run_failed(self, w, dry, detail):
-        """P31 (D434): a real run whose dry run on copies failed is a build failure, never a question: w fails with code's
-        detail (P28's signature), keeps its output's end for the revising builder, a not-run receipt is written, its code is
-        forgotten, and Adaptation proposes the fix, unless the same failure twice in a row stops the cycle. True (handled)."""
-        w["status"], w["failure"], w["dry_run_output"] = "failed", ["dry_run", detail], dry.get("output") or ""
-        code = self.real_runs_asked.pop(w["id"], None)
-        with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": w["id"], **w["real_run"], "code": code, "approved": False,
-                                "ran": False, "exit": None, "evidence": f"not asked: the dry run on copies failed ({detail})",
-                                "dry_run": {k: v for k, v in dry.items() if k != "evidence"},
-                                "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
-        self._event("code", "real_run", f"{w['id']}: the dry run on copies failed ({detail})")
-        self.post("system", "Dry run failed, sent back to the builder")      # owner (review R1-7): a plain info line, never a question or card
-        self.save("workflows.json", self.workflows)
-        if self.last_failure is None:      # a passing build in between cleared P28's memory; it says nothing of the dry run after it
-            self.last_failure = getattr(self, "dry_failure", None)
-        stop = self._repeat_build_stop(w["id"])
-        self.dry_failure = self.last_failure
-        if not stop:
-            self._handoff("adaptation", kind="propose", new_cycle=True,
-                          why=f"{w['id']}'s real run failed its dry run on copies ({detail}). Propose a workflow that revises "
-                              f"{w['id']} and keeps its real_run. Its output (end): {w['dry_run_output']}")
-        return True
-
     def _identity_real_run(self, h):
         """Step 7: code, not an agent, compares the Requester's reply with RUN <code> exactly. Only then the command runs,
-        once, in the sandbox (real_run). Either way a receipt goes to receipts.jsonl and the run goes on to its end."""
+        once (_real_run_once). Either way a receipt goes to receipts.jsonl and the run goes on to its end. P31 (D434): the
+        whole reply REAL_RUN_DECLINE declines; any other reply asks again, the same code; the run stays open."""
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
         last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
         ans = str(h.get("answer") or "").strip()
         ok = bool(w and code) and not last.get("auto") and ans == f"RUN {code}"
-        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()      # P31 (D434): the whole reply
-        if w and code and not ok and not declined:      # P31 (D434): any other reply asks again, the same code; the run stays open
+        declined = not last.get("auto") and ans.casefold() == REAL_RUN_DECLINE.casefold()
+        if w and code and not ok and not declined:
             self._event("identity", "real_run_unclear", f"{h.get('wid')}: the reply was neither RUN <code> nor {REAL_RUN_DECLINE}")
             return self._ask_user(f"Not run. Press Run or type RUN {code}.", [{"question": "Run it for real?"}], "real_run",
                                   handoff={"kind": "real_run", "r": h.get("r") or {}, "wid": h.get("wid")})
-        res = real_run(self._out_dir(), w["real_run"], builder_timeout()) if ok else \
-            {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
-             "not run: the reply was not exactly RUN " + str(code)}
-        nums = {as_int(c) for c in ((w or {}).get("real_run") or {}).get("checks") or []}      # P33 (D436): the items it decides
+        if w:
+            self._real_run_once(w, None if ok else {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run"
+                                                    if declined else "not run: the reply was not exactly RUN " + str(code)},
+                                code=code, approved=ok, answer_msg=last.get("id"))
+        self._goal_done(h.get("r") or {})
+
+    def _real_run_once(self, w, res=None, **row):
+        """P46 (D452): w's real run, once, on the folder itself (no copies). Code records every file under its folder (path
+        and sha256; reads are not recorded) before and after the command; when it exited 0 and what it created, changed and
+        deleted differs from its expect (P35's expect_mismatch), every item it checks is NEEDS_REVISION with that mismatch
+        and no Audit call is made; else Audit reads its output and that diff (P33's _judge_real_run). One real_run row goes
+        to receipts.jsonl (the mismatch, or Audit's verdicts, in its audit key), then the items get their verdicts. res: a
+        run that did not start, given instead of running it; row: more keys for the row."""
+        rr, wid, diff, mm, judged = w["real_run"], w["id"], {}, "", {}
+        if res is None:
+            folder = os.path.realpath(rr["folder"])
+            before = _tree(folder)
+            res = real_run(self._out_dir(), rr, builder_timeout())
+            diff = _tree_diff(before, _tree(folder))
+        ran_ok = bool(res.get("ran") and res.get("exit") == 0)
+        nums = {as_int(c) for c in rr.get("checks") or []}
         mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
-        judged = self._judge_real_run(w, res, mine) if mine and ok and res.get("ran") and res.get("exit") == 0 else {}
+        if ran_ok:
+            mm = expect_mismatch(rr["expect"], diff) if rr.get("expect") else ""      # a real run registered before P35 has none
+            judged = ({t: (False, "not what it said it would do: " + mm) for t in mine} if mm
+                      else self._judge_real_run(w, res, diff, mine) if mine else {})
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
-            f.write(json.dumps({"type": "real_run", "workflow": h.get("wid"), **(w or {}).get("real_run", {}), "code": code,
-                                "approved": ok, "answer_msg": last.get("id"), **res,
+            f.write(json.dumps({"type": "real_run", "workflow": wid, **rr, **row, **res,
                                 **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
-                                              for t, v in judged.items()}} if judged else {}),      # P33 (D436)
-                                "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
+                                              for t, v in judged.items()}} if judged else {}),
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
-        self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
-        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + ".",
-                  warning=bool(res.get("ran") and res.get("exit") != 0))
-        ran_ok = self.real_runs_done[h.get("wid")] = bool(ok and res.get("ran") and res.get("exit") == 0)      # the receipt
-        self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): Audit's verdict per item (P30 reads it)
+        self._event("code", "real_run", f"{wid}: {res['evidence']}" + (f"; not what it said it would do: {mm}" if mm else ""))
+        self.post("system", ("Ran for real: " if res.get("ran") else "") + res["evidence"] + "."
+                  + (f" Not what it said it would do: {mm}." if mm else ""), warning=bool(res.get("ran") and res.get("exit") != 0 or mm))
+        ran_ok = self.real_runs_done[wid] = ran_ok and not mm      # the receipt
+        self.real_run_item_ok.update({t: v[0] for t, v in judged.items()})      # P33 (D436): the verdict per item (P30 reads it)
         passed = ran_ok and all(v[0] for v in judged.values())      # P33 (D436): an item it did not judge needs every one passed
         items = set(self._real_run_items()) - set(self._real_run_items(pending=True))
         if self.audits and items:      # the items this run checks: decided by its receipt, never by a builder or Audit
             last = self.audits[-1]
             for x in last["results"]:
                 if x["criterion"] in items:
-                    j = judged.get(x["criterion"])      # P33 (D436): Audit's verdict on the output decides each item it judged
+                    j = judged.get(x["criterion"])      # the mismatch, or Audit's verdict on the output, decides each item it judged
                     p = j[0] if j else passed
                     x.update({"pass": p, "verdict": "PASS" if p else "NEEDS_REVISION" if j else "FAIL",
-                              "note": f"real run receipt ({h.get('wid')}): {res['evidence']}"
-                                      + (f"; Audit read its output: {j[1]}" if j else "")})
+                              "note": f"real run receipt ({wid}): {res['evidence']}"
+                                      + (f"; {j[1]}" if j and mm else f"; Audit read its output: {j[1]}" if j else "")})
             last["after_real_run"] = [t for t in last.get("after_real_run") or [] if t not in items]
             self._save_audits()
-        self._goal_done(h.get("r") or {})
 
-    def _judge_real_run(self, w, res, items):
-        """P33 (D436): one Audit call reads an approved real run's output (exit 0) against the Requester's brief, for the items
-        the run decides. {item text: (passed, evidence)}: PASS with evidence passes; anything else, or no finding, does not.
-        Code reads only the verdict field, never the words. A plain call: budget and dollar accounting count it like any."""
-        rr, dry = w["real_run"], self.real_runs_dry.get(w["id"]) or {}
+    def _real_run_back(self, w, detail):
+        """P46 (D452), from P31's _dry_run_failed (D434): a real run that cannot start (its packages or an import are missing,
+        P42) is a build failure, never a question: w fails with code's detail (P28's signature) and Adaptation proposes the
+        fix, unless the same failure twice in a row stops the cycle. No row: nothing ran. True (handled)."""
+        w["status"], w["failure"] = "failed", ["real_run_setup", detail]
+        self._event("code", "real_run", f"{w['id']}: sent back to the builder ({detail})")
+        self.post("system", f"Sent back to the builder: {detail}")      # a plain info line, never a question or card
+        self.save("workflows.json", self.workflows)
+        if self.last_failure is None:      # a passing build in between cleared P28's memory; it says nothing of this after it
+            self.last_failure = getattr(self, "setup_failure", None)
+        stop = self._repeat_build_stop(w["id"])
+        self.setup_failure = self.last_failure
+        if not stop:
+            self._handoff("adaptation", kind="propose", new_cycle=True,
+                          why=f"{w['id']}'s real run could not start ({detail}). Propose a workflow that revises {w['id']} "
+                              "and keeps its real_run.")
+        return True
+
+    def _judge_real_run(self, w, res, diff, items):
+        """P33 (D436): one Audit call reads a real run's output (exit 0) and what it did to its folder (diff, D452) against
+        the Requester's brief, for the items the run decides. {item text: (passed, evidence)}: PASS with evidence passes;
+        anything else, or no finding, does not. Code reads only the verdict field, never the words. A plain call: budget
+        and dollar accounting count it like any."""
+        rr = w["real_run"]
         r = self.call("audit", '{"say": str, "findings": [{"item": int, "verdict": "PASS"|"NEEDS_REVISION", "evidence": str '
                                '(one line: what in the output shows it)}] (exactly one per item)}',
                       f"REQUESTER'S BRIEF: {self.request}\n"
                       f"ITEMS THIS REAL RUN DECIDES: {json.dumps([{'item': self._no(t), 'criterion': t} for t in items], ensure_ascii=False)}\n"
                       f"COMMAND: {shlex.join(rr['command'])}\n"
-                      f"WHAT THE DRY RUN DID TO THE COPY: {json.dumps({k: dry.get(k) or [] for k in ('created', 'changed', 'deleted')}, ensure_ascii=False)}\n"
+                      f"WHAT THE RUN DID TO THE FOLDER: {json.dumps({k: diff.get(k) or [] for k in ('created', 'changed', 'deleted')}, ensure_ascii=False)}\n"
                       f"ITS OUTPUT (the end, by code): {res.get('output') or '(no output)'}\n"
                       "Judge each item only from this output against the brief: PASS only when the output shows the item "
                       "done; say what shows it.",
@@ -9828,7 +9742,7 @@ class J2Run:
                 rel = self._out_rel()      # (file_sorter/sort_files.py): a run template finds the type they belong to
                 wf["outputs"] = [o if str(o).startswith(rel + "/") else f"{rel}/{str(o).lstrip('./')}" for o in wf["outputs"]]
             if w.get("real_run") is not None:      # step 7: checked here, asked for when the deliverable is workable
-                w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored, dry-run and run written out
+                w["real_run"] = home_expanded(w["real_run"])      # P31 (D434, beta fix): stored and run written out
                 bad = real_run_problems(w["real_run"], self._fact_source(pieces=True),      # P43 (D448, review R1-1)
                                         self.out.get("test_runner"), self.dir)
                 if bad:
@@ -10320,10 +10234,6 @@ class J2Run:
             states, checks = self._item_states(), self.goal["item_checks"]
             brief["items"] = [{"item": self._no(t), "text": t, "check": checks.get(t),
                                "status": (states.get(t) or {}).get("status", "not_built")} for t in self._owned_items(w)]
-        mine = set((w.get("real_run") or {}).get("checks") or [])      # P31 (D434): the latest workflow whose real run checked one of
-        if mine and (rv := next((x for x in reversed(self.workflows) if x is not w and (x.get("failure") or [None])[0] == "dry_run"
-                                 and mine & set(x["real_run"].get("checks") or [])), None)):      # these items and failed its dry run
-            brief["dry_run_failure"] = rv.get("dry_run_output")      # (by item number: a folder run drops "revises"): what it printed
         self.atom = (w.get("atoms") or [{}])[0].get("id")     # its AI calls are tagged with the atom they build
         if self._file_wf(w):
             return self._run_artifact(w, brief, max_calls)
@@ -11063,11 +10973,12 @@ class J2Run:
             w["item_status"][t] = {"status": s, "reason": why}
 
     def _item_states(self):
-        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins. Amended in D449:
-        a workflow that failed only its dry run (failure[0] "dry_run", P31) counts too: its builder's statuses stand."""
+        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins. Amended in D449
+        and D452: a workflow sent back only because its real run could not start (failure[0] "real_run_setup", P46) counts
+        too: its builder's statuses stand."""
         out = {}
         for w in self.workflows:
-            if w.get("status") == "done" or (w.get("status") == "failed" and (w.get("failure") or [None])[0] == "dry_run"):
+            if w.get("status") == "done" or (w.get("status") == "failed" and (w.get("failure") or [None])[0] == "real_run_setup"):
                 out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
         return out
 

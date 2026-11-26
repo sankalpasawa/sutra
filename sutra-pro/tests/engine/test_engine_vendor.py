@@ -166,15 +166,15 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_sut19s_p36_to_p40_p44_and_p45():
+def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_p32_sut19s_p36_to_p40_p44_and_p45():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
     Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422); P27 lists only files for a type's pattern (main c9d4e662); P28 stops the cycle on the same build failure twice in a
     row, across workflows (D431); P29 never offers, applies or declares done what leaves nothing built (D431); P30 gives every done-when item a runnable check and a
-    builder-set status, and ends Done only when all are built and pass (D433); P31 sends a failed dry run back to the build and takes only
-    RUN <code> or Don't run as the real-run answer (D434); P32 runs the dry run only inside the sandbox runtime, never with network (D435); P33 has Audit read an approved real
-    run's output against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and sends a dry run that
-    differs, or writes into a read-only folder, back to the build (D438); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
+    builder-set status, and ends Done only when all are built and pass (D433); P31 takes only
+    RUN <code> or Don't run as the real-run answer (D434); P32 (D435, the dry run only inside the sandbox runtime) is retired by D452, which has
+    no dry run; P33 has Audit read a real run's output and what it did to its folder against the brief, so exit 0 alone never passes an item (D436); P34 removes the Claude CLI's .claude folder from a builder's output and never copies it (D437); P35 makes a real run state what it creates, changes and deletes, and code compares it after
+    the real run (D438, D452); P36-P40 are SUT-19's, not on this base yet; P41 gives every script
     the engine runs a clean environment from an allowlist plus what its plan states, with secrets by file path (D446); P42 gives a build with a requirements.txt an
     environment of its own, installed only after RUN <code> (D447); P43 keeps an answer from confirming a real-run item and
     counts a picked option's text (D448); P44 (D449, hosts the Requester named, an offline dry run) is retired by D452, which
@@ -182,14 +182,14 @@ def test_the_patch_table_has_p1_to_p46_without_p6_p13_p20_sut19s_p36_to_p40_p44_
     run's hosts, checked for their syntax only, and srt allows exactly them (D452)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 47) if n not in (6, 13, 20, 36, 37, 38, 39, 40, 44, 45)]
+    assert ids == [f"P{n}" for n in range(1, 47) if n not in (6, 13, 20, 32, 36, 37, 38, 39, 40, 44, 45)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
 
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
-    marks = {"P46": ("j2.py", "def real_run_hosts_problems(rr)"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def dry_secret_files"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P32": ("j2.py", "results may differ."), "P31": ("j2.py", "def _dry_run_failed"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
+    marks = {"P46": ("j2.py", "def real_run_hosts_problems(rr)"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def real_run_env_problems"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P31": ("j2.py", "def home_expanded"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "def _mark_run_template_used"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", '(self.out or {}).get("single")'),
              "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),

@@ -76,7 +76,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests and vendor tests pass
   - Covers: FR-12, FR-13
 
-- [ ] T5: No dry run; the real run's own before/after diff is checked against `expect` (P32 retired; P31, P33, P35, P41 amended)
+- [x] T5: No dry run; the real run's own before/after diff is checked against `expect` (P32 retired; P31, P33, P35, P41 amended)
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_patches.py`, `tests/engine/test_engine_vendor.py`, `tests/engine/test_engine_legacy.py`
   - Change:
     1. Delete every `Edit("P32", ...)` and its note. Change P35 and P41 edits in place so no `new` text holds `real_run_dry`, `fence`, `deny_read`, `dry_secret_files`, `reads_changed`, `real_changed` or placeholder lines. P46 deletes J2's own `real_run_dry` (j2.py:1092-1135), the `fence` branch of `real_run` (:912-918), `real_runs_dry` (:3978).
