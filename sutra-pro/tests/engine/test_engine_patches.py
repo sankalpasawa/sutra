@@ -4870,3 +4870,60 @@ def test_p46_a_json_plan_keeps_no_unparsed_key(j2, make_run):
     saved = json.loads((Path(run.dir) / "deliverables.json").read_text())
     assert "unparsed" not in saved and "trail" not in saved and saved["deliverables"]
     assert not [m for m in run.chat if "could not be read as JSON" in str(m.get("text"))]
+
+
+# ---- what the Pulse run of 26 Nov 2026 showed (run j2-20261126-171020-2c39) --------------------------------------------
+
+def test_a_summary_cut_to_three_sentences_keeps_the_one_that_says_what_was_not_done(j2):
+    """The builder's last sentence said the code had not been run; the cut to the first 3 sentences dropped it."""
+    said = ("I built four parts of Pulse: the review page, Disha's daily digest, the Slack lookup that finds Disha by email, "
+            "and the Slack sender. The review page lists every mailbox that wasn't checked and why. The sender does nothing "
+            "in preview mode. It sends only with your approval. None of this code has been run yet, because I wasn't "
+            "allowed to run commands here.")
+    cut = j2.kept_sentences(said, 3)
+    assert cut.startswith("I built four parts of Pulse") and cut.endswith("allowed to run commands here."), cut
+    assert j2.human_problem(cut) is None, cut
+    blocked = ("I added the Tests section. The tests use only fake mail. Each rule has a test. The real run on the six "
+               "mailboxes is marked blocked until mailbox access is verified. The config section lists every setting.")
+    assert "marked blocked" in j2.kept_sentences(blocked, 3) and "marked blocked" in j2.kept_sentences(blocked, 2)
+    plain = "One thing. Two things. Three things. Four things."
+    assert j2.kept_sentences(plain, 3) == "One thing. Two things. Three things."      # nothing to keep: the first 3, as before
+    assert j2.kept_sentences("One thing. Two things.", 3) == "One thing. Two things."
+
+
+def test_the_report_says_who_raised_the_budget(j2):
+    """Code made all 6 top-ups of that run and the report said "6 raise(s) approved by the Requester"."""
+    top_up = {"why": "code top-up from dollars left", "code": True}
+    assert j2.raises_words([top_up] * 6) == "6 raise(s) made by code"
+    asked = {"why": "the Requester said yes"}
+    dollars = {"why": "the Requester's dollar raise at $0.0100 per credit", "code": True}
+    assert j2.raises_words([asked, dollars, top_up]) == "2 raise(s) approved by the Requester and 1 raise(s) made by code"
+    assert j2.raises_words([]) == "0 raises"
+
+
+def test_a_folder_the_charter_lists_is_present_when_it_holds_a_file(j2, tmp_path):
+    """The charter listed tests/fixtures/ and the files check called it missing: a folder is not a file."""
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+    assert not j2.charter_folder_has_file(str(tmp_path / "tests" / "fixtures"))      # empty: nothing was built in it
+    (tmp_path / "tests" / "fixtures" / "threads.json").write_text("[]")
+    assert j2.charter_folder_has_file(str(tmp_path / "tests" / "fixtures/"))
+    assert j2.charter_folder_has_file(str(tmp_path / "tests"))                       # a file further down counts
+    assert not j2.charter_folder_has_file(str(tmp_path / "tests" / "fixtures" / "threads.json"))
+    assert not j2.charter_folder_has_file(str(tmp_path / "absent"))
+
+
+def test_a_send_workflow_is_a_valid_workflow_record(j2, make_run, monkeypatch):
+    """The test Slack message's workflow had outputs None and an empty completion_check: workflows.json was refused as a
+    record on each of the 23 saves that followed."""
+    from sutra_app.library.records import check_record
+    monkeypatch.setenv("J2_TEST_EMAIL", "me@example.invalid")
+    monkeypatch.delenv("J2_SEND_MODE", raising=False)
+    run = make_run()
+    run.budget = 400
+    say(run, CAMPUS_DOCS + " When the documents are finished, send a test email to me with a short summary of the PRD.")
+    sends = [w for w in run.past_workflows + run.workflows if w.get("agent") == "Code"]
+    assert sends and run.deed_log, run.stages
+    for w in sends:
+        assert isinstance(w["outputs"], list) and w["outputs"] and w["completion_check"], w
+        assert not j2.is_artifact(w), w["outputs"]      # words, not a file path: no artifact file is expected of a send
+        check_record("workflows.json", [w])             # raises RecordRejected on a row the library refuses

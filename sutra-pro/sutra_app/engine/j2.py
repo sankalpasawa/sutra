@@ -471,9 +471,23 @@ def human_problem(t):
         "it is longer than 3 sentences" if n > 3 else None
 
 
-def first_sentences(t, n):
-    """The first n sentences of t, split as human_problem counts them."""
-    return " ".join([x for x in re.split(r"(?<=[.!?])\s+", str(t or "").strip()) if x][:n])
+# A sentence that says what was not done: not run, not tested, blocked, refused, still needed. A builder puts it last,
+# so a cut to the first sentences lost it and the Requester read a build as finished.
+NOT_DONE = re.compile(r"\b(?:blocked|denied|refused|failed|unable|unverified|untested|not yet|yet to|none of|still needs?|"
+                      r"(?:was|were|am|is|are|has|have|had|did|does|do|could|can|would)(?: not|n't|not) (?:\w+ ){0,2}"
+                      r"(?:run|ran|tested|verified|checked|built|done|finished|allowed|able|read|scanned|sent|completed?))\b",
+                      re.I)
+
+
+def kept_sentences(t, n):
+    """t cut to n sentences, split as human_problem counts them: the first one, then every sentence that says what was
+    not done (NOT_DONE), then the earliest of the rest, in their own order. Text of n sentences or fewer is unchanged."""
+    s = [x for x in re.split(r"(?<=[.!?])\s+", str(t or "").strip()) if x]
+    if len(s) <= n:
+        return " ".join(s)
+    rest = range(1, len(s))
+    order = [0] + [i for i in rest if NOT_DONE.search(s[i])] + [i for i in rest if not NOT_DONE.search(s[i])]
+    return " ".join(s[i] for i in sorted(order[:n]))
 
 
 INTERNAL = re.compile(r"\bW-\d+(?:\.a\d+)?\b|\ba\d\b|(?<![\w&])#[A-Za-z][\w-]*|(?<=\s)\.[A-Za-z][\w-]+|\bunits?\b|[<>]|"
@@ -1008,6 +1022,20 @@ def charter_list(goal, field):
     """A charter field as a list of non-empty strings (a single string is a list of one)."""
     v = (goal or {}).get(field)
     return [str(x).strip() for x in (v if isinstance(v, list) else [v]) if str(x or "").strip()]
+
+
+def raises_words(raises):
+    """The report's count of budget raises, by who made each: code's own top-ups (`code`) apart from the Requester's
+    approvals and overrides. "6 raise(s) approved by the Requester" was written for 6 that code made."""
+    code = sum(1 for r in raises or () if r.get("code") and "Requester" not in str(r.get("why")))      # not the credits of a dollar raise the Requester approved
+    asked = len(raises or ()) - code
+    parts = ([f"{asked} raise(s) approved by the Requester"] if asked else []) + ([f"{code} raise(s) made by code"] if code else [])
+    return " and ".join(parts) or "0 raises"
+
+
+def charter_folder_has_file(path):
+    """Whether a folder the charter lists (an entry ending in a slash) is there with at least one file in it."""
+    return os.path.isdir(path) and any(files for _, _, files in os.walk(path))
 
 
 def folder_text(folder, limit=2_000_000):
@@ -5802,7 +5830,8 @@ class J2Run:
         wf = {"id": wid, "proposal_id": None, "name": d["label"], "covers": [], "fixes": [], "covers_text": [],
               "purpose": f"The Requester asked for a {d['words']}", "cost": cost, "estimate": cost,
               "envelope": {"money_limit": cost, "model_call_limit": 0, "retry_limit": 0}, "charged": True,
-              "calls_used": 0, "retries_used": 0, "outputs": None, "completion_check": "", "dependencies": [],
+              "calls_used": 0, "retries_used": 0, "outputs": [f"the {d['words']}"],
+              "completion_check": atom["verification"][0]["text"], "dependencies": [],
               "status": "running", "cycle": self.cycle, "agent": "Code", "section": None, "revises": None, "atoms": [atom]}
         self.workflows = [wf]
         self._recalc_spent()
@@ -6170,7 +6199,8 @@ class J2Run:
         wf = {"id": wid, "proposal_id": None, "name": f"Email · {tag} done", "covers": [], "fixes": [], "covers_text": [],
               "purpose": f"A milestone email: {tag} done", "cost": cost, "estimate": cost,
               "envelope": {"money_limit": cost, "model_call_limit": 0, "retry_limit": 0}, "charged": True,
-              "calls_used": 0, "retries_used": 0, "outputs": None, "completion_check": "", "dependencies": [],
+              "calls_used": 0, "retries_used": 0, "outputs": ["the milestone email"],
+              "completion_check": atom["verification"][0]["text"], "dependencies": [],
               "status": "running", "cycle": self.cycle, "agent": "Code", "section": None, "revises": None, "atoms": [atom]}
         self.given[wid] = {"edges": [{"atom": a["id"], "why": f"the email reports {tag} done"} for w in self.workflows for a in w.get("atoms") or []], "whole": False}
         rec = j2_send.send("milestone_email", art, text, art if text else None, built=built, **self._send_args(atom))
@@ -10837,11 +10867,12 @@ class J2Run:
 
     def _human_output(self, w, meta, sid):
         """1 to 3 plain sentences saying what the builder built. Code fixes an unusable one itself, with no re-ask
-        (logged, _autofix): a longer one is cut to its first 3 sentences; "done." alone becomes a plain sentence from
+        (logged, _autofix): a longer one is cut to 3 sentences, keeping those that say what was not done (kept_sentences);
+        "done." alone becomes a plain sentence from
         the workflow's name."""
         fn, last = w["id"], str(meta.get("human_output") or "")
         if p := human_problem(last):
-            new = first_sentences(last, 3) if "longer" in p else f"I built {w['name']} for the {self.out['noun']}."
+            new = kept_sentences(last, 3) if "longer" in p else f"I built {w['name']} for the {self.out['noun']}."
             if human_problem(new):
                 new = f"{fn} built {w['name']} in section {sid}. Code ran its checks; see the receipts."
             self._autofix(fn, "human_output", f"human_output: {p}: {last!r} is now {new!r}")
@@ -11043,9 +11074,9 @@ class J2Run:
         for n, a in enumerate(w.get("atoms") or []):
             text = str(meta.get("atom_human_output") or "") if n == 0 else ""
             p = atom_human_problem(text) if n == 0 else None
-            if p and ("longer" in p and not atom_human_problem(first_sentences(text, 2)) or "too short" in p):
+            if p and ("longer" in p and not atom_human_problem(kept_sentences(text, 2)) or "too short" in p):
                 # fixed by code, no re-ask: cut to 2 sentences, or the atom's expected output in plain words
-                new = first_sentences(text, 2) if "longer" in p else fallback_human(a, self.out["noun"])
+                new = kept_sentences(text, 2) if "longer" in p else fallback_human(a, self.out["noun"])
                 self._autofix(w["id"], "atom_human_output", f"atom human_output: {p}: {text!r} is now {new!r}")
                 text = new
             if atom_human_problem(text):
@@ -13096,8 +13127,10 @@ class J2Run:
             want = charter_list(g, cond.get("charter_field"))
             if not want:      # P29 (D431): unmet because the charter lists none: building can't change it
                 c["from_charter"] = True
+            # an entry that ends in a slash names a folder: present when the folder holds at least one file
             miss = [f for f in want if not (llm.inside(os.path.join(folder, f), folder)
-                                            and os.path.isfile(os.path.join(folder, f)))]
+                                            and (charter_folder_has_file(os.path.join(folder, f)) if f.endswith(("/", "\\"))
+                                                 else os.path.isfile(os.path.join(folder, f))))]
             return (bool(want) and not miss, (f"missing: {', '.join(miss)}" if miss else
                                               f"all {len(want)} files are in the folder") if want else
                     f"the charter lists no {cond.get('charter_field')}")
@@ -13611,7 +13644,7 @@ class J2Run:
                "## Measured (counted by code)",
                f"- {m['ai_calls']} AI calls, {m['cycles']} cycles, {m['minutes']} min, model {m['model'] or 'mock'}",
                f"- Budget {m['budget']['spent']}/{m['budget']['total']} (started {m['budget']['start']}, "
-               f"{len(m['budget']['raises'])} raise(s) approved by the Requester, cap {m['budget']['cap']}; rate card "
+               f"{raises_words(m['budget']['raises'])}, cap {m['budget']['cap']}; rate card "
                f"{'on' if m['budget']['rate_card'] else 'off'}), {m['site_versions']} site versions, final site "
                f"{m['site_bytes'] / 1000:.0f} KB",
                f"- Negotiation: {n['proposals']} proposals, {n['grants']} GRANT / {n['counters']} COUNTER / "
