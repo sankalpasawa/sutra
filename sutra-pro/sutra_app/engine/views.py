@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
-from . import capabilities, forms
+from . import capabilities, forms, rawchat
 from .paths import pid_alive
 from .spec import (RUN_TEMPLATE_KEY_CHARS, RUN_TEMPLATE_KEYS_MAX, RUN_TEMPLATE_WORKFLOWS_MAX, EngineSettings, is_run_template_id,
                    run_template_keys)
@@ -350,7 +350,8 @@ def state(ctx: RunCtx, q: dict) -> Reply:
         base = _with_studio(ctx, effective_snapshot(ctx))
         snap = {**base, "saved": None, "chat": (base.get("chat") or [])[since:]}
         if ctx.mode == "live":              # additive keys (engine design 4.6): the process, the run and the department
-            snap.update(host={"pid": _live_dict(ctx)["pid"], "alive": ctx.alive}, run_id=ctx.run_id, dept_id=ctx.dept_id)
+            snap.update(host={"pid": _live_dict(ctx)["pid"], "alive": ctx.alive}, run_id=ctx.run_id, dept_id=ctx.dept_id,
+                        live={k: {f: v for f, v in e.items() if f != "text"} for k, e in rawchat.live_tail(_dir(ctx))["agents"].items()})      # D453: who works now, no agent text
     return _json(snap) if snap else _json({"error": "no such run"}, 404)
 
 

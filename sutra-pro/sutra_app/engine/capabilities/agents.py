@@ -98,14 +98,16 @@ class AgentLiveCapability(Capability):
     """The live view of an agent's work (D133). `progress` sees every progress event of every engine call: `{"chars", "text"}` (the reply so far)
     and `{"tool": title}` (a tool call); the router's `finish_hooks` say when a call ends. The capability adds nothing to a call; it only watches it.
 
-    The file: `{"schema": "agent-live/1", "at": <epoch>, "agents": {"W-3": {"call", "since", "text", "tool", "tools"}}}`, replaced atomically (0600).
+    The file: `{"schema": "agent-live/1", "at": <epoch>, "agents": {"W-3": {"call", "since", "step", "text", "tool", "tools"}}}`, replaced atomically (0600).
     An agent is listed from its first event of a call until the call ends. `write_now()` writes at once (the thread calls it, throttled; tests call
     it directly); `threaded=False` leaves the thread out."""
 
     name = "agent-live"
 
-    def __init__(self, *, interval: float = LIVE_INTERVAL, clock: Callable[[], float] = time.time, threaded: bool = True) -> None:
+    def __init__(self, *, interval: float = LIVE_INTERVAL, clock: Callable[[], float] = time.time, threaded: bool = True,
+                 redact: Optional[Callable[[str], str]] = None) -> None:
         self.interval = interval
+        self._redact = redact
         self._clock = clock
         self._threaded = threaded
         self._lock = threading.Lock()
@@ -122,6 +124,10 @@ class AgentLiveCapability(Capability):
         router, run_dir = router_of(ctx), run_dir_of(ctx)
         if router is None or run_dir is None or not hasattr(router, "finish_hooks"):
             return                                         # mock mode: nothing runs a tool, nothing to show
+        if self._redact is None:      # D453: redact before the cut; the host knows the .env values only (no secret-named environment), the API redacts the rest whole
+            from sutra_app.config import default_env_file
+            from sutra_app.orchestrator.redact import Redactor
+            self._redact = Redactor(default_env_file())
         self.attach(Path(run_dir) / LIVE_FILE)
         if self.finished not in router.finish_hooks:
             router.finish_hooks.append(self.finished)
@@ -155,11 +161,11 @@ class AgentLiveCapability(Capability):
         with self._lock:
             entry = self._agents.get(key)
             if entry is None:
-                entry = self._agents[key] = {"call": tag.call_no, "since": round(self._clock(), 3), "text": "", "tool": "", "tools": 0}
+                entry = self._agents[key] = {"call": tag.call_no, "since": round(self._clock(), 3), "step": tag.step, "text": "", "tool": "", "tools": 0}
             if isinstance(text, str):
-                entry["text"] = text[-LIVE_TAIL:]
+                entry["text"] = text                       # whole: snapshot() redacts, then cuts
             if isinstance(tool, str):
-                entry["tool"] = tool[:TOOL_CHARS]
+                entry["tool"] = tool
                 entry["tools"] += 1
         self._dirty.set()
 
@@ -173,7 +179,8 @@ class AgentLiveCapability(Capability):
     # ---- the file ----------------------------------------------------------------------------------------------------------------
     def snapshot(self) -> dict:
         with self._lock:
-            return {"schema": LIVE_SCHEMA, "agents": {name: dict(entry) for name, entry in sorted(self._agents.items())}}
+            r = self._redact or (lambda t: t)
+            return {"schema": LIVE_SCHEMA, "agents": {n: {**e, "text": r(e["text"])[-LIVE_TAIL:], "tool": r(e["tool"])[:TOOL_CHARS]} for n, e in sorted(self._agents.items())}}
 
     def write_now(self) -> bool:
         """Replace the file with the agents' state now. False, touching nothing, when it is what the file already holds."""

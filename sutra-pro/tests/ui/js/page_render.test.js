@@ -54,6 +54,11 @@ const E13_WORDS = JSON.parse(execFileSync(path.join(ROOT, "scripts", "py"), [pat
   {encoding: "utf8", cwd: ROOT}));
 // Every pair applied to the text of a value: the goldens are J2's, the page says "priced" and "pricing" instead of "ranked".
 const withE13 = value => JSON.parse(E13_WORDS.reduce((text, [from, to]) => text.split(from).join(to), JSON.stringify(value)));
+// E32 (D453): the crew's fixed sentences are gone; on the fixture state each teammate shows their last line of the team stream, else the run's last
+// one (Asha keeps her question line). J2's line, then the page's, written out here so the golden comparison still holds every crew line.
+const NORA_LAST = "Nora checked everything on your list: all 5 good.";
+const E32_CREW = [["Finished 6 parts", "Mira finished item 5."], ["Nothing for this project", NORA_LAST], ["Checked the work 2 times", NORA_LAST]];
+const withE32 = value => JSON.parse(E32_CREW.reduce((text, [from, to]) => text.split(`<small>${from}</small>`).join(`<small>${to}</small>`), JSON.stringify(value)));
 
 // ----------------------------------------------------------------------------------------------------------------------
 // a harness as a child process (what a developer runs), and in this process (to change what the stub page sees)
@@ -142,8 +147,8 @@ test("the manifest of the captures lists the goldens compared here, the pinned c
 });
 
 for (const key of GOLDEN_KEYS) {
-  test(`parity: "${key}" equals J2's golden once the E13 pairs are applied to it`, () => {
-    assert.deepEqual(rendered().out[key], withE13(readJson(fixture(`golden-${key}.json`))));
+  test(`parity: "${key}" equals J2's golden once the E13 pairs and E32's crew lines are applied to it`, () => {
+    assert.deepEqual(rendered().out[key], withE32(withE13(readJson(fixture(`golden-${key}.json`)))));
   });
 }
 
@@ -356,7 +361,7 @@ test("J2's own harness on J2's own page prints every key the ported page prints,
   const theirs = spawnHarness(path.join(J2, "j2_ui_render.js"), [path.join(J2, "j2_ui.html"), ...RENDER_ARGS.slice(1)]);
   assert.equal(theirs.status, 0);
   assert.deepEqual(Object.keys(theirs.out), J2_KEYS);
-  assert.deepEqual(rendered().out, withE13(theirs.out));
+  assert.deepEqual(rendered().out, withE32(withE13(theirs.out)));
   const layout = spawnHarness(path.join(J2, "j2_graph_layout.js"), [path.join(J2, "j2_ui.html"), fixture("maps.json")]);
   assert.deepEqual(spawnHarness(LAYOUT, [PAGE, fixture("maps.json")]).out, layout.out);
 });
@@ -418,4 +423,104 @@ test("Run settings opens a run by J2's own link: the run set and the view kept, 
   assert.equal(page.run('viewHref("j2-20261104-100004-7f3a")'), "?run=j2-20261104-100004-7f3a&view=detail");
   assert.equal(page.run('viewHref("")'), "?view=detail");
   assert.equal(runHarness(RENDER, RENDER_ARGS, {boot: BOOT, location: {pathname: "/d/web/", search: "?run=x"}}).run('viewHref("")'), "?view=detail");
+});
+
+// ----------------------------------------------------------------------------------------------------------------------
+// E32 (D453): who works now, from agent_live.json (the fixture holds what a real run writes; a mock run writes none)
+// ----------------------------------------------------------------------------------------------------------------------
+const LIVEFIX = readJson(path.join(ROOT, "tests/ui/fixtures/live/agent_live.json")).agents;
+const RUNNING = live => ({...readJson(fixture("state.json")), status: "running", paused: null, live});
+const call = (page, code) => JSON.parse(page.run(`JSON.stringify(${code})`));      // values cross the vm realm as JSON
+// the team page loads raw_chat.js on every team page (dept_ext.js rawChat()); its PEOPLE names a function's person or role title
+const livePage = () => { const page = plain(); page.context.RawChat = require(path.join(UI, "static/js/raw_chat.js")); return page; };
+const LINES = {identity: "Asha: Reading brief.md", adaptation: "Planner: Adaptation proposes workflows", "W-2": "Mira: Reading src/a.py",
+  audit: "Nora: Reading .env (fake-token-0123456789)", agent: "agent: Is the site workable?"};
+
+test("E32: the who is the part's person, else the function's person (Your team's names), else its role title, else the key", () => {
+  const rows = call(livePage(), `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  const P = {identity: "asha", "W-2": "mira", audit: "nora"};
+  assert.deepEqual(rows.map(r => [r.k, r.p, r.line]), Object.entries(LINES).map(([k, line]) => [k, P[k] || "", line]));
+  const bare = call(plain(), `liveLines(${JSON.stringify(RUNNING({adaptation: LIVEFIX.adaptation}))})`);      // before raw_chat.js has loaded: the Map's words
+  assert.equal(bare[0].line, "Strategist: Adaptation proposes workflows");
+});
+
+test("E32: the what is the tool, else the part, else the step; never the agent's text; 120 characters at most", () => {
+  const page = livePage(), rows = call(page, `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  assert.deepEqual(rows.map(r => r.what), ["Reading brief.md", "Adaptation proposes workflows", "Reading src/a.py", "Reading .env (fake-token-0123456789)", "Is the site workable?"]);
+  for (const e of Object.values(LIVEFIX)) if (e.text) assert.ok(!JSON.stringify(rows).includes(e.text), e.text);
+  const part = call(page, `liveLines(${JSON.stringify(RUNNING({"W-2": {...LIVEFIX["W-2"], tool: ""}}))})`)[0];
+  assert.equal(part.line, "Mira: Item 1");
+  const long = call(page, `liveLines(${JSON.stringify(RUNNING({"W-2": {...LIVEFIX["W-2"], tool: "r".repeat(300)}}))})`)[0];
+  assert.equal(long.what, "r".repeat(120));
+  assert.deepEqual(call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), status: "waiting"})})`), []);
+});
+
+test("E32: the chat line is one per agent by start time, three then +N, and adds nothing to the chat", () => {
+  const page = livePage();
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING(LIVEFIX))})`), [LINES.identity, LINES.adaptation, LINES["W-2"]].join("<br>") + "<br>+2");
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING({"W-2": LIVEFIX["W-2"]}))})`), LINES["W-2"]);
+  assert.equal(call(page, `liveTyping(${JSON.stringify({...RUNNING(LIVEFIX), status: "waiting"})})`), "Your turn.");
+  assert.ok(!page.run("liveTyping.toString() + liveLines.toString()").includes("addMsg"));
+});
+
+test("E32: between calls the last line stays; a fresh page says the step", () => {
+  const page = livePage();
+  call(page, `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING({}))})`), LINES.agent);
+  assert.equal(call(livePage(), `liveTyping(${JSON.stringify(RUNNING({}))})`), "Is the site workable?");
+});
+
+test("E32: the Map lights the live boxes and its chip says the newest line; between calls the crew's chain, never a bare Running", () => {
+  const page = livePage(), M = `{status: {state: "Running"}, nodes: [{id: "fn:adaptation", kind: "function", label: "Adaptation", status: "idle"},
+    {id: "step:charter>site", kind: "engine", label: "Build", workflows: ["W-2"], status: "filed"}, {id: "fn:audit", kind: "function", label: "Audit", status: "idle"}]}`;
+  page.run(`var m = ${M}`);
+  page.run(`CTX = ${JSON.stringify(RUNNING({adaptation: LIVEFIX.adaptation, "W-2": LIVEFIX["W-2"]}))}`);
+  assert.deepEqual(call(page, "mapLive(m).nodes.map(n => [n.label, n.status])"), [["Adaptation", "running"], ["Build", "running"], ["Audit", "idle"]]);
+  assert.deepEqual(call(page, "m.nodes.map(n => n.status)"), ["idle", "filed", "idle"]);      // R1-6: a copy; the map itself is not changed
+  assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);
+  page.run(`CTX = ${JSON.stringify(RUNNING({}))}`);
+  assert.deepEqual(call(page, "mapLive(m).nodes.map(n => n.status)"), ["idle", "filed", "idle"]);
+  assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);      // the last live line
+  const fresh = livePage(), S = RUNNING({});
+  fresh.run(`var m = ${M}; CTX = ${JSON.stringify(S)}`);
+  assert.deepEqual(call(fresh, "mapChip(m)"), [NORA_LAST, "running"]);      // no live line yet: the run's last team-stream line
+  fresh.run(`CTX = ${JSON.stringify({...S, studio: {...S.studio, stream: []}})}`);
+  assert.deepEqual(call(fresh, "mapChip(m)"), ["Is the site workable?", "running"]);      // nothing in the stream: the step
+});
+
+test("E32: the crew says what the live agents do, Asha and Nora included; the others keep their last line, never an empty one", () => {
+  const page = livePage(), crew = live => call(page, `(() => { const s = ${JSON.stringify(RUNNING(live))}; return sCrew(s, sModel(s)); })()`);
+  const pick = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, [v.line, v.busy]]));
+  const ASHA = "Reading brief.md", MIRA = "Reading src/a.py", NORA = "Reading .env (fake-token-0123456789)";      // as the tool line says it (R1-7: plain() would write "Reading.env")
+  assert.deepEqual(pick(crew(LIVEFIX)), {asha: [ASHA, true], mira: [MIRA, true], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, true]});
+  assert.deepEqual(pick(crew({})), {asha: [ASHA, false], mira: [MIRA, false], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, false]});
+  const S = readJson(fixture("state.json")), T = call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`);
+  assert.deepEqual([T.asha.ask, T.asha.line, T.mira.line, T.nora.line], [true, "Has a question for you", "Mira finished item 5.", NORA_LAST]);
+  const none = {...S, studio: {...S.studio, stream: []}};
+  assert.equal(call(plain(), `(() => { const s = ${JSON.stringify(none)}; return sCrew(s, sModel(s)); })()`).kabir.line, "Is the site workable?");
+  const src = page.run("sCrew.toString()");
+  for (const gone of ["Planning the parts", "Deciding what comes first", "Lining up who goes next", "Making sure each part is ready to start", "Talking it through with the team",
+    "Keeping things on track", "Checks each part as it finishes", "Free for the next part", "Waiting for the plan", "Nothing for this project", "Hit a problem",
+    "Wrapped up", "Ready when you are", "Checked the work", "coming up", "Finished "]) assert.ok(!src.includes(gone), gone);
+});
+
+test("E32 (R1-1): a run that ended, or another run in the same tab, shows its own crew lines, not the last run's live lines", () => {
+  const page = livePage(), crew = s => call(page, `(() => { const s = ${JSON.stringify(s)}; return sCrew(s, sModel(s)); })()`);
+  const lines = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, v.line]));
+  const S = readJson(fixture("state.json")), fresh = lines(call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`));
+  call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), run_id: "j2-a"})})`);
+  assert.deepEqual(lines(crew(S)), fresh);                                                    // the run ended: the stream lines again
+  assert.deepEqual(lines(crew({...S, saved: "j2-b"})), lines(call(plain(), `(() => { const s = ${JSON.stringify({...S, saved: "j2-b"})}; return sCrew(s, sModel(s)); })()`)));
+  const other = {...RUNNING({}), run_id: "j2-c"};
+  assert.equal(call(page, `liveTyping(${JSON.stringify(other)})`), "Is the site workable?");   // another run: no line of the first one
+  assert.equal(crew(other).mira.line, "Mira finished item 5.");
+});
+
+test("E32 (R2-1): sCrew alone on a new run's first state shows nothing of the last run", () => {
+  const page = livePage();
+  call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), run_id: "j2-a"})})`);
+  const s = {...RUNNING({}), run_id: "j2-c"}, T = call(page, `(() => { const s = ${JSON.stringify(s)}; return sCrew(s, sModel(s)); })()`);
+  const old = Object.values(LIVEFIX).map(e => e.tool).filter(Boolean);
+  for (const [k, v] of Object.entries(T)) assert.ok(!old.includes(v.line), `${k}: ${v.line}`);
+  assert.equal(T.mira.line, "Mira finished item 5.");
 });

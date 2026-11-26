@@ -51,6 +51,7 @@ from .models import (
 from .policy import Resolved, RoutingPolicy
 from .quota_windows import plan_label
 from .schema import fits_native, schema_sha, to_json_schema
+from .tool_kinds import describe
 from .attachments import PDF_PROVIDERS
 from .budget import carry_chars
 from .discover import explain_missing
@@ -749,11 +750,11 @@ class Router:
     def _text_call(self, state: _Request, plan: Plan, req: AskRequest, provider: str, connector: ModelConnector,
                    on_progress: Optional[Callable[[dict], None]]) -> TurnResult:
         """One connector call for a text request (or a text request that carries a schema: the engine's `json_schema`)."""
-        on_event = self._watched(req.ctx.tag, provider, _progress(on_progress))
         model = plan.models[provider]
         scripted = req.scripted if provider == "stub" else None
         # the owner's folder when the call's tag asks for it (D127); "" leaves the call as it was. A builder tools call (D245) works in its run folder only
         folder = "" if req.run_tools is not None else self.folder_for(req.ctx.tag)
+        on_event = self._watched(req.ctx.tag, provider, _progress(on_progress, req.run_tools.root if req.run_tools is not None else folder, provider))
         system = self._grounded(req.system, folder)
         if req.schema is None:
             kw: dict[str, Any] = {"scripted": scripted} if scripted is not None else {}
@@ -844,7 +845,7 @@ class Router:
             kw["cancel"] = state.cancel
         return connector.call_json_result(
             req.user, plan.tools, schema, state.timeout_s(), system=system, ctx=state.connector_ctx(), effort=plan.effort_for(provider),
-            model=plan.models[provider], images=req.images, hooks=state, on_event=self._watched(req.ctx.tag, provider, _progress(on_progress)), force_prompted=force,
+            model=plan.models[provider], images=req.images, hooks=state, on_event=self._watched(req.ctx.tag, provider, _progress(on_progress, folder, provider)), force_prompted=force,
             repair_rounds=plan.resolved.repair_rounds, folder=folder, **kw)
 
     def _watched(self, tag: Any, provider: str, on_event: Optional[Callable[[ConnectorEvent], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
@@ -1285,19 +1286,14 @@ def _once(fn: Callable[[], Any]) -> Iterator[Any]:
     yield       # pragma: no cover  (makes this a generator)
 
 
-_TOOL_ARGS = ("file_path", "pattern", "command", "query", "url", "path", "description")      # what a tool call is about, the first one present
-TOOL_TITLE_CHARS = 120
-
-
-def tool_title(data: Mapping[str, Any]) -> str:
-    """One line for a tool call of the model: its name and what it is about ("Read src/app.py", "Grep def main"). Codex names the kind only."""
+def tool_title(data: Mapping[str, Any], folder: str = "", provider: str = "claude") -> str:
+    """One line for a tool call of the model, an action and a file only (D453, the owner's live test): a read or an edit is `tool_kinds.describe`'s
+    title ("Reading src/a.py": relative to `folder`, else the basename), a command its program ("Running python3", never its arguments or a heredoc),
+    anything else the tool's name ("Using Grep")."""
     name = str(data.get("name") or data.get("type") or "tool")
-    args = data.get("input")
-    about = ""
-    if isinstance(args, Mapping):
-        about = next((str(args[k]) for k in _TOOL_ARGS if isinstance(args.get(k), str) and args[k].strip()), "")
-    title = " ".join(f"{name} {about}".split())
-    return title if len(title) <= TOOL_TITLE_CHARS else title[:TOOL_TITLE_CHARS - 1] + "…"
+    kind, title, target = describe(name, data.get("input"), folder, provider)
+    program = next((w for w in target.split() if "=" not in w), "") if kind == "run" else ""
+    return title if kind in ("read", "edit") else f"Running {os.path.basename(program)}" if program else f"Using {name}"
 
 
 def _stream_mode(provider: str, connector: ModelConnector) -> str:
@@ -1316,7 +1312,7 @@ def _failed(provider: str, err: ConnectorError, action: str, delay_s: float, nex
             "delay_s": round(float(delay_s), 3), "next_provider": next_provider}
 
 
-def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callable[[ConnectorEvent], None]]:
+def _progress(on_progress: Optional[Callable[[dict], None]], folder: str = "", provider: str = "claude") -> Optional[Callable[[ConnectorEvent], None]]:
     """J2's progress events: `{"chars": n, "text": text so far}` after every piece of the reply, and `{"tool": title}` for each tool call of the model
     (what an agent that works in the owner's folder is doing; a consumer that does not know the key ignores it)."""
     if on_progress is None:
@@ -1329,7 +1325,7 @@ def _progress(on_progress: Optional[Callable[[dict], None]]) -> Optional[Callabl
             return
         if event.kind == "tool_call":
             if event.data.get("name") != "StructuredOutput":       # Claude's own way of handing back the reply of a schema call: not work to show
-                on_progress({"tool": tool_title(event.data)})
+                on_progress({"tool": tool_title(event.data, folder, provider)})
             return
         if event.kind == "text_delta":
             acc["text"] += str(event.data.get("text", ""))

@@ -1,0 +1,6 @@
+{"schema": "agent-live/1", "at": 1793786403.0, "agents": {
+  "identity": {"call": 2, "since": 1793786380.0, "step": 1, "text": "Let me read the brief first.", "tool": "Reading brief.md", "tools": 1},
+  "adaptation": {"call": 3, "since": 1793786390.0, "step": 2, "text": "{\"workflows\": [{\"name\": \"Build_menu\"", "tool": "", "tools": 0},
+  "W-2": {"call": 11, "since": 1793786400.0, "step": 6, "text": "I will read the file and then write the menu.", "tool": "Reading src/a.py", "tools": 3},
+  "audit": {"call": 12, "since": 1793786401.0, "step": 7, "text": "", "tool": "Reading .env (fake-token-0123456789)", "tools": 1},
+  "agent": {"call": 13, "since": 1793786402.0, "step": null, "text": "free words an agent wrote", "tool": "", "tools": 0}}}

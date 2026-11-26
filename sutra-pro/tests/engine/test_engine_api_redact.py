@@ -3,6 +3,7 @@
 chat, its calls, its page, its documents and its settings."""
 import json
 import os
+import shutil
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,8 @@ from sutra_app.engine.spec import EngineSettings
 from sutra_app.orchestrator.redact import Redactor
 
 SECRET = "PLANTED-SECRET-VALUE-12345"
+LIVE_SECRET = "fake-token-0123456789"      # in the live fixture's audit tool line
+LIVE_FIXTURE = os.path.join(os.path.dirname(__file__), "..", "ui", "fixtures", "live", "agent_live.json")
 TOKEN = {"X-Sutra-Token": "fake-token-fake-token-0123"}
 GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a", "/api/docs", "/api/map", "/api/plan", "/api/library",
              "/api/run-templates", "/api/artifacts", "/api/agent?who=identity", "/api/artifacts/tree", "/api/artifact?name=prd.md",
@@ -25,7 +28,7 @@ GET_PATHS = ["/api/state", "/api/runs", "/api/call?id=1", "/api/preview?atom=a",
 @pytest.fixture
 def api(fake_services):
     svc = fake_services
-    svc.secrets = [SECRET]
+    svc.secrets = [SECRET, LIVE_SECRET]
     chat = [{"id": 1, "who": "user", "text": f"my key is {SECRET}"}]
     ref = svc.add_run("web", files={
         "chat.jsonl": json.dumps({"meta": True, "run": "x", "output": "prd"}) + "\n" + json.dumps(chat[0]) + "\n",
@@ -36,6 +39,7 @@ def api(fake_services):
     folder = svc.data_dir / ref.dir
     snap = views.idle_snapshot(EngineSettings(), views.MemoryPaths(str(folder / "l"), str(folder / "p")), ref.run_id)
     (folder / "snapshot.json").write_text(json.dumps({**snap, "status": "waiting", "saved": None, "chat": chat, "outcome": SECRET}))
+    shutil.copy(LIVE_FIXTURE, folder / "agent_live.json")      # D453: the agents at work now (FR-11)
     (folder / "live.json").write_text(json.dumps({**views.EMPTY_LIVE, "pid": os.getpid(), "sites": 1, "output": "prd", "doc": False}))
     (svc.data_dir / "departments" / "web" / "engine.json").write_text(json.dumps({"test_email": SECRET, "budget": 7}))
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
@@ -84,3 +88,14 @@ def test_the_orchestrators_redactor_hides_environment_secrets_in_every_reply(api
     assert got.text == "<p>[redacted] at /Users/x</p>"
     (api.svc.data_dir / "departments" / "web" / "engine.json").write_text(json.dumps({"test_slack_target": "sk-live-abcdef123456"}))
     assert "sk-live" not in api.client.get("/api/engine/settings?dept=web").text
+
+
+def test_a_live_state_carries_the_live_agents_and_a_saved_one_does_not(api):
+    """D453 (FR-2, FR-5b, FR-7): the page's one poll carries agent_live.json, redacted; the chat is still only what chat.jsonl holds."""
+    got = api.client.get("/api/state?dept=web")
+    body = got.json()
+    assert set(body["live"]) == {"identity", "adaptation", "W-2", "audit", "agent"}
+    assert {k: body["live"]["W-2"][k] for k in ("tool", "since", "step")} == {"tool": "Reading src/a.py", "since": 1793786400.0, "step": 6}
+    assert LIVE_SECRET not in got.text and body["live"]["audit"]["tool"] == "Reading .env ([redacted])"
+    assert len(body["chat"]) == 1 and not any("text" in e for e in body["live"].values())      # R1-3: the page never shows an agent's text
+    assert "live" not in api.client.get(f"/api/state?dept=web&run={api.ref.run_id}").json()
