@@ -77,3 +77,15 @@ Spend in the beta for this test, from `usage_ledger` (USD at API price, 77 calls
 ## Follow-ups
 - Owner: decide on R-1 (D451 memory in clean runs) with Kaivan, and on the merge order with Kaivan's `_seed_output` ticket (R-2).
 - Try S-3 and S-4 live: Stop a team while it waits on a question, then answer it.
+
+## Fix-up round 1 (review.md round 1)
+| Finding | Status | Commit | Change |
+|---|---|---|---|
+| R1-1 and cuts C-1 to C-6 | fixed | ff493905 | `TaskStore.latest_in` deleted; its 3 test callers read the newest task with one SQL line. Shorter docstrings for `_follow_up`, `_pick_follows`, `_candidates` and `ChatAgent.follows`. The status list in `_candidates` and the combined-brief text are written inline (`CONTINUES` removed). `run_lines` ends with `or "(none)"`. The `context` override in `_stage` is kept (C-7 declined: it keeps per-team accounting). |
+| R1-3 | fixed | 32302dd5 | `_pick_follows` checks the team first: active and not deleted, the same SELECT as `_deliver`. A deleted project or inactive team makes no model call. Test: `test_a_deleted_project_is_refused_without_a_model_call`. |
+| R1-2 | verified live | none | Beta 0.9.0 beta 32302dd, a new team "Sut26 Answer". Steps: brief "make a page for my shop", Identity asked its question, the run was stopped through the app, then one short line was written in the team chat. The question had no numbered options, so the line was a bare answer to its first part: "A tea shop called Leaf and Co.". The agent picked that run: task.json `seed_from` = `parent_run_id` = `j2-20261126-124802-a3c6`; framing = "Earlier the team asked the owner: <that run's question>"; `user_text` = "make a page for my shop\n\nThe owner now writes: A tea shop called Leaf and Co."; `upstream/j2-20261126-124802-a3c6/` present (fresh start after a stopped seed). The question was marked answered by the line, and the team chat shows the line alone. The continuation run was stopped through the app. Follows call: 4.0 s, $0.020. Spend for the check: $0.58 (7 calls, API price), within the $3 cap. |
+| R1-4, R1-5 | declined | none | By the owner's instruction. |
+
+Size after the fix-up: `sutra_app/` Python 102 added, 42 deleted, **net +60** (before: +76); templates +8, unchanged.
+
+Gate after the fix-up (`scripts/gate.sh`, at 32302dd5): 4 failed, 13676 passed, 389 skipped. The 4 failures are the ones main also has: route table `/api/appearance`, `test_workflows_yaml`, `test_fake_backend`, `test_shared_css`.
