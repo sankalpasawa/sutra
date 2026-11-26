@@ -419,3 +419,56 @@ test("Run settings opens a run by J2's own link: the run set and the view kept, 
   assert.equal(page.run('viewHref("")'), "?view=detail");
   assert.equal(runHarness(RENDER, RENDER_ARGS, {boot: BOOT, location: {pathname: "/d/web/", search: "?run=x"}}).run('viewHref("")'), "?view=detail");
 });
+
+// ----------------------------------------------------------------------------------------------------------------------
+// E32 (D453): who works now, from agent_live.json (the fixture holds what a real run writes; a mock run writes none)
+// ----------------------------------------------------------------------------------------------------------------------
+const LIVEFIX = readJson(path.join(ROOT, "tests/ui/fixtures/live/agent_live.json")).agents;
+const RUNNING = live => ({...readJson(fixture("state.json")), status: "running", paused: null, live});
+const call = (page, code) => JSON.parse(page.run(`JSON.stringify(${code})`));      // values cross the vm realm as JSON
+const LINES = {adaptation: "Strategist: Adaptation proposes workflows", "W-2": "Mira: Reading src/a.py",
+  audit: "Quality Reviewer: Reading .env (fake-token-0123456789)", agent: "agent: Is the site workable?"};
+
+test("E32: the who of each live key is its part's person, else the Map's persona of the function, else the key", () => {
+  const rows = call(plain(), `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  assert.deepEqual(rows.map(r => [r.k, r.p, r.line]), Object.entries(LINES).map(([k, line]) => [k, k === "W-2" ? "mira" : "", line]));
+});
+
+test("E32: the what is the tool, else the part, else the step; never the agent's text; 120 characters at most", () => {
+  const page = plain(), rows = call(page, `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  assert.deepEqual(rows.map(r => r.what), ["Adaptation proposes workflows", "Reading src/a.py", "Reading .env (fake-token-0123456789)", "Is the site workable?"]);
+  for (const e of Object.values(LIVEFIX)) if (e.text) assert.ok(!JSON.stringify(rows).includes(e.text), e.text);
+  const part = call(page, `liveLines(${JSON.stringify(RUNNING({"W-2": {...LIVEFIX["W-2"], tool: ""}}))})`)[0];
+  assert.equal(part.line, "Mira: Item 1");
+  const long = call(page, `liveLines(${JSON.stringify(RUNNING({"W-2": {...LIVEFIX["W-2"], tool: "r".repeat(300)}}))})`)[0];
+  assert.equal(long.what, "r".repeat(120));
+  assert.deepEqual(call(page, `liveLines(${JSON.stringify({...RUNNING(LIVEFIX), status: "waiting"})})`), []);
+});
+
+test("E32: the chat line is one per agent by start time, three then +N, and adds nothing to the chat", () => {
+  const page = plain();
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING(LIVEFIX))})`),
+    [LINES.adaptation, LINES["W-2"], LINES.audit].join("<br>") + "<br>+1");
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING({"W-2": LIVEFIX["W-2"]}))})`), LINES["W-2"]);
+  assert.equal(call(page, `liveTyping(${JSON.stringify({...RUNNING(LIVEFIX), status: "waiting"})})`), "Your turn.");
+  assert.ok(!page.run("liveTyping.toString() + liveLines.toString()").includes("addMsg"));
+});
+
+test("E32: between calls the last line stays; a fresh page says the step", () => {
+  const page = plain();
+  call(page, `liveLines(${JSON.stringify(RUNNING(LIVEFIX))})`);
+  assert.equal(call(page, `liveTyping(${JSON.stringify(RUNNING({}))})`), LINES.agent);
+  assert.equal(call(plain(), `liveTyping(${JSON.stringify(RUNNING({}))})`), "Is the site workable?");
+});
+
+test("E32: the Map lights the live boxes and its chip says the newest line; the boxes go back when the agents stop", () => {
+  const page = plain();
+  page.run(`var m = {status: {state: "Running"}, nodes: [{id: "fn:adaptation", kind: "function", label: "Adaptation", status: "idle"},
+    {id: "step:charter>site", kind: "engine", label: "Build", workflows: ["W-2"], status: "filed"}, {id: "fn:audit", kind: "function", label: "Audit", status: "idle"}]}`);
+  page.run(`CTX = ${JSON.stringify(RUNNING({adaptation: LIVEFIX.adaptation, "W-2": LIVEFIX["W-2"]}))}; mapLive(m)`);
+  assert.deepEqual(call(page, "m.nodes.map(n => [n.label, n.status])"), [["Adaptation", "running"], ["Build", "running"], ["Audit", "idle"]]);
+  assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);
+  page.run(`CTX = ${JSON.stringify(RUNNING({}))}; mapLive(m)`);
+  assert.deepEqual(call(page, "m.nodes.map(n => [n.status, 'st0' in n])"), [["idle", false], ["filed", false], ["idle", false]]);
+  assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);
+});

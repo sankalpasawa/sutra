@@ -1079,6 +1079,25 @@ const sPartLabel = w => plain(String((w && w.name) || "A part"));
 function sModel(s){ const st = (s && s.studio) || {}, parts = (st.parts || []).map(p => ({...p, name: plain(p.name)}));
   return {parts, done: st.done || 0, total: st.total || 0, qsec: st.qsec || null}; }
 const sAnd = xs => xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
+// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines
+const LIVE = {last: {}, line: "", key: ""};
+const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step's name without its code
+function liveLines(s){
+  if (!s || s.status !== "running") return [];
+  const parts = sModel(s).parts;
+  return Object.entries(s.live || {}).sort((a, b) => (a[1].since || 0) - (b[1].since || 0)).map(([k, e]) => {
+    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, p = part.person || "",
+      what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120), name = p ? PEOPLE[p].name : MAPLABEL.persona[k] || k;
+    if (p) LIVE.last[p] = what;
+    LIVE.line = what ? `${name}: ${what}` : name;
+    return {k, p, what, line: LIVE.line}; });
+}
+const liveTyping = s => { const L = liveLines(s).map(l => l.line), r = L.length ? L : s.status === "running" ? [LIVE.line || liveStep(s)] : [];
+  return r.length ? r.slice(0, 3).map(esc).join("<br>") + (r.length > 3 ? `<br>+${r.length - 3}` : "") : s.status === "waiting" ? "Your turn." : ""; };
+function mapLive(m){      // a live agent's box shows running; it goes back to the map's own status when the agent stops
+  const L = liveLines(CTX), on = n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k));
+  (m.nodes || []).forEach(n => { if (on(n)){ if (!("st0" in n)) n.st0 = n.status; n.status = "running"; } else if ("st0" in n){ n.status = n.st0; delete n.st0; } });
+}
 const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);
 function sCrew(s, M){
   const th = s.thinking, live = s.status === "running", open = needsYou(s).length > 0 && !live && !s.saved, t = {};
@@ -1970,8 +1989,8 @@ async function poll(){
     if (s.chat.length){ seen = s.total; chatGroup(); if (CHAT.on) chatSeenAll(); else chatBadge(); $("msgs").scrollTop = $("msgs").scrollHeight; if (CHATFN) chatFnFilter(); }      // the section's count follows the new messages
     if (CHATFN && !CHATALL) loadFeed();
     renderSteps(s);
-    $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`
-      : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";
+    $("typing").innerHTML = liveTyping(s);      // E32 (D453)
+    const lk = liveLines(s).map(l => l.line).join("\n"); if (lk !== LIVE.key){ LIVE.key = lk; paintMap(); }      // the Map follows the live lines
     const busy = s.status === "running" || !!s.saved, p = s.paused;
     $("banner").hidden = !s.saved;
     if (s.saved) $("banner").textContent = `Viewing saved run ${s.saved} (read only). ${s.outcome || ""}`;
@@ -3436,7 +3455,7 @@ function motionInertia(zoom, svg){      // a pan keeps going after the pointer l
         if (Math.hypot(vx, vy) < 0.01) return; zoom.translateBy(d3.select(svg), vx * dt / k, vy * dt / k); requestAnimationFrame(step); };
       requestAnimationFrame(step); });
 }
-function paintMap(){ paint($("pane-map"), renderMap(MAP)); treeMount(); treeAvoid(); lineMount(); consPlace(); motionMount(); }
+function paintMap(){ mapLive(MAP); paint($("pane-map"), renderMap(MAP)); treeMount(); treeAvoid(); lineMount(); consPlace(); motionMount(); }
 // Line view: the same pan and zoom as the Tree, in screen pixels (the viewBox is the card's size, so the labels stay vector and crisp). Fit scales the drawing's
 // content box to the card with a margin; when that would make a label smaller than 11px, it holds 11px and the side that overflows pans instead. Zoom is 0.25x to 4x of the fit.
 const LINE = {zoom: {}}, LINEM = 12, LINEMIN = 11, LINEBOT = 44,      // LINEBOT: the legend chip sits in the bottom-left corner; the fit leaves its strip clear
@@ -3656,6 +3675,7 @@ const codeView = (key, plain) => { const t = CODE[key]; if (t === undefined) ret
 // function waits, something runs), and "not recorded" only when nothing about the state is known
 function mapChip(m){
   const st = m.status || {}, ns = m.nodes || [];
+  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveStep(CTX); if (t) return [t, "running"]; }      // E32 (D453)
   if (st.state && st.state !== "not recorded") return [st.state, st.state_status || "idle"];
   if (ns.some(n => n.status === "waiting_on_you") || (CTX && typeof needsYou === "function" && needsYou(CTX).length)) return ["Paused: waiting for you", "waiting_on_you"];      // the same question the Needs you strip shows
   const w = ns.find(n => n.kind === "function" && n.status === "waiting");

@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 57 edits (E1 to E13, E19 to E27, E30, E31; no E28 or E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E30a to E30d count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 61 edits (E1 to E13, E19 to E27, E30, E31, E32; no E28 or E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E30a to E30d, E32a and E32c to E32e count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 57 edits
+    pages/j0_ui.html            the page after the 57 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -158,6 +158,7 @@ _E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
             'fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; '
             '(d.head || d.body).appendChild(fl); }')
 
+SNUM = 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);'      # E32a's anchor
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),
     # E2: the two preview iframes get a sandbox (no allow-same-origin: a generated page cannot read the page's token, D83). `frame` also gets
@@ -319,6 +320,38 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # written before D452 still carries `approved` and says what happened then (review R1-6)
     Edit("E31", '      + ` · ${r.approved ? "approved by you" : "not approved"}</span>',
          '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
+    # E32 (D453): who works now and what, from the run's agent_live.json (`s.live`, on the one poll). Tool lines may be shown; the agents' free text may not.
+    # The who is the part's person (studio.parts), else the Map's persona of the function (MAPLABEL.persona), else the key; the what is the tool line, else
+    # the part's name, else the call's step's name. `#typing`, the Map's chip and its lit boxes read it; LIVE keeps this page session's last line (never stored)
+    Edit("E32a", SNUM, _lines(
+        "// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines",
+        'const LIVE = {last: {}, line: "", key: ""};',
+        'const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step\'s name without its code',
+        "function liveLines(s){",
+        '  if (!s || s.status !== "running") return [];',
+        "  const parts = sModel(s).parts;",
+        "  return Object.entries(s.live || {}).sort((a, b) => (a[1].since || 0) - (b[1].since || 0)).map(([k, e]) => {",
+        "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, p = part.person || \"\",",
+        "      what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120), name = p ? PEOPLE[p].name : MAPLABEL.persona[k] || k;",
+        "    if (p) LIVE.last[p] = what;",
+        "    LIVE.line = what ? `${name}: ${what}` : name;",
+        "    return {k, p, what, line: LIVE.line}; });",
+        "}",
+        'const liveTyping = s => { const L = liveLines(s).map(l => l.line), r = L.length ? L : s.status === "running" ? [LIVE.line || liveStep(s)] : [];',
+        '  return r.length ? r.slice(0, 3).map(esc).join("<br>") + (r.length > 3 ? `<br>+${r.length - 3}` : "") : s.status === "waiting" ? "Your turn." : ""; };',
+        "function mapLive(m){      // a live agent's box shows running; it goes back to the map's own status when the agent stops",
+        '  const L = liveLines(CTX), on = n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k));',
+        '  (m.nodes || []).forEach(n => { if (on(n)){ if (!("st0" in n)) n.st0 = n.status; n.status = "running"; } else if ("st0" in n){ n.status = n.st0; delete n.st0; } });',
+        "}",
+        SNUM), 1),
+    Edit("E32c", '    $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`\n'
+         '      : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";\n',
+         '    $("typing").innerHTML = liveTyping(s);      // E32 (D453)\n'
+         '    const lk = liveLines(s).map(l => l.line).join("\\n"); if (lk !== LIVE.key){ LIVE.key = lk; paintMap(); }      // the Map follows the live lines\n', 1),
+    Edit("E32d", "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n",
+         "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n"
+         '  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveStep(CTX); if (t) return [t, "running"]; }      // E32 (D453)\n', 1),
+    Edit("E32e", "function paintMap(){ paint(", "function paintMap(){ mapLive(MAP); paint(", 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").
