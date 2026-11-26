@@ -121,7 +121,7 @@ Size estimate (Impact/Effort):
   - Done when: `scripts/py -m pytest tests/test_diagram_decisions.py tests/test_ownership.py -q` passes.
   - Covers: FR-16, AC-15, NFR-6.
 
-- [ ] T8: Full gate, line count, beta
+- [x] T8: Full gate, line count, beta
   - Files: `docs/ai/sut-26-context/implementation.md` (developer's report, committed with this step).
   - Change / checks:
     1. Targeted set (the T6 command plus `tests/orchestrator/test_chat_agent.py tests/test_diagram_decisions.py tests/test_ownership.py`) → no failure outside the T0 baseline.
