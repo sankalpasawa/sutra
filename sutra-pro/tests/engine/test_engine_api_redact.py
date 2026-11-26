@@ -97,5 +97,5 @@ def test_a_live_state_carries_the_live_agents_and_a_saved_one_does_not(api):
     assert set(body["live"]) == {"identity", "adaptation", "W-2", "audit", "agent"}
     assert {k: body["live"]["W-2"][k] for k in ("tool", "since", "step")} == {"tool": "Reading src/a.py", "since": 1793786400.0, "step": 6}
     assert LIVE_SECRET not in got.text and body["live"]["audit"]["tool"] == "Reading .env ([redacted])"
-    assert len(body["chat"]) == 1
+    assert len(body["chat"]) == 1 and not any("text" in e for e in body["live"].values())      # R1-3: the page never shows an agent's text
     assert "live" not in api.client.get(f"/api/state?dept=web&run={api.ref.run_id}").json()

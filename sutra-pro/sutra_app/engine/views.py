@@ -351,7 +351,7 @@ def state(ctx: RunCtx, q: dict) -> Reply:
         snap = {**base, "saved": None, "chat": (base.get("chat") or [])[since:]}
         if ctx.mode == "live":              # additive keys (engine design 4.6): the process, the run and the department
             snap.update(host={"pid": _live_dict(ctx)["pid"], "alive": ctx.alive}, run_id=ctx.run_id, dept_id=ctx.dept_id,
-                        live=rawchat.live_tail(_dir(ctx))["agents"])      # D453: who works now (agent_live.json), on the page's one poll
+                        live={k: {f: v for f, v in e.items() if f != "text"} for k, e in rawchat.live_tail(_dir(ctx))["agents"].items()})      # D453: who works now, no agent text
     return _json(snap) if snap else _json({"error": "no such run"}, 404)
 
 
