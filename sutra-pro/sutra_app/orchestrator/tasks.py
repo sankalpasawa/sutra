@@ -1040,6 +1040,8 @@ class TaskService:
         follows_of = self.follows_of
         try:
             conn = self.db.conn()
+            if conn.execute("SELECT 1 FROM departments d JOIN org_nodes o ON o.id = d.id WHERE d.id = ? AND o.state = 'active' AND d.hidden_at IS NULL", (dept_id,)).fetchone() is None:
+                return None                                  # a deleted project or an inactive team: the transaction refuses the line, no call is spent
             if self.store.live_in(conn, dept_id) is not None or conn.execute(
                     "SELECT 1 FROM tasks WHERE dept_id = ? AND status IN ('blocked','queued') LIMIT 1", (dept_id,)).fetchone():
                 return None

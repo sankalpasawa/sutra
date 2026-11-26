@@ -665,6 +665,15 @@ def test_a_team_with_no_run_or_waiting_on_the_owner_makes_no_call(tenv):
     assert tenv.service.deliver_to_department("web", "Sweet Bean").delivered == "answer" and calls == []
 
 
+def test_a_deleted_project_is_refused_without_a_model_call(tenv):
+    first = ended_run(tenv)
+    calls = pick(tenv, first)
+    tenv.sql("UPDATE departments SET hidden_at = '2026-11-26T10:00:00Z' WHERE id = 'web'")
+    with pytest.raises(ReadOnly):
+        tenv.service.deliver_to_department("web", "Make the header blue")
+    assert calls == []
+
+
 def test_a_second_line_while_the_agent_decides_is_busy(tenv):
     first = ended_run(tenv)
 
