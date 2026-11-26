@@ -1388,6 +1388,16 @@ def test_p22_the_real_run_workflow_covering_its_own_item_keeps_the_old_message(s
     assert not reg and "so no workflow covers it: take it out of covers and keep it in real_run checks" in refused[0]
 
 
+@pytest.mark.parametrize("checks, why", [([9], "real_run checks item 9, which is not a done-when item"),
+                                          ([], "real_run checks is empty")])
+def test_d452_a_real_runs_checks_must_name_done_when_items(sort_run, checks, why):
+    """Review R1-8: J2's checks refusals, kept from the legacy real_run_checks block (skipped in D452 for its approval part)."""
+    make, real = sort_run
+    script = sort_proposals(real, fix=True)[0]
+    reg, refused, _ = make()._register([{**script, "real_run": {**script["real_run"], "checks": checks}}])
+    assert not reg and any(why in str(x) for x in refused), refused
+
+
 def test_p22_the_same_rejection_of_the_same_workflow_twice_in_a_row_stops_the_cycle(sort_run):
     """Cycles 2 to 4 of the run refused the script again and again; the second identical refusal stops the cycle: Identity
     asks the Requester (a limit), and "keep going" resumes where the validator was going."""
@@ -2726,20 +2736,27 @@ def test_p46_the_receipt_answer_says_ran_not_approved(p31):
     assert a.startswith("W-1: ran, ") and "exited 0" in a and "approv" not in a, a
 
 
-def test_p46_a_follow_up_never_reruns_a_parents_real_run(p31, j2ft, monkeypatch):
-    """AC-29: a follow-up copies receipts.jsonl into its own folder and restores the workflows (rehydrate.py); a W-1 with a
-    row there never runs again, one without runs once. The copy is made here as rehydrate makes it (its refusal rules for a
-    folder type's saved output are not what this tests)."""
+def test_p46_a_follow_up_never_reruns_a_parents_real_run(p31, j2ft, monkeypatch, tmp_path):
+    """AC-29 (review R1-9): a finished run continued as a follow-up through rehydrate (which copies receipts.jsonl and
+    restores the workflows): a W-1 with a row there never runs again, one without runs once."""
     go, real = p31
     calls, orig = [], j2ft.real_run
     monkeypatch.setattr(j2ft, "real_run", lambda *a, **k: calls.append(a) or orig(*a, **k))
+    package = sys.modules[j2ft.__name__.rpartition(".")[0]]      # rehydrate imports J2 from its package: this module's copy, as
+    monkeypatch.setattr(package, "j2", j2ft)                     # in the app (another test module's fresh copy may sit there)
+    monkeypatch.setattr(package, "j2_types", j2ft.j2_types)
     for ran_before in (True, False):
         parent = go(P31_OK)
         if ran_before:
             parent._real_run_next({})
-        nxt = go(P31_OK)      # the follow-up: the same W-1, done
-        if (Path(parent.dir) / "receipts.jsonl").exists():
-            shutil.copy(Path(parent.dir) / "receipts.jsonl", Path(nxt.dir) / "receipts.jsonl")
+        parent.outcome = "Done with open items: x."
+        parent.save("goal.json", parent.goal)
+        parent.save("workflows.json", parent.workflows)
+        parent._write_summary()
+        nxt = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261126-1200{int(ran_before):02d}-a29f")
+        nxt.rehydrate(parent.dir)
+        assert [w["id"] for w in nxt.workflows] == ["W-1"] and nxt.workflows[0]["real_run"]
+        assert (Path(nxt.dir) / "receipts.jsonl").exists() == ran_before
         before = len(calls)
         nxt._real_run_next({})
         assert len(calls) - before == (0 if ran_before else 1), (ran_before, calls)
@@ -2817,10 +2834,6 @@ def test_p46_a_replacements_real_run_decides_the_item_the_failed_one_checked(p31
 # Made-up stand-in for srt: it keeps the settings it was given beside itself, then runs the command (no sandbox: test only).
 P32_SRT = ("import shutil, subprocess, sys\na = sys.argv[1:]\nshutil.copy(a[a.index('-s') + 1], sys.argv[0] + '.json')\n"
            "sys.exit(subprocess.run(a[a.index('-c') + 1], shell=True).returncode)\n")
-
-
-def p32_card(run):
-    return next(m["text"] for m in run.chat if m.get("real_run") == "W-1")
 
 
 def test_p46_with_the_sandbox_switch_off_the_real_run_runs_without_it(p31, tmp_path, monkeypatch):
@@ -3501,16 +3514,6 @@ def p35(j2ft, tmp_path, monkeypatch):
         run.post("user", "Build it and run it on my notes")
         return run
     return go, src, dst
-
-
-def p35_again(run):
-    """Adaptation's fix: a workflow that revises W-1 with the same real run; its build passed (P28 sees a pass)."""
-    rr = {k: v for k, v in run.workflows[0]["real_run"].items()}
-    reg, refused, _ = run._register([{**sort_proposals(rr["folder"], fix=True)[0], "real_run": rr, "revises": "W-1"}])
-    assert len(reg) == 1 and not refused, refused
-    reg[0]["status"] = "done"
-    assert run._repeat_build_stop(reg[0]["id"]) is False
-    return reg[0]
 
 
 def test_p35_expect_mismatch_missing_and_unexpected(j2ft):
@@ -4646,6 +4649,21 @@ def test_p46_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p46, monkey
           "command": [sys.executable, "fetch.py", str(real), "http://other.invalid/"]}
     res = j2ft.real_run(run._out_dir(), rr, 60)
     assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p46_real_srt_writes_only_the_plans_folder(j2ft, p46, monkeypatch, tmp_path):
+    """AC-19 (writes, NFR-8, review R1-4): under the real srt a real run writes its folder and nothing outside it."""
+    run, real = p46_real_srt(p46, monkeypatch, tmp_path)
+    outside = Path(real).parent / "outside-d452"
+    outside.mkdir()
+    (Path(run._out_dir()) / "write.py").write_text(
+        "import os, sys\nopen(os.path.join(sys.argv[1], 'inside.txt'), 'w').write('1')\n"
+        "try:\n    open(os.path.join(sys.argv[2], 'outside.txt'), 'w').write('1')\nexcept OSError as e:\n    print('refused', e)\n")
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "write.py", str(real), str(outside)]}
+    res = j2ft.real_run(run._out_dir(), rr, 60)
+    assert res["ran"] and res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert (Path(real) / "inside.txt").exists() and not (outside / "outside.txt").exists(), res["output"]
 
 
 @pytest.mark.parametrize("name", ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy",
