@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, Tuple, Union
 
 from . import j2, j2_agent, j2_artifacts, j2_map, j2_story, j2_studio, j2_template_lib, llm
-from . import capabilities, forms, rawchat
+from . import capabilities, doc_reader, forms, rawchat
 from .paths import pid_alive
 from .spec import (RUN_TEMPLATE_KEY_CHARS, RUN_TEMPLATE_KEYS_MAX, RUN_TEMPLATE_WORKFLOWS_MAX, EngineSettings, is_run_template_id,
                    run_template_keys)
@@ -387,7 +387,7 @@ def preview(ctx: RunCtx, q: dict) -> Reply:
     ao = (at or {}).get("agent_output") or {}
     if ao.get("kind") == "doc":          # a document atom: its section as the page renders markdown
         body = j2.atom_section_body(d, wfs, q.get("atom")) if d else None
-        return _json({"anchor": None, "html": j2.md_html(body, "Section") if body else None})
+        return _json({"anchor": None, "html": doc_reader.reader_html(body, "Section", chrome=False) if body else None})
     anchor = ao.get("anchor")
     if live:
         page = _live_page(ctx)
@@ -576,10 +576,11 @@ IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                ".svg": "image/svg+xml"}      # an <img> never runs an SVG's scripts
 
 
-def view_page(p: Optional[str]) -> str:
-    """A file of a run's artifact list as a page for the Simple view: markdown rendered, a page as it is, an image shown inline,
-    anything else (data, code, a script) as readable text; no path (a file that is not in the list) is a plain "not written yet"
-    line. J2's own `view_page` lives in its server file, which the app does not vendor (D25): this is the same function, the app's."""
+def view_page(p: Optional[str], name: str = "", meta: Optional[dict] = None) -> str:
+    """A file of a run's artifact list as a page for the Simple view: markdown in the document reader (D455; `name` is the file's name in
+    the run, for its Download menu, and `meta` its revision metadata), a page as it is, an image shown inline, anything else (data, code,
+    a script) as readable text; no path (a file that is not in the list) is a plain "not written yet" line. J2's own `view_page` lives in
+    its server file, which the app does not vendor (D25): this is the same function, the app's."""
     if not p:
         return "<p style='font:15px system-ui;color:#667;padding:24px'>This isn't written yet.</p>"
     ext = os.path.splitext(p)[1].lower()
@@ -591,7 +592,8 @@ def view_page(p: Optional[str]) -> str:
     with open(p, encoding="utf-8", errors="replace") as f:
         text = f.read()
     if ext == ".md":
-        return j2.md_html(text, os.path.basename(p))
+        meta = meta or {}
+        return doc_reader.reader_html(text, meta.get("label") or os.path.basename(p), meta, name=name)
     if ext in (".html", ".htm"):
         return text
     return (f"<!doctype html><meta charset='utf-8'><title>{html.escape(os.path.basename(p))}</title><body style='margin:0;background:#fbfaf7'>"
@@ -617,15 +619,37 @@ def record(ctx: RunCtx, q: dict) -> Reply:
     return _json(rec) if rec else _json({"error": "no such part"}, 404)
 
 
+def doc_meta(d: Optional[str], name: str) -> dict:
+    """A document's own revision metadata from the run's artifact list (D455): its version (when the run keeps versions of it), the time
+    that version was written, its label, and the Word file the run exported beside it. Never the run's id, time, status or checks: the
+    reader shows the document, not the run."""
+    if not d:
+        return {}
+    try:
+        rows = j2_artifacts.listing(d)
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    row = next((r for r in rows["deliverables"] + rows["records"] if r.get("file") == name), None) or {}
+    out = {k: row[k] for k in ("version", "time", "label") if row.get(k)}
+    word = os.path.splitext(name)[0] + ".docx"
+    if name.endswith(".md") and j2_artifacts.served(d, word):
+        out["word"] = word          # the Word file the run exported beside the document (j2.export_docx): the Download menu offers it
+    return out
+
+
 def doc(ctx: RunCtx, q: dict) -> Reply:
     """`GET /doc/<name>`: the run's `<name>.md` (prd, hld, lld, ...) as a readable page for the Simple view's output tabs. Only a file the
     run's artifact list names is read (`j2_artifacts.served`); anything else is the plain "not written yet" line (J2 sync 4)."""
-    return Reply(200, view_page(j2_artifacts.served(_dir(ctx), f"{q.get('name') or ''}.md")), "text/html")
+    d, name = _dir(ctx), f"{q.get('name') or ''}.md"
+    p = j2_artifacts.served(d, name)
+    return Reply(200, view_page(p, name, doc_meta(d, name) if p else None), "text/html")
 
 
 def view(ctx: RunCtx, q: dict) -> Reply:
     """`GET /view?name=<file>`: any file the run's artifact list names, as a readable page (`view_page`): the Simple view's output tabs."""
-    return Reply(200, view_page(j2_artifacts.served(_dir(ctx), q.get("name"))), "text/html")
+    d, name = _dir(ctx), str(q.get("name") or "")
+    p = j2_artifacts.served(d, name)
+    return Reply(200, view_page(p, name, doc_meta(d, name) if p else None), "text/html")
 
 
 # --------------------------------------------------------------------------------------------------------- rows 18 to 21
@@ -710,7 +734,7 @@ def site_saved(ctx: RunCtx, q: dict) -> Reply:
     if not name:
         return Reply(200, "<p style='font:14px system-ui;color:#667;padding:24px'>No site in this run.</p>", "text/html")
     text = _read_text(os.path.join(site, name))
-    return Reply(200, j2.md_html(text) if name.endswith(".md") else text, "text/html")
+    return Reply(200, doc_reader.reader_html(text) if name.endswith(".md") else text, "text/html")
 
 
 def _stub_noun(live: dict) -> str:
@@ -732,7 +756,7 @@ def site_live(ctx: RunCtx, q: dict) -> Reply:
     if not 1 <= i <= n:
         return _not_found()
     text = _live_page(ctx, i)
-    return Reply(200, j2.md_html(text, live["out_label"]) if live["doc"] else text, "text/html")
+    return Reply(200, doc_reader.reader_html(text, live["out_label"]) if live["doc"] else text, "text/html")
 
 
 def site(ctx: RunCtx, q: dict) -> Reply:

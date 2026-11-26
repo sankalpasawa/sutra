@@ -811,8 +811,8 @@ def test_the_live_site_serves_a_version_or_the_latest(w):
 def test_a_live_document_is_rendered_from_markdown(w):
     ctx = live_ctx(w, w.prd)
     page = text_of(call(w, "site", ctx, key="latest"))
-    assert "<h2>Problem</h2>" in page and "<table>" in page
-    assert text_of(call(w, "site", ctx, key="v1")) == w.j2.md_html(w.prd.sites[0], "PRD document")
+    assert "<h2>Problem</h2>" in page and '<table class="lg' in page, "the document reader (D455)"
+    assert text_of(call(w, "site", ctx, key="v1")) == w.views.doc_reader.reader_html(w.prd.sites[0], "PRD document")
 
 
 def test_before_anything_is_built_the_live_site_is_a_stub(w):

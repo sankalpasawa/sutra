@@ -272,7 +272,8 @@
 
   // What the stage shows for a view: {site}, {frame: url, head}, or {pane: html}. Never a /site/ URL on a non-page run (FR-21).
   function stage(root, G, s, v, rows, main) {
-    const head = (row, back) => `<div class="rvhead">${back ? `<button type="button" class="rvback" data-view="files">${WORDS.allFiles}</button>` : ""}<b>${G.esc(row.file)}</b>${dl(G, row)}</div>`;
+    // a Markdown file's own Download menu is in the document reader (D455), so its head has none
+    const head = (row, back) => `<div class="rvhead">${back ? `<button type="button" class="rvback" data-view="files">${WORDS.allFiles}</button>` : ""}<b>${G.esc(row.file)}</b>${/\.md$/i.test(row.file) ? "" : dl(G, row)}</div>`;
     const one = (row, back) => {
       const kind = viewerFor(row);
       if (kind === "site") return isPageRun(s) && s.versions > 0 ? {site: true} : {pane: head(row, back) + note(G, WORDS.cantShow)};
@@ -353,6 +354,9 @@
     pane.appendChild(body); pane.appendChild(later); out.appendChild(pane);
     if (d.head && !d.querySelector('link[href$="/ui/css/result_view.css"]')) {
       const link = d.createElement("link"); link.rel = "stylesheet"; link.href = "/ui/css/result_view.css"; d.head.appendChild(link);
+    }
+    if (d.head && !d.querySelector('script[src$="/ui/js/doc_frame.js"]')) {      // the document reader's theme, view mode and downloads (D455)
+      const sc = d.createElement("script"); sc.src = "/ui/js/doc_frame.js"; d.head.appendChild(sc);
     }
     const orig = root.sViews;
     root.sViews = function (s, M, ready) {
