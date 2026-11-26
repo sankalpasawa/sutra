@@ -15,6 +15,7 @@ Branch `live-view`, base 6c79a1db (= origin/main on 2026-11-26). Not pushed, no 
 | T8 | 3d1115d5 | Trim: E32a anchors inline (no `SNUM` constant) and one comment block fewer. Full gate run (results below) |
 | Fix-up | ce457a0e | Owner fix-ups 1 and 2: names come from the existing tables (deviation 3), so Asha and Nora show busy. The Map chip falls back through the crew's chain via one helper, `liveSaid` (deviation 7). The fixture gains an `identity` entry ("Reading brief.md"). D453's text follows |
 | Docs | e68938d3 | spec.md, architecture.md, plan.md, impact.md committed. docs/ai/analysis.md stays uncommitted (owner) |
+| Review 1 | eee91b32, 28d975db, 3d7422ff, e24b9585, 47082c84 | Round 1 findings (see "Review round 1" below) |
 
 ## Deviations from plan.md and architecture.md
 | # | Deviation | Why |
@@ -25,7 +26,7 @@ Branch `live-view`, base 6c79a1db (= origin/main on 2026-11-26). Not pushed, no 
 | 4 | Crew lines stay in the golden comparison (owner change 4) | No blanking. `E32_CREW` replaces J2's `<small>` texts with the exact expected ones ("Mira finished item 5.", "Nora checked everything on your list: all 5 good."), in both the golden loop and the opt-in J2 test. There is no time part in a crew line, so nothing is blanked |
 | 5 | An idle crew line is never empty (owner change 5) | Fallback chain: last live what of this page session, then `liveSaid(s, k)`: the person's last line in `studio.stream` (via the existing `sTalk`), else the run's last stream line, else the step name. The chat line still follows FR-9 (last live line, else the step name) |
 | 6 | Existing entry test expects `"step": 0`, not `None` | `CallTag.step` defaults to 0 (port.py:35) |
-| 7 | Map chip between calls (fix-up 2) | `LIVE.line || liveSaid(CTX, LIVE.p)`: the last live line, else the last live person's stream line, else the run's last stream line, else the step name. It is the same helper the crew uses. Its status is `running` while the run runs (architecture said `idle`). The person step only applies when no live line exists yet, and then `LIVE.p` is empty, so on a fresh page the chip shows the run's last stream line. Test: the Map test checks the chip text after the agents stop, on a fresh page, and with an empty stream |
+| 7 | Map chip between calls (fix-up 2, R1-5) | `LIVE.line || liveSaid(CTX, "")`: the last live line, else the run's last team-stream line, else the step name. It uses the same helper as the crew. Status `running` while the run runs (architecture said `idle`). `LIVE.p` was dead state and is gone (R1-5). Tests check the chip text after the agents stop, on a fresh page, and with an empty stream |
 | 8 | `scripts/record_api_shapes.py` changed (not in the Components table) | test_engine_views compares the state's keys with J2's recorded shape; `live` is engine-only, like `host` and `run_id` |
 | 9 | The 300-char tool test, FR-7 "no addMsg", NFR-4 line count | All covered as planned; `liveLines` returns `[]` unless the status is running (an explicit test) |
 
@@ -34,24 +35,40 @@ Branch `live-view`, base 6c79a1db (= origin/main on 2026-11-26). Not pushed, no 
 |---|---|
 | `scripts/gate.sh`, first run (15 min 21 s) | 13660 passed, 4 failed, 389 skipped |
 | `scripts/gate.sh`, full rerun after ce457a0e and e68938d3 (15 min 25 s) | 13660 passed, 4 failed (the same 4 below), 389 skipped |
+| `scripts/gate.sh`, full rerun after review round 1 (15 min 25 s) | 13662 passed, 4 failed (the same 4 below), 389 skipped |
 | The 4 failures, rerun on a clean worktree of 6c79a1db with its own `scripts/py` | the same 4 fail there, so they were already failing: `tests/contracts/test_contract_route_table.py::test_every_path_the_view_scripts_call_is_served_by_some_router` (`/api/appearance`), `tests/release/test_workflows_yaml.py::test_ci_is_named_ci_and_runs_on_push_to_main_pull_requests_and_manual_dispatch`, `tests/ui/test_fake_backend.py::test_the_pages_come_from_the_real_ui_router_with_the_fakes_token_and_version`, `tests/ui/test_shared_css.py::test_each_page_links_its_own_sheet_and_the_frozen_one_is_for_home_and_the_console_only` |
 | `node --test tests/ui/js/` (after the fix-up) | 1753 pass, 0 fail, 2 skipped |
 | `node --test tests/ui/js/page_render.test.js` with `SUTRA_J2_CHECKOUT` set to the ee659fb5 extraction | 60 pass, 0 fail (the opt-in J2 comparison included) |
 | `tests/ui/test_port_edits.py`, plain and with `SUTRA_J2_CHECKOUT` | pass |
 | `port_j2_ui.py --j2 <ee659fb5 extraction> --commit ee659fb5... --check` | "ok: the 64 anchors ... equal a fresh port" |
 | Targeted engine tests (agent_live, rawchat, api_redact, views, api_scope, runs_watcher_partials, diagram_decisions, lib_records, lib_wire) | pass |
-| After the fix-up | port `--check` clean (64 edits); test_port_edits and page_render pass with and without the J2 opt-in |
+| After review round 1 | port `--check` clean (65 edits); page_render 61/61 with the J2 opt-in; test_port_edits passes |
 
 Review checks: `git diff 6c79a1db..HEAD` touches no j2*.py, j2_map.py, j2_realization.py, events.py, host/, engine/api/ or vendor_j2.py; E28 and E29 are unchanged. No new route, poll timer, event type or stored file.
 
-Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`): port_j2_ui.py +43/-2, agents.py +15/-6, views.py +3/-2, rawchat.py +1/-1, record_api_shapes.py +1/-1, which is **+51 net** in source written by hand. The generated j2_ui.html is +30/-19 (+11 net). The +51 is over the ~35 the owner accepted. Most of it is the E32 JavaScript as port-script string lines and its two edit anchors.
+Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`, after review round 1): port_j2_ui.py +41/-2, agents.py +13/-6, views.py +3/-2, rawchat.py +1/-1, record_api_shapes.py +1/-1, which is **+47 net** in source written by hand. The generated j2_ui.html is +29/-19 (+10 net). No feature was dropped to get closer to ~35 (owner).
+
+## Review round 1
+| ID | Status | Commit | What |
+|---|---|---|---|
+| R1-1 | fixed | eee91b32 | The crew uses `LIVE.last` only while the state is running. `liveLines` resets `LIVE` (last, line) when a running state's `run_id` changes. The new test (a run that ended, a saved run, another run in the same tab) failed before the fix |
+| R1-2 | fixed (wording only) | 28d975db | FR-5 and A-4 in spec.md, D453 in DECISIONS.md, its decisions.json label and the agents.py comment now say the host's Redactor knows `.env` values only. An environment-only secret is redacted whole by the API, and one split by the cut is a known, accepted limit. No secret is passed into the host |
+| R1-3 | fixed | 3d7422ff | `/api/state`'s `live` leaves out `text`. agent_live.json and `/api/agent-live` (Raw AI chat) keep it. The API test asserts the absence |
+| R1-4 | fixed | e24b9585 | New port edit E32f: `<script id="raw_chat-js" src="/ui/js/raw_chat.js"></script>` before the page script. dept_ext.js `rawChat()` returns early when that id exists (dept_ext.js:209-215), so it is loaded once. raw_chat.js waits for DOMContentLoaded before its `init` |
+| R1-5 | fixed | 47082c84 | `LIVE.p` removed; the chip passes `""` |
+| R1-6 | fixed | 47082c84 | `mapLive` returns a copy (`{...m, nodes: ...}`) and E32e paints `renderMap(mapLive(MAP))`. No `st0`. The test asserts that MAP itself is unchanged |
+| R1-7 | fixed | 47082c84 | The crew shows the tool line as it is (no `plain()`), so "Reading .env" stays as written. Part names are already plain (sModel) |
+| R1-8 | skipped | | Not in the owner's approved list. The redaction proofs are the writer and API tests |
+| R1-9 | skipped | | Not in the approved list. The PIN line predates the branch and is only a label |
+| Cuts C1, C2, C3, C4, C5, C7 | done | 47082c84 | C1 = R1-6, C2 = R1-5. C3: the JS header comment is gone, and the rule "tool lines may be shown, the agents' free text may not" moved into E32a's edit-table comment. C4: the anchor comment is gone. C5: `rc` folded. C7: agents.py lines joined |
+| Cut C6 | skipped | | The owner said to skip it: it would leave unused variables in the generated page |
 
 ## Follow-ups
 | # | Item |
 |---|---|
 | F1 | Change-request calls (`purpose="change"`) are not in `LIVE_PURPOSES`, so they never show live (owner change 7). Not built |
 | F2 | Rebase onto remove-real-run-gates after it lands, then regenerate j2_ui.html with the port script (deviation 1) |
-| F3 | The person comes from raw_chat.js, which loads asynchronously. Until it has loaded (the first moments of a page), functions show the Map's words ("Strategist") and Asha and Nora are not marked busy |
+| F3 | Fixed in review round 1 (R1-4): the page loads raw_chat.js before its own script (E32f), so the names are right on the first poll. dept_ext.js skips its own load when `#raw_chat-js` exists (dept_ext.js:211) |
 | F4 | plan.md's `J2PAGE` pin (00efb179, taken from test_port_edits.py's miniature PIN) does not port this page; the page pin is ee659fb5 |
 | F5 | The Q-1 runtime check (key `adaptation` during "What I build") is only proven by the unit test until the owner's beta run |
 
