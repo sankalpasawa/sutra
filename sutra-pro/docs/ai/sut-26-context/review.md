@@ -94,3 +94,27 @@ None (round 1).
 | R1-3 | Fixed in 32302dd5: the team check now runs before the call, with a test. |
 | R1-4 | Declined (owner). |
 | R1-5 | Declined (owner). |
+
+## Round 2  (2026-11-26, commit 10fbbfc8)
+Verdict: **Approved**. This round re-checked only the lines changed in `7cb4b268..10fbbfc8`. There are no new findings.
+
+### Findings
+None.
+
+### Checks
+| Check | Result | Evidence |
+|---|---|---|
+| The trims change no behaviour | Confirmed | The f-string at `tasks.py` `_follow_up` builds the same text as the old `CONTINUES.format` (test_tasks asserts the exact text). `run_lines(...) or "(none)"`: joining an empty list gives "", so the result is "(none)" as before. The literal status list in `_candidates` equals `GOOD_END + BAD_END`. The other changes are docstrings only. |
+| `latest_in` fully gone | Confirmed | `grep -rn latest_in sutra_app tests scripts` finds nothing. The 3 tests now query `ORDER BY created_at DESC, rowid DESC`, the same order the old method used. |
+| R1-3 check comes before any model call and uses the same rule as `_deliver` | Confirmed | `_pick_follows` runs the team query (`departments JOIN org_nodes`, `state = 'active'`, `hidden_at IS NULL`) first inside its `try`, before the live/queued checks, `_candidates` and `_run_async`. `_deliver:931-935` applies the same two conditions and refuses with NotFound or ReadOnly; this check returns None for both, so the transaction still gives the same refusal. |
+| The new test is meaningful | Confirmed (by reading) | In `test_a_deleted_project_is_refused_without_a_model_call`, the team has an ended run with a folder, so without the new check `_candidates` would be non-empty, the double would be called, and `calls == []` would fail. It also asserts ReadOnly. |
+
+### Open item from round 1
+R1-2 is closed for S-3: a run was stopped while it waited, then answered with a bare line. The agent picked that run, and framing, combined `user_text`, `upstream/` and the closed question are all recorded in implementation.md. This covers it adequately: stopping first is the only way to reach the `follows` path (a live waiting task takes the answer directly, NG-4), and a free-text answer is a fair stand-in for "Option 1". The live test did not cover S-4 (the right run chosen among several, with a newer unrelated run present), because the team had only 1 candidate. That stays under spec risk R-4 (model judgement). It is not a code defect and not a blocker.
+
+### Tests run
+`scripts/py -m pytest -q tests/orchestrator tests/contracts/test_contract_settings.py tests/contracts/test_contract_route_table.py tests/e2e/test_scenario_followup.py tests/e2e/test_scenario_restart_stop.py`
+Result: 3220 passed, 2 skipped, 1 failed. The failure, `test_contract_route_table.py::test_every_path_the_view_scripts_call_is_served_by_some_router` (`/api/appearance`), also fails on main. The edited test in the same file passes.
+
+### Earlier findings
+R1-1: fixed. R1-2: fixed for S-3 (S-4 stays under R-4). R1-3: fixed. R1-4, R1-5: declined by the owner. That is acceptable for both, since both are nits.
