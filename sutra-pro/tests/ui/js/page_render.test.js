@@ -54,6 +54,11 @@ const E13_WORDS = JSON.parse(execFileSync(path.join(ROOT, "scripts", "py"), [pat
   {encoding: "utf8", cwd: ROOT}));
 // Every pair applied to the text of a value: the goldens are J2's, the page says "priced" and "pricing" instead of "ranked".
 const withE13 = value => JSON.parse(E13_WORDS.reduce((text, [from, to]) => text.split(from).join(to), JSON.stringify(value)));
+// E32 (D453): the crew's fixed sentences are gone; on the fixture state each teammate shows their last line of the team stream, else the run's last
+// one (Asha keeps her question line). J2's line, then the page's, written out here so the golden comparison still holds every crew line.
+const NORA_LAST = "Nora checked everything on your list: all 5 good.";
+const E32_CREW = [["Finished 6 parts", "Mira finished item 5."], ["Nothing for this project", NORA_LAST], ["Checked the work 2 times", NORA_LAST]];
+const withE32 = value => JSON.parse(E32_CREW.reduce((text, [from, to]) => text.split(`<small>${from}</small>`).join(`<small>${to}</small>`), JSON.stringify(value)));
 
 // ----------------------------------------------------------------------------------------------------------------------
 // a harness as a child process (what a developer runs), and in this process (to change what the stub page sees)
@@ -142,8 +147,8 @@ test("the manifest of the captures lists the goldens compared here, the pinned c
 });
 
 for (const key of GOLDEN_KEYS) {
-  test(`parity: "${key}" equals J2's golden once the E13 pairs are applied to it`, () => {
-    assert.deepEqual(rendered().out[key], withE13(readJson(fixture(`golden-${key}.json`))));
+  test(`parity: "${key}" equals J2's golden once the E13 pairs and E32's crew lines are applied to it`, () => {
+    assert.deepEqual(rendered().out[key], withE32(withE13(readJson(fixture(`golden-${key}.json`)))));
   });
 }
 
@@ -356,7 +361,7 @@ test("J2's own harness on J2's own page prints every key the ported page prints,
   const theirs = spawnHarness(path.join(J2, "j2_ui_render.js"), [path.join(J2, "j2_ui.html"), ...RENDER_ARGS.slice(1)]);
   assert.equal(theirs.status, 0);
   assert.deepEqual(Object.keys(theirs.out), J2_KEYS);
-  assert.deepEqual(rendered().out, withE13(theirs.out));
+  assert.deepEqual(rendered().out, withE32(withE13(theirs.out)));
   const layout = spawnHarness(path.join(J2, "j2_graph_layout.js"), [path.join(J2, "j2_ui.html"), fixture("maps.json")]);
   assert.deepEqual(spawnHarness(LAYOUT, [PAGE, fixture("maps.json")]).out, layout.out);
 });
@@ -471,4 +476,20 @@ test("E32: the Map lights the live boxes and its chip says the newest line; the 
   page.run(`CTX = ${JSON.stringify(RUNNING({}))}; mapLive(m)`);
   assert.deepEqual(call(page, "m.nodes.map(n => [n.status, 'st0' in n])"), [["idle", false], ["filed", false], ["idle", false]]);
   assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);
+});
+
+test("E32: the crew says what the live agents do; the others keep their last line, never an empty one", () => {
+  const page = plain(), crew = live => call(page, `(() => { const s = ${JSON.stringify(RUNNING(live))}; return sCrew(s, sModel(s)); })()`);
+  const pick = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, [v.line, v.busy]]));
+  const ASHA = "Asha passed the next step to the team.", MIRA = call(page, 'plain("Reading src/a.py")');
+  assert.deepEqual(pick(crew(LIVEFIX)), {asha: [ASHA, false], mira: [MIRA, true], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA_LAST, false]});
+  assert.deepEqual(pick(crew({})), {asha: [ASHA, false], mira: [MIRA, false], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA_LAST, false]});
+  const S = readJson(fixture("state.json")), T = call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`);
+  assert.deepEqual([T.asha.ask, T.asha.line, T.mira.line], [true, "Has a question for you", "Mira finished item 5."]);
+  const none = {...S, studio: {...S.studio, stream: []}};
+  assert.equal(call(plain(), `(() => { const s = ${JSON.stringify(none)}; return sCrew(s, sModel(s)); })()`).kabir.line, "Is the site workable?");
+  const src = page.run("sCrew.toString()");
+  for (const gone of ["Planning the parts", "Deciding what comes first", "Lining up who goes next", "Making sure each part is ready to start", "Talking it through with the team",
+    "Keeping things on track", "Checks each part as it finishes", "Free for the next part", "Waiting for the plan", "Nothing for this project", "Hit a problem",
+    "Wrapped up", "Ready when you are", "Checked the work", "coming up", "Finished "]) assert.ok(!src.includes(gone), gone);
 });

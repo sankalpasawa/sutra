@@ -1098,25 +1098,14 @@ function mapLive(m){      // a live agent's box shows running; it goes back to t
   const L = liveLines(CTX), on = n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k));
   (m.nodes || []).forEach(n => { if (on(n)){ if (!("st0" in n)) n.st0 = n.status; n.status = "running"; } else if ("st0" in n){ n.status = n.st0; delete n.st0; } });
 }
-const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);
 function sCrew(s, M){
-  const th = s.thinking, live = s.status === "running", open = needsYou(s).length > 0 && !live && !s.saved, t = {};
-  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, line: "", parts: M.parts.filter(p => p.person === k)});
+  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {}, ev = sTalk(s), said = x => x ? `${PEOPLE[x.who].name} ${x.text}` : "";
+  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty
+    line: plain(LIVE.last[k] || "") || said(ev.filter(x => x.who === k).pop() || ev[ev.length - 1]) || liveStep(s)});
   const qp = M.parts.find(p => p.st === "ask");
   if (open){ t.asha.line = APPROVE.includes((s.paused || {}).kind) ? "Needs your OK" : "Has a question for you"; t.asha.ask = true; }
-  else if (th === "identity"){ t.asha.busy = true; t.asha.line = stage(s) === 0 ? "Reading your request" : "Talking it through with the team"; }
-  else if (["adaptation", "priority", "coordination", "validator"].includes(th)){ t.asha.busy = true;
-    t.asha.line = {adaptation: "Planning the parts", priority: "Deciding what comes first", coordination: "Lining up who goes next", validator: "Making sure each part is ready to start"}[th]; }
-  else t.asha.line = live ? "Keeping things on track" : failed(s) ? "Hit a problem" : isReady(s) ? "Wrapped up your project" : s.saved ? "Wrapped up this project" : "Ready when you are";
-  const audits = (s.audits || []).length;
-  if (th === "audit"){ t.nora.busy = true; t.nora.line = s.doc ? "Checking the document against your list" : "Checking it on a phone and a laptop"; }
-  else t.nora.line = audits ? `Checked the work ${audits === 1 ? "once" : audits + " times"}` + (live ? ", checks again when parts land" : "") : "Checks each part as it finishes";
-  ["mira", "kabir", "dev"].forEach(k => { const m = t[k], on = m.parts.filter(p => p.st === "doing");
-    if (qp && qp.person === k){ const b = SV.bat && SV.bat.park, mn = b && b.sec === qp.sec ? Math.floor((Date.now() - b.at) / 6e4) : 0; m.line = "Parked on your answer" + (mn >= 1 ? ` · ${mn < 60 ? mn + "m" : Math.floor(mn / 60) + "h"}` : ""); m.ask = true; m.cls = "park"; }
-    else if (on.length){ m.busy = true; m.line = (on.some(p => p.fixing) ? "Fixing " : "On ") + sAnd(on.slice(0, 2).map(p => p.name)) + (on.length > 2 ? ` and ${on.length - 2} more` : ""); }
-    else if (!m.parts.length) m.line = !M.parts.length && !isReady(s) && !s.saved ? "Waiting for the plan" : live ? "Free for the next part" : "Nothing for this project";
-    else { const d = m.parts.filter(p => p.st === "done").length, left = m.parts.length - d;
-      m.line = live || open ? (d ? `Finished ${sNum(d)}${left ? `, ${left} to go` : ""}` : sCap(`${sNum(left)} coming up`)) : `Finished ${sNum(d)}${left ? `, ${left} left open` : ""}`; } });
+  if (qp){ const m = t[qp.person], b = SV.bat && SV.bat.park, mn = b && b.sec === qp.sec ? Math.floor((Date.now() - b.at) / 6e4) : 0; m.line = "Parked on your answer" + (mn >= 1 ? ` · ${mn < 60 ? mn + "m" : Math.floor(mn / 60) + "h"}` : ""); m.ask = true; m.cls = "park"; }
+  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json
   ["mira", "kabir", "dev", "nora"].forEach(k => { const b = !t[k].ask && sBatLine(k); if (b) Object.assign(t[k], b); });      // a handoff or a resume, for a few seconds
   return t;
 }

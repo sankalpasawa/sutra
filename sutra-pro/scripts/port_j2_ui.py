@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 61 edits (E1 to E13, E19 to E27, E30, E31, E32; no E28 or E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E30a to E30d, E32a and E32c to E32e count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 62 edits (E1 to E13, E19 to E27, E30, E31, E32; no E28 or E29, deleted in D452; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E30a to E30d, E32a to E32e count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j0_ui.html            the page after the 57 edits
+    pages/j2_ui.html            the page after the 62 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -158,6 +158,16 @@ _E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
             'fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; '
             '(d.head || d.body).appendChild(fl); }')
 
+# E32b's anchor: sCrew from `const th` to the makers' loop (its fixed sentences); it keeps `qp`, the question line and the parked line's body
+SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \(open\)\{.*?\n).*?    if \(qp && qp\.person === k\)\{ const b = (.*?\n)'
+                      r'.*?(?=  \["mira", "kabir", "dev", "nora"\]\.forEach)', re.S)
+SCREW = _lines(
+    '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {}, ev = sTalk(s), said = x => x ? `${PEOPLE[x.who].name} ${x.text}` : "";',
+    "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
+    '    line: plain(LIVE.last[k] || "") || said(ev.filter(x => x.who === k).pop() || ev[ev.length - 1]) || liveStep(s)});',
+    r"\1\2  if (qp){ const m = t[qp.person], b = \3"
+    "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json",
+    "")
 SNUM = 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);'      # E32a's anchor
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),
@@ -322,7 +332,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
     # E32 (D453): who works now and what, from the run's agent_live.json (`s.live`, on the one poll). Tool lines may be shown; the agents' free text may not.
     # The who is the part's person (studio.parts), else the Map's persona of the function (MAPLABEL.persona), else the key; the what is the tool line, else
-    # the part's name, else the call's step's name. `#typing`, the Map's chip and its lit boxes read it; LIVE keeps this page session's last line (never stored)
+    # the part's name, else the call's step's name. `#typing`, the Map's chip, its lit boxes and the crew read it; LIVE keeps this page session's last lines (never stored)
     Edit("E32a", SNUM, _lines(
         "// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines",
         'const LIVE = {last: {}, line: "", key: ""};',
@@ -342,8 +352,8 @@ PAGE_EDITS: tuple[Edit, ...] = (
         "function mapLive(m){      // a live agent's box shows running; it goes back to the map's own status when the agent stops",
         '  const L = liveLines(CTX), on = n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k));',
         '  (m.nodes || []).forEach(n => { if (on(n)){ if (!("st0" in n)) n.st0 = n.status; n.status = "running"; } else if ("st0" in n){ n.status = n.st0; delete n.st0; } });',
-        "}",
-        SNUM), 1),
+        "}"), 1),
+    Edit("E32b", SCREW_J2, SCREW, 1),      # the crew: a live agent's person is busy with its what; the fixed sentences and sNum/sCap (only they used them) go
     Edit("E32c", '    $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`\n'
          '      : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";\n',
          '    $("typing").innerHTML = liveTyping(s);      // E32 (D453)\n'
