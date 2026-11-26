@@ -128,7 +128,7 @@ The API answers errors as `{"error": {"code", "message", "details"}}`; the code 
 | `payload_too_large` | 413 | the request body is over 2 MB (a chat attachment may be 20 MB). Send less; nothing was read or changed |
 | `rules` | 422 | the org chart rules refused a well-formed change; the message says which rule |
 | `not_found` | 404 | no such team, task, node or run |
-| `busy` | 409 | the team already runs a task, or the task has ended. Wait, or stop it first |
+| `busy` | 409 | the team already runs a task, or the task has ended. Wait, or stop it first. With `details.stale` it is a save of a project's instructions or memory made from an old read (another window saved first): reload and make the change again (D451) |
 | `name_taken` | 409 | another project already has that name (case and spaces do not count). Choose another name, or rename or delete the other project first (D426) |
 | `stale_chart` | 409 | the chart changed under the request (F4). Send it again |
 | `already_decided` | 409 | that change was already approved or declined |
@@ -181,3 +181,6 @@ Run end codes in `run.ended`: `start_failed` (F6), `process_gone` (F7) and `inte
 - **The chat cannot see my files:** set the Working folder in Settings, Connectors (one folder, read-only, chats only; D121); the chat names it, or says none is set.
 - **The desktop app did not update by itself:** it checks about a minute after it starts and every 6 hours, only if Check for updates automatically is on in Settings, About; it installs only a download it could verify, and only when you choose Restart Now or Install on Quit (D124).
 - **Everything is red after an update:** run `sutra-pro doctor`, then `sutra-pro restore` the backup you took before the update (see [OPERATIONS.md](OPERATIONS.md), section 4).
+- **A file says "no longer stored. Attach it again":** the file you attached was removed from the app's store between the moment you added it and the moment you sent (for example by "Remove" in Project files while it was still waiting). Nothing was sent; remove the chip and attach the file again (D451).
+- **A project's files are not read:** open "Project files and memory" from the project's name and check that "Use in this project" is on for each file and that the project is not deleted. "What will be sent" shows the exact text; empty there means nothing reaches a model. `SUTRA_PROJECT_CONTEXT=0` switches the whole feature off (see [ENVIRONMENT.md](ENVIRONMENT.md)).
+- **A project remembers something wrong or old:** it is one line in "Memory"; edit or delete it, or turn memory off for the project. Each line is only the request you wrote and how that run ended; no file content and no model's reasoning is ever stored in it (D451).
