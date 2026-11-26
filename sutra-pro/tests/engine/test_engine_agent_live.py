@@ -161,6 +161,18 @@ def test_the_removal_reaches_the_file_and_close_leaves_it_empty(tmp_path):
     assert read(tmp_path)["agents"] == {} and cap._thread is None
 
 
+@pytest.mark.parametrize("role, purpose", [("planner", "plan"), ("judge", "judge")])
+def test_a_planner_and_a_judge_call_are_keyed_by_their_function(live, role, purpose):
+    """D453 (FR-1): a planner or judge call inside "What I build" keeps the enclosing function in its tag, so its entry names a person."""
+    with llm.tagged(function="adaptation", step=2):
+        with llm.tagged(role=role, purpose=purpose):
+            t = llm.current_tag()
+    live.progress(t, {"tool": "Reading a"})
+    assert list(live.snapshot()["agents"]) == ["adaptation"]
+    live.finished(t)
+    assert live.snapshot()["agents"] == {}
+
+
 # ---- through a router -----------------------------------------------------------------------------------------------------------------
 
 def make_port(tmp_path):
