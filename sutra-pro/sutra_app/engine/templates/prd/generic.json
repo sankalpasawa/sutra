@@ -4,7 +4,7 @@
   "kind": "generic",
   "version": 1,
   "from": "hand-edited: this file is the source of this type's sections, their fields, rules and rendering. J2 builds each section's model and checks from it at load time (j2_artifact_models, j2_rules); python3 j2_template_lib.py checks every generic.json",
- "assumptions_section": true,
+  "assumptions_section": true,
   "templates": [
     {
       "name": "PRD/1 · Problem",
@@ -96,14 +96,14 @@
               "name": "needs",
               "type": "string",
               "required": false,
-              "description": "what this group needs from the product",
+              "description": "what this group needs, as one sentence in its own voice: \"When <situation>, I want <what>, so that <outcome>\"",
               "nullable": false
             },
             {
               "name": "actions",
               "type": "list[string]",
               "required": false,
-              "description": "what this group does on the page; empty when this group has no actions in this version",
+              "description": "what this group does with the product; empty when this group has no actions in this version",
               "nullable": false
             }
           ]
@@ -129,7 +129,7 @@
       "render": [
         {
           "each": "users",
-          "line": "- {group}: {needs|uses the page}[; they {actions}]."
+          "line": "- {group}: {needs|uses the product}[; they {actions}]."
         },
         {
           "each": "users",
@@ -211,114 +211,6 @@
         {
           "each": "goals",
           "line": "- **{id}**: {statement}"
-        },
-        {
-          "each": "assumptions",
-          "line": "Assumption: {_}",
-          "after_body": true
-        }
-      ]
-    },
-    {
-      "name": "PRD/1 · Requirements",
-      "artifact": "prd",
-      "section": "Requirements",
-      "version": 1,
-      "kind": "generic",
-      "description": "The generic PRD/1 · Requirements template: the fixed layout of every PRD Requirements section, whatever the business",
-      "model": "PRDRequirements",
-      "conditions": [
-        "P1",
-        "P2"
-      ],
-      "fact_fields": true,
-      "fields": [
-        {
-          "name": "requirements",
-          "type": "list[Requirement]",
-          "required": true,
-          "description": "the requirements, R1, R2, ... in order",
-          "nullable": false
-        },
-        {
-          "name": "assumptions",
-          "type": "list[string]",
-          "required": false,
-          "description": "",
-          "nullable": false
-        }
-      ],
-      "objects": [
-        {
-          "name": "Requirement",
-          "fields": [
-            {
-              "name": "id",
-              "type": "string",
-              "required": true,
-              "description": "R1, R2, ... in order",
-              "nullable": false
-            },
-            {
-              "name": "statement",
-              "type": "string",
-              "required": true,
-              "description": "what the product must do, naming the user group that does it",
-              "nullable": false
-            },
-            {
-              "name": "priority",
-              "type": "string",
-              "required": true,
-              "description": "must, should or could",
-              "enum": [
-                "must",
-                "should",
-                "could"
-              ],
-              "nullable": false
-            },
-            {
-              "name": "goals",
-              "type": "list[string]",
-              "required": false,
-              "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
-              "nullable": false
-            }
-          ]
-        }
-      ],
-      "rules": [
-        {
-          "rule": "ids_sequential",
-          "path": "requirements",
-          "prefix": "R",
-          "name": "ids R1, R2, ... unique and in order",
-          "from": "P2"
-        },
-        {
-          "rule": "enum",
-          "path": "requirements[].priority",
-          "values": [
-            "must",
-            "should",
-            "could"
-          ],
-          "name": "priority is must, should or could",
-          "from": "P2"
-        },
-        {
-          "rule": "ref_exists",
-          "path": "requirements[].goals",
-          "target": "this.goals[].id",
-          "name": "goals point at a goal id of this document",
-          "from": "P6"
-        }
-      ],
-      "render": [
-        {
-          "each": "requirements",
-          "line": "{#}. **{id}**: {statement:nodot} ({priority|must}).[ Serves {goals}.]"
         },
         {
           "each": "assumptions",
@@ -414,6 +306,483 @@
       ]
     },
     {
+      "name": "PRD/1 · Approach",
+      "artifact": "prd",
+      "section": "Approach",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Approach template: the fixed layout of every PRD Approach section, whatever the business",
+      "model": "PRDApproach",
+      "conditions": [
+        "P1"
+      ],
+      "fields": [
+        {
+          "name": "approach",
+          "type": "string",
+          "required": true,
+          "description": "the shape of the solution in a few sentences: what the product does and how it reaches its users, with no design or technical detail",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": "approach",
+          "name": "the approach is given",
+          "from": "P1"
+        }
+      ],
+      "render": [
+        {
+          "text": "{approach}"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "PRD/1 · Key flows",
+      "artifact": "prd",
+      "section": "Key flows",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Key flows template: the fixed layout of every PRD Key flows section, whatever the business",
+      "model": "PRDKeyFlows",
+      "conditions": [
+        "P1"
+      ],
+      "fields": [
+        {
+          "name": "key_flows",
+          "type": "list[KeyFlow]",
+          "required": true,
+          "description": "the main ways the product is used or runs, the most important first",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "KeyFlow",
+          "fields": [
+            {
+              "name": "name",
+              "type": "string",
+              "required": true,
+              "description": "a short name for the flow",
+              "nullable": false
+            },
+            {
+              "name": "steps",
+              "type": "list[string]",
+              "required": true,
+              "description": "the steps in order: what starts it, what the product and the people do, and the result",
+              "nullable": false
+            },
+            {
+              "name": "failure",
+              "type": "string",
+              "required": false,
+              "description": "one thing that can go wrong, and what happens then",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "key_flows[].name",
+            "key_flows[].steps"
+          ],
+          "name": "every flow has a name and its steps",
+          "from": "P1"
+        }
+      ],
+      "render": [
+        {
+          "each": "key_flows",
+          "line": "- **{name}**: {steps}.[ If it fails: {failure:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "PRD/1 · Requirements",
+      "artifact": "prd",
+      "section": "Requirements",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Requirements template: the fixed layout of every PRD Requirements section, whatever the business",
+      "model": "PRDRequirements",
+      "conditions": [
+        "P1",
+        "P2"
+      ],
+      "fact_fields": true,
+      "fields": [
+        {
+          "name": "requirements",
+          "type": "list[Requirement]",
+          "required": true,
+          "description": "the requirements, R1, R2, ... in order",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Requirement",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "R1, R2, ... in order",
+              "nullable": false
+            },
+            {
+              "name": "statement",
+              "type": "string",
+              "required": true,
+              "description": "what the product must do, naming the user group that does it",
+              "nullable": false
+            },
+            {
+              "name": "priority",
+              "type": "string",
+              "required": true,
+              "description": "must, should or could",
+              "enum": [
+                "must",
+                "should",
+                "could"
+              ],
+              "nullable": false
+            },
+            {
+              "name": "goals",
+              "type": "list[string]",
+              "required": false,
+              "description": "the goal ids this requirement serves, e.g. [\"G1\"]",
+              "nullable": false
+            },
+            {
+              "name": "acceptance",
+              "type": "string",
+              "required": false,
+              "description": "how anyone can tell the requirement is met: one check that passes or fails",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "ids_sequential",
+          "path": "requirements",
+          "prefix": "R",
+          "name": "ids R1, R2, ... unique and in order",
+          "from": "P2"
+        },
+        {
+          "rule": "enum",
+          "path": "requirements[].priority",
+          "values": [
+            "must",
+            "should",
+            "could"
+          ],
+          "name": "priority is must, should or could",
+          "from": "P2"
+        },
+        {
+          "rule": "ref_exists",
+          "path": "requirements[].goals",
+          "target": "this.goals[].id",
+          "name": "goals point at a goal id of this document",
+          "from": "P6"
+        }
+      ],
+      "render": [
+        {
+          "each": "requirements",
+          "line": "{#}. **{id}**: {statement:nodot} ({priority|must}).[ Serves {goals}.][ Accepted when: {acceptance:nodot}.]"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "PRD/1 · Quality and constraints",
+      "artifact": "prd",
+      "section": "Quality and constraints",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Quality and constraints template: the fixed layout of every PRD Quality and constraints section, whatever the business",
+      "model": "PRDQuality",
+      "conditions": [
+        "P1"
+      ],
+      "fields": [
+        {
+          "name": "quality",
+          "type": "list[QualityNeed]",
+          "required": true,
+          "description": "what must hold however the product is built: privacy, security, speed, reliability, accessibility, platform, and the limits the charter sets",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "QualityNeed",
+          "fields": [
+            {
+              "name": "area",
+              "type": "string",
+              "required": true,
+              "description": "the kind of need, e.g. \"Privacy\"",
+              "nullable": false
+            },
+            {
+              "name": "requirement",
+              "type": "string",
+              "required": true,
+              "description": "what must hold",
+              "nullable": false
+            },
+            {
+              "name": "check",
+              "type": "string",
+              "required": false,
+              "description": "how it is checked, or the threshold it must meet",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "quality[].area",
+            "quality[].requirement"
+          ],
+          "name": "every need says what must hold",
+          "from": "P1"
+        }
+      ],
+      "render": [
+        {
+          "each": "quality",
+          "line": "| {area} | {requirement} | {check|not set in the brief} |",
+          "head": "| Area | What must hold | How it is checked |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "PRD/1 · Dependencies",
+      "artifact": "prd",
+      "section": "Dependencies",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Dependencies template: the fixed layout of every PRD Dependencies section, whatever the business",
+      "model": "PRDDependencies",
+      "conditions": [
+        "P1"
+      ],
+      "fields": [
+        {
+          "name": "dependencies",
+          "type": "list[Dependency]",
+          "required": true,
+          "description": "what the product needs from outside itself: systems, access, data, people",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "Dependency",
+          "fields": [
+            {
+              "name": "needed",
+              "type": "string",
+              "required": true,
+              "description": "what is needed",
+              "nullable": false
+            },
+            {
+              "name": "source",
+              "type": "string",
+              "required": true,
+              "description": "who or what provides it",
+              "nullable": false
+            },
+            {
+              "name": "state",
+              "type": "string",
+              "required": false,
+              "description": "whether it is available now, as the charter says",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "dependencies[].needed",
+            "dependencies[].source"
+          ],
+          "name": "every dependency says what is needed and from whom",
+          "from": "P1"
+        }
+      ],
+      "render": [
+        {
+          "each": "dependencies",
+          "line": "| {needed} | {source} | {state|not stated} |",
+          "head": "| Needed | From | State |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
+      "name": "PRD/1 · Risks",
+      "artifact": "prd",
+      "section": "Risks",
+      "version": 1,
+      "kind": "generic",
+      "description": "The generic PRD/1 · Risks template: the fixed layout of every PRD Risks section, whatever the business",
+      "model": "PRDRisks",
+      "conditions": [
+        "P1"
+      ],
+      "fields": [
+        {
+          "name": "risks",
+          "type": "list[ProductRisk]",
+          "required": true,
+          "description": "what could stop the product meeting its goals, each with what is done about it",
+          "nullable": false
+        },
+        {
+          "name": "assumptions",
+          "type": "list[string]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        }
+      ],
+      "objects": [
+        {
+          "name": "ProductRisk",
+          "fields": [
+            {
+              "name": "risk",
+              "type": "string",
+              "required": true,
+              "description": "the risk, one line",
+              "nullable": false
+            },
+            {
+              "name": "effect",
+              "type": "string",
+              "required": false,
+              "description": "what it would cost the users or the goals",
+              "nullable": false
+            },
+            {
+              "name": "mitigation",
+              "type": "string",
+              "required": true,
+              "description": "what is done about it",
+              "nullable": false
+            }
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "rule": "not_empty",
+          "path": [
+            "risks[].risk",
+            "risks[].mitigation"
+          ],
+          "name": "every risk has a mitigation",
+          "from": "P1"
+        }
+      ],
+      "render": [
+        {
+          "each": "risks",
+          "line": "| {risk} | {effect|not stated} | {mitigation} |",
+          "head": "| Risk | Effect | What is done about it |\n|---|---|---|"
+        },
+        {
+          "each": "assumptions",
+          "line": "Assumption: {_}",
+          "after_body": true
+        }
+      ]
+    },
+    {
       "name": "PRD/1 · Out of scope",
       "artifact": "prd",
       "section": "Out of scope",
@@ -496,6 +865,27 @@
           "nullable": false
         },
         {
+          "name": "success_metrics",
+          "type": "list[SuccessMetric]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "approach",
+          "type": "string",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "key_flows",
+          "type": "list[KeyFlow]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
           "name": "requirements",
           "type": "list[Requirement]",
           "required": false,
@@ -503,8 +893,22 @@
           "nullable": false
         },
         {
-          "name": "success_metrics",
-          "type": "list[SuccessMetric]",
+          "name": "quality",
+          "type": "list[QualityNeed]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "dependencies",
+          "type": "list[Dependency]",
+          "required": false,
+          "description": "",
+          "nullable": false
+        },
+        {
+          "name": "risks",
+          "type": "list[ProductRisk]",
           "required": false,
           "description": "",
           "nullable": false
@@ -531,7 +935,12 @@
         "needs",
         "actions",
         "target",
-        "window"
+        "window",
+        "acceptance",
+        "failure",
+        "check",
+        "state",
+        "effect"
       ]
     }
   ]

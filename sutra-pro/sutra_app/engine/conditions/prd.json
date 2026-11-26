@@ -2,7 +2,7 @@
   "_note": "Necessary conditions for a PRD (J2_OUTPUT=prd). Code checks each one on prd.md after every build; the PRD is workable only when all are met, except a \"severity\": \"warn\" one (a heuristic check: Audit weighs it, it never blocks) and Audit accepts. \"check\" names the code check in j2.condition_met(). \"severity\": \"warn\" shows the result on the Audit tab and in conditions.json but never blocks workable(); every other condition blocks.",
   "output": "prd",
   "conditions": [
-    {"id": "P1", "text": "All six sections are present and not empty", "check": "sections-present", "min_words": 1},
+    {"id": "P1", "text": "All eleven sections are present and not empty", "check": "sections-present", "min_words": 1},
     {"id": "P2", "text": "Requirement ids are unique and sequential (R1, R2, ...)", "check": "ids-sequential", "section": "Requirements", "prefix": "R"},
     {"id": "P3", "text": "Every brief fact appears exactly", "check": "facts-present-all", "severity": "warn"},
     {"id": "P4", "text": "No invented facts: every number, email and proper name comes from the charter or the Requester's answers, or sits in an Assumption: line", "check": "no-invented-facts", "names": true, "severity": "warn"},
