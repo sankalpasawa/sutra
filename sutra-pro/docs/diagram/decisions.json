@@ -2168,5 +2168,10 @@
   "id": "D452",
   "label": "a planned real run runs once, unasked; no dry run, no host question; expect checked after the run (P46, E31)",
   "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
+  "id": "D453",
+  "label": "the Map and chat say who works now and what, from agent_live.json; fixed crew sentences removed",
+  "anchor": "band:EXPERIENCE"
  }
 ]
