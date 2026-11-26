@@ -42,11 +42,31 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})\s*([\w.+-]*)[^`]*$")
 LIST = re.compile(r"^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$")
 TABLE_SEP = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$")
+COMMENT = re.compile(r"^\s*<!--.*-->\s*$")
 HR = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 QUOTE = re.compile(r"^\s*>\s?(.*)$")
 NOTE = re.compile(r"^(" + "|".join(NOTE_LABELS) + r"):\s*(.*)$")
 ID = r"[A-Z]{1,3}-?\d{1,3}"
 ID_LEAD = re.compile(r"^\*\*(" + ID + r")\b\s*([^*]*?)\*\*\s*:?\s*(.*)$")
+ID_PAREN = re.compile(r"^\*\*[A-Za-z][\w ]{0,30}?\((" + ID + r")\)\*\*\s*:?\s*(.*)$")      # "**Requirements1 (R1)**: ..."
+
+
+class _Lead:
+    """An item's leading id: [1] the id, [2] the rest of the bold text, [3] the text after it (as ID_LEAD's groups)."""
+
+    def __init__(self, rid, bold, text):
+        self.g = (None, rid, bold, text)
+
+    def __getitem__(self, i):
+        return self.g[i]
+
+
+def id_lead(line):
+    if m := ID_LEAD.match(line):
+        return _Lead(m[1], m[2], m[3])
+    if m := ID_PAREN.match(line):
+        return _Lead(m[1], "", m[2])
+    return None
 ID_WORD = re.compile(r"(?<![\w#-])(" + ID + r")(?![\w-])")
 GH_CALLOUT = re.compile(r"^\[!(\w+)\]\s*(.*)$", re.I)
 BOLD_CALLOUT = re.compile(r"^\*\*(" + "|".join(CALLOUT_KINDS.values()) + r"):?\*\*:?\s*(.*)$", re.I)
@@ -55,9 +75,15 @@ BOLD_CALLOUT = re.compile(r"^\*\*(" + "|".join(CALLOUT_KINDS.values()) + r"):?\*
 # ------------------------------------------------------------------------------------------------------------------ blocks
 def blocks(md):
     """The document as a list of blocks (dicts with "t"): h(level, text), p(lines), list(ordered, items[{lines, children}]),
-    table(head, align, rows), code(lang, text), quote(lines), hr. Nothing is dropped: every non-blank line lands in one block."""
-    lines = str(md or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    return _blocks(lines)
+    table(head, align, rows), code(lang, text), quote(lines), hr. Nothing is dropped but an HTML comment line outside a code
+    fence (a builder's section marker such as "<!-- W-9:start -->"), which Markdown never shows: every other line lands in a block."""
+    lines, fence, kept = str(md or "").replace("\r\n", "\n").replace("\r", "\n").split("\n"), "", []
+    for ln in lines:
+        if m := FENCE.match(ln):
+            fence = "" if fence and ln.strip().startswith(fence) else (fence or m[2])
+        if fence or not COMMENT.match(ln):
+            kept.append(ln)
+    return _blocks(kept)
 
 
 def _blocks(lines):
@@ -66,6 +92,9 @@ def _blocks(lines):
         ln = lines[i]
         s = ln.strip()
         if not s:
+            i += 1
+            continue
+        if COMMENT.match(ln):      # an HTML comment line (a builder's section marker) is not shown, as in any Markdown
             i += 1
             continue
         if m := FENCE.match(ln):
@@ -207,7 +236,7 @@ def defined_ids(bl):
         for b in bs:
             if b["t"] == "list":
                 for it in b["items"]:
-                    if m := ID_LEAD.match(it["lines"][0]):
+                    if m := id_lead(it["lines"][0]):
                         out.append(m[1])
                     walk(it["children"])
             elif b["t"] == "table":
@@ -245,13 +274,15 @@ def _slugger():
 
 def _requirement(text):
     """A requirement item's parts when it has "Accepted when": (requirement, accepted, checked, serves); else None."""
-    m = re.match(r"^(.*?)\s+Accepted when\s+(.*)$", text)
+    m = re.match(r"^(.*?)\s+Accepted when[,:]?\s+(.*)$", text)
     if not m:
         return None
     req, rest = m[1], m[2]
     chk = serves = ""
     if s := re.search(r"\s+Serves\s+([^.]*?)\.?\s*$", rest):
         serves, rest = s[1], rest[:s.start()]
+    if not serves and (s := re.search(r"\s+Serves\s+([^.]*?)\.\s*$", req)):      # "... (must). Serves G1. Accepted when: ..."
+        serves, req = s[1], req[:s.start()]
     if c := re.search(r"\s+Checked by\s+(.*?)\.?\s*$", rest):
         chk, rest = c[1], rest[:c.start()]
     return req, rest, chk, serves
@@ -330,7 +361,9 @@ def _body(bl, ids, title_used, slug, toc, pics=None):
             parts.append(_lines_html(b["lines"], ids, cls=' class="failpath"' if fail else ""))
         elif t == "list":
             parts.append(_flow_html(b, ids) if sec == FLOWS_SECTION and b["ordered"] and not _has_diagram(bl, sec)
-                         else _list_html(b, ids, slug, toc))
+                         else _flow_html(b, ids) if sec == PICTURE_AFTER and b["ordered"] and len(b["items"]) >= 2
+                         and all(_bold_lead(it["lines"][0]) for it in b["items"])      # Approach written as named steps
+                         else _list_html(b, ids, slug, toc, sec))
         elif t == "table":
             parts.append(_table_html(b, ids))
         elif t == "code":
@@ -502,13 +535,29 @@ def _pictures(bl, title):
     return out
 
 
-def _list_html(b, ids, slug, toc):
+def _list_html(b, ids, slug, toc, sec=""):
     items = b["items"]
-    led = [ID_LEAD.match(it["lines"][0]) for it in items]
+    led = [id_lead(it["lines"][0]) for it in items]
+    plain = not any(it["children"] for it in items)
+    if len(items) >= 2 and plain and sec in LABEL_SECTIONS and not all(led) and all(
+            LABEL.match(" ".join(it["lines"])) or NOTE.match(it["lines"][0]) for it in items) and sum(
+            1 for it in items if not NOTE.match(it["lines"][0])) >= 2:
+        return _label_table_html(items, ids, sec)
+    notes = [it for it, m in zip(items, led) if not m and NOTE.match(it["lines"][0])]
+    if notes and plain and sum(1 for m in led if m) >= 2 and all(m or NOTE.match(it["lines"][0]) for it, m in zip(items, led)):
+        # an id list with "Assumption:" items among it: the ids take their shape, the assumptions follow as notes
+        rest = {**b, "items": [it for it, m in zip(items, led) if m]}
+        return _list_html(rest, ids, slug, toc, sec) + "".join(_lines_html(it["lines"], ids) for it in notes)
     if len(items) >= 2 and all(led):
         reqs = [_requirement(" ".join([m[3]] + it["lines"][1:])) for m, it in zip(led, items)]
-        if all(reqs) and not any(it["children"] for it in items):
+        if all(reqs) and plain:
             return _ledger_html(led, reqs, ids)
+        if plain and sec in STEP_SECTIONS:
+            return _steps_html(led, items, ids)
+        texts = [" ".join([m[3]] + it["lines"][1:]) for m, it in zip(led, items)]
+        shaped = sum(1 for t in texts if _clauses(t)[1] or NAME_KIND.match(t))
+        if plain and shaped * 2 >= len(items) and any(_clauses(t)[1] for t in texts):
+            return _id_table_html(led, items, ids, sec)
         rows = []
         for m, it in zip(led, items):
             rid, rest_bold, text = m[1], m[2], m[3]
@@ -529,21 +578,143 @@ def _list_html(b, ids, slug, toc):
 
 
 NOT_STATED = '<span class="none">Not stated</span>'
+DASH = '<span class="none" title="not given">—</span>'
+# Signal's status pills: a table cell that holds only one of these words. ok: allowed or plain; ask: needs a person; no: not allowed
+STATUS = {"yes": "ok", "no": "no", "read": "ok", "write": "ask", "read/write": "ask", "autonomous": "ok", "with_confirmation": "ask",
+          "with confirmation": "ask", "approval": "ask", "needs approval": "ask", "blocked": "no", "available": "ok",
+          "not yet verified": "ask", "not verified": "ask", "must": "ok", "should": "ask", "could": "no"}
+
+
+PRIORITY = re.compile(r"\s*\((must|should|could|won't)\)\.?\s*$", re.I)
 
 
 def _ledger_html(led, reqs, ids):
+    """Requirements as a table: id, requirement (with what it serves), priority when they say it, accepted when, checked by."""
+    pri = [PRIORITY.search(r[0]) for r in reqs]
+    with_pri = any(pri)
     rows = []
-    for m, (req, acc, chk, serves) in zip(led, reqs):
+    for m, (req, acc, chk, serves), p in zip(led, reqs, pri):
         rid = m[1]
         lead = f"<b>{inline(m[2], ids)}</b> " if m[2] else ""
         srv = f'<span class="serves">Serves {inline(serves, ids)}</span>' if serves else ""
+        text = req[:p.start()] + "." if p else req
+        prio = (f'<td class="prio" data-label="Priority"><span class="pri pri-{p[1].lower().replace(chr(39), "")}">{p[1].lower()}</span></td>'
+                if p else '<td class="prio" data-label="Priority"><span class="none">not stated</span></td>') if with_pri else ""
         rows.append(f'<tr id="{rid}"><td class="id" data-label="Id"><a class="rid" href="#{rid}">{rid}</a></td>'
-                    f'<td data-label="Requirement">{lead}{inline(req, ids)}{srv}</td>'
+                    f'<td data-label="Requirement">{lead}{inline(text, ids)}{srv}</td>{prio}'
                     f'<td data-label="Accepted when">{inline(acc, ids)}</td>'
                     f'<td class="method" data-label="Checked by">{inline(chk, ids) if chk else NOT_STATED}</td></tr>')
     long = " long" if len(rows) >= LONG_TABLE else ""
     return ('<div class="tw"><table class="lg req stack' + long + '"><thead><tr><th class="id">Id</th><th>Requirement</th>'
-            '<th>Accepted when</th><th>Checked by</th></tr></thead><tbody>' + "".join(rows) + "</tbody></table></div>")
+            + ('<th>Priority</th>' if with_pri else "") + '<th>Accepted when</th><th>Checked by</th></tr></thead><tbody>'
+            + "".join(rows) + "</tbody></table></div>"
+            + _matrix_html([(m[1], r[3]) for m, r in zip(led, reqs)], "goal", "Which goal each requirement serves"))
+
+
+def _matrix_html(pairs, what, caption):
+    """A coverage matrix (Signal's): one row per item, one column per id its "Serves"/"Covers" text names, a dot where it does.
+    "" unless at least two rows and two columns."""
+    rows = [(rid, re.findall(ID, str(text or ""))) for rid, text in pairs]
+    cols = sorted({c for _, cs in rows for c in cs}, key=lambda x: (re.sub(r"\d", "", x), int(re.sub(r"\D", "", x) or 0)))
+    if len([r for r in rows if r[1]]) < 2 or len(cols) < 2:
+        return ""
+    head = '<th class="id"></th>' + "".join(f'<th><a class="ref" href="#{c}">{c}</a></th>' for c in cols)
+    body = "".join(f'<tr><th class="id"><a class="rid" href="#{rid}">{rid}</a></th>'
+                   + "".join(f'<td>{"<span class=dot title=yes>&#9679;</span>" if c in cs else ""}</td>' for c in cols) + "</tr>"
+                   for rid, cs in rows)
+    return (f'<figure class="matrix"><div class="tw"><table aria-label="{html.escape(caption)}"><thead><tr>{head}</tr></thead>'
+            f'<tbody>{body}</tbody></table></div><figcaption>{html.escape(caption)}, from the {what} ids each item names.</figcaption></figure>')
+
+
+# ---- lists that are tables or flows in disguise (D460). The words stay; only where they sit changes.
+CLAUSE = re.compile(r"(?:(?<=[.)])\s+|^)(Covers(?= [A-Z]{1,3}-?\d)|In(?= S\d)|Performs(?= A\d)|Implements(?= [A-Z]{1,3}-?\d)|Serves(?= [A-Z]{1,3}-?\d)"
+                    r"|Shown by|Mitigation|Effect|Checked by|Owner|Covered by|Proves)\b:?\s+")
+NAME_KIND = re.compile(r"^(.{1,70}?) \(([^()]{2,40})\):\s+(.*)$")
+STEP_SECTIONS = ("Steps",)
+LABEL_SECTIONS = ("Trigger", "State", "Safety", "Runtime", "Limits", "Config and secrets", "Configuration keys and defaults")
+LABEL = re.compile(r"^(?:\*\*([^*]{1,50}?):?\*\*:?|`([^`]{1,60})`:|([A-Z][\w ,/()'-]{1,48}?):)\s+(.*)$")
+
+
+def _clauses(text):
+    """("description", {label: text}) from "... Covers R8. In S1. Performs A2." (labels only at a sentence's start)."""
+    parts = CLAUSE.split(text)
+    out, desc = {}, parts[0].strip()
+    for k in range(1, len(parts) - 1, 2):
+        out[parts[k]] = parts[k + 1].strip().rstrip(".")
+    return desc, out
+
+
+def _id_table_html(led, items, ids, sec):
+    """An id list whose items carry a name (kind) and labelled clauses, as a table: Id, Name, Kind, What, then one column per label."""
+    rows, cols = [], []
+    for m, it in zip(led, items):
+        text = " ".join([m[3]] + it["lines"][1:])
+        name, kind = _plain(m[2]).strip(" :"), ""
+        if (nk := NAME_KIND.match(text)) and not name:
+            name, kind, text = nk[1], nk[2], nk[3]
+        elif name and (k := re.match(r"^\(([^()]{2,40})\)\s*:?\s*(.*)$", text)):
+            kind, text = k[1], k[2]
+        desc, labels = _clauses(text)
+        rows.append((m[1], name, kind, desc, labels))
+        cols += [c for c in labels if c not in cols]
+    with_name, with_kind = any(r[1] for r in rows), any(r[2] for r in rows)
+    head = ('<th class="id">Id</th>' + ("<th>Name</th>" if with_name else "") + ("<th>Kind</th>" if with_kind else "")
+            + f"<th>{'Description' if with_name else sec or 'What'}</th>" + "".join(f"<th>{html.escape(c)}</th>" for c in cols))
+    body = []
+    for rid, name, kind, desc, labels in rows:
+        cells = [f'<td class="id" data-label="Id"><a class="rid" href="#{rid}">{rid}</a></td>']
+        if with_name:
+            cells.append(f'<td class="nm" data-label="Name">{inline(name, ids)}</td>')
+        if with_kind:
+            cells.append(f'<td data-label="Kind"><span class="kind">{inline(kind, ids)}</span></td>')
+        cells.append(f'<td data-label="{"Description" if with_name else "What"}">{_lines_html([desc], ids, tag="")}</td>')
+        cells += [f'<td data-label="{html.escape(c)}">{inline(labels[c], ids) if c in labels else DASH}</td>' for c in cols]
+        body.append(f'<tr id="{rid}">{"".join(cells)}</tr>')
+    cls = "lg idt" + (" long" if len(rows) >= LONG_TABLE else "") + (" stack" if 2 + with_name + with_kind + len(cols) >= 4 else "")
+    cover = next((c for c in ("Covers", "Implements") if c in cols), None)
+    matrix = _matrix_html([(r[0], r[4].get(cover, "")) for r in rows], "requirement", f"Which requirement each item {cover.lower()}") if cover else ""
+    return f'<div class="tw"><table class="{cls}"><thead><tr>{head}</tr></thead><tbody>{"".join(body)}</tbody></table></div>{matrix}'
+
+
+def _steps_html(led, items, ids):
+    """Numbered steps with ids (S1, S2, ...) as a flow: each step's id, name, kind and words."""
+    out = []
+    for m, it in zip(led, items):
+        text = " ".join([m[3]] + it["lines"][1:])
+        name, kind = _plain(m[2]).strip(" :"), ""
+        if (nk := NAME_KIND.match(text)) and not name:
+            name, kind, text = nk[1], nk[2], nk[3]
+        badge = f'<span class="kind">{inline(kind, ids)}</span>' if kind else ""
+        out.append(f'<li id="{m[1]}"><a class="rid" href="#{m[1]}">{m[1]}</a><div><b>{inline(name, ids)}</b> {badge}'
+                   f'<div class="sd">{_lines_html([text], ids, tag="")}</div></div></li>')
+    return f'<ol class="stepflow" aria-label="Steps, in order">{"".join(out)}</ol>'
+
+
+def _label_table_html(items, ids, sec):
+    """A list of "Label: value" items as a table (Safety: yes/no answers get their own column); Assumption lines stay notes."""
+    rows, notes, yn = [], [], True
+    for it in items:
+        line = " ".join(it["lines"])
+        if NOTE.match(line):
+            notes.append(line)
+            continue
+        m = LABEL.match(line)
+        key, val = (m[1] or m[2] or m[3]).strip(), m[4]
+        a = re.match(r"^(yes|no)\b[.,:;]?\s*(.*)$", val, re.I)
+        yn = yn and bool(a)
+        rows.append((key, val, a, bool(m[2])))
+    third = yn and len(rows) >= 2
+    head = "<th>Setting</th><th>Value</th>" if any(r[3] for r in rows) else ("<th>Question</th><th>Answer</th><th>Detail</th>" if third else "<th>Item</th><th>Detail</th>")
+    body = []
+    for key, val, a, code in rows:
+        k = f"<code>{html.escape(key)}</code>" if code else inline(key, ids)
+        if third:
+            body.append(f'<tr><td class="nm">{k}</td><td><span class="yn yn-{a[1].lower()}">{a[1].lower()}</span></td>'
+                        f'<td>{_lines_html([a[2]], ids, tag="")}</td></tr>')
+        else:
+            body.append(f'<tr><td class="nm">{k}</td><td>{_lines_html([val], ids, tag="")}</td></tr>')
+    return (f'<div class="tw"><table class="lg kv{" long" if len(rows) >= LONG_TABLE else ""}"><thead><tr>{head}</tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table></div>' + "".join(_lines_html([n], ids) for n in notes))
 
 
 def _table_html(b, ids):
@@ -559,6 +730,8 @@ def _table_html(b, ids):
             lab = html.escape(_plain(head[i]) if i < len(head) else "", quote=True)
             if i == 0 and rid:
                 tds.append(f'<td class="id" data-label="{lab}"{st(i)}><a class="rid" href="#{first}">{html.escape(first)}</a></td>')
+            elif (pill := STATUS.get(_plain(c).strip().lower())):
+                tds.append(f'<td data-label="{lab}"{st(i)}><span class="pill pill-{pill}">{html.escape(_plain(c).strip())}</span></td>')
             else:
                 tds.append(f'<td data-label="{lab}"{st(i)}>{inline(c, ids)}</td>')
         trs.append(f"<tr{rid}>{''.join(tds)}</tr>")
@@ -923,7 +1096,7 @@ p{margin:0 0 12px}
 ul,ol{margin:0 0 14px;padding-left:22px}
 li{margin:3px 0}
 li>ul,li>ol{margin:4px 0 6px}
-code{font:13px/1.5 var(--f-m);background:var(--codebg);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+code{overflow-wrap:anywhere;font:13px/1.5 var(--f-m);background:var(--codebg);border:1px solid var(--line);border-radius:4px;padding:0 4px}
 hr{border:0;border-top:1px solid var(--line);margin:24px 0}
 .lab{border-left:2px solid var(--line2);padding:1px 0 1px 12px;color:var(--muted);font-size:14.5px;margin:-4px 0 12px}
 .lab b{color:var(--ink);font-weight:650}
@@ -939,12 +1112,13 @@ a.ref{font-family:var(--f-m);font-size:.88em;text-decoration:none;border-bottom:
 .tw{overflow-x:auto;margin:0 0 18px;border-top:2px solid var(--ink)}
 table.lg{border-collapse:collapse;width:100%;font-size:14px;line-height:1.5;color:var(--ink)}
 table.lg th{font:650 12px/1.4 var(--f-b);text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);vertical-align:bottom}
-table.lg td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+table.lg td{overflow-wrap:anywhere;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
 table.lg td.id,table.lg th.id{width:1%;white-space:nowrap}
 table.long{font-size:13.5px}
 table.long td{padding:5px 10px}
 table.long tbody tr:nth-child(even) td{background:var(--zebra)}
-table.req td:nth-child(2){width:46%}
+table.req td:nth-child(2){width:38%}
+table.req td:nth-last-child(2){width:34%}
 table.req th:last-child{white-space:nowrap}
 table.req td.method{font-family:var(--f-m);font-size:12.5px;white-space:nowrap}
 .serves{display:block;font:12px/1.5 var(--f-m);color:var(--muted);margin-top:3px}
@@ -967,6 +1141,30 @@ svg.dg .dgah{fill:var(--muted)}
 svg.dg .dgt{fill:var(--ink);font-size:13px;font-weight:550}
 svg.dg .dgl{fill:var(--ink);font-size:12px;paint-order:stroke;stroke:var(--paper);stroke-width:5px;stroke-linejoin:round}
 svg.dg .dgx{fill:none;stroke-dasharray:5 4}
+table.lg td.nm{font-weight:600;min-width:120px}
+.pill{display:inline-block;font:650 11.5px/1.7 var(--f-b);border-radius:999px;padding:0 9px;white-space:nowrap;border:1px solid var(--line2)}
+.pill-ok{color:var(--ink)}
+.pill-ask{color:var(--ask);border-color:var(--ask);background:var(--asksoft)}
+.pill-no{color:var(--muted);text-decoration:line-through}
+figure.matrix{margin:-6px 0 20px}
+figure.matrix .tw{overflow-x:auto!important}
+figure.matrix table{border-collapse:collapse;font:12.5px/1.4 var(--f-m)}
+figure.matrix th,figure.matrix td{border:1px solid var(--line);padding:4px 8px;text-align:center;min-width:34px}
+figure.matrix thead th{background:var(--paper2)}
+figure.matrix th.id{text-align:left;background:var(--paper2)}
+figure.matrix .dot{color:var(--accent);font-size:13px}
+.kind{display:inline-block;font:600 11px/1.6 var(--f-m);color:var(--muted);border:1px solid var(--line2);border-radius:5px;padding:0 6px;white-space:nowrap}
+.pri{display:inline-block;font:650 11.5px/1.6 var(--f-b);text-transform:uppercase;letter-spacing:.04em;border-radius:5px;padding:0 7px;border:1px solid var(--line2)}
+.pri-must{border-color:var(--ink);color:var(--ink)}
+.pri-should,.pri-could,.pri-wont{color:var(--muted)}
+td.prio{white-space:nowrap}
+.yn{display:inline-block;font:650 11.5px/1.6 var(--f-b);text-transform:uppercase;border-radius:5px;padding:0 7px;border:1px solid var(--line2)}
+.yn-yes{color:var(--ask);border-color:var(--ask)}
+.yn-no{color:var(--muted)}
+ol.stepflow{list-style:none;padding:0;margin:4px 0 16px}
+ol.stepflow>li{position:relative;display:grid;grid-template-columns:44px minmax(0,1fr);gap:0 10px;margin:0 0 14px;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;background:var(--paper)}
+ol.stepflow>li:not(:last-child)::after{content:"";position:absolute;left:30px;bottom:-12px;width:2px;height:10px;background:var(--muted)}
+ol.stepflow .sd{font-size:14px;margin-top:2px}
 figure figcaption{font:12.5px/1.5 var(--f-b);color:var(--muted);margin-top:8px}
 ol.flowchain{list-style:none;padding:0;margin:4px 0 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 26px}
 ol.flowchain>li{position:relative;display:flex;gap:10px;margin:0;border:1px solid var(--line2);border-radius:10px;padding:10px 12px;background:var(--paper);font-size:14px;line-height:1.5}
@@ -1039,7 +1237,7 @@ html.js:not(.themed) body{visibility:hidden}
  .tocdd{order:-1;flex:1}
  .tocdd summary{width:100%}
  .wrap{padding:16px 14px 64px}
- .tw{overflow:visible}
+ .tw{overflow-x:auto}
  table.stack,table.stack tbody,table.stack tr,table.stack td{display:block;width:auto!important}
  table.stack thead{display:none}
  table.stack tr{padding:10px 0;border-bottom:1px solid var(--line)}
