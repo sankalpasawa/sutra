@@ -62,7 +62,7 @@ Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`,
 | R1-9 | skipped | | Not in the approved list. The PIN line predates the branch and is only a label |
 | Cuts C1, C2, C3, C4, C5, C7 | done | 47082c84 | C1 = R1-6, C2 = R1-5. C3: the JS header comment is gone, and the rule "tool lines may be shown, the agents' free text may not" moved into E32a's edit-table comment. C4: the anchor comment is gone. C5: `rc` folded. C7: agents.py lines joined |
 | Cut C6 | skipped | | The owner said to skip it: it would leave unused variables in the generated page |
-| R2-1 | fixed | (this commit) | `sCrew` calls `liveLines(s)` once at its top (a new run clears `LIVE` before the crew reads it) and reuses the rows. Test: `sCrew` alone on a new run's first state shows nothing of the last run; it failed before the fix. tests/ui/js 1755 pass, page_render with the J2 opt-in 62 pass, test_port_edits 183 passed + 1 skipped (184 with the opt-in), port `--check` clean; full gate not rerun (coordinator) |
+| R2-1 | fixed | 1281a9f3 | `sCrew` calls `liveLines(s)` once at its top (a new run clears `LIVE` before the crew reads it) and reuses the rows. Test: `sCrew` alone on a new run's first state shows nothing of the last run; it failed before the fix. tests/ui/js 1755 pass, page_render with the J2 opt-in 62 pass, test_port_edits 183 passed + 1 skipped (184 with the opt-in), port `--check` clean; full gate not rerun (coordinator) |
 
 ## Follow-ups
 | # | Item |
@@ -72,6 +72,28 @@ Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`,
 | F3 | Fixed in review round 1 (R1-4): the page loads raw_chat.js before its own script (E32f), so the names are right on the first poll. dept_ext.js skips its own load when `#raw_chat-js` exists (dept_ext.js:211) |
 | F4 | plan.md's `J2PAGE` pin (00efb179, taken from test_port_edits.py's miniature PIN) does not port this page; the page pin is ee659fb5 |
 | F5 | The Q-1 runtime check (key `adaptation` during "What I build") is only proven by the unit test until the owner's beta run |
+
+## Owner live test: the tool line
+The owner saw raw commands and full home paths in live lines ("Bash python3 - <<'E' p='index.html'…", "Write ~/.sutra-pro-beta/…"). They came from `router.tool_title`, which joined the tool name and its first argument as given. That function is the one place where the `{"tool": …}` progress line is made (router.py `_progress`), so the fix is there. It now reuses `tool_kinds.describe` instead of its own argument list:
+| Tool | Line |
+|---|---|
+| Read / Write / Edit (any read or edit kind) | `describe`'s title: "Reading" / "Writing" / "Editing" + the path relative to the call's folder (a builder call: its run folder, `run_tools.root`; any other call: the owner's folder it was given), else the basename. Never a home path |
+| Bash / a Codex command | "Running <program>": the first word that is not `NAME=value`, as a basename (`/usr/bin/python3` → python3). Never arguments or a heredoc |
+| Anything else (Grep, Glob, WebFetch, an unknown tool) | "Using <tool name>", no arguments |
+
+The writer still redacts before it cuts. Raw AI chat reads the same agent_live.json, so its "writing right now" rows show these lines too (e.g. "Running python3", "Writing site/index.html" where it used to show "Bash python3 - <<'E' …"). Its call list comes from calls.jsonl and is unchanged. The node-chat partials (orchestrator/runs.py) show the same new lines. The chat's own tool cards (`chat_blocks`, which calls `describe` directly) are unchanged.
+
+## Follow-ups (from the owner's live test, not built)
+| # | Item |
+|---|---|
+| L1 | Finished or idle people keep their last line and look busy |
+| L2 | The Simple view's chat panel has no live line |
+| L3 | Asha's line stays "Enough information to work?" after intake |
+| L4 | The planner is not shown in the Simple view's crew, since it is not one of the five people |
+
+Tests after the fix: tests/connectors plus the agent_live, rawchat, api_redact, views, runs_watcher_partials and port_edits tests: 2467 passed, 7 skipped, 0 failed. tests/ui/js: 1755 pass. page_render with the J2 opt-in at ee659fb5: 62 pass. port `--check` clean (the page did not change). The full gate was not rerun.
+
+Confirmed in the owner's live test: Q-1, the planner and judge entry is keyed `adaptation` with `"step": 2`; R2-2, Raw AI chat loads and opens with raw_chat.js loaded before the page script.
 
 ## How to test live (the owner runs it; it spends model quota)
 What changes on screen:

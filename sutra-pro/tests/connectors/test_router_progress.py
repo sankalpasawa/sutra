@@ -16,9 +16,9 @@ from sutra_app.connectors.stub import StubConnector
 from sutra_app.engine.port import CallTag, CompletionRequest, ModelError
 
 
-def events_of(*events):
+def events_of(*events, folder=""):
     got = []
-    on_event = _progress(got.append)
+    on_event = _progress(got.append, folder)
     for event in events:
         on_event(event)
     return got
@@ -31,12 +31,30 @@ def tool(**data):
 def test_a_tool_call_is_forwarded_with_its_name_and_what_it_is_about():
     got = events_of(tool(name="Read", input={"file_path": "src/app.py"}), tool(name="Grep", input={"pattern": "def main", "path": "."}),
                     tool(name="LS", input={}), tool(type="command_execution", id="x"))
-    assert got == [{"tool": "Read src/app.py"}, {"tool": "Grep def main"}, {"tool": "LS"}, {"tool": "command_execution"}]
+    assert got == [{"tool": "Reading src/app.py"}, {"tool": "Using Grep"}, {"tool": "Using LS"}, {"tool": "Using command_execution"}]
 
 
 def test_a_long_or_multiline_tool_line_is_one_short_line():
     title = tool_title({"name": "Bash", "input": {"command": "git log\n  --oneline " + "x" * 400}})
-    assert "\n" not in title and len(title) <= 120 and title.startswith("Bash git log --oneline x")
+    assert title == "Running git"
+
+
+RUN = "/home/someone/.sutra-pro-beta/departments/web/runs/j2-1"
+
+
+@pytest.mark.parametrize("data, line", [
+    ({"name": "Bash", "input": {"command": "python3 - <<'E'\np='index.html';s=open(p).read()\nE"}}, "Running python3"),      # never the heredoc
+    ({"name": "Bash", "input": {"command": "/usr/bin/python3 build.py --out " + RUN}}, "Running python3"),                       # the program, no path or arguments
+    ({"name": "Bash", "input": {"command": "FOO=1 node x.js"}}, "Running node"),
+    ({"name": "Write", "input": {"file_path": RUN + "/site/index.html"}}, "Writing site/index.html"),                        # relative to the run folder
+    ({"name": "Read", "input": {"file_path": "/home/someone/notes/plan.md"}}, "Reading plan.md"),                           # outside: the basename only
+    ({"name": "Edit", "input": {"file_path": RUN + "/src/a.py", "old_string": "x", "new_string": "y"}}, "Editing src/a.py"),
+    ({"name": "Mystery", "input": {"command_line": "--token abc"}}, "Using Mystery"),                                       # an unknown tool: its name only
+])
+def test_a_live_tool_line_is_an_action_and_a_file_never_a_command_body_or_a_home_path(data, line):
+    """D453 (the owner's live test): the line names the action and the file; a run's paths are relative to the call's folder."""
+    assert tool_title(data, RUN) == line
+    assert events_of(tool(**data), folder=RUN) == [{"tool": line}]
 
 
 def test_claudes_structured_output_call_is_not_shown_as_work():
@@ -46,7 +64,7 @@ def test_claudes_structured_output_call_is_not_shown_as_work():
 def test_the_text_events_are_as_before_and_tool_calls_do_not_disturb_them():
     got = events_of(ConnectorEvent(kind="started", data={}), ConnectorEvent(kind="text_delta", data={"text": "ab"}), tool(name="Read", input={"path": "a"}),
                     ConnectorEvent(kind="text_delta", data={"text": "cd"}), ConnectorEvent(kind="text", data={"text": "abcd"}))
-    assert got == [{"chars": 2, "text": "ab"}, {"tool": "Read a"}, {"chars": 4, "text": "abcd"}]
+    assert got == [{"chars": 2, "text": "ab"}, {"tool": "Reading a"}, {"chars": 4, "text": "abcd"}]
 
 
 def test_no_callback_no_listener():
