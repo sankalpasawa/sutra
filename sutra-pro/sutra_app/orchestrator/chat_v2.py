@@ -23,6 +23,7 @@ from sutra_app.orchestrator import direct_turns
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.errors import AppError, NotFound
 from sutra_app.orchestrator.ids import iso_z
+from sutra_app.orchestrator.project_memory import record_chat_archive
 from sutra_app.orchestrator.records import ChatMessage
 
 __all__ = ["ChatSegments", "ChatSearch", "ChatArchive", "ChatChoices", "MAX_RESULTS", "SCOPE_RE", "DIRECT_ASK", "INTERRUPTED", "recover_interrupted",
@@ -123,6 +124,7 @@ class ChatArchive:
         if row["status"] == "archived":
             return False
         tx.conn.execute("UPDATE chat_sessions SET status = 'archived', writable = 0, updated_at = max(updated_at, ?) WHERE id = ?", (tx.now(), session_id))
+        record_chat_archive(tx.conn, session_id, tx.now())              # D451: one line of the project's memory (its first owner line, its last reply); no model, never raises
         self._replace(tx, row)
         tx.emit("chat.archived", {"session_id": session_id, "archived": True})
         return True

@@ -99,13 +99,16 @@
     const name = esc(clean(f.name));
     if (f.sent === "image") return "Sent as an image: " + name;
     if (f.sent === "pdf") return "Sent as a PDF: " + name;
+    if (f.sent === "reference") return "Kept as a reference file: " + name;          // D451: an image or a PDF that came with a request to the team: copied into the run, never read as text
     const sent = Number.isFinite(f.chars) ? f.chars : 0;
     const total = Number.isFinite(f.total) && f.total >= sent ? f.total : sent;
+    if (f.sent === "given") return "Given to the team: " + name + (f.cut === true ? " (opening " + grouped(Math.max(0, Math.floor(sent))) + " of " + grouped(Math.max(0, Math.floor(total))) + " characters; the whole file is in the run folder)" : " (all " + grouped(Math.max(0, Math.floor(sent))) + " characters)");
     return "Read: " + name + (f.cut === true ? " (first " + grouped(Math.max(0, Math.floor(sent))) + " of " + grouped(Math.max(0, Math.floor(total))) + " characters)" : " (all " + grouped(Math.max(0, Math.floor(sent))) + " characters)");
   }
   const fileReceiptHtml = files => {
-    const list = (Array.isArray(files) ? files : []).filter(f => isObj(f) && ["text", "image", "pdf"].includes(f.sent)).slice(0, 10);
-    return list.length === 0 ? "" : '<ul class="creceipt" aria-label="What the model received">' + list.map(f => "<li>" + fileReceiptLine(f) + "</li>").join("") + "</ul>";
+    const list = (Array.isArray(files) ? files : []).filter(f => isObj(f) && ["text", "image", "pdf", "given", "reference"].includes(f.sent)).slice(0, 10);
+    const team = list.length > 0 && list.every(f => f.sent === "given" || f.sent === "reference");          // D451: the files of a request to a team
+    return list.length === 0 ? "" : '<ul class="creceipt" aria-label="' + (team ? "What the team was given" : "What the model received") + '">' + list.map(f => "<li>" + fileReceiptLine(f) + "</li>").join("") + "</ul>";
   };
 
   // The agents address each other with a leading "@Name" (J2's chat). The owner reads the sentence, not the address, so the tag is dropped from

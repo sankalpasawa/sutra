@@ -34,6 +34,14 @@ ID_PATTERN = r"^[A-Za-z0-9_.:\-]{1,120}$"       # every id in a URL (design 6.1)
 TASK_ID_PATTERN = r"^tsk_[0-9a-f]{12}$"
 
 
+class FileRefIn(BaseModel):
+    """One file of the attachment store that goes with a task (D451): its content hash and the owner's name for it."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    name: str = Field(min_length=1, max_length=200)
+
+
 class TaskIn(BaseModel):
     """The body of `POST /api/tasks`. Closed: another key is a 422. `settings` is checked by the service (the seven keys)."""
 
@@ -44,6 +52,7 @@ class TaskIn(BaseModel):
     title: str | None = Field(None, min_length=1, max_length=200)
     settings: dict[str, Any] | None = None
     follows: str | None = Field(None, pattern=TASK_ID_PATTERN)
+    files: list[FileRefIn] = Field(default_factory=list, max_length=10)          # D451: stored files that go with the task; each is copied into the run's `inputs/attached/`
 
 
 def _service(request: Request) -> TaskService:
@@ -73,7 +82,7 @@ def build_router() -> APIRouter:
         def create() -> str:
             with service.db.tx() as tx:
                 created = service.create(tx, dept_id=body.dept_id, text=text, title=body.title, scope_id=body.scope_id,
-                                         follows=body.follows, settings=body.settings)
+                                         follows=body.follows, settings=body.settings, input_files=[f.model_dump() for f in body.files])
                 return created.id
 
         task_id = await run_blocking(create)

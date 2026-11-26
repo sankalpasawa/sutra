@@ -136,6 +136,7 @@ class TaskSpec(BaseModel):
     settings: dict[str, str] = {}
     connector: Literal["auto", "claude", "codex", "stub"] = "auto"
     node: Optional[NodeSpec] = None                 # present only for a node of a multi-agent project (D283); absent in every task of today
+    inputs: list[dict] = []                          # the files the server copied into `inputs/` before the start (D451): {id, name, kind, size, chars, where}; the host does not read them
     _dropped_settings: list[str] = PrivateAttr(default_factory=list)
 
     @field_validator("schema_")

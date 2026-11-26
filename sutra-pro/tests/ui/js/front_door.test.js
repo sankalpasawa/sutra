@@ -163,7 +163,7 @@ test("the home box (D423): an empty holder for the Budget chip beside Go, the ch
   assert.equal(FD.budgetOf, undefined);
   const js = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/static/js/home.js"), "utf8");
   assert.match(js, /choice \? \{text: body, choice\} : \{text: body, \.\.\.budget\}/);      // a budget never rides with a card answer
-  assert.match(js, /send\(body, null, \{plan: true, usd_budget: usd\}\)/);
+  assert.match(js, /send\(body, null, \{plan: true, usd_budget: usd, files\}\)/);          // D451: + the front door's files
 });
 
 test("stopOf (D420): Stop while the box is empty, the card shows the work this send started, and its team has a live task", () => {
@@ -217,4 +217,20 @@ test("the first approval that starts a project, once per change (D427: the box o
   assert.deepEqual(FD.addToName(needs, {"chg-0007": true}), {change_id: "chg-0008", ref: "$a", name: "Bakery"});
   assert.equal(FD.addToName(needs, {"chg-0007": true, "chg-0008": true}), null);
   assert.equal(FD.addToName(null, {}), null);
+});
+
+test("Attention's box takes files (D451, E3 and E4): the paperclip and chips in the markup, the scripts before home.js, and the files ride with the request (source pin: home.js is not loadable in node)", () => {
+  const fs = require("node:fs");
+  const html = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/pages/home.html"), "utf8");
+  const js = fs.readFileSync(path.resolve(__dirname, "../../../sutra_app/ui/static/js/home.js"), "utf8");
+  assert.match(html, /<div class="sfiles" id="fdfiles"><\/div>\s*<div class="fdcfoot"><span id="fdattach"><\/span>/);
+  for (const name of ["attach_bar", "start_files", "project_context_view", "chat_composer"]) assert.ok(html.indexOf("/ui/js/" + name + ".js") > 0 && html.indexOf("/ui/js/" + name + ".js") < html.indexOf("/ui/js/home.js"), name);
+  assert.ok(html.indexOf("/ui/js/attach_bar.js") < html.indexOf("/ui/js/chat_composer.js"));
+  assert.match(js, /"\/api\/teams\/" \+ encodeURIComponent\(team\(\)\.id\) \+ "\/attachments" : "\/api\/chats\/" \+ ORG \+ "\/attachments"/);      // a picked project's own upload, else the org chat's
+  assert.match(js, /async function sendToProject\(team, body, usd, files\)/);
+  assert.match(js, /if \(Array\.isArray\(files\) && files\.length\) payload\.files = files;/);
+  assert.match(js, /const held = S\.files \? S\.files\.blocked\(\) : "";\s*\/\/ D451/);                                                                // a failed or uploading chip holds the send
+  assert.match(js, /sendToProject\(team, body, usd, files\)/);
+  assert.match(js, /if \(allFiles\.length\) payload\.files = allFiles;/);
+  assert.match(js, /root\.ProjectContextView\.openFor\(\{dept: team\.id/);                                                                     // "Project files and memory" in the project menu
 });

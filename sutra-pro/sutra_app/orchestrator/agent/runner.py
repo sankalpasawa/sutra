@@ -131,24 +131,29 @@ class TurnRunner:
     # =================================================================================================================
 
     async def post_user_message(self, session_id: str, text: str, choice: ChatChoice | None = None, *, budget: int | None = None, decide_for_me: bool = False,
-                                 failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None) -> Accepted:
+                                 failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None, files: Sequence[dict] = ()) -> Accepted:
         """Store the owner's line (state `pending`), queue the turn and return at once. A click on a card button (`choice`) is stored
         as the owner's line with the option's label. Raises 503 `provider_unavailable` / `cli_missing` before anything is stored when
         a model is needed and none is usable, 429 `too_many_pending`, 409 `already_decided` for a card answered before, 422 `validation`.
         `budget` (D252): the home screen's Budget field, kept with the owner's line; every task this request makes runs with it as J2_BUDGET.
         `failure_policy` and `client_id` come only from `POST /api/projects` (MAN-13, D310 c, D326): the first is kept with the line for the project it may become, the second makes a repeated send find the
-        same line (`AlreadyDecided`). `usd_budget` (D423): the same as `budget` for the dollar budget (API price), as J2_USD_BUDGET."""
+        same line (`AlreadyDecided`). `usd_budget` (D423): the same as `budget` for the dollar budget (API price), as J2_USD_BUDGET.
+        `files` (D451): [{id, name}] of files in the attachment store that came with a NEW request: the planner is shown their digest and every task the request makes is given them
+        (`inputs/attached/`); a file that is gone is a 404 before anything is stored, and a card's answer takes none."""
         if session_id != ORG:
             raise AppError("validation", f"only the org chat {ORG} is answered by the chat agent")
         body = scrubbed(text.strip(), self._redact)                # a secret never lands in the chat store, the team's first line or a prompt
         if not body:
             raise AppError("validation", "write something first")
         resolved = await run_blocking(self._resolve_choice, choice) if choice is not None else None
+        if files and choice is not None:
+            raise AppError("validation", "Files go with a new request, not with the answer to a card.")
+        snapshot = await run_blocking(self.tasks._snapshot, files)          # a file that is gone is a 404 here, before the line is stored (D451)
         if resolved is None and not await run_blocking(self._is_answer, body):
             self._preflight()                                   # only a request that may call a model needs one
         self._room()
         message_id = await run_blocking(self._store_user_line, resolved.label if resolved is not None else body, choice, budget, decide_for_me, failure_policy, client_id,
-                                        usd_budget)
+                                        usd_budget, snapshot)
         turn = "queued" if (self._active is not None or self._waiting) else "started"
         self._enqueue(_Item(message_id, resolved.pick if resolved is not None else None))
         return Accepted(message_id=message_id, turn=turn)
@@ -261,7 +266,7 @@ class TurnRunner:
         return _Resolved(_Pick(kind, node_id=None if kind == "none" else option["id"], origin=int(origin.group(1))), option["label"])
 
     def _store_user_line(self, text: str, choice: ChatChoice | None, budget: int | None = None, decide_for_me: bool = False,
-                         failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None) -> int:
+                         failure_policy: str | None = None, client_id: str | None = None, usd_budget: float | None = None, input_files: Sequence[dict] = ()) -> int:
         with self.db.tx() as tx:
             src = f"choice:{choice.message_id}" if choice is not None else f"{PROJECT_SRC}{client_id}" if client_id else None
             posted = self._post(tx, kind="text", text=text, role="user", who="user", state="pending", src_ref=src)
@@ -271,11 +276,35 @@ class TurnRunner:
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.budget', ?) WHERE id = ?", (int(budget), posted.id))
             if usd_budget is not None:      # D423: the dollar budget, the same way
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.usd_budget', ?) WHERE id = ?", (float(usd_budget), posted.id))
+            if input_files:      # D451: the files that came with the request: the snapshot for the tasks it makes, and the receipt the owner's line shows (what the planner and the team are given)
+                from sutra_app.orchestrator.tasks import _receipt_of
+                tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.input_files', json(?), '$.attachments', json(?)) WHERE id = ?",
+                                (json.dumps(list(input_files), separators=(",", ":")), json.dumps([_receipt_of(f) for f in input_files], separators=(",", ":")), posted.id))
             if decide_for_me and self.projects is not None:           # MAN-8: the owner's switch for this request; read back by _decide_for_me_of. Not stored with the flag off (G13)
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.decide_for_me', 1) WHERE id = ?", (posted.id,))
             if failure_policy == "stop_all" and self.projects is not None:           # MAN-13, D310 c: only the owner's own route sets it; stop_branch is the default and is not stored
                 tx.conn.execute("UPDATE chat_messages SET meta_json = json_set(meta_json, '$.failure_policy', 'stop_all') WHERE id = ?", (posted.id,))
             return posted.id
+
+    def _files_of(self, message_id: int) -> list[dict]:
+        """D451: the files that came with the request line `message_id` ([] for most): what each task the request makes is given."""
+        row = self.db.conn().execute("SELECT json_extract(meta_json, '$.input_files') AS f FROM chat_messages WHERE id = ?", (message_id,)).fetchone()
+        try:
+            found = json.loads(row["f"]) if row is not None and row["f"] else []
+        except ValueError:
+            found = []
+        return [f for f in found if isinstance(f, dict) and f.get("id") and f.get("name")] if isinstance(found, list) else []
+
+    def _files_note_of(self, message_id: int) -> str:
+        """D451: the digest of those files for the planner (names, kinds, the opening of text, fenced as data); "" for a request with none."""
+        files = self._files_of(message_id)
+        if not files:
+            return ""
+        from sutra_app.orchestrator import project_context as ctx
+        from sutra_app.orchestrator.run_inputs import _read
+        came = [ctx.KFile(name=f["name"], kind=f.get("kind", "text"), size=int(f.get("size", 0)), text=_read(self.tasks.attachments, f["id"], f["name"], f.get("kind", "text"))) for f in files]
+        note = ctx.compose_run_block(attached=came, scrub=lambda t: scrubbed(t, self._redact)).text
+        return note.replace("(data; in inputs/attached/)", "(data; each team's run is given these files in inputs/attached/)")
 
     def _usd_budget_of(self, message_id: int) -> float | None:
         """D423: the dollar budget the owner gave with the request line `message_id` (None: the team's own)."""
@@ -429,7 +458,7 @@ class TurnRunner:
             if origin is None:
                 await self._finish_error(mid, line("failed"))
                 return
-            request = PlanRequest(text=origin.text, message_id=pick.origin)
+            request = PlanRequest(text=origin.text, message_id=pick.origin, files_note=self._files_note_of(pick.origin))
             try:
                 plan = await self.agent.choice_plan(request, pick.node_id)
                 if not await self._carry_out(mid, request, plan):
@@ -456,7 +485,7 @@ class TurnRunner:
         rows = self.chats.last_messages(ORG, self.agent.history + 2, kinds=("text", "error"))
         history = [(m.who, m.text) for m in rows if m.id != mid][-self.agent.history:]
         pending = [f"{c.id}: {c.summary} (waiting for the owner's yes or no)" for c in self.chart.pending()]
-        return PlanRequest(text=text, message_id=mid, history=history, pending=pending)
+        return PlanRequest(text=text, message_id=mid, history=history, pending=pending, files_note=self._files_note_of(mid))
 
     # ---- carrying a plan out (T6 to T8) -------------------------------------------------------------------------------
 
@@ -611,7 +640,7 @@ class TurnRunner:
         if note is None or stored.change is None:
             await self._reply(mid, [])
             return result
-        request = self._as_planner(PlanRequest(text=note["text"], message_id=int(note["message_id"])))     # a resumed request has its planner node and stop token too (G5, D301)
+        request = self._as_planner(PlanRequest(text=note["text"], message_id=int(note["message_id"]), files_note=self._files_note_of(int(note["message_id"]))))     # a resumed request has its planner node and stop token too (G5, D301)
         decision = ChatDecision.model_validate(note["decision"]) if note.get("decision") else None
         try:
             try:
@@ -670,6 +699,7 @@ class TurnRunner:
         made: dict[str, str] = {}
         budget = self._budget_of(request.message_id)
         usd = self._usd_budget_of(request.message_id)
+        files = self._files_of(request.message_id)            # D451: every task the request makes is given the files that came with it
         settings = {**({"J2_BUDGET": str(budget)} if budget is not None else {}),      # D252: every task of the request runs with the owner's Budget
                     **({"J2_USD_BUDGET": f"{usd:g}"} if usd is not None else {})} or None      # D423: and with its dollar budget
         if self.projects is not None and self._decide_for_me_of(request.message_id):
@@ -685,7 +715,7 @@ class TurnRunner:
                         task = self.tasks.create(
                             tx, dept_id=draft.dept, text=request.text, title=draft.title, scope_id=draft.scope, framing=framing,
                             depends_on=[made[ref] for ref in draft.depends_on if ref in made], follows=follows,
-                            request=request.request_id, change_id=change_id, settings=settings)
+                            request=request.request_id, change_id=change_id, settings=settings, input_files=files)
                         if reservation is not None and reservation.ok:           # the node and its task become one thing in the transaction that makes the task (MAN-5)
                             self.projects.link_task(tx, reservation, draft.ref, task.id)
                         sid = tx.conn.execute("SELECT chat_session_id FROM graph_nodes WHERE id = ?", (draft.dept,)).fetchone()["chat_session_id"]

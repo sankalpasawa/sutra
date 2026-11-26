@@ -44,7 +44,7 @@ import sutra_app
 from sutra_app import oslayer
 from sutra_app.config import LOOPBACK_HOSTS, Settings, SettingsError
 from sutra_app.connectors.attachments import MAX_BYTES as MAX_ATTACHMENT_BYTES
-from sutra_app.orchestrator.api import agent, agent_chats, appearance, atoms, chat_v2, chart, chat, departments, graph, insight, limits, projects, recurring, rules_notes, sections, system, tasks, teams, usage
+from sutra_app.orchestrator.api import agent, agent_chats, appearance, atoms, chat_v2, chart, chat, departments, graph, insight, limits, project_context, projects, recurring, rules_notes, sections, system, tasks, teams, usage
 from sutra_app.orchestrator.api import events as events_api
 from sutra_app.orchestrator.api.deps import install_error_handlers, redacted_response_class
 from sutra_app.orchestrator.errors import error_body
@@ -67,7 +67,7 @@ MAX_UPLOAD_BODY_BYTES = MAX_ATTACHMENT_BYTES * 4 // 3 + 64 * 1024        # one f
 STOP_POLL_S = 0.5                # how often the server looks for a stop request (the app.stop file)
 GRACEFUL_SHUTDOWN_S = 5                 # open connections are cancelled after this; the stop ladders then run in the lifespan
 # the orchestrator's own routers, in include order: the agent router first (it owns POST /api/chats/{sid}/messages and the decision route)
-ROUTERS = (events_api, chat_v2, agent_chats, agent, chat, atoms, usage, graph, chart, insight, departments, tasks, recurring, limits, projects, attention_api, system, rules_notes, sections, teams, appearance)
+ROUTERS = (events_api, chat_v2, agent_chats, agent, chat, atoms, usage, graph, chart, insight, departments, tasks, recurring, limits, projects, attention_api, system, rules_notes, sections, teams, project_context, appearance)
 # plug-ins: (module, how to mount it), in the order orchestrator 6.4 fixes; the library's schema router sits before the UI
 PLUGINS = ("sutra_app.engine.api", "sutra_app.connectors.api", "sutra_app.library.api", "sutra_app.ui")
 OPS_API = "sutra_app.ops.api"           # GAP-CONSOLE's router (`router`); mounted after the orchestrator's routers when the module exists
@@ -112,7 +112,7 @@ class BodyLimitMiddleware:
     """One cap on the size of a request body, checked before the body is read: a declared `Content-Length` over the cap is answered 413
     `payload_too_large` (in the error envelope) without reading a byte, and a body with no length (chunked) is read up to the cap and refused
     when it goes over. Without this the server read and parsed whatever it was sent, token or not, and a 600 MB post grew it to 2 GB. The cap is
-    `MAX_BODY_BYTES`, or `MAX_UPLOAD_BODY_BYTES` for `POST /api/chats/<id>/attachments` (a file travels as base64 in JSON)."""
+    `MAX_BODY_BYTES`, or `MAX_UPLOAD_BODY_BYTES` for `POST /api/chats/<id>/attachments`, `POST /api/teams/<id>/attachments` and `POST /api/teams/<id>/files` (a file travels as base64 in JSON)."""
 
     def __init__(self, app: ASGIApp, limit: int = MAX_BODY_BYTES, upload_limit: int = MAX_UPLOAD_BODY_BYTES) -> None:
         self.app = app
@@ -122,6 +122,8 @@ class BodyLimitMiddleware:
     def _limit_for(self, scope: Scope) -> int:
         path = scope.get("path", "")
         if scope.get("method") == "POST" and path.startswith("/api/chats/") and path.endswith("/attachments"):
+            return self.upload_limit
+        if scope.get("method") == "POST" and path.startswith("/api/teams/") and path.endswith(("/attachments", "/files")):          # a file for a project, or for one request to it (D451)
             return self.upload_limit
         return self.limit
 

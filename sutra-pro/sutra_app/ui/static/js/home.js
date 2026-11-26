@@ -256,6 +256,11 @@
   }
   function choosePick(id) {
     if (root.ProjectPick && id === root.ProjectPick.NEW) { if (root.CreateProject) root.CreateProject.open(); return; }
+    if (root.ProjectPick && id === root.ProjectPick.FILES) {                       // D451: Project files and memory, for the project that is picked now
+      const team = pickedProject();
+      if (team && root.ProjectContextView) root.ProjectContextView.openFor({dept: team.id, name: clean(team.name) || team.id}, api);
+      return;
+    }
     pickState.pick = id || "";
     renderPick();
     api.put("/api/teams/last", {dept: pickState.pick}).catch(() => {});
@@ -267,9 +272,11 @@
 
   // A prompt for a picked project goes straight to it, with its budget, without the org chat (R1.10), then its page opens. A busy project
   // or one deleted meanwhile is refused in plain words, and nothing is lost from the box.
-  async function sendToProject(team, body, usd) {
+  async function sendToProject(team, body, usd, files) {
     try {
-      await api.post("/api/say?dept=" + encodeURIComponent(team.id), Number.isFinite(usd) ? {text: body, usd_budget: usd} : {text: body});
+      const payload = Number.isFinite(usd) ? {text: body, usd_budget: usd} : {text: body};
+      if (Array.isArray(files) && files.length) payload.files = files;                     // D451: the files of the box go with the request to the picked project
+      await api.post("/api/say?dept=" + encodeURIComponent(team.id), payload);
     } catch (err) {
       const status = err && Number.isInteger(err.status) ? err.status : 0;
       S.front.error = (root.ProjectPick && root.ProjectPick.refusal(status, team.name)) || (err && err.message) || FAILED;
@@ -662,7 +669,8 @@
     const body = text(value).trim();
     if (body === "" || S.blocked !== "" || (S.sending && !choice)) return false;
     const held = !choice && root.ChatComposer ? composer() : null;
-    if (held !== null && held.state().files.length > 0) { showBanner({text: root.ChatComposer.TEAM_FILES}); return false; }          // a file only goes to the model (D440, FR-3): never dropped unseen
+    const carried = held !== null ? held.teamFiles() : {ok: true, files: []};          // the files in the box go with the message (D451, which replaces D440's refusal); a chip that failed or still uploads holds the send
+    if (!carried.ok) { showBanner({text: carried.error}); return false; }
     const entry = {serverId: null, msg: {id: "local-" + (++S.localSeq), session_id: ORG, role: "user", who: "user", kind: "text", text: body, card: null,
       pause: null, answered_by: null, task_id: null, state: "pending", at: ""}};
     S.pending.push(entry);
@@ -673,7 +681,12 @@
     renderComposer();
     try {
       const budget = isObj(opts) && Number.isFinite(opts.usd_budget) ? {usd_budget: opts.usd_budget} : {};      // D423: the Budget chip's dollars, a new request only
-      const accepted = await api.post("/api/chats/" + ORG + "/messages", choice ? {text: body, choice} : {text: body, ...budget});
+      const payload = choice ? {text: body, choice} : {text: body, ...budget};
+      const front = isObj(opts) && Array.isArray(opts.files) ? opts.files : [];          // the front door's own chips (D451)
+      const allFiles = !choice ? [...carried.files, ...front] : [];
+      if (allFiles.length) payload.files = allFiles;          // D451: the files of the box go with a new request, never with a card's answer
+      const accepted = await api.post("/api/chats/" + ORG + "/messages", payload);
+      if (held !== null && carried.files.length) held.clearFiles();
       entry.serverId = isObj(accepted) && Number.isInteger(accepted.message_id) ? accepted.message_id : null;
       clearSent(body);
       clearBanner();
@@ -976,6 +989,16 @@
 
   // D423: the Budget chip beside Go, drawn once the team default is known (GET /api/engine/settings, effective.usd_budget); without it no
   // budget is sent and the team's own applies
+  // D451: the paperclip and the chips of Attention's box. The upload goes to the picked project's own store route, or to the org chat's when Sutra chooses; a file is
+  // read by the team (a project) or by the planner (the org chat); each chip can be kept with the project. The words say where the files go.
+  function mountFiles() {
+    const el = $("fdattach");
+    if (!el || !root.StartFiles || S.files) return;
+    const team = () => pickedProject();
+    S.files = root.StartFiles.mount({el, chips: $("fdfiles"), host: $("fdbox") ? $("fdbox").closest(".fdcompose") || $("fdbox") : null, api, noun: "request",
+      url: () => (team() ? "/api/teams/" + encodeURIComponent(team().id) + "/attachments" : "/api/chats/" + ORG + "/attachments"), project: () => (team() ? team().id : "")});
+  }
+
   async function mountChip() {
     const el = $("fdbudget");
     if (!el || !root.BudgetChip) return;
@@ -991,6 +1014,9 @@
     const body = text(box.value).trim();
     if (body === "" || S.sending) return false;
     const usd = S.chip ? S.chip.value() : null;      // D423: the Budget chip; null is the team's own budget
+    const held = S.files ? S.files.blocked() : "";   // D451: a chip that failed or is still uploading holds the send, the words and the chips stay
+    if (held !== "") { S.files.say(held); return false; }
+    const files = S.files ? S.files.refs() : [];
     S.front.sent = true;
     S.front.error = "";
     S.front.going = false;
@@ -998,15 +1024,15 @@
     $("fdsend").disabled = true;
     const team = pickedProject();
     if (team) {
-      const sent = await sendToProject(team, body, usd);
+      const sent = await sendToProject(team, body, usd, files);
       $("fdsend").disabled = false;
-      if (sent) { box.value = ""; if (S.chip) S.chip.reset(); }
+      if (sent) { box.value = ""; if (S.chip) S.chip.reset(); if (S.files) S.files.reset(); }
       renderFrontLatest();
       return sent;
     }
-    const ok = await send(body, null, {plan: true, usd_budget: usd});
+    const ok = await send(body, null, {plan: true, usd_budget: usd, files});
     $("fdsend").disabled = false;
-    if (ok) { if (box.value.trim() === body) box.value = ""; if (S.chip) S.chip.reset(); }
+    if (ok) { if (box.value.trim() === body) box.value = ""; if (S.chip) S.chip.reset(); if (S.files) S.files.reset(); }
     else S.front.error = (S.banner && S.banner.text) || S.blocked || FAILED;
     renderFrontLatest();
     return ok;
@@ -2025,6 +2051,7 @@
     wire();
     wireFind();
     mountChip();
+    mountFiles();
     selectPane(link.pane, {reveal: link.pane !== "graph" || !!link.node, focus: false, group: link.pane === "settings" ? "appearance" : ""});
     renderProgress();
     renderComposer();

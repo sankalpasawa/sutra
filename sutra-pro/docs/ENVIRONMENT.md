@@ -129,6 +129,7 @@ These are optional, mostly for the Mac launcher, for development and for tests.
 | `SUTRA_CLAUDE_MODEL` | `unset` | overrides the model the Claude connector asks for (the policy default is `sonnet`); wins over `CLAUDE_CLI_MODEL` |
 | `CLAUDE_CLI_MODEL` | `unset` | the same, under J2's old name |
 | `SUTRA_DOCUMENTS_DIR` | `unset` | the folder that holds `Sutra Pro/<project name>`, the folder a new project gets when the owner picks none (D426); unset is the system's Documents folder. For tests and local checks that must not write into the owner's Documents |
+| `SUTRA_PROJECT_CONTEXT` | `on` | `0` makes a project's files, instructions and memory deliver nothing (to a chat or a run) and keeps the memory from adding lines; nothing in the database changes, so it is the switch to pull if a release misbehaves (D451). A file you send with a request is still delivered |
 | `SUTRA_NODES` | `on` | `off` runs the engine without the function-node layer (no atoms); `enforce` is reserved and refused |
 | `SUTRA_HOOKS` | `sutra_app.engine.fnodes.layer:factory` | `package.module:function` that builds the engine's hooks (tests) |
 | `J2_TYPES_DIR` | `<data>/types` | where J2 keeps the types a run makes (`types.local.json` and `templates/<name>/`); the host sets it for every engine process and the server exports it before it first imports J2 (D163); do not set it by hand |

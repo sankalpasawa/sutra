@@ -881,7 +881,7 @@ class Session:
         return scores, faults
 
 
-def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None):
+def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None, trail=False):      # P44 (D449): trail
     """The planning half of realization for one charter. mocks: {"checklist", "plan", "revise", "judge"} callables for
     offline runs (plan and revise take the round; judge takes the round, the plan and the question spec), used only
     when llm.MOCK. extra: rules of the system the plan runs in (J2 passes its own), added to Adaptation's task.
@@ -934,6 +934,7 @@ def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", typ
         "stages": stages, "plan_confidence": plan_conf, "plan_faults": rounds[-1]["plan_faults"],
         "calls": s.calls, "seconds": round(s.seconds, 1),
         **({"deliverables": deliverables(plan)} if types is not None else {}),
+        **({"trail": s.trail} if trail else {}),      # P44 (D449): every call, only when asked
     }
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

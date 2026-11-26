@@ -29,7 +29,7 @@ EXAMPLE = json.loads(
 
 # the fields of the orchestrator's RunSpec (orchestrator.md 3.3): every one must exist in TaskSpec
 RUN_SPEC_FIELDS = ["run_id", "task_id", "dept_id", "dept_label", "scope_id", "scope_label", "user_text", "framing", "parent_run_id",
-                   "seed_from", "upstream", "settings", "connector", "node"]
+                   "seed_from", "upstream", "settings", "connector", "node", "inputs"]
 
 
 def task(**changes):

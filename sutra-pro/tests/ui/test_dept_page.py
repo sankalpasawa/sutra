@@ -899,6 +899,131 @@ def test_beside_the_sidebar_the_studio_has_one_way_to_each_thing(finished_team, 
     assert team.b.console_errors == [] and team.b.failed_requests == []
 
 
+# SUT-27 (D450): a run that made a script and its report, not a website. The hand-built fixture (fixtures/result_view/) is laid over J2's captured
+# snapshot (which keeps every key the page reads), and the run's two files replace the site in /api/artifacts, through the fake's cache.
+RESULT_VIEW_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "result_view"
+SCRIPT_PANEL = r"""(() => {
+  const drawn = el => !!el && (s => s.display !== "none" && s.visibility !== "hidden")(getComputedStyle(el)) && el.getClientRects().length > 0;
+  return {tabs: Array.from(document.querySelectorAll("#sviews [role=tab]")).map(b => [b.textContent.trim(), b.getAttribute("aria-selected")]),
+          files: Array.from(document.querySelectorAll("#rvbody .rvfiles li .slink")).filter(drawn).map(b => b.textContent.trim()),
+          downloads: Array.from(document.querySelectorAll("#rvbody .rvfiles a[download]")).map(a => a.getAttribute("href")),
+          finish: Array.from(document.querySelectorAll("#sfinish a, #sfinish button")).filter(drawn).map(el => el.textContent.trim()),
+          words: (document.getElementById("sstage").innerText.match(/\b(site|page|website)\b/gi) || []),
+          open: drawn(document.getElementById("sopen")),
+          siteUrls: Array.from(document.querySelectorAll("#sview [href], #sview iframe[src]")).map(e => e.getAttribute("href") || e.getAttribute("src")).filter(u => u.startsWith("/site/")),
+          scroll: document.documentElement.scrollWidth - window.innerWidth};
+})()"""
+
+
+LINK_CONTRAST = r"""(() => {
+  const rgb = c => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+  const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return Math.round((x + 0.05) / (y + 0.05) * 100) / 100; };
+  const root = document.documentElement, was = root.getAttribute("data-theme"), out = {};
+  for (const theme of ["light", "dark"]) {
+    root.setAttribute("data-theme", theme);
+    const a = document.querySelector("#rvbody .rvdl");
+    out[theme] = ratio(getComputedStyle(a).color, getComputedStyle(document.getElementById("rvpane")).backgroundColor);
+  }
+  if (was === null) root.removeAttribute("data-theme"); else root.setAttribute("data-theme", was);
+  return out;
+})()"""
+
+
+@pytest.fixture()
+def script_team(team, fake_server, monkeypatch) -> Page:
+    j2 = fake_server.state.fx.j2
+    snapshot = json.loads(j2.raw("state.json"))
+    snapshot.update(json.loads((RESULT_VIEW_FIXTURES / "state-script.json").read_text(encoding="utf-8")))
+    monkeypatch.setitem(j2._cache, "state.json", json.dumps(snapshot).encode())
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-script.json").read_bytes())
+    return team
+
+
+@browser_only
+@pytest.mark.parametrize("width, height", [(1280, 860), (375, 812)], ids=["1280x860", "375x812"])
+def test_a_script_run_shows_its_files_and_no_site_words(script_team, width, height):
+    team = script_team
+    run = json.loads((J2_FIXTURES / "runs.json").read_text(encoding="utf-8"))["live"]
+    team.b.set_size(width, height)
+    team.open(f"?run={run}", view="simple")
+    team.b.wait_for("!!document.querySelector('#sfinish [data-view=files]') && document.querySelectorAll('#rvbody .rvfiles li').length === 2")
+    seen = team.js(SCRIPT_PANEL)
+    assert seen["tabs"] == [["Result", "true"], ["Files", "false"], ["How it was made", "false"]], seen
+    assert seen["files"] == ["env_report/report.py", "env_report/report.txt"], seen
+    assert seen["downloads"] == [f"/api/artifact?name=env_report%2Freport.{x}&run={run}&dept={DEPT}" for x in ("py", "txt")], seen
+    assert seen["finish"] == ["All files (2)"], seen                              # no Copy share link without a main file (Q-4); Open full view is the sidebar's
+    assert seen["words"] == [] and seen["open"] is False and seen["siteUrls"] == [], seen
+    assert seen["scroll"] <= 0, seen
+    # the Download links are readable: WCAG AA (4.5:1) against the pane they sit on, in both themes
+    ratios = team.js(LINK_CONTRAST)
+    assert set(ratios) == {"light", "dark"} and min(ratios.values()) >= 4.5, ratios
+    # "What the team made": each file is titled by the part that made it, not by the project's title
+    team.js("document.querySelector('#sviews [data-view=team]').click()")
+    team.b.wait_for("document.querySelectorAll('#steamwork .sartc:not(.rec)').length === 2")
+    made = team.js("Array.from(document.querySelectorAll('#steamwork .sartc:not(.rec)')).map(c => [c.querySelector('b').textContent, c.querySelector('small').textContent])")
+    assert made == [["Write the report script", "version 1 · report.py"], ["Write the report script", "version 1 · report.txt"]], made
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+# A document set (two design documents), hand-built in the same way (fixtures/result_view/state-docset.json, artifacts-docset.json): its plan cards and its
+# own toasts, which are the page's ("The PRD is being written"), never a site's.
+DOCSET_CARDS = r"""(() => Array.from(document.querySelectorAll("#steamwork .spart[data-part]")).map(c => ({
+  sec: c.dataset.part, st: c.className.split(" ")[1], bars: !!c.querySelector(".sl"), sketch: !!c.querySelector(".ssk"),
+  summary: (c.querySelector(".rvsum") || {}).textContent || null, files: Array.from(c.querySelectorAll(".rvfile")).map(f => f.textContent)})))()"""
+
+
+def docset_state(j2, **change) -> bytes:
+    snapshot = json.loads(j2.raw("state.json"))
+    snapshot.update(json.loads((RESULT_VIEW_FIXTURES / "state-docset.json").read_text(encoding="utf-8")))
+    snapshot.update(change)
+    return json.dumps(snapshot).encode()
+
+
+def running_docset(snapshot_parts: list, **change) -> dict:
+    return {"status": "running", "outcome": "", "studio": {"schema": 1, "parts": snapshot_parts, "stream": [], "qsec": None, "done": 1, "total": 2}, **change}
+
+
+@browser_only
+def test_a_document_set_says_its_documents_are_being_written_and_its_cards_follow_the_work(team, fake_server, monkeypatch):
+    j2 = fake_server.state.fx.j2
+    parts = json.loads((RESULT_VIEW_FIXTURES / "state-docset.json").read_text(encoding="utf-8"))["studio"]["parts"]
+    parts[1] = {**parts[1], "st": "doing"}
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-docset.json").read_bytes())
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2, **running_docset(parts, versions=0, docset_files=[], doc=True)))
+    team.open("", view="simple")
+    team.b.wait_for("document.querySelectorAll('#steamwork .spart[data-part]').length === 2")
+    # the first document appears while the run goes on: the page's own toast names it
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2, **running_docset(parts, versions=1, docset_files=[
+        {"kind": "prd", "label": "Product requirements", "md": "prd.md", "docx": "prd.docx"}], doc=True)))
+    team.b.wait_for("(document.getElementById('stoast').textContent || '').includes('being written')", timeout=20)
+    toast = team.js("document.getElementById('stoast').textContent")
+    assert toast == "The PRD is being written", toast
+    assert "taking shape" not in toast
+    cards = team.js(DOCSET_CARDS)
+    assert cards[0] == {"sec": "W-1", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the product requirements.", "files": ["prd.md"]}, cards
+    assert cards[1]["st"] == "doing" and cards[1]["sketch"] is True and cards[1]["summary"] is None, cards     # in progress: its lines still draw
+    words = team.js(r"(document.getElementById('sstage').innerText.match(/\b(site|website)\b/gi) || [])")
+    assert words == [], words
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
+@browser_only
+def test_a_finished_document_set_shows_each_part_with_its_line_and_its_file(team, fake_server, monkeypatch):
+    j2 = fake_server.state.fx.j2
+    monkeypatch.setitem(j2._cache, "artifacts.json", (RESULT_VIEW_FIXTURES / "artifacts-docset.json").read_bytes())
+    monkeypatch.setitem(j2._cache, "state.json", docset_state(j2))
+    team.open("", view="simple")
+    team.b.wait_for("!!document.querySelector('#sviews [data-view=team]')")
+    team.js("document.querySelector('#sviews [data-view=team]').click()")
+    team.b.wait_for("document.querySelectorAll('#steamwork .spart .rvsum').length === 2 && document.querySelectorAll('#steamwork .rvfile').length === 2")
+    cards = team.js(DOCSET_CARDS)
+    assert cards == [
+        {"sec": "W-1", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the product requirements.", "files": ["prd.md"]},
+        {"sec": "W-2", "st": "done", "bars": False, "sketch": False, "summary": "I wrote the high-level design.", "files": ["hld.md"]}], cards
+    assert team.b.console_errors == [] and team.b.failed_requests == []
+
+
 # `.apill` names two things: the attention pill (a link in `.apillhost`) and the status pill of a work atom (a span in `.atomcard`). The atoms' rules used to be the later ones with the
 # same weight, so they drew the attention pill too, as a 21px box with the atoms' 10px corners and a plain border, and the strip's room for it was fitted to that box (0.3.1).
 PILL_LOOKS = r"""(() => {

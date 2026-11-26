@@ -36,6 +36,7 @@ from sutra_app.orchestrator.attempts import attempt_in
 from sutra_app.orchestrator.db import Database, Tx
 from sutra_app.orchestrator.deliverable import Deliverable, read_deliverable
 from sutra_app.orchestrator.errors import AppError, NotFound
+from sutra_app.orchestrator.project_memory import record_run_end
 from sutra_app.orchestrator.stopwords import plain_outcome
 from sutra_app.orchestrator.ids import ORG_SESSION_ID, Clock, SystemClock, iso_z, parse_iso_z
 from sutra_app.orchestrator.models import (
@@ -479,6 +480,7 @@ class Projector:
         ended_at = max(when, row.started_at or row.created_at, row.created_at)
         row = self.store.update(tx, row.id, status=status, outcome=text, ended_at=ended_at)
         batch.row = row
+        record_run_end(tx.conn, row, ended_at)                              # D451: one line of the project's memory (the owner's request, the outcome sentence); no model, never raises
         batch.ended = batch.freed = True
         self._abandon_open_atoms(batch, status)
         self._settle_nodes(batch, status)

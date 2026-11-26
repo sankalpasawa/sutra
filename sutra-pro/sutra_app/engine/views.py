@@ -802,6 +802,27 @@ def _say_template(body: dict) -> Tuple[Optional[str], Optional[str], Optional[st
     return template, ",".join(keys) or "all", None
 
 
+SAY_FILES_MAX = 10
+_SAY_FILES_WRONG = f"files must be a list of {{id, name}}, at most {SAY_FILES_MAX}"
+
+
+def _say_files(body: dict) -> Tuple[Optional[list], Optional[str]]:
+    """(the files, the violation) of a `POST /api/say` body's `files` (D451): the files of the attachment store that go with these words, `[{id, name}]`, at most ten; the id is the
+    store's content hash. Absent, null or an empty list is None. The route only checks the SHAPE; the orchestrator looks each id up (a file that is gone is 404, nothing stored)."""
+    raw = body.get("files")
+    if raw is None or raw == []:
+        return None, None
+    if not isinstance(raw, list) or len(raw) > SAY_FILES_MAX:
+        return None, _SAY_FILES_WRONG
+    out = []
+    for item in raw:
+        if (not isinstance(item, dict) or set(item) - {"id", "name"} or not isinstance(item.get("id"), str) or not re.fullmatch(r"[0-9a-f]{64}", item["id"])
+                or not isinstance(item.get("name"), str) or not 1 <= len(item["name"]) <= 200):
+            return None, _SAY_FILES_WRONG
+        out.append({"id": item["id"], "name": item["name"]})
+    return out, None
+
+
 def say(ctx: RunCtx, body: dict) -> Reply:
     text = body.get("text")
     text = text.strip() if isinstance(text, str) else ""
@@ -810,12 +831,13 @@ def say(ctx: RunCtx, body: dict) -> Reply:
     template, workflows, violation = _say_template(body)
     budget, too = _say_budget(body)
     usd, usd_wrong = _say_usd_budget(body)
-    if violation or too or usd_wrong:
-        return _json({"error": violation or too or usd_wrong}, 400)
+    files, files_wrong = _say_files(body)
+    if violation or too or usd_wrong or files_wrong:
+        return _json({"error": violation or too or usd_wrong or files_wrong}, 400)
     if ctx.commands is None:
         return _no_commands()
     extra = {**({"template": template, "workflows": workflows} if template else {}), **({"budget": budget} if budget else {}),
-             **({"usd_budget": usd} if usd else {})}
+             **({"usd_budget": usd} if usd else {}), **({"files": files} if files else {})}
     ok = bool(ctx.commands.say(text, **extra))
     return _json({"ok": ok}, 200 if ok else 409)
 

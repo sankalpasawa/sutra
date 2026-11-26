@@ -87,9 +87,9 @@ def build_router() -> APIRouter:
             raise AppError("validation", "a budget goes with a new request in the org chat")      # D252, D423
         if session.kind == "org":
             accepted = await _need(request, "runner").post_user_message(sid, body.text, body.choice, budget=body.budget, decide_for_me=bool(body.decide_for_me),
-                                                                        usd_budget=body.usd_budget)
+                                                                        usd_budget=body.usd_budget, files=[f.model_dump() for f in body.files])
             return _json(request, accepted.model_dump(mode="json"), 202)
-        delivery = await run_blocking(_need(request, "tasks").deliver, sid, body.text)
+        delivery = await run_blocking(_need(request, "tasks").deliver, sid, body.text, [f.model_dump() for f in body.files])
         return _json(request, delivery.model_dump(mode="json"))
 
     @router.post(f"/api/chats/{ORG_SESSION_ID}/retry", summary="Run the last failed request again", dependencies=[Depends(require_token)])

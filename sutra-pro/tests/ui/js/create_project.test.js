@@ -89,3 +89,79 @@ test("the module is a classic script with one global", () => {
   assert.match(src, /root\.CreateProject = CreateProject/);
   assert.doesNotMatch(src, /\bimport\b|\bexport\b/);
 });
+
+// ---- D451, T12: project files in the Create project box -------------------------------------------------------------------------------------------
+globalThis.AttachBar = require(path.resolve(__dirname, "../../../sutra_app/ui/static/js/attach_bar.js"));
+
+test("the box offers Project files, optional, with an Add files button, a drop line and the local-only promise", () => {
+  const html = CreateProject.html({desktop: true});
+  assert.match(text(html), /Project files \(optional\)/);
+  assert.match(html, /<button type="button" class="cpbtn" data-act="cp-files">Add files<\/button><input type="file" class="cpfileinput" multiple hidden/);
+  assert.match(text(html), /or drop them here\. Every run and chat of the project can read them\. They stay on this computer\./);
+});
+
+test("chosen files wait as chips; a refused type is a failed chip with its reason that stays; the 51st file is refused in words", () => {
+  const s = {};
+  CreateProject.pickFiles(s, [{name: "brief.md", size: 10}, {name: "sheet.xlsx", size: 10}]);
+  assert.deepEqual(s.files.map(f => [f.name, f.status]), [["brief.md", "ready"], ["sheet.xlsx", "failed"]]);
+  assert.match(s.files[1].error, /Excel and PowerPoint files cannot be attached/);
+  const html = CreateProject.filesHtml(s);
+  assert.match(text(html), /brief\.md .*sheet\.xlsx .*not attached: .*Excel and PowerPoint/);
+  const many = {};
+  CreateProject.pickFiles(many, Array.from({length: 51}, (_, i) => ({name: "f" + i + ".txt", size: 1})));
+  assert.equal(many.files[50].error, "A project can hold 50 files.");
+});
+
+function boxRig(post) {
+  const on = {};
+  const el = {className: "", innerHTML: "", parentNode: null, on, addEventListener: (k, f) => { on[k] = f; }, querySelector: () => null, querySelectorAll: () => []};
+  const done = [];
+  globalThis.document = {body: {appendChild: e => { e.parentNode = globalThis.document.body; }, removeChild: () => {}}, createElement: () => el, activeElement: null};
+  globalThis.SutraCtx = {api: {post}};
+  globalThis.FileReader = class { readAsDataURL() { this.result = "data:text/plain;base64,aGVsbG8="; setImmediate(() => this.onload()); } };
+  const box = CreateProject.open({onDone: id => done.push(id)});
+  const click = act => on.click({target: {closest: () => ({disabled: false, dataset: {act}})}});
+  return {el, on, box, done, click, tick: () => new Promise(r => setImmediate(r)), clean: () => { delete globalThis.document; delete globalThis.SutraCtx; delete globalThis.FileReader; }};
+}
+
+test("after the project exists each waiting file is uploaded to it, one by one, and the page then opens the project", async () => {
+  const posts = [];
+  const r = boxRig(async (p, body) => { posts.push([p, body.name]); return p === "/api/teams" ? {team: {id: "pulse"}} : {}; });
+  r.on.input({target: {id: "cpname", value: "Pulse"}});
+  r.on.change({target: {classList: {contains: c => c === "cpfileinput"}, files: [{name: "a.md", size: 4}, {name: "b.csv", size: 4}], value: "x"}});
+  assert.match(r.el.innerHTML, /a\.md/);
+  r.click("cp-create");
+  for (let i = 0; i < 12; i += 1) await r.tick();
+  assert.deepEqual(posts, [["/api/teams", "Pulse"], ["/api/teams/pulse/files", "a.md"], ["/api/teams/pulse/files", "b.csv"]]);
+  assert.deepEqual(r.done, ["pulse"]);
+  r.clean();
+});
+
+test("a file that cannot be added does not undo the project: the box names it, keeps it as a failed chip and offers Open the project", async () => {
+  const r = boxRig(async (p, body) => {
+    if (p === "/api/teams") return {team: {id: "pulse"}};
+    if (body.name === "b.csv") throw Object.assign(new Error("This project holds 50 files. Remove one to add another."), {status: 422});
+    return {};
+  });
+  r.on.input({target: {id: "cpname", value: "Pulse"}});
+  r.on.change({target: {classList: {contains: c => c === "cpfileinput"}, files: [{name: "a.md", size: 4}, {name: "b.csv", size: 4}], value: "x"}});
+  r.click("cp-create");
+  for (let i = 0; i < 12; i += 1) await r.tick();
+  assert.deepEqual(r.done, []);                                                         // the box waits: nothing navigates away from the failure
+  assert.match(text(r.el.innerHTML), /The project was made\. These files could not be added: b\.csv: This project holds 50 files/);
+  assert.match(r.el.innerHTML, /data-act="cp-open">Open the project</);
+  assert.doesNotMatch(r.el.innerHTML, /data-act="cp-create"/);                          // never made twice
+  r.click("cp-open");
+  assert.deepEqual(r.done, ["pulse"]);
+  r.clean();
+});
+
+test("with no file the box makes the project exactly as before: one request, then the page opens it", async () => {
+  const posts = [];
+  const r = boxRig(async (p) => { posts.push(p); return {team: {id: "pulse"}}; });
+  r.on.input({target: {id: "cpname", value: "Pulse"}});
+  r.click("cp-create");
+  for (let i = 0; i < 6; i += 1) await r.tick();
+  assert.deepEqual(posts, ["/api/teams"]); assert.deepEqual(r.done, ["pulse"]);
+  r.clean();
+});

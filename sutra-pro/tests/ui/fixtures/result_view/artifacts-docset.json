@@ -1,0 +1,7 @@
+{
+  "deliverables": [
+    {"name": "Product requirements", "type": "prd", "kind": "type", "form": "document", "file": "prd.md", "deliverable": true, "workflows": ["W-1"], "depends_on": [], "version": 1, "sha256": "3333333333333333333333333333333333333333333333333333333333333333", "time": "2026-11-25T10:00:05", "label": "Product requirements", "tag": "PRD", "color": "--prd", "depends_on_labels": [], "saved": true},
+    {"name": "High-level design", "type": "hld", "kind": "type", "form": "document", "file": "hld.md", "deliverable": true, "workflows": ["W-2"], "depends_on": [], "version": 2, "sha256": "4444444444444444444444444444444444444444444444444444444444444444", "time": "2026-11-25T10:00:09", "label": "High-level design", "tag": "HLD", "color": "--hld", "depends_on_labels": [], "saved": true}
+  ],
+  "records": []
+}

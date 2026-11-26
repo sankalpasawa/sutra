@@ -43,7 +43,7 @@ class ChatPort(Protocol):
     def send(self, session_id: str, turn: ChatTurnIn, on_event: Optional[Callable[[ChatEvent], None]] = None) -> ChatTurnOut: ...
     def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]: ...
     def stream(self, session_id: str, turn: ChatTurnIn, *, cancel: Optional[CancelToken] = None, acc: Optional[BlockAccumulator] = None) -> Iterator[ChatEvent]: ...
-    def set_system(self, session_id: str, text: str) -> None: ...
+    def set_system(self, session_id: str, text: str, *, context_sig: str = "") -> None: ...
     def stop(self, session_id: str) -> bool: ...
     def close(self) -> None: ...
 
@@ -237,7 +237,8 @@ class RouterChatPort:
 
     def _message(self, session_id: str, turn: ChatTurnIn) -> Message:
         d = self._delivery(session_id, turn)
-        return Message(role="user", text=turn.text) if d is None else Message(role="user", text=turn.text + d.text, images=list(d.images))
+        tail = f"\n\n{turn.context}" if turn.context else ""                # this message's excerpts of the project's files (D451): after the files' text, before nothing else
+        return Message(role="user", text=turn.text + tail) if d is None else Message(role="user", text=turn.text + d.text + tail, images=list(d.images))
 
     def preflight(self, session_id: str, turn: ChatTurnIn) -> tuple[FileReceipt, ...]:
         """Whether the turn's files can be delivered, and what each will become: the SAME code the turn runs (`_delivery`), with no process started and nothing written.
@@ -343,12 +344,25 @@ class RouterChatPort:
         d = done.data
         return ChatTurnOut(text=d["text"], provider=d["provider"], model=d.get("model"), usd=d.get("usd"), blocks=d["blocks"], switched=d["switched"])
 
-    def set_system(self, session_id: str, text: str) -> None:
+    def set_system(self, session_id: str, text: str, *, context_sig: str = "") -> None:
         """The system text of this session's next turns (the grounding of a direct chat): `<workdir>/system.txt`, mode 0600, replaced
         atomically; an empty text removes it. Claude reads the file on every turn; Codex on the first turn of a thread (a new session or a
-        switch), so a resumed Codex thread keeps the text it began with. The caller scrubs the text; nothing else is written."""
+        switch), so a resumed Codex thread keeps the text it began with. The caller scrubs the text; nothing else is written.
+
+        `context_sig` (D451) is the hash of the project block inside the text (files, instructions, memory): written to `<workdir>/context.sig` (removed when empty) so the router can start a new
+        Codex thread, with the carry-over, when it changes. A chat of no project never has the file."""
         directory = self._work_dir(session_id)
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        sig_file = directory / "context.sig"
+        if context_sig:
+            sig_tmp = directory / f".context.{uuid.uuid4().hex[:8]}.tmp"
+            try:
+                write_private_file(sig_tmp, context_sig)
+                oslayer.replace(sig_tmp, sig_file)
+            finally:
+                sig_tmp.unlink(missing_ok=True)
+        else:
+            sig_file.unlink(missing_ok=True)
         target = directory / "system.txt"
         if not text:
             target.unlink(missing_ok=True)

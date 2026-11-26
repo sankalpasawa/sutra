@@ -2150,7 +2150,22 @@
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
+  "id": "D450",
+  "label": "centre panel: Result / Files / How it was made for every output; main result by rule, never by name (SUT-27)",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D449",
+  "label": "a real run reaches only the hosts the Requester named, after Run; the dry run stays offline (P44, E29)",
+  "anchor": "band:DEPARTMENT RUNTIME"
+ },
+ {
   "id": "D451",
+  "label": "a project keeps files, instructions and earlier-work memory; every start box takes files; delivered by the system addendum (0.9.0)",
+  "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D452",
   "label": "a built program: own charter, real runs and installs only the Requester's, run output kept (P45)",
   "anchor": "band:DEPARTMENT RUNTIME"
  }

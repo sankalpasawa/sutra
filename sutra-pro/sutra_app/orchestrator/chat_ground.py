@@ -99,7 +99,7 @@ class ChatGround:
         self.today = today                    # the owner's date now (for a note's expiry); None leaves the notes out
         self.folder = folder                  # the owner's working folder now ("" or None: none is set); None here leaves the folder paragraph out
 
-    def text(self, session_id: str) -> str:
+    def text(self, session_id: str, project: str = "") -> str:
         """The grounding of `session_id`: the node's record, then `RULES`. A session that is not an org, department or division chat,
         or whose node is gone, gets the rules alone."""
         conn = self.db.conn()
@@ -113,8 +113,8 @@ class ChatGround:
                 record = self._department(conn, node, session_id)
             elif node is not None and session["kind"] == "division" and node["kind"] == "division":
                 record = self._division(conn, node)
-        tail = self._notes_and_rules()
-        room = GROUND_CHARS + (INSTRUCTIONS_MAX + 600 if "<project-instructions>" in tail else 0)      # the project's own words are not cut to the record's share
+        tail = self._notes_and_rules(project)
+        room = GROUND_CHARS + (INSTRUCTIONS_MAX + 600 if "<project-instructions>" in tail else 0) + (len(project) + 2 if project else 0)      # the project's own words are not cut to the record's share
         return _fit([self.scrub(line) for line in record], tail, room)
 
     def _folder_block(self) -> str:
@@ -128,11 +128,11 @@ class ChatGround:
             found = None
         return "\n".join(self.scrub(line) for line in grounding_text(found if isinstance(found, str) else None).split("\n"))
 
-    def _notes_and_rules(self) -> str:
-        """The owner's active notes (scrubbed line by line), then the working folder paragraph, in front of the fixed rules; the rules alone with
-        no note, no folder source or no date source."""
+    def _notes_and_rules(self, project: str = "") -> str:
+        """The owner's active notes (scrubbed line by line), then the working folder paragraph, then the project's block (D451: instructions, earlier work, files; already composed and
+        scrubbed), in front of the fixed rules; the rules alone with no note, no folder source or no date source."""
         folder = self._folder_block()
-        tail = folder + "\n\n" + RULES if folder else RULES
+        tail = "\n\n".join([p for p in (folder, project) if p] + [RULES])
         if self.today is None:
             return tail
         try:
@@ -220,12 +220,13 @@ def _fit(record: list[str], rules: str, limit: int) -> str:
     return text[:limit]
 
 
-def ground(services: Any, session_id: str, *, ask: bool = False) -> str:
+def ground(services: Any, session_id: str, *, ask: bool = False, project: str = "") -> str:
     """`ChatGround(services.db).text(session_id)` through the app's redactor and the egress credential shapes (replaced, as the owner's own
     line is), so a secret that reached a task outcome or a question never reaches the model.
 
     `ask` is the Ask mode of the direct chat (DV-1): the folder paragraph says the file tools are read-only even when the owner let the team change files (the turn itself is
-    held to that by the router), and `ASK_RULES` come last. Without it the text is exactly what it was."""
+    held to that by the router), and `ASK_RULES` come last. Without it the text is exactly what it was. `project` (D451) is the stable text of the project block (`project_context.compose_chat_block`),
+    placed after the folder paragraph and before the rules; "" is exactly what it was."""
     redact = services.redact
     router = getattr(services, "connector_router", None) or getattr(getattr(services, "chat_port", None), "router", None)     # the same router
     chat_folder = getattr(router, "chat_folder", None)                                  # the router's own reading: "" offline or with none set
@@ -234,5 +235,5 @@ def ground(services: Any, session_id: str, *, ask: bool = False) -> str:
         read_of = folder
         folder = lambda: (lambda found: Folder(str(found), edit=False) if found else found)(read_of())          # noqa: E731  (the same folder, never editable)
     text = ChatGround(services.db, scrub=lambda line: scan(redact(line), replace=True)[0], today=lambda: local_today(services.clock),
-                      folder=folder).text(session_id)
+                      folder=folder).text(session_id, project)
     return text + "\n\n" + ASK_RULES if ask else text

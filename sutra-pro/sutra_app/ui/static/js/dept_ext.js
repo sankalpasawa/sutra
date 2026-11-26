@@ -399,6 +399,7 @@
     if (!el || !root.ProjectPick || !c || !c.api || !dept || boot.archived === true) return false;
     const pick = root.ProjectPick.mount(el, {projects: [{id: dept, name: clean(boot.dept_label) || dept}], pick: dept, attention: false, onPick: id => {
       if (id === root.ProjectPick.NEW) { if (root.CreateProject) root.CreateProject.open(); return; }
+      if (id === root.ProjectPick.FILES) { if (root.ProjectContextView) root.ProjectContextView.openFor({dept, name: clean(boot.dept_label) || dept}, c.api); return; }          // D451: files, instructions, memory
       if (id && id !== dept && root.location) root.location.href = "/d/" + encodeURIComponent(id) + "/";
     }});
     Promise.resolve(c.api.get("/api/departments")).then(list => { if (Array.isArray(list) && pick) pick.set({projects: list}); }).catch(() => {});

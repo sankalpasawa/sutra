@@ -20,7 +20,8 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
       <h1 class="sgreet" id="sgreet">What should we make?</h1>
       <div class="srt" id="srt" hidden></div>
       <form class="sbox" id="lform"><textarea id="lbox" rows="3" aria-label="Describe what to build" placeholder="A one-page website for my physio clinic in Indiranagar…"></textarea>
-        <div class="sbrow"><div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button class="sgo" id="lsend" type="submit" disabled>Go</button></div></form>
+        <div class="sfiles" id="lfiles"></div>
+        <div class="sbrow"><span id="lattach"></span><div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button class="sgo" id="lsend" type="submit" disabled>Go</button></div></form>
       <div class="slrow"><div class="soutpick" id="soutpick"></div><button type="button" class="screwg" id="slandteam" aria-haspopup="dialog" aria-controls="steamcard" aria-label="See your team"><span class="slfaces" id="slfaces"></span><span class="slready">Asha, Mira, Kabir, Dev and Nora are ready.</span></button>
         <button type="button" class="sauto" id="sautoland" role="switch" aria-checked="false" title="When this is on, the team answers its own questions with the suggested option and keeps going."><span class="ssw" aria-hidden="true"></span>Decide for me</button></div>
       <section class="srecent" id="srecent" aria-labelledby="srecenth" hidden><h2 id="srecenth">Recent</h2><div class="srlist" id="srlist"></div></section>
@@ -69,7 +70,7 @@ try { var tp = localStorage.getItem("j2theme"); document.documentElement.dataset
         <div class="sph"><span class="sphav" id="sphav"></span><span class="sphn"><b>Asha</b> <span>· Client Lead</span><small class="sright" id="smood"></small></span><button type="button" class="sx sashax" id="sashax" aria-label="Close the chat">×</button></div>
         <div class="sprog" id="sprog" aria-label="Progress"></div>
         <div class="smsgs" id="smsgs" role="log" aria-live="polite" aria-label="Conversation with Asha, your Client Lead"></div>
-        <form class="scbox" id="sform"><input id="sbox" aria-label="Your message" placeholder="Ask for a change…" autocomplete="off"><button class="sgo" id="ssend" type="submit" aria-label="Send"><svg data-icon="send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg></button></form>
+        <div class="sfiles" id="sfiles"></div><form class="scbox" id="sform"><span id="sattach"></span><input id="sbox" aria-label="Your message" placeholder="Ask for a change…" autocomplete="off"><button class="sgo" id="ssend" type="submit" aria-label="Send"><svg data-icon="send" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg><svg data-icon="stop" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="display:none"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg></button></form>
       </aside>
     </div>
     <nav class="sdock" id="sdock" aria-label="Team, plan and chat"></nav>
@@ -1140,6 +1141,7 @@ function qCard(s, m, live, where){      // one card per Needs you item: the ques
   qs.forEach((q, i) => {
     h += q.q ? sQText(q.q) : "";
     if (ok) h += q.opts.length ? `<p class="qnote">${esc(q.opts.map(plain).join(" · "))}</p>` : "";
+    else if (kind === "hosts" && live) h += `<div class="acts"><button type="button" class="pri" data-run="Option 1">Allow</button><button type="button" class="ghost" data-run="Don't allow">Don't allow</button></div>`;      // E29 (D449)
     else if (q.opts.length) h += `<div class="opts" data-q="${i + 1}" data-n="${qs.length}">${q.opts.map((o, j) => `<button type="button" data-opt="${j + 1}"${one && sug === j + 1 ? ' class="sug"' : ""}${live ? "" : " disabled"}><kbd aria-hidden="true">${j + 1}</kbd><span>${esc(optLabel(kind, o))}${one && sug === j + 1 ? '<span class="sugt">Suggested</span>' : ""}</span></button>`).join("")}</div>`; });
   if (!live) return h + `<p class="qnote">This question was waiting when the project was saved.</p></div>`;
   if (ok) h += sRaise(s, kind, live) + `<div class="acts"><button type="button" class="pri" data-approve="yes">Approve</button><button type="button" class="ghost" data-approve="no">Not now</button></div>`;
@@ -1779,8 +1781,9 @@ async function sRecent(){
 }
 async function sendText(text, usdBudget){
   if (!text) return;
-  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(usdBudget ? {usd_budget: usdBudget} : {})})});
+  const said = await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(usdBudget ? {usd_budget: usdBudget} : {}), ...(window.StartFiles ? StartFiles.fields() : {})})});
   if (RTNEW.id) RTNEW.sent = true;
+  if (window.StartFiles) StartFiles.answered(said);      // E30 (D451): the files of this send are cleared, or a refusal is said and the words come back
 }
 // ---- a new run from a run template: /?template=<id>&workflows=<keys|all> (the library's "Use whole template" and "Use selected
 // workflows" buttons). The start page names the template above the brief box and starts the brief with the facts it asks for; the
@@ -4816,6 +4819,11 @@ if (!CAT.on) poll();
 <script src="/ui/js/function_chat.js"></script>
 <script src="/ui/js/output_pick.js"></script>
 <script src="/ui/js/budget_chip.js"></script>
+<script src="/ui/js/chat_search.js"></script>
+<script src="/ui/js/attach_bar.js"></script>
+<script src="/ui/js/start_files.js"></script>
+<script src="/ui/js/project_context_view.js"></script>
+<script src="/ui/js/result_view.js"></script>
 <script src="/ui/js/dept_ext.js"></script>
 </body>
 </html>

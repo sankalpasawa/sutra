@@ -31,8 +31,10 @@ test("with no project at all the heading is plain words and has no button", () =
 
 test("the menu lists every project, then New project, on Attention and on a team page alike", () => {
   const items = html => (html.match(/data-pp="[^"]*"/g) || []).map(x => x.slice(9, -1));
-  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: true})), ["pulse", "web", "+new"]);
-  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: false})), ["pulse", "web", "+new"]);
+  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: true})), ["pulse", "web", "+files", "+new"]);          // D451: Project files and memory, for the picked project
+  assert.deepEqual(items(ProjectPick.menuHtml(P, "pulse", {attention: false})), ["pulse", "web", "+files", "+new"]);
+  assert.match(ProjectPick.menuHtml(P, "pulse", {}), /role="menuitem" data-pp="\+files">Project files and memory</);
+  assert.deepEqual(items(ProjectPick.menuHtml([], "", {})), ["+new"]);                                                          // with no project there is nothing to open
   assert.match(ProjectPick.menuHtml(P, "pulse", {}), /role="menuitemradio" aria-checked="true" data-pp="pulse">Pulse</);
   assert.match(ProjectPick.menuHtml(P, "pulse", {}), /data-pp="\+new">\+ New project&hellip;</);
 });

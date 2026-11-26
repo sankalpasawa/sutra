@@ -52,6 +52,7 @@ from sutra_app.orchestrator.api.deps import RedactedJSONResponse, require_token,
 from sutra_app.orchestrator import ask_mode, direct_running
 from sutra_app.orchestrator.agent_sessions import agent_of, effective, pick_dict
 from sutra_app.orchestrator.chat_ground import ground
+from sutra_app.orchestrator import project_context, project_delivery
 from sutra_app.orchestrator import live_checkpoint
 from sutra_app.orchestrator.chats import mode_of as stored_mode_of
 from sutra_app.orchestrator.chat_v2 import (DIRECT_ASK, MAX_RESULTS, SCOPE_RE, ChatArchive, ChatChoices, ChatSearch, attempts_stored, find_owner_line, last_outcome, newest_owner_line,
@@ -263,10 +264,11 @@ def build_router() -> APIRouter:
         # DV-1: the Ask mode, only when the flag is on and the request named `ask` (a request without a mode never gets here, and the flag off never reads one)
         asking = (await run_blocking(ask_mode.begin, services, port, session, _clean(services, body.text), lambda value: _clean(services, value))
                   if ask_mode.requested(request) == "ask" else None)
+        block = await run_blocking(_project_block, services, session, _clean(services, body.text))          # D451: what the project adds to this turn; None for a chat of no project or a project with nothing
         if _live_on(services):
             return await _start_live(request, services, port, sid, said=_clean(services, body.text),
                                      attached=_clean(services, attached_line(list(body.names), [r.kind for r in refs])), refs=refs, client_id=body.client_id, ask=asking,
-                                     receipts=receipts)
+                                     receipts=receipts, block=block)
         if not direct_running.begin(sid):
             raise Busy("This chat is already answering")
         try:
@@ -274,12 +276,12 @@ def build_router() -> APIRouter:
             attached = _clean(services, attached_line(list(body.names), [r.kind for r in refs]))
             message_id = await run_blocking(_store_user_line, services, sid, said, attached, None, "ask" if asking is not None else None, _line_files(refs, receipts))
             direct_running.attach(sid, message_id)       # from here any page can read which line is being answered (GET /api/chats/{sid}: direct_turn)
-            await run_blocking(_ground, services, port, sid, asking is not None)
+            await run_blocking(_ground, services, port, sid, asking is not None, block)
         except BaseException:
             direct_running.end(sid)
             raise
-        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, ChatTurnIn(text=said, attachments=refs) if asking is None else asking.turn_in(said, refs), 1, asking))
-        return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", **_files_of(receipts)})
+        asyncio.get_running_loop().create_task(run_blocking(_answer, services, port, sid, message_id, _turn_of(said, refs, asking, block), 1, asking))
+        return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", **_files_of(receipts), **_context_of(block)})
 
     # DV-1: registered here, where the decorator was, with the route class that takes `mode` out of the body when the flag is on (orchestrator/ask_mode.py); inert while it is off
     router.add_api_route("/chats/{sid}/direct", direct, methods=["POST"], summary="Ask the chat model directly", dependencies=[Depends(require_token)],
@@ -388,13 +390,57 @@ def _store_user_line(services: Any, sid: str, text: str, attached: str = "", cli
     return stored
 
 
-def _ground(services: Any, port: Any, sid: str, ask: bool = False) -> None:
+def _ground(services: Any, port: Any, sid: str, ask: bool = False, block: "project_context.ChatBlock | None" = None) -> None:
     """The session's system text for this turn: the node's own record and the rules (`orchestrator/chat_ground.py`), rebuilt every turn so it
-    is current. A grounding that cannot be built or written is logged and the turn runs without a new one; it never fails the turn. `ask` (DV-1) adds the Ask mode's words."""
+    is current. A grounding that cannot be built or written is logged and the turn runs without a new one; it never fails the turn. `ask` (DV-1) adds the Ask mode's words.
+    `block` (D451) is the project's stable block: it stands in the text in front of the rules, and its signature goes with the text so a Codex thread that read an older one is replaced."""
     try:
-        port.set_system(sid, ground(services, sid, ask=True) if ask else ground(services, sid))
+        kw: dict[str, Any] = {"project": block.stable} if block is not None and block.stable else {}
+        text = ground(services, sid, ask=True, **kw) if ask else ground(services, sid, **kw)
+        if kw:
+            port.set_system(sid, text, context_sig=block.sig)                                  # type: ignore[union-attr]
+        else:
+            port.set_system(sid, text)
     except Exception:
         log.warning("could not ground the direct chat %s", sid, exc_info=True)
+
+
+def _project_of(services: Any, session: Any) -> str | None:
+    """The project (team) a direct chat belongs to: the team's own chat, or a division's chat inside it. None for the org chat and every other kind."""
+    kind = getattr(session, "kind", "")
+    if kind == "department":
+        return session.node_id
+    if kind == "division":
+        found = services.db.conn().execute("SELECT department_id FROM graph_nodes WHERE id = ?", (session.node_id,)).fetchone()
+        return found["department_id"] if found is not None else None
+    return None
+
+
+def _project_block(services: Any, session: Any, message: str) -> "project_context.ChatBlock | None":
+    """What the project of this chat adds to the turn (D451): its instructions, its earlier-context memory and its files, composed within the chat budget, with the app's secrets and the credential
+    shapes replaced (`project_delivery.chat_block`). None when the chat has no project, the project has nothing to say, or `SUTRA_PROJECT_CONTEXT=0`. Reading never fails the turn."""
+    if project_context.switched_off():
+        return None
+    try:
+        dept = _project_of(services, session)
+        attachments = getattr(services, "attachments", None)
+        if dept is None or attachments is None:
+            return None
+        return project_delivery.chat_block(services.db, attachments.store, services.redact, services.clock, dept, message)
+    except Exception:                                      # noqa: BLE001  (a project that cannot be read must never keep the owner from asking)
+        log.warning("the project of the chat %s could not be read", getattr(session, "id", "?"), exc_info=True)
+        return None
+
+
+def _turn_of(said: str, refs: list, asking: Any, block: "project_context.ChatBlock | None") -> ChatTurnIn:
+    """The turn the port takes: the owner's words and files, the Ask mode's limits when it asked, and this message's excerpts of the project's files."""
+    turn = ChatTurnIn(text=said, attachments=refs) if asking is None else asking.turn_in(said, refs)
+    return turn.model_copy(update={"context": block.context}) if block is not None and block.context else turn
+
+
+def _context_of(block: "project_context.ChatBlock | None") -> dict:
+    """The 202's `context`: what the project gave this turn (a row per part: name, characters, cut, mode), only when it gave anything, so a chat of no project answers exactly what it always did."""
+    return {"context": project_context.receipt(block)} if block is not None else {}
 
 
 def _refuse_deleted(services: Any, session: Any) -> None:
@@ -510,7 +556,7 @@ def _files_of(receipts: tuple) -> dict:
 
 
 async def _start_live(request: Request, services: Any, port: Any, sid: str, *, said: str, attached: str, refs: list, client_id: str | None,
-                      ask: "ask_mode.AskTurn | None" = None, receipts: tuple = ()) -> RedactedJSONResponse:
+                      ask: "ask_mode.AskTurn | None" = None, receipts: tuple = (), block: "project_context.ChatBlock | None" = None) -> RedactedJSONResponse:
     """One send as a live turn. The order matters (D220): look the `client_id` up, claim the chat (which also creates the stop token), store the owner's line, ground the chat,
     build and bind the live turn, publish `turn.accepted` (seq 1), and only then return the 202."""
     if client_id:
@@ -528,7 +574,7 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
     try:
         message_id = await run_blocking(_store_user_line, services, sid, said, attached, client_id, "ask" if ask is not None else None, _line_files(refs, receipts))
         direct_running.attach(sid, message_id)
-        await run_blocking(_ground, services, port, sid, ask is not None)
+        await run_blocking(_ground, services, port, sid, ask is not None, block)
         live = _new_live(services, sid, message_id, generation, client_id, 1, claim.token)
         direct_running.bind(sid, live)
         live.start()
@@ -540,10 +586,10 @@ async def _start_live(request: Request, services: Any, port: Any, sid: str, *, s
             live.close()
         direct_running.end(sid)
         raise
-    turn = ChatTurnIn(text=said, attachments=refs) if ask is None else ask.turn_in(said, refs)
+    turn = _turn_of(said, refs, ask, block)
     asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, message_id, turn, live, 1, ask))
     return RedactedJSONResponse(status_code=202, content={"message_id": message_id, "turn": "started", "generation_id": generation, "attempt_no": 1,
-                                                          "client_id": client_id or _client_of_line(services, sid, message_id), **_files_of(receipts)})
+                                                          "client_id": client_id or _client_of_line(services, sid, message_id), **_files_of(receipts), **_context_of(block)})
 
 
 def _client_of_line(services: Any, sid: str, message_id: int) -> str | None:
@@ -574,6 +620,7 @@ async def _retry_live(request: Request, services: Any, port: Any, sid: str, body
     # DV-1 (D350): the mode of the owner's line is stored with it. A retry of an Ask is an Ask whatever the body says (a body that names `do` is refused); a body may only narrow: `ask` on a line that was not
     wanted = ask_mode.retry_mode(line_mode, ask_mode.requested(request))
     asking = await run_blocking(ask_mode.begin, services, port, session, said, lambda value: _clean(services, value)) if wanted == "ask" else None
+    block = await run_blocking(_project_block, services, session, said)                      # D451: the retry is given the project's block as the first send was
     claim = direct_running.begin_turn(sid, body.client_id)
     if isinstance(claim, direct_running.Busy):
         raise Busy("This chat is already answering")
@@ -583,7 +630,7 @@ async def _retry_live(request: Request, services: Any, port: Any, sid: str, body
         if attempt > direct_turns.MAX_ATTEMPT:
             raise AppError("not_retryable", "That question was already answered again as often as the chat allows.")
         direct_running.attach(sid, body.message_id)
-        await run_blocking(_ground, services, port, sid, asking is not None)
+        await run_blocking(_ground, services, port, sid, asking is not None, block)
         live = _new_live(services, sid, body.message_id, generation, body.client_id, attempt, claim.token)
         direct_running.bind(sid, live)
         live.start()
@@ -595,7 +642,7 @@ async def _retry_live(request: Request, services: Any, port: Any, sid: str, body
             live.close()
         direct_running.end(sid)
         raise
-    turn = ChatTurnIn(text=said) if asking is None else asking.turn_in(said, [])
+    turn = _turn_of(said, [], asking, block)
     asyncio.get_running_loop().create_task(run_blocking(_answer_live, services, port, sid, body.message_id, turn, live, attempt, asking))
     return RedactedJSONResponse(status_code=202, content={"message_id": body.message_id, "turn": "started", "generation_id": generation, "attempt_no": attempt,
                                                           "client_id": body.client_id})

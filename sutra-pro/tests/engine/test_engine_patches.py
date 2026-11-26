@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -3612,8 +3613,8 @@ def test_p35_the_proposal_rules_ask_for_expect(j2ft, tmp_path, monkeypatch):
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261124-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    # P41 (D446) appends its environment rule right after this one, so the expect rule now sits just before it
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
+    # P41 (D446) appends its environment rule right after this one and P44 (D449) its internet rule after that
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE) and '"expect"' in j2ft.REAL_RUN_EXPECT_RULE
     assert "file paths or globs" in j2ft.REAL_RUN_EXPECT_RULE and "never a folder" in j2ft.REAL_RUN_EXPECT_RULE
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
     run._apply_output(FT)
@@ -3923,7 +3924,7 @@ def test_p41_loader_names_are_refused(j2ft, tmp_path):
     cred.write_text(P41_CRED)
     probs = j2ft.real_run_env_problems({"secret_files": {"LD_PRELOAD": str(cred)}}, j2ft.squash(f"use {cred}"),
                                        str(tmp_path / "run"))
-    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts (a fixed guardrail list)"], probs
+    assert probs == ["real_run may not set LD_PRELOAD: it changes how a program starts or where it connects (a fixed guardrail list)"], probs
     assert j2ft.real_run_env_problems({"settings": {"NODE_ENV": "x", "LDAP_HOST": "x"}}, "", str(tmp_path)) == []
 
 
@@ -4012,7 +4013,7 @@ def test_p41_rule_joins_atom_rules_with_tools_and_runner(j2ft, tmp_path, monkeyp
     run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090100-5e12")
     run._apply_output(FT)
     assert run.out.get("test_runner") and j2ft.llm.tools_on()
-    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE)
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_EXPECT_RULE + j2ft.REAL_RUN_ENV_RULE + j2ft.REAL_RUN_NET_RULE)      # P44 (D449)
     rule = j2ft.REAL_RUN_ENV_RULE
     assert '"settings"' in rule and '"secret_files"' in rule and "placeholder" in rule and "NODE_OPTIONS" in rule
     monkeypatch.setenv("J2_AGENT_TOOLS", "0")
@@ -4432,7 +4433,7 @@ def test_p43_a_picked_option_names_its_folder_only_when_the_requester_picked_it(
         run._run()
     else:
         run.auto = True
-        # P45 (D451): Decide for me no longer answers a question about the folder a real run uses; it waits for the Requester.
+        # P45 (D452): Decide for me no longer answers a question about the folder a real run uses; it waits for the Requester.
         # D448's own guard (a pick it did make never names a folder) is still checked below, with that subject rule set aside.
         assert run._auto_pick() is None and not any(m.get("auto") for m in run.chat)
         monkeypatch.setattr(run, "_requester_only", lambda p: None)
@@ -4573,7 +4574,644 @@ def test_p41_d448_a_secret_file_is_named_only_whole(j2, tmp_path, monkeypatch):
         assert not not_named("~/Documents/Made Up/key.txt", said), said
 
 
-# ---- P45 (D451): the programs the engine builds and runs ---------------------------------------------------------------------
+# ---- P44 (D449): a real run's internet hosts; the dry run runs an offline command ----------------------------------------------
+# Made-up hosts only (.invalid, RFC 2606); nothing here resolves a name or reaches the internet.
+P44_DONE_WHEN = ["fetch.py saves the page title", "A test covers fetch.py with a fake server", "fetch.py ran for real on the folder"]
+P44_URL = "http://api.made-up.invalid/v1"
+MISSING, DEFAULT = object(), object()      # a field left out of the plan; the fixture's default value
+
+
+@pytest.fixture
+def p44_reg(j2ft, tmp_path, monkeypatch):
+    """new(request, goal, runner): a fresh run of the folder type whose brief names the made-up folder and host;
+    register(run, hosts, offline, folder, **fields): W-1 proposed with a real run on that folder: (run, registered, refused)."""
+    dst, home = tmp_path / "out", tmp_path / "home"
+    dst.mkdir()
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))      # Windows: expanduser reads USERPROFILE
+    counter = itertools.count(1)
+
+    def new(request=None, goal=None, runner=None):
+        run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-1000{next(counter):02d}-5e12")
+        run._apply_output(FT)
+        if runner:
+            run.out = {**run.out, "test_runner": runner}
+        run.request = request or f"Build fetch.py and run it on {dst}: it reads {P44_URL} and writes title.txt"
+        run.goal, run.budget = goal or {"statement": "x", "done_when": list(P44_DONE_WHEN)}, 100
+        return run
+
+    def proposal(run, hosts=DEFAULT, offline=DEFAULT, folder=None, **fields):
+        x, f = run.out["test_runner"][0], folder or str(dst)
+        rr = {"command": [x, "fetch.py", f, P44_URL], "folder": f, "reads": [], "why": "x", "checks": [3],
+              "expect": {"created": ["title.txt"], "changed": [], "deleted": []},
+              "hosts": ["api.made-up.invalid"] if hosts is DEFAULT else hosts,
+              "offline": {"command": [x, "fetch.py", f, "--offline"], "same_files": True} if offline is DEFAULT else offline,
+              **fields}
+        return [{**sort_proposals(f, fix=True)[0], "real_run": {k: v for k, v in rr.items() if v is not MISSING}}]
+
+    def register(run=None, **kw):
+        run = run or new()
+        reg, refused, _ = run._register(proposal(run, **kw))
+        return run, reg, refused
+    return SimpleNamespace(new=new, proposal=proposal, register=register, dst=dst, home=home)
+
+
+def test_p44_a_good_plan_registers_hosts_and_offline(p44_reg):
+    run, reg, refused = p44_reg.register(hosts=[" API.Made-Up.invalid ", "api.made-up.invalid"])
+    assert len(reg) == 1 and not refused, refused
+    x = run.out["test_runner"][0]
+    assert reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"]      # lower case, each once (Kaivan's real_hosts)
+    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", str(p44_reg.dst), "--offline"], "same_files": True}
+    run, reg, refused = p44_reg.register(hosts=MISSING, offline=MISSING)
+    assert len(reg) == 1 and not {"hosts", "offline"} & set(reg[0]["real_run"]), reg[0]["real_run"]
+    run, reg, refused = p44_reg.register(hosts=MISSING)      # offline without hosts is not stored
+    assert len(reg) == 1 and "offline" not in reg[0]["real_run"], reg[0]["real_run"]
+    (p44_reg.home / "x").mkdir()
+    run = p44_reg.new(request=f"Build fetch.py and run it on ~/x: it reads {P44_URL}")
+    run, reg, refused = p44_reg.register(run, folder="~/x", offline={"command": [x, "fetch.py", "~/x", "--offline"], "same_files": False})
+    assert len(reg) == 1 and not refused, refused
+    assert reg[0]["real_run"]["offline"] == {"command": [x, "fetch.py", os.path.expanduser("~/x"), "--offline"], "same_files": False}
+
+
+@pytest.mark.parametrize("case, want", [
+    ("missing", 'also needs "offline"'), ("no_same_files", "must be exactly"), ("same_files_text", "must be exactly"),
+    ("real_command", "is the real command"), ("no_folder", "offline: real_run command must pass the folder")])
+def test_p44_hosts_without_offline_are_refused_with_their_key(p44_reg, case, want):
+    x, f = "python3", str(p44_reg.dst)
+    offline = {"missing": MISSING, "no_same_files": {"command": [x, "fetch.py", f, "--offline"]},
+               "same_files_text": {"command": [x, "fetch.py", f, "--offline"], "same_files": "yes"},
+               "real_command": {"command": [x, "fetch.py", f, P44_URL], "same_files": True},
+               "no_folder": {"command": [x, "fetch.py", "--offline"], "same_files": True}}[case]
+    run, reg, refused = p44_reg.register(offline=offline)
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_offline"], refused
+    assert want in refused[0] and (case != "no_folder" or "offline: real_run command must pass the folder" in run.rejections[-1]["reason"])
+
+
+@pytest.mark.parametrize("host, ok", [
+    ("https://api.made-up.invalid", False), ("api.made-up.invalid/v1", False), ("*", False), ("*.invalid", False),
+    ("10.0.0.8", False), ("localhost", False), ("api.made-up.invalid:0", False), ("api.made-up.invalid:65536", False),
+    ("api.made-up.invalid:08", False), ("made-up", False), (5, False),
+    ("*.made-up.invalid", True), ("api.made-up.invalid:8443", True)])
+def test_p44_host_format_refused_and_accepted(p44_reg, host, ok):
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}: it reads {host} and {P44_URL}")
+    run, reg, refused = p44_reg.register(run, hosts=[host])
+    if ok:
+        assert len(reg) == 1 and reg[0]["real_run"]["hosts"] == [host], refused
+        return
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+    assert ("must be a list of host names" if host == 5 else "must be a host name") in refused[0], refused
+
+
+def test_p44_host_named_only_whole_in_brief_typed_or_picked(j2ft):
+    named = lambda h, *pieces: j2ft.host_named(h, [j2ft.squash(p) for p in pieces])
+    for said in ("https://api.made-up.invalid/v1 and", "api.made-up.invalid:8443/x", "api.made-up.invalid.", "(api.made-up.invalid)"):
+        assert named("api.made-up.invalid", said), said
+    for said in ("x.api.made-up.invalid", "notapi.made-up.invalid", "api.made-up.invalid.evil.example", "bob@api.made-up.invalid",
+                 "*.api.made-up.invalid"):
+        assert not named("api.made-up.invalid", said), said
+    assert named("api.made-up.invalid:8443", "use api.made-up.invalid"), "a port only narrows: it need not be written"
+    assert named("*.made-up.invalid", "use *.made-up.invalid") and not named("*.made-up.invalid", "made-up.invalid")
+    assert not named("api.made-up.invalid", "api.made-", "up.invalid"), "a host split across two texts is not named"
+
+
+def p44_option(run, monkeypatch):
+    """P43's option setup: one decision question whose first option names the made-up host."""
+    run._ask_user("Which host?", [{"question": "Which host should it reach?", "options": ["Use api.made-up.invalid", "Another host"],
+                                   "kind": "decision"}], "fact", handoff={"kind": "requester_answered"}, done=False)
+    monkeypatch.setattr(run, "_handoff", lambda *a, **k: setattr(run, "turn", None))
+    monkeypatch.setattr(run, "_plan_stages", lambda: None)
+
+
+def test_p44_host_only_in_charter_or_decide_for_me_is_refused(p44_reg, monkeypatch):
+    """Owner answer 1: the charter (an agent writes it) and Decide for me never name a host; _fact_source would have."""
+    brief = f"Build fetch.py and run it on {p44_reg.dst}"
+    goal = {"statement": "x", "done_when": ["fetch.py saves the page title of api.made-up.invalid"] + P44_DONE_WHEN[1:]}
+    run, reg, refused = p44_reg.register(p44_reg.new(request=brief, goal=goal))
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"] and "not named" in refused[0], refused
+    assert "api.made-up.invalid" in run._fact_source()
+    run = p44_reg.new(request=brief)
+    p44_option(run, monkeypatch)
+    run.auto = True
+    run._auto_go()
+    assert [m for m in run.chat if m["who"] == "user"][-1].get("auto") and "picked" not in run.decisions[-1]
+    run, reg, refused = p44_reg.register(run)
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+    run = p44_reg.new(request=brief)
+    run.post("user", "api.made-up.invalid", auto=True)
+    run, reg, refused = p44_reg.register(run)
+    assert not reg and run.rejections[-1]["key"] == ["real_run_hosts"], refused
+
+
+def test_p44_host_in_a_requester_click_registers(p44_reg, monkeypatch):
+    brief = f"Build fetch.py and run it on {p44_reg.dst}"
+    run = p44_reg.new(request=brief)
+    p44_option(run, monkeypatch)
+    run.post("user", "Option 1")
+    run._run()
+    assert run.decisions[-1]["picked"] == "Use api.made-up.invalid"
+    run, reg, refused = p44_reg.register(run)
+    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
+    run = p44_reg.new(request=brief)
+    run.post("user", "it calls api.made-up.invalid")
+    run, reg, refused = p44_reg.register(run)
+    assert len(reg) == 1 and not refused and reg[0]["real_run"]["hosts"] == ["api.made-up.invalid"], refused
+
+
+# ---- P44 (D449) T1b (owner): hosts the Requester has not named are asked once, in a pickable option; never Decide for me
+def p44_flow(run, monkeypatch, *proposals):
+    """Adaptation's proposals, one per Adaptation turn, registered by the validator's own _agree; any other turn (building)
+    ends the run here."""
+    it = iter(proposals)
+
+    def turn():
+        if run.turn == "adaptation":
+            run._agree(next(it))
+        else:
+            run.turn = None
+    monkeypatch.setattr(run, "_dispatch_turn", turn)
+
+
+def p44_asked(run):
+    return [m for m in run.chat if m.get("pause") == "hosts"]
+
+
+@pytest.fixture
+def p44_ask(p44_reg, monkeypatch):
+    """A run whose brief names the folder but no host; Adaptation's plan names the made-up host: the validator refuses it and
+    Identity asks the host question. Returns (run, the question, proposal(**fields) for later turns)."""
+    def go(*later, runner=None, **fields):
+        run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}", runner=runner)
+        plan = p44_reg.proposal(run, **fields)
+        p44_flow(run, monkeypatch, plan, *[x if x is not None else plan for x in later])
+        run.post("user", "Build it, please")
+        run._run()
+        assert not run.workflows and run.rejections[-1]["key"] == ["real_run_hosts"], run.rejections
+        assert len(p44_asked(run)) == 1 and run.paused["kind"] == "hosts", [m["text"] for m in run.chat]
+        return run, run.paused["questions"][0], plan
+    return go
+
+
+def test_p44_t1b_unnamed_hosts_are_asked_once_and_the_requesters_click_registers_them(p44_ask, p44):
+    run, q, _ = p44_ask(None, reaches="the made-up API", runner=[sys.executable, "{target}"])      # p44: the fake srt
+    assert q["question"] == "This script needs to reach the made-up API (api.made-up.invalid). Allow it?", q
+    assert q["options"] == ["Allow internet access to api.made-up.invalid", "Don't allow it: leave the real run out"], q
+    run.post("user", "Option 1")      # what a card click sends
+    run._run()
+    assert run.decisions[-1]["picked"] == "Allow internet access to api.made-up.invalid"
+    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
+    assert len(p44_asked(run)) == 1 and run.paused is None, "no second question"
+    assert run.hosts_asked == {"api.made-up.invalid": True} and run.hosts_ask is None
+    run.workflows[0]["status"] = "done"      # T3: once built, the Run card shows the hosts the Requester's click allowed
+    os.makedirs(run._out_dir(), exist_ok=True)
+    (Path(run._out_dir()) / "fetch.py").write_text(P44_FETCH)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    assert "\nInternet access: api.made-up.invalid" in p32_card(run)
+
+
+def test_p44_t1b_without_reaches_the_question_names_the_hosts_alone(p44_ask):
+    _, q, _ = p44_ask(hosts=["api.made-up.invalid", "*.cdn.made-up.invalid:8443"], reaches="two\nlines")
+    assert q["question"] == "This script needs to reach api.made-up.invalid, *.cdn.made-up.invalid:8443. Allow it?", q
+    assert q["options"][0] == "Allow internet access to api.made-up.invalid, *.cdn.made-up.invalid:8443"
+
+
+@pytest.mark.parametrize("answer", ["Option 2", "  don't ALLOW "])      # the Don't allow button (E29) or its exact text
+def test_p44_t1b_a_decline_leaves_the_real_run_out_with_the_reason_and_never_asks_again(p44_ask, answer):
+    without = [{**sort_proposals("x", fix=True)[0], "real_run": None}]      # Adaptation's plan without the real run
+    run, q, plan = p44_ask(None, without)      # it first proposes the same hosts again: refused, not asked again
+    run.post("user", answer)
+    run._run()
+    why = "The Requester did not allow internet access to api.made-up.invalid"
+    assert ("picked" in run.decisions[-1]) == (answer == "Option 2") and len(p44_asked(run)) == 1 and run.paused is None
+    assert run.goal["done_when"] == P44_DONE_WHEN[:2]
+    assert run.goal["dropped_reasons"] == [{"criterion": P44_DONE_WHEN[2], "reason": why, "hosts": ["api.made-up.invalid"]}]
+    assert any(m["text"].startswith("Left out on the Requester's decision") and why.lower() in m["text"].lower() for m in run.chat)
+    assert [w.get("real_run") for w in run.workflows] == [None], run.rejections      # registered without its real run
+    run._goal_done({})
+    assert f"Left out: {P44_DONE_WHEN[2]}: {why}." in run.outcome, run.outcome
+    run._hosts_to_ask("Build sort_files.py", plan[0]["real_run"])      # the same hosts in a later plan: never asked again
+    assert run.hosts_ask is None and run.hosts_asked == {"api.made-up.invalid": False}
+
+
+@pytest.mark.parametrize("answer", ["yes", "Don't allow it, thanks", "allow", "Option 3"])
+def test_p44_t1b_any_other_answer_keeps_the_host_question_open(p44_ask, answer):
+    """Owner (E29): only the Allow pick, the hosts typed out, or a clear decline settle it; code reads no other word."""
+    run, q, _ = p44_ask()      # no later proposal: a handoff to Adaptation would end the test with StopIteration
+    run.post("user", answer)
+    run._run()
+    asked = p44_asked(run)
+    assert run.paused["kind"] == "hosts" and run.paused["questions"] == [q], run.paused
+    assert "Not allowed yet. Press Allow, or type the hosts." in asked[-1]["text"], asked[-1]["text"]
+    assert run.paused["handoff"]["hosts_ask"]["hosts"] == ["api.made-up.invalid"]
+    assert run.hosts_asked == {"api.made-up.invalid": None} and not run.workflows and "dropped_reasons" not in run.goal
+    assert not p31_receipts(run) and not any(m["text"].startswith("Left out") for m in run.chat)
+
+
+def test_p44_t1b_the_hosts_typed_out_register(p44_ask):
+    """Passes before E29 too: typed hosts already counted (T1); pinned beside the stricter answers."""
+    run, _, _ = p44_ask(None)
+    run.post("user", "yes, api.made-up.invalid")
+    run._run()
+    assert [w["real_run"]["hosts"] for w in run.workflows] == [["api.made-up.invalid"]], run.rejections
+    assert run.paused is None and run.hosts_asked == {"api.made-up.invalid": True}
+
+
+@pytest.mark.parametrize("answer", ["Option 1", "Option 2"])
+def test_p44_t1b_the_host_question_loses_no_other_workflow_of_its_batch(p44_reg, monkeypatch, answer):
+    """R1-4: one batch registers a workflow without hosts and asks about the other's. The question takes coordination's
+    schedule turn; after the answer the batch-mate is still registered and coordination still schedules it."""
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+    hosted, other = p44_reg.proposal(run)[0], {**sort_proposals("x")[1], "dependencies": []}
+    again = hosted if answer == "Option 1" else {**hosted, "real_run": None}
+    it, turns = iter([[hosted, other], [again]]), []
+
+    def turn():
+        turns.append((run.turn, run.handoff.get("kind")))
+        if run.turn == "adaptation":
+            run._agree(next(it))
+        else:
+            run.turn = None
+    monkeypatch.setattr(run, "_dispatch_turn", turn)
+    run.post("user", "Build it, please")
+    run._run()
+    assert run.paused["kind"] == "hosts" and [w["name"] for w in run.workflows] == [other["name"]], run.rejections
+    assert ("coordination", "schedule") not in turns, turns
+    run.post("user", answer)
+    run._run()
+    assert run.paused is None and turns[-1] == ("coordination", "schedule"), turns
+    assert sorted(w["name"] for w in run.workflows) == sorted([other["name"], hosted["name"]]), run.rejections
+    assert all(w["status"] == "registered" for w in run.workflows), run.workflows
+
+
+def test_p44_t1b_a_document_run_asks_about_the_hosts_as_written(p44_reg, monkeypatch):
+    """R1-1: a document run's "site" -> "document" rewrite never touches the host question; else Allow named a host that
+    isn't the plan's and asked again on every press."""
+    run = p44_reg.new(request=f"Build fetch.py and run it on {p44_reg.dst}")
+    run.doc = True      # a document run (its form has a template) that asks for no page
+    assert run._requester_noun("sites.made-up.invalid") == "documents.made-up.invalid"      # the rewrite this test guards
+    run._hosts_to_ask("Build sort_files.py", p44_reg.proposal(run, hosts=["sites.made-up.invalid"])[0]["real_run"])
+    a, run.hosts_ask = run.hosts_ask, None      # as _run's loop takes it
+    run._ask_hosts(a)
+    q = run.paused["questions"][0]
+    assert q["options"][0] == "Allow internet access to sites.made-up.invalid" and "sites.made-up.invalid" in q["question"], q
+    monkeypatch.setattr(run, "_dispatch_turn", lambda: setattr(run, "turn", None))
+    run.doc = False      # the folder fixture has no document file for the run's end (summary.json); the pick is already made
+    run.post("user", "Option 1")
+    run._run()
+    assert run.paused is None and run.hosts_asked == {"sites.made-up.invalid": True} and len(p44_asked(run)) == 1, run.paused
+
+
+def test_p44_t1b_decide_for_me_never_answers_the_host_question(p44_ask, j2ft):
+    run, _, _ = p44_ask()
+    assert "hosts" in j2ft.AUTO_ASK
+    run.auto = True
+    run._auto_go()
+    assert run.paused["kind"] == "hosts" and not [m for m in run.chat if m.get("auto")], "it waits for the Requester"
+    assert run.snapshot()["paused"]["auto_waits"] is True
+
+# ---- P44 (D449) T2: the dry run runs the offline command, offline; only the approved real run reaches the named hosts --------
+# Made-up script: offline it writes a made-up title; for real it fetches the URL it was given (through the sandbox's proxy).
+P44_FETCH = ("import os, sys, urllib.request\nf, src = sys.argv[1], sys.argv[2]\n"
+             "body = '<title>made-up</title>' if src == '--offline' else urllib.request.urlopen(src, timeout=5).read().decode()\n"
+             "open(os.path.join(f, 'title.txt'), 'w').write(body)\n")
+# Made-up stand-in for srt (test only, no sandbox): it records the allowedDomains and the -c command it was given, then runs the
+# command (a list, never a shell) with HTTP_PROXY at its own 127.0.0.1 proxy. The proxy serves a made-up page itself for an
+# allowed host (exact, or *.x for a strict subdomain; ports dropped) and answers 403 for any other, as srt does; nothing is forwarded,
+# no name is resolved (urllib sends the absolute URI to the proxy).
+P44_SRT = r'''import http.server, json, os, shlex, subprocess, sys, threading, urllib.parse
+a = sys.argv[1:]
+allowed = json.load(open(a[a.index("-s") + 1]))["network"]["allowedDomains"]
+cmd = a[a.index("-c") + 1]
+with open(sys.argv[0] + ".net.jsonl", "a") as f:
+    f.write(json.dumps({"allowedDomains": allowed, "command": cmd}) + "\n")
+def ok(h):
+    for e in allowed:
+        e = e.rsplit(":", 1)[0]
+        if h == e or (e.startswith("*.") and h.endswith(e[1:])):
+            return True
+    return False
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if ok(urllib.parse.urlsplit(self.path).hostname or ""):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"<title>made-up</title>")
+        else:
+            self.do_CONNECT()
+    def do_CONNECT(self):
+        self.send_response(403)      # srt 0.0.81 answers a plain-HTTP GET 403 Forbidden
+        self.end_headers()
+    def log_message(self, *x):
+        pass
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+threading.Thread(target=s.serve_forever, daemon=True).start()
+p = "http://127.0.0.1:%d" % s.server_port
+sys.exit(subprocess.run(shlex.split(cmd), env={**os.environ, "HTTP_PROXY": p, "http_proxy": p}).returncode)
+'''
+
+
+def p44_net(seen):
+    return [json.loads(x) for x in seen.read_text().splitlines()] if seen.exists() else []
+
+
+@pytest.fixture
+def p44(p44_reg, tmp_path, monkeypatch):
+    """go(script, request, **register fields): W-1 (fetch.py, its real run on the made-up folder, item 3) registered with
+    sys.executable as the runner, done, its script written; the dry run and the real run go through the fake srt. Returns
+    (go, the real folder, where the fake srt records what it was given)."""
+    fake = tmp_path / "fake_srt.py"
+    fake.write_text(P44_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))      # split back exactly, on any OS
+
+    def go(script=P44_FETCH, request=None, **fields):
+        run = p44_reg.new(request=request, runner=[sys.executable, "{target}"])
+        run, reg, refused = p44_reg.register(run, **fields)
+        assert [w["id"] for w in reg] == ["W-1"] and not refused, refused
+        run.workflows[0]["status"] = "done"
+        os.makedirs(run._out_dir(), exist_ok=True)
+        (Path(run._out_dir()) / "fetch.py").write_text(script)
+        run.post("user", "Build it and run it on my folder")
+        return run
+    return go, p44_reg.dst, Path(str(fake) + ".net.jsonl")
+
+
+def test_p44_the_dry_run_runs_the_offline_command_without_network(p44):
+    go, real, seen = p44
+    run = go()
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    net = p44_net(seen)
+    assert len(net) == 1 and net[0]["allowedDomains"] == [], net
+    assert "--offline" in net[0]["command"] and "api.made-up.invalid" not in net[0]["command"]
+    dry = run.real_runs_dry["W-1"]
+    assert dry["exit"] == 0 and dry["created"] == ["title.txt"], dry
+    assert not (real / "title.txt").exists()
+
+
+@pytest.mark.parametrize("hosts", [["api.made-up.invalid"], ["api.made-up.invalid", "*.cdn.made-up.invalid:8443"]])
+def test_p44_the_real_run_gets_exactly_the_hosts(p44, hosts):
+    go, real, seen = p44
+    run = go(request=f"Build fetch.py and run it on {real}: it reads {P44_URL} and *.cdn.made-up.invalid", hosts=hosts)
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    assert p44_net(seen)[-1]["allowedDomains"] == hosts
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 0 and r["hosts"] == hosts and "offline" in r, r
+    assert (real / "title.txt").read_text() == "<title>made-up</title>"
+
+
+def test_p44_a_host_not_named_is_refused_in_the_real_run(p44):
+    """Fails closed: the approved real run reaches only its hosts; any other gets the sandbox's 403."""
+    go, real, seen = p44
+    run = go(P44_FETCH.replace("urlopen(src,", "urlopen('http://other.made-up.invalid/',"))
+    run._ask_real_run({})
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert p44_net(seen)[-1]["allowedDomains"] == ["api.made-up.invalid"]
+    assert r["approved"] and r["exit"] != 0 and "403" in r["output"] and not (real / "title.txt").exists(), r
+
+
+def test_p44_a_networked_command_in_the_dry_run_never_gets_hosts(j2ft, p44):
+    """A guard of P32's fence: the dry run of a networked command gets no host even when the run it is given names hosts. It
+    passes before and after P44 (the fence was already there); it pins that Edit C keeps it."""
+    go, real, seen = p44
+    run = go()
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
+    dry = j2ft.real_run_dry(run._out_dir(), rr, 30)
+    assert p44_net(seen)[-1]["allowedDomains"] == [] and dry["exit"] != 0 and "403" in dry["output"], dry
+
+
+def test_p44_rerun_and_install_keep_their_network(j2ft):
+    assert j2ft.sandbox_settings("/x")["network"]["allowedDomains"] == []
+    assert j2ft.j2_runenv.PYPI_HOSTS == ("pypi.org", "files.pythonhosted.org")
+
+
+def p44_real_srt(p44, monkeypatch, tmp_path):
+    """The real srt (no network is reached: srt's proxy refuses a name not on its list with 403, observed as "HTTP Error 403:
+    Forbidden" for a plain-HTTP GET; a .invalid name never resolves), with a temp HOME as P41's real-srt tests have (srt
+    denies reads under ~). The dry-run test passes before P44 too: P32's fence already held."""
+    go, real, _ = p44
+    run = go()
+    home = tmp_path / "srt-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    return run, real
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p44_real_srt_dry_run_refuses_a_named_host(j2ft, p44, monkeypatch, tmp_path):
+    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
+    rr = {**run.workflows[0]["real_run"], "command": [sys.executable, "fetch.py", str(real), P44_URL]}
+    dry = j2ft.real_run_dry(run._out_dir(), rr, 60)
+    assert dry["ran"] and dry["exit"] != 0 and "HTTP Error 403" in dry["output"], dry      # srt's proxy refused the name
+
+
+@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+def test_p44_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p44, monkeypatch, tmp_path):
+    """srt starts with a P44 hosts list (a wildcard with a port) and still refuses a host not on it. The allowed path is not
+    tested with the real srt: it would resolve a name. Passes before Edit C too (an empty list refuses the same host)."""
+    run, real = p44_real_srt(p44, monkeypatch, tmp_path)
+    rr = {**run.workflows[0]["real_run"], "hosts": ["*.made-up.invalid:8443"],
+          "command": [sys.executable, "fetch.py", str(real), "http://other.invalid/"]}
+    res = j2ft.real_run(run._out_dir(), rr, 60)
+    assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res
+
+# ---- P44 (D449) T3: the Run card names the internet hosts and what the dry run could not check ------------------------------
+P44_LOCAL = "import os, sys\nopen(os.path.join(sys.argv[1], 'title.txt'), 'w').write('made-up')\n"      # reaches nothing
+
+
+def test_p44_card_lines(p44, monkeypatch):
+    go, real, _ = p44
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    card = p32_card(run)
+    off = shlex.join([sys.executable, "fetch.py", str(real), "--offline"])
+    assert "\nInternet access: api.made-up.invalid" in card and "can't be limited" not in card, card
+    assert "\nThe dry run ran its offline command, without internet access: " + off in card, card
+    monkeypatch.setenv("J2_SANDBOX", "0")      # no sandbox for the real run; P32 still fences the dry run (the fake srt)
+    run = go()
+    assert run._ask_real_run({}) and run.real_runs_dry["W-1"]["fenced"] is True
+    card = p32_card(run)
+    assert "\nThis computer has no sandbox, so internet access can't be limited to these hosts." in card, card
+    assert "\nThe dry run ran its offline command" in card
+    monkeypatch.setenv("J2_SANDBOX_CMD", "no-such-sandbox-xyz")      # no runtime at all: no dry run
+    run = go()
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run"
+    card = p32_card(run)
+    assert NO_DRY_RUN in card and "can't be limited to these hosts" in card and "offline command" not in card, card
+
+
+def test_p44_no_hosts_card_is_unchanged(j2ft, p44):
+    assert j2ft.real_run_net_lines({}, False, {"fenced": True}) == ""
+    go, _, _ = p44
+    run = go(P44_LOCAL, hosts=MISSING, offline=MISSING)
+    assert run._ask_real_run({}) and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    card = p32_card(run)
+    assert "Internet access" not in card and "offline command" not in card and "couldn't be checked" not in card, card
+
+# ---- P44 (D449) T4: P35 compares the offline dry run's file changes with expect unless the plan says it can't ----------------
+P44_OTHER = P44_FETCH.replace("'title.txt'", "'other.txt' if src == '--offline' else 'title.txt'")      # offline: another file
+
+
+def test_p44_offline_mismatch_goes_back_to_the_builder(p44):
+    """A guard that P35 keeps comparing the offline command's changes with expect: passes before the amendment too."""
+    go, _, _ = p44
+    run = go(P44_OTHER)
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert w["failure"][0] == "dry_run" and "not what it said it would do" in w["failure"][1], w.get("failure")
+    assert run.turn == "adaptation" and not [m for m in run.chat if m.get("real_run")]
+
+
+def test_p44_same_files_false_skips_expect_with_the_card_line(p44):
+    go, real, _ = p44
+    run = go(P44_OTHER, offline={"command": [sys.executable, "fetch.py", str(real), "--offline"], "same_files": False})
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run", [m["text"] for m in run.chat]
+    assert "expect_mismatch" not in run.real_runs_dry["W-1"] and run.workflows[0].get("failure") is None
+    assert "\nFile changes couldn't be checked first." in p32_card(run)
+
+# ---- P44 (D449) T5: a failed dry run never makes built work "not built" (P30 amended); run 458e's shape, made-up data ---------
+def test_p44_a_dry_run_failure_keeps_the_builders_built_items(p44):
+    go, real, _ = p44
+    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src == '--offline' else None\nbody = "))      # offline: exit 1
+    crit = run.goal["done_when"]
+    run.goal["item_checks"] = {crit[0]: {"type": "file-exists", "target": "fetch.py", "expect": True},
+                               crit[1]: {"type": "file-exists", "target": "test_fetch.py", "expect": True},
+                               crit[2]: {"type": "real-run"}}
+    run.workflows[0]["item_status"] = {crit[0]: {"status": "built", "reason": ""}, crit[1]: {"status": "built", "reason": ""}}
+    assert run._ask_real_run({}) is True
+    w = run.workflows[0]
+    assert w["status"] == "failed" and w["failure"][0] == "dry_run", w.get("failure")
+    assert run._open_items() == [], run._open_items()      # never "(not built: no workflow built it)"
+    assert run._item_states()[crit[0]]["wid"] == "W-1"
+    assert any("done-when item 3" in x for x in run._real_run_pending()), "the real run's item stays open"
+    reg, refused, _ = run._register([{**sort_proposals(str(real), fix=True)[0], "real_run": None, "revises": "W-1"}])
+    assert len(reg) == 1 and not refused, refused
+    w2 = reg[0]      # a later done revision's own statuses win
+    w2["status"] = "done"
+    w2["item_status"] = {crit[0]: {"status": "not_built", "reason": "x"}}
+    assert run._item_states()[crit[0]]["status"] == "not_built" and run._item_states()[crit[0]]["wid"] == w2["id"]
+
+# ---- P44 (D449) T6: a real run is never run again without its own Run press (a pin; no code change) ------------------------
+def test_p44_a_failed_real_run_is_never_run_again_without_its_own_code(j2ft, p44, p44_reg, monkeypatch):
+    """FR-10: an approved real run that fails is not run again by itself: the same workflow is never asked again, and a
+    replacement gets its own card and code and runs only after its own RUN <code>. That Decide for me's exact RUN <code> never
+    runs one is pinned by P31 (test_p31_a_reply_that_is_not_the_code_asks_again_and_keeps_the_run_open); not repeated here.
+    Passes before and after P44: _ask_real_run skips a workflow already asked (real_runs_asked)."""
+    go, real, _ = p44
+    calls, orig = [], j2ft.real_run
+    monkeypatch.setattr(j2ft, "real_run", lambda out, rr, t: calls.append(rr.get("fence") is True) or orig(out, rr, t))
+    unfenced = lambda: sum(1 for f in calls if not f)
+    run = go(P44_FETCH.replace("body = ", "sys.exit(1) if src != '--offline' else None\nbody = "))      # real: exit 1
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run"
+    p31_answer(run, f"RUN {run.real_runs_asked['W-1']}")
+    r = p31_receipts(run)[-1]
+    assert r["approved"] and r["ran"] and r["exit"] == 1 and unfenced() == 1, (r, calls)
+    assert run._ask_real_run({}) is False and unfenced() == 1
+    assert (run.paused or {}).get("kind") != "real_run"
+    reg, refused, _ = run._register([{**p44_reg.proposal(run)[0], "revises": "W-1", "parts": ["fix"]}])      # a replacement
+    # that keeps the real run; W-1 is done (only its real run failed), so rewriting it is priced as a fix
+    assert len(reg) == 1 and not refused, refused
+    w2 = reg[0]
+    w2["status"] = "done"
+    assert run._ask_real_run({}) is True and run.paused["kind"] == "real_run" and unfenced() == 1
+    assert run.real_runs_asked[w2["id"]] != run.real_runs_asked["W-1"]
+    assert any(m.get("real_run") == w2["id"] for m in run.chat), "the replacement gets its own card"
+    p31_answer(run, f"RUN {run.real_runs_asked[w2['id']]}")
+    assert unfenced() == 2
+
+# ---- P44 (D449) T7: the proxy names join the fixed guardrail list (D446 amended, P41 amended) -------------------------------
+@pytest.mark.parametrize("name", ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy",
+                                  "no_proxy"])
+@pytest.mark.parametrize("hosts", [True, False])
+def test_p44_proxy_settings_are_refused_with_or_without_hosts(p44_reg, name, hosts):
+    """srt's own proxy can't be overridden by a plan: a proxy name is refused as a setting, in either case, with hosts or not."""
+    kw = {} if hosts else {"hosts": MISSING, "offline": MISSING}
+    run, reg, refused = p44_reg.register(settings={name: "http://made-up.invalid:3128"}, **kw)
+    assert not reg and len(refused) == 1 and run.rejections[-1]["key"] == ["real_run_env"], refused
+    assert f"real_run may not set {name}" in refused[0] and "where it connects (a fixed guardrail list)" in refused[0], refused
+
+# ---- P44 (D449) T8: the planner and the builder are told how hosts, the offline command and the read-only first call work ------
+def p44_builder_prompt(j2ft, tmp_path, runner):
+    """The tools builder's first prompt for a made-up workflow (as P41's test captures it), with the form's runner or none."""
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / f"j2-20261125-0903{'01' if runner else '02'}-5e12")
+    run._apply_output(FT)
+    if not runner:
+        run.out = {**run.out, "test_runner": None}
+    run.goal, run.budget = {"statement": "fetch", "done_when": ["fetch.py saves the page title"]}, 100
+    os.makedirs(run._out_dir(), exist_ok=True)
+    w = {"id": "W-1", "name": "fetcher", "purpose": "fetch", "outputs": [f"{FT}/fetch.py"], "status": "running", "calls_used": 0,
+         "retries_used": 0, "cost": 10, "cycle": 1, "section": "W-1", "covers": [1],
+         "atoms": [{"id": "W-1.a1", "goal": "fetch", "expected_output": [],
+                    "verification": [{"text": "fetch.py exists", "type": "file-exists", "target": "fetch.py", "expect": True}]}]}
+    run.workflows = [w]
+    j2ft.add_workflow_agent("W-1")
+    prompts = []
+
+    def call(fn, fmt, prompt, mock, **kw):
+        prompts.append(prompt)
+        (Path(run._out_dir()) / "fetch.py").write_text("print('made-up')\n")
+        return {"say": "@Coordination built", "human_output": "I built it.", "atom_human_output": "The fetcher."}
+    run.call = call
+    run._run_tools(w, {"id": "W-1", "name": "fetcher", "outputs": w["outputs"]}, 3)
+    assert prompts
+    return prompts[0]
+
+
+def test_p44_rules_join_with_tools_and_runner(j2ft, tmp_path, monkeypatch):
+    """A hint, not enforced: code checks the hosts and the offline command at registration and grants hosts only after Run."""
+    rule = j2ft.REAL_RUN_NET_RULE
+    for x in ('"hosts"', '"reaches"', '"offline"', '"same_files"', "made-up data", "read-only call", "*.example.com only if",
+              ":port", "80 characters", "asked once", "Only code and the Run card grant internet access", "never tell anyone",
+              "HTTP_PROXY"):
+        assert x in rule, x
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    run = j2ft.J2Run(run_dir=tmp_path / "runs" / "j2-20261125-090300-5e12")
+    run._apply_output(FT)
+    assert run.out.get("test_runner") and j2ft.llm.tools_on()
+    assert run.ATOM_RULES.endswith(j2ft.REAL_RUN_ENV_RULE + rule)
+    monkeypatch.setenv("J2_AGENT_TOOLS", "0")
+    run._apply_output(FT)
+    assert rule not in run.ATOM_RULES
+    hint = j2ft.SCRIPT_NET_RULE
+    for x in ("read-only check", "a bad key or missing access fails", "--mock", "--dry-run", "made-up data", "fake local server",
+              "never promise it"):
+        assert x in hint, x
+    monkeypatch.setenv("J2_AGENT_TOOLS", "1")
+    told = p44_builder_prompt(j2ft, tmp_path, runner=True)
+    assert j2ft.SCRIPT_ENV_RULE + hint in told, told[:2000]
+    assert hint not in p44_builder_prompt(j2ft, tmp_path, runner=False)
+
+
+# ---- P44 (D449): the deliverables planner's replies that were not JSON are kept in deliverables.json -----------------------
+NOT_JSON = "Here is the plan: (not JSON)"      # made-up text, no model call
+
+
+def test_p44_the_deliverables_planners_unreadable_replies_are_kept(j2, make_run, monkeypatch):
+    """The plan and its one revision both come back as text: the run stops as before, and both replies are kept."""
+    real = j2.j2_realization.deliverable_mocks
+    monkeypatch.setattr(j2.j2_realization, "deliverable_mocks",
+                        lambda goal, names: {**real(goal, names), "plan": lambda rnd: NOT_JSON, "revise": lambda rnd: NOT_JSON})
+    run = make_run()
+    say(run, BREW_LAB)
+    assert run.outcome == "Stopped: the plan chose nothing J2 can build.", run.outcome
+    saved = json.loads((Path(run.dir) / "deliverables.json").read_text())
+    assert [(u["who"], u["raw"], u["chars"]) for u in saved["unparsed"]] == [("adaptation", NOT_JSON, len(NOT_JSON))] * 2, saved
+    assert "trail" not in saved
+    note = "The planner's reply could not be read as JSON (2 times); kept in deliverables.json under unparsed."
+    assert [m for m in run.chat if m.get("text") == note and m["who"] == "system"], run.chat[-5:]
+
+
+def test_p44_a_json_plan_keeps_no_unparsed_key(j2, make_run):
+    run = make_run()
+    say(run, BREW_LAB)
+    saved = json.loads((Path(run.dir) / "deliverables.json").read_text())
+    assert "unparsed" not in saved and "trail" not in saved and saved["deliverables"]
+    assert not [m for m in run.chat if "could not be read as JSON" in str(m.get("text"))]
+
+
+# ---- P45 (D452): the programs the engine builds and runs ---------------------------------------------------------------------
 # Modelled on three Pulse runs of the beta: j2-20261123-103238-3429 and j2-20261124-113042-87be (an agent stage with a document's
 # charter, C2 "the test '' is not a file in the folder", a list of files read as one name, "unknown check test-passed") and
 # j2-20261125-045739-52c5 (Decide for me confirmed the folder of the install and the live read; an install card with no packages;

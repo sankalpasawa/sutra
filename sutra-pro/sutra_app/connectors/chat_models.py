@@ -80,6 +80,8 @@ class CarryPlan(M):
 class ChatTurnIn(M):
     text: str
     attachments: list[AttachmentRef] = []
+    # what a project adds for THIS message (D451): the excerpts of its files that match it, appended to the message after the attachments' text and never stored in the owner's line. "" adds nothing
+    context: str = ""
     tag: CallTag = Field(default_factory=CallTag)
     # what ONE turn may spend (calls, dollars, a deadline): None, the default, adds nothing to the port's own context. The Ask mode of the direct chat (DV-1) sets it
     allowance: Optional[Allowance] = None

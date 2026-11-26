@@ -15,13 +15,13 @@ file would be ported) into a new, empty folder:
 `--j2` is always such an extraction. `--commit` names the commit it was taken from: a `git archive` folder is not a repository, so
 the script cannot ask git; without the flag it asks git about the folder and says "unknown" when that fails.
 
-The page is J2's `j2_ui.html` with 54 edits (E1 to E13, E19 to E28; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E28a and E28b count). Every edit is `Edit(id, old, new, count)`:
+The page is J2's `j2_ui.html` with 59 edits (E1 to E13, E19 to E30; the letters E2a to E2c, E9b, E20a to E20i with E20f1 and E20f2, E24a to E24f, E25a to E25d, E26a to E26c, E27a to E27e, E28a and E28b, E30a to E30d count). Every edit is `Edit(id, old, new, count)`:
 `old` is a literal or a compiled regex and `count` is the number of places it must match in J2's file. Every count is checked against
 J2's own text first, so no edit anchors on another edit's output. A count that is not met means J2 changed under the port: the port
 stops, names every edit that no longer matches and writes nothing. Re-port; never hand-edit the copy.
 
 What it writes, under `sutra_app/ui/` of the repository the script lives in (or `--root`):
-    pages/j2_ui.html            the page after the 54 edits
+    pages/j2_ui.html            the page after the 59 edits
     pages/j2_ui_render.js       J2's render harness, three small changes (sutra_ctx.js runs first; d3 and its tag test move)
     pages/j2_graph_layout.js    J2's layout harness, one change (sutra_ctx.js runs first)
     static/css/j2.css           the page's `<style>` block, byte for byte (the leading newline included)
@@ -55,7 +55,7 @@ J2_FILES = (J2_PAGE, J2_RENDER, J2_LAYOUT, *(f"vendor/{name}" for name in J2_VEN
 
 # The modules the department page loads after its own script, in this order (E12); all under /ui/js/.
 MODULES = ("avatars", "sutra_events", "graph_layout", "chart_marks", "graph_render", "graph_view", "orgchart_view", "fnode_view",
-           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "dept_ext")
+           "chat_view", "node_panel", "function_chat", "output_pick", "budget_chip", "chat_search", "attach_bar", "start_files", "project_context_view", "result_view", "dept_ext")
 
 SANDBOX = "allow-scripts allow-forms allow-popups"      # the second layer behind the engine's sandbox header (S3-web-14)
 
@@ -250,7 +250,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '<div class="schips" id="schips"></div><span id="lbudget" style="font-size:13px"></span><button class="sgo" id="lsend" type="submit"', 1),
     Edit("E25b", "async function sendText(text){", "async function sendText(text, usdBudget){", 1),
     Edit("E25c", "body:JSON.stringify(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text})",
-         "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(usdBudget ? {usd_budget: usdBudget} : {})})", 1),
+         "body:JSON.stringify({...(RTNEW.id && !RTNEW.sent ? {text, template: RTNEW.id, workflows: RTNEW.keys} : {text}), ...(usdBudget ? {usd_budget: usdBudget} : {}), ...(window.StartFiles ? StartFiles.fields() : {})})", 1),     # E30 (D451): + the files of this send, only when it has some
     Edit("E25d", '$("lform").addEventListener("submit", e => { e.preventDefault(); const t = $("lbox").value.trim(); if (!t) return; $("lbox").value = ""; '
                  '$("lsend").disabled = true; sendText(t); });',
          _lines(
@@ -315,6 +315,20 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E28b", '  if (b.dataset.approve) return sendText(',
          _lines("  if (b.dataset.run !== undefined) return sendText(b.dataset.run);      // E28 (D434): Run sends the exact RUN <code>; Don't run declines",
                 '  if (b.dataset.approve) return sendText('), 1),
+    # E29 (D449): a live host question (pause kind "hosts", P44) shows Allow (sends Option 1: the Requester's own pick of the option
+    # that carries every host) and Don't allow (the engine's HOSTS_DENY) in place of its numbered options, clicked through E28's
+    # data-run. Any other reply is asked again by the engine (P44 _hosts_answered)
+    Edit("E29", '    else if (q.opts.length) h += `<div class="opts"',
+         _lines('    else if (kind === "hosts" && live) h += `<div class="acts"><button type="button" class="pri" data-run="Option 1">Allow</button><button type="button" class="ghost" data-run="Don\'t allow">Don\'t allow</button></div>`;      // E29 (D449)',
+                '    else if (q.opts.length) h += `<div class="opts"'), 1),
+    # E30 (D451): files where work starts. The start box and the follow-up box take files (start_files.js mounts the paperclip in `#lattach` / `#sattach`, the chips in `#lfiles` /
+    # `#sfiles`, and holds a send while a chip uploads or failed); `sendText` carries them as `files` (E25c reads StartFiles.fields() in the same tick as the submit) and gives the server's
+    # answer to StartFiles.answered, which clears the chips on success and, on a refusal, says why and puts the words back. A send with no file is exactly what it was.
+    Edit("E30a", '</textarea>\n        <div class="sbrow">', '</textarea>\n        <div class="sfiles" id="lfiles"></div>\n        <div class="sbrow"><span id="lattach"></span>', 1),
+    Edit("E30b", '<form class="scbox" id="sform"><input id="sbox"', '<div class="sfiles" id="sfiles"></div><form class="scbox" id="sform"><span id="sattach"></span><input id="sbox"', 1),
+    Edit("E30c", '  if (!text) return;\n  await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ',
+         '  if (!text) return;\n  const said = await fetch("/api/say", {method:"POST", headers:{"Content-Type":"application/json"}, ', 1),
+    Edit("E30d", "  if (RTNEW.id) RTNEW.sent = true;\n}", "  if (RTNEW.id) RTNEW.sent = true;\n  if (window.StartFiles) StartFiles.answered(said);      // E30 (D451): the files of this send are cleared, or a refusal is said and the words come back\n}", 1),
 )
 
 # The harnesses. Their command lines and JSON output do not change (docs/design/ui.md section 5, "The two harnesses").

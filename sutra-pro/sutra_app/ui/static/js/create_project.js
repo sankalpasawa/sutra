@@ -9,7 +9,10 @@
    POST /api/chart/changes/<id>/decision {approve: true, names: {<ref>: name}, folder?, access?}. A refusal shows under the field its
    `details.field` names; success opens the new project's page.
 
-   html(state), canCreate(state), savedIn(name, win), body(state) are pure (the node tests); open(opts) mounts the box on the page. */
+   Project files (D451): optional. Files dropped or chosen in the box wait as chips (a refused type is a failed chip that says why, and stays until it is removed); they are uploaded to
+   POST /api/teams/<id>/files once the project exists. A file that cannot be added does not undo the project: the box says which files failed and offers "Open the project".
+
+   html(state), canCreate(state), savedIn(name, win), body(state), filesHtml(state), pickFiles(state, list) are pure (the node tests); open(opts) mounts the box on the page. */
 (function (root) {
   "use strict";
 
@@ -20,6 +23,9 @@
   const trimmed = v => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "");
   const ACCESS_WORDS = {edit: "Read and edit", read: "Read only"};
   const FAILED = "That did not work. Try again.";
+  const AB = () => root.AttachBar || (typeof require === "function" ? require("./attach_bar.js") : null);
+  const CS = () => root.ChatSearch || (typeof require === "function" ? require("./chat_search.js") : null);
+  const MAX_FILES = 50;
 
   function savedIn(name, win) {
     const sep = win ? "\\" : "/";
@@ -71,6 +77,36 @@
         : '<p class="cphint">' + esc(savedIn(s.name, s.win === true)) + "</p>");
   }
 
+  // The chips of the files waiting for the project, and the way to add more. A file waiting is "ready"; one the lists refuse is "failed" with the reason.
+  function filesHtml(state) {
+    const s = isObj(state) ? state : {};
+    const files = Array.isArray(s.files) ? s.files : [];
+    const ab = AB();
+    const chips = ab && files.length ? ab.chips(files.map(f => ({key: f.key, name: f.name, size: f.size, status: f.status === "failed" ? "failed" : "ready", error: f.error, kind: f.kind}))) : "";
+    const failed = Array.isArray(s.failedUploads) ? s.failedUploads : [];
+    return '<p class="cplabel">Project files <span class="cpopt">(optional)</span></p>' +
+      '<div class="cpdrop"><button type="button" class="cpbtn" data-act="cp-files">Add files</button><input type="file" class="cpfileinput" multiple hidden tabindex="-1" aria-label="Choose files for the project"/>' +
+      '<span class="cphint"> or drop them here. Every run and chat of the project can read them. They stay on this computer.</span></div>' +
+      '<div class="cpchips" role="status">' + chips + (s.filesNote ? '<p class="cphint">' + esc(s.filesNote) + "</p>" : "") + "</div>" +
+      (failed.length ? '<p class="cperr" role="alert">The project was made. These files could not be added: ' + esc(failed.join(" ")) + "</p>" : "");
+  }
+
+  // The chosen files as chips: a refused type or an over-the-limit file is a failed chip with its reason; more than MAX_FILES is refused with the limit in words.
+  function pickFiles(state, list) {
+    const s = isObj(state) ? state : {};
+    s.files = Array.isArray(s.files) ? s.files : [];
+    s.seq = Number.isInteger(s.seq) ? s.seq : 0;
+    const cs = CS();
+    for (const f of Array.from(list || [])) {
+      s.seq += 1;
+      const name = trimmed(f && f.name) || "file";
+      const why = cs ? cs.checkFile({name, size: f && f.size}) : "";
+      const over = s.files.filter(x => x.status !== "failed").length >= MAX_FILES;
+      s.files.push({key: "p" + s.seq, name, size: Number.isFinite(f && f.size) ? f.size : 0, status: why || over ? "failed" : "ready", error: why || (over ? "A project can hold " + MAX_FILES + " files." : ""), file: f});
+    }
+    return s.files;
+  }
+
   function html(state) {
     const s = isObj(state) ? state : {};
     const go = canCreate(s) ? "" : " disabled";
@@ -80,9 +116,10 @@
       '<label for="cpname">Project name</label>' +
       '<input id="cpname" class="cpinput" type="text" maxlength="' + NAME_CHARS + '" autocomplete="off" value="' + esc(s.name || "") + '">' +
       errorHtml(s, "name") +
-      '<p class="cplabel">Source folder <span class="cpopt">(optional)</span></p>' + folderHtml(s) + errorHtml(s, "folder") +
+      '<p class="cplabel">Source folder <span class="cpopt">(optional)</span></p>' + folderHtml(s) + errorHtml(s, "folder") + filesHtml(s) +
       '<div class="cpacts cpend"><button type="button" class="cpbtn cpghost" data-act="cp-close">Cancel</button>' +
-      '<button type="button" class="cpbtn cpgo" data-act="cp-create"' + go + ">" + (s.busy === true ? "Creating…" : "Create project") + "</button></div></div>";
+      (s.created ? '<button type="button" class="cpbtn cpgo" data-act="cp-open">Open the project</button>'
+        : '<button type="button" class="cpbtn cpgo" data-act="cp-create"' + go + ">" + (s.busy === true ? "Creating…" : "Create project") + "</button>") + "</div></div>";
   }
 
   /* ---------------------------------------------------------------- the box on the page */
@@ -137,6 +174,34 @@
         if (first && first.focus) first.focus();
       }
     }
+    function finish(id) {
+      close();
+      if (typeof o.onDone === "function") o.onDone(id);
+      else if (id) root.location.href = "/d/" + encodeURIComponent(id) + "/";
+    }
+    // After the project exists (D451): each waiting file to POST /api/teams/<id>/files, one by one. -> the sentences of the files that could not be added ([] when all went).
+    async function uploadFiles(id) {
+      const waiting = (state.files || []).filter(x => x.status === "ready" && x.file);
+      if (!id || waiting.length === 0) return [];
+      const failed = [];
+      for (const f of waiting) {
+        try {
+          const b64 = await readFile(f.file);
+          await ctx.api.post("/api/teams/" + encodeURIComponent(id) + "/files", {name: f.name, content_b64: b64});
+        } catch (e) { failed.push(f.name + ": " + ((e && e.message) || FAILED)); f.status = "failed"; }
+      }
+      return failed;
+    }
+    function readFile(file) {
+      return new Promise((resolve, reject) => {
+        const Reader = root.FileReader;
+        if (typeof Reader !== "function") { reject(new Error("This browser cannot read files.")); return; }
+        const r = new Reader();
+        r.onerror = () => reject(new Error("That file could not be read."));
+        r.onload = () => resolve(String(r.result).split(",").slice(1).join(","));
+        r.readAsDataURL(file);
+      });
+    }
     async function create() {
       if (!canCreate(state)) return;
       state.busy = true;
@@ -153,9 +218,13 @@
           const answer = await ctx.api.post("/api/teams", payload);
           id = isObj(answer) && isObj(answer.team) ? answer.team.id : "";
         }
-        close();
-        if (typeof o.onDone === "function") o.onDone(id);
-        else if (id) root.location.href = "/d/" + encodeURIComponent(id) + "/";
+        const failed = await uploadFiles(id);
+        if (failed.length > 0) {                       // the project stands; the box says which files did not go and waits for the owner
+          Object.assign(state, {busy: false, created: id, failedUploads: failed, files: state.files.filter(x => x.status === "failed")});
+          render();
+          return;
+        }
+        finish(id);
       } catch (err) {
         state.busy = false;
         state.error = (err && err.message) || FAILED;
@@ -183,6 +252,24 @@
       else if (act === "cp-unfolder") { state.folder = ""; state.access = null; render(); }
       else if (act === "cp-access") { state.access = b.dataset.access === "read" ? "read" : "edit"; render(); }
       else if (act === "cp-create") create();
+      else if (act === "cp-files") { const input = el.querySelector(".cpfileinput"); if (input && input.click) input.click(); }
+      else if (act === "cp-open") finish(state.created);
+      else if (act === "composer-remove") { state.files = (state.files || []).filter(x => x.key !== b.dataset.key); render(); }
+    });
+    el.addEventListener("change", e => {
+      const t = e.target;
+      if (!t || !t.classList || !t.classList.contains("cpfileinput")) return;
+      const picked = Array.from(t.files || []);
+      t.value = "";
+      if (picked.length) { pickFiles(state, picked); render(); }
+    });
+    el.addEventListener("dragover", e => { const ab = AB(); if (ab && ab.hasFiles(e.dataTransfer)) e.preventDefault(); });
+    el.addEventListener("drop", e => {
+      const ab = AB();
+      if (!ab || !ab.hasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      pickFiles(state, ab.filesOf(e.dataTransfer));
+      render();
     });
     el.addEventListener("keydown", e => {
       if (e.key === "Escape") { e.preventDefault(); close(); return; }
@@ -200,7 +287,7 @@
     return current;
   }
 
-  const CreateProject = {html, canCreate, savedIn, body, open, NAME_CHARS};
+  const CreateProject = {html, canCreate, savedIn, body, open, filesHtml, pickFiles, NAME_CHARS};
   if (typeof module === "object" && module.exports) module.exports = CreateProject;
   else root.CreateProject = CreateProject;
 })(globalThis);

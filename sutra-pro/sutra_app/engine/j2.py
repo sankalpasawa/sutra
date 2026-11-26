@@ -204,7 +204,8 @@ PAUSES = {"info": "J2.a: not enough information to work yet",
           "fact": "J2.g: a fact only the Requester knows",
           "limit": "a safety limit was hit: add budget, drop the failing items or ship as is",
           "send_confirm": "J2_SEND_MODE=live: may real emails go to the test address in this run",
-          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
+          "real_run": "may a built script run for real on the Requester's folder (exact reply only)",
+          "hosts": "may a real run reach the internet hosts its plan names (P44, D449)"}
 TO_USER = re.compile(r"@(?:requester|user)\b", re.I)
 
 # P8: the J2 step (STEPS) each turn sets before its first model call, told to the hooks when the turn starts.
@@ -233,6 +234,7 @@ def _ask(tag, *args, **kw):
 # answered by code the moment the run pauses, the way a click would answer it, and the run goes on. Real-world side
 # effects are never decided for you (AUTO_ASK); after AUTO_CAP answers in one run the next question waits for you.
 AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
+AUTO_ASK.add("hosts")      # P44 (D449): only the Requester allows a real run's internet hosts
 AUTO_CAP = int(os.getenv("J2_AUTO_CAP") or 6)
 REAL_RUN_DECLINE = "Don't run"      # P31 (D434): the real-run card's decline, compared whole (stripped, any case)
 AUTO_ASSUME = ("Decide for me: go with sensible, typical choices for anything I haven't told you, "
@@ -863,7 +865,7 @@ def real_run_env_problems(rr, source, run_dir):
             elif n.upper() in base:
                 out.append(f"real_run may not set {n}: the script already gets it")
             elif llm.is_loader_name(n):
-                out.append(f"real_run may not set {n}: it changes how a program starts (a fixed guardrail list)")
+                out.append(f"real_run may not set {n}: it changes how a program starts or where it connects (a fixed guardrail list)")
             if "\0" in v:
                 out.append(f"real_run {key} {n} holds a NUL character")
             if "\r" in v or "\n" in v:      # it would add lines to the approval card that look like the card's own
@@ -931,7 +933,8 @@ def real_run(out_dir, rr, timeout):
     t0 = time.time()
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+            json.dump({"network": {"allowedDomains": [] if fence else list(rr.get("hosts") or []),      # P44 (D449): only the
+                                   "deniedDomains": []},      # approved real run; fence (P32) always holds in the dry run
                        "filesystem": {"denyRead": ["~"] + list(rr.get("deny_read") or []),      # P41 (D446): dry run
                                       "allowRead": [out_dir, folder] + reads
                                       + list((rr.get("secret_files") or {}).values()),      # P41 (D446): placeholders or real paths
@@ -946,7 +949,7 @@ def real_run(out_dir, rr, timeout):
         argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
         p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
                            env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
-        if isinstance(rr.get("capture"), dict):      # P45 (D451): the caller's own record of what it printed (run_output_record)
+        if isinstance(rr.get("capture"), dict):      # P45 (D452): the caller's own record of what it printed (run_output_record)
             rr["capture"].update(stdout=p.stdout or "", stderr=p.stderr or "")
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
@@ -963,108 +966,112 @@ def real_run(out_dir, rr, timeout):
         os.unlink(conf)
 
 
-REAL_RUN_RESULT_RULE = ('\nREAL RUN RESULT: the real_run may also carry "result": the one file the run leaves as its main result, as a path '
-                        "inside the folder it writes (e.g. out.json); leave it out when there is none. Code keeps a record of what the "
-                        "run printed and which files it created, changed or deleted; the result file's contents are kept with it.")      # P45 (D451)
+# P44 (D449): the internet hosts a real run may reach. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
+HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
+HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?")      # srt's allowedDomains form, narrowed
+REAL_RUN_NET_RULE = ('\nREAL RUN AND THE INTERNET: when the script must reach a service over the internet, the real_run also carries '
+                     '"hosts": [each host it reaches, a bare name like api.example.com, exactly as the brief or the Requester '
+                     'wrote it; *.example.com only if they wrote that; an optional :port; no scheme, path or address], '
+                     '"reaches": "what it reaches, in plain words, like Gmail and Slack (at most 80 characters)" and "offline": '
+                     '{"command": [the same runner and folder arguments, plus what makes it use made-up data and no network], '
+                     '"same_files": true when that makes the same file changes as expect says, else false}. A real_run with '
+                     'hosts must give offline: its command makes the same file changes with made-up data. The dry run runs the '
+                     'offline command on copies with no internet access; only the approved real run reaches the named hosts, '
+                     'and nothing else. Its real run starts with a read-only call (such as reading the account profile), so a '
+                     'bad key or missing access fails before anything changes. List every host it needs: a host the Requester '
+                     'has not named is asked once, by code, and the plan is proposed again if they allow it. Never set '
+                     'HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or NO_PROXY. Only code and the Run card grant internet access: never '
+                     'tell anyone it will be allowed.')      # P44 (D449): Adaptation, after P41's rule
+SCRIPT_NET_RULE = (" A script that reaches the internet starts its real run with a read-only check (such as a profile call), so a "
+                   "bad key or missing access fails fast; it has an offline mode (a --mock or --dry-run style switch, its real "
+                   "run's offline command) that makes the same file changes with made-up data and no network; its tests cover "
+                   "the network part with a fake local server, never the internet. Only code and the Run card grant internet "
+                   "access: never promise it.")      # P44 (D449): the tools builder, after P41's line
 
 
-def real_run_result_problems(rr):
-    """P45 (D451): why a planned real run's "result" is not usable ([] when it is, or when none is stated): the one file the run
-    leaves as its main result, a path inside the folder it writes: text, relative, never climbing out (..)."""
-    r = rr.get("result") if isinstance(rr, dict) else None
-    if r is None:
+def real_hosts(rr):
+    """The hosts a planned real run names, as code uses them: lower case, each once, in the order written."""
+    return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
+
+
+HOSTS_DECLINE = "Don't allow it: leave the real run out"      # P44 (D449): the host question's second option
+HOSTS_DENY = "Don't allow"      # P44 (D449, E29): the Don't allow button's words; typed as the whole reply, a decline too
+
+
+def host_entry_ok(h):
+    """P44 (D449): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
+    return bool(HOST_ENTRY.fullmatch(h)) and not (":" in h and int(h.rpartition(":")[2]) > 65535)
+
+
+def host_pieces(request, decisions, chat):
+    """P44 (D449): where a host counts as named, each text squashed on its own: the brief, the Requester's own picks (P43)
+    and the Requester's typed messages. Never the charter (an agent writes it) and never Decide for me (auto)."""
+    return [squash(t) for t in [request or ""] + [d["picked"] for d in decisions if d.get("picked")]
+            + [m["text"] for m in chat if m["who"] == "user" and not m.get("auto")]]
+
+
+def host_named(h, pieces):
+    """P44 (D449): host h (lower case) is named whole in one piece. Its :port is left out (a port only narrows); *.x only
+    as written. Not after a name character, ".", "@" (an e-mail address names no host) or "*"; not before a name character
+    or a further ".label"."""
+    pat = r"(?<![\w.@*-])" + re.escape(re.sub(r":\d+\Z", "", h)) + r"(?![\w-]|\.[\w-])"
+    return any(re.search(pat, s) for s in pieces)
+
+
+def real_run_hosts_problems(rr, pieces):
+    """P44 (D449): why a planned real run's hosts are not usable ([] when usable or none): a list of strings, each an srt
+    allowedDomains entry of HOST_ENTRY's narrow form (no scheme, path, address, localhost, * or *.com), named whole."""
+    hosts = rr.get("hosts")
+    if hosts is None or hosts == []:
         return []
-    if not isinstance(r, str) or not r.strip():
-        return ["real_run result must be one file path inside its folder (or left out)"]
-    parts = re.split(r"[/\\]", r.strip())
-    if os.path.isabs(r.strip()) or ".." in parts or r.strip().endswith(("/", "\\")):
-        return [f"real_run result {r!r} must be a file path relative to its folder, without .."]
-    return []
-
-
-def folder_files(root):
-    """{relative path: {"size", "sha256"}} of every file under root: what a real run's folder holds."""
-    out = {}
-    for r, _, fs in os.walk(root):
-        for f in fs:
-            p = os.path.join(r, f)
-            try:
-                with open(p, "rb") as fh:
-                    data = fh.read()
-            except OSError:
-                continue
-            out[os.path.relpath(p, root).replace(os.sep, "/")] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    if not (isinstance(hosts, list) and all(isinstance(x, str) for x in hosts)):
+        return ['real_run hosts must be a list of host names, like ["api.example.com"]']
+    out = []
+    for x in hosts:
+        h = x.strip().lower()
+        if not host_entry_ok(h):
+            out.append(f"real_run host {x!r} must be a host name like api.example.com, or *.example.com for its subdomains, "
+                       "with an optional :port; no scheme, path, address, localhost, * or *.com")
+        elif not host_named(h, pieces):
+            out.append(f"real_run host {x} is not named in the brief or the Requester's own answers: ask for it")
     return out
 
 
-def output_tail(text, lines, max_bytes):
-    """{"tail", "lines_total", "truncated"}: the last `lines` lines of a stream, never more than max_bytes of them."""
-    rows = str(text or "").splitlines()
-    tail = "\n".join(rows[-lines:])
-    cut = tail.encode("utf-8")[-max_bytes:].decode("utf-8", "ignore") if len(tail.encode("utf-8")) > max_bytes else tail
-    return {"tail": cut, "lines_total": len(rows), "truncated": len(rows) > lines or cut != tail}
+def real_run_offline_problems(rr, source, runner, run_dir):
+    """P44 (D449): a real run that names hosts also states "offline": {"command": [...], "same_files": bool}, the command its
+    dry run runs without internet access, checked as the real command is (real_run_problems) and not the same command."""
+    if not real_hosts(rr):
+        return []
+    off = rr.get("offline")
+    if off is None:
+        return ['real_run names hosts, so it also needs "offline": {"command": [...], "same_files": true or false}: the dry '
+                'run runs that command on copies without internet access']
+    if not (isinstance(off, dict) and set(off) == {"command", "same_files"} and isinstance(off["same_files"], bool)):
+        return ['real_run offline must be exactly {"command": [...], "same_files": true or false}']
+    if home_expanded({"command": off["command"]}).get("command") == home_expanded(rr).get("command"):
+        return ["real_run offline command is the real command: the dry run has no internet access, so give one that uses "
+                "made-up data instead"]
+    return ["offline: " + p for p in real_run_problems({**rr, "command": off["command"]}, source, runner, run_dir)]
 
 
-def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at, entry_file=None):
-    """P45 (D451): what an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
-    folder and the limits are data, OWN_RUNS.run_output): its receipt, workflow, command and folder, when it started and
-    ended, its exit code, its main result, the files it created, changed and deleted in the folder it writes (relative
-    paths, sizes, sha256; a changed file before and after; files_truncated when the lists stop at max_files), and the
-    last lines of its stdout and stderr. The main result (path, exists, size, sha256, and its text when it is text no
-    larger than text_cap_bytes) is the plan's "result", a path in the folder the run writes; a plan that names none:
-    the type's entry_file (a path in the run folder), when it names one file that is there; else None. Only the main
-    result's contents are copied. `before`: folder_files() of the real folder taken just before the run.
-    What the real-run receipt row gains: {"id", "run_output" (the record's path, relative to the run folder),
-    "run_output_counts", "created", "changed", "deleted" (relative paths, sorted: the dry run's own format, _tree_diff),
-    "files_truncated", "result"}."""
-    cfg = OWN_RUNS["run_output"]
-    lim, folder = cfg["limits"], os.path.realpath(rr["folder"])
-    after, left = folder_files(folder), cfg["limits"]["max_files"]
-    files = {"created": [{"path": k, **after[k]} for k in sorted(after) if k not in before],
-             "changed": [{"path": k, "before": before[k], "after": after[k]} for k in sorted(after) if k in before and after[k] != before[k]],
-             "deleted": [{"path": k, **before[k]} for k in sorted(before) if k not in after]}
-    counts = {k: len(v) for k, v in files.items()}
-    for k in files:      # max_files over the three lists, in this order
-        files[k], left = files[k][:left], max(0, left - len(files[k]))
-    truncated = sum(counts.values()) > lim["max_files"]
-    declared = str(rr["result"]).strip() if rr.get("result") and not real_run_result_problems(rr) else None
-    entry = str(entry_file) if entry_file and not any(c in str(entry_file) for c in "*?[") else None      # one file, not a pattern
-    rel, base = (os.path.normpath(declared).replace(os.sep, "/"), folder) if declared else (entry, os.path.realpath(run_dir))
-    main = None
-    if rel and (declared or os.path.isfile(os.path.join(base, rel))):      # a declared result that is not there: exists false
-        path = os.path.join(base, rel)
-        main = {"path": rel, "exists": llm.inside(os.path.realpath(path), base) and os.path.isfile(path)}
-        if main["exists"]:
-            with open(path, "rb") as f:
-                data = f.read()
-            main.update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
-            if len(data) <= lim["text_cap_bytes"] and b"\0" not in data:
-                try:
-                    main["text"] = data.decode("utf-8")
-                except UnicodeDecodeError:
-                    pass
-    out = output_tail(capture.get("stdout", res.get("stdout")), lim["stdout_lines"], lim["tail_bytes"])
-    err = output_tail(capture.get("stderr", res.get("stderr")), lim["stderr_lines"], lim["tail_bytes"])
-    rec = {"schema": "run-output/1", "receipt": receipt, "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
-           "approved": True, "started_at": started_at, "ended_at": ended_at, "exit": res.get("exit"), "main_result": main,
-           "files": files, "files_truncated": truncated, "stdout": out, "stderr": err, "limits": dict(lim)}
-    path = f"{cfg['folder']}/{receipt}.json"
-    os.makedirs(os.path.join(run_dir, cfg["folder"]), exist_ok=True)
-    with open(os.path.join(run_dir, path), "w", encoding="utf-8") as f:
-        json.dump(rec, f, ensure_ascii=False, indent=1)
-    return {"id": receipt, "run_output": path,
-            "run_output_counts": {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]},
-            **{k: [x["path"] for x in v] for k, v in files.items()}, "files_truncated": truncated,
-            "result": declared or (str(entry_file) if entry_file else None)}
+def real_run_net_fields(rr):
+    """P44 (D449): what _register stores of checked hosts: hosts (real_hosts) and offline (~ written out), only with hosts."""
+    if not real_hosts(rr):
+        return {}
+    return {"hosts": real_hosts(rr), "offline": {"command": home_expanded({"command": rr["offline"]["command"]})["command"],
+                                                 "same_files": rr["offline"]["same_files"]}}
 
 
-def run_output_receipt(run_dir, wid):
-    """The id of a real run's receipt, which names its run-output record: rr-<workflow>-<n>, n counting that
-    workflow's records in this run."""
-    n = 1
-    while os.path.exists(os.path.join(run_dir, OWN_RUNS["run_output"]["folder"], f"rr-{wid}-{n}.json")):
-        n += 1
-    return f"rr-{wid}-{n}"
+def real_run_net_lines(rr, sandboxed, dry):
+    """P44 (D449): the Run card's internet lines ("" without hosts)."""
+    hosts, off = rr.get("hosts") or [], rr.get("offline") or {}
+    if not hosts:
+        return ""
+    return ("\nInternet access: " + ", ".join(hosts)
+            + ("" if sandboxed else "\nThis computer has no sandbox, so internet access can't be limited to these hosts.")
+            + (f"\nThe dry run ran its offline command, without internet access: {shlex.join(off['command'])}"
+               if dry.get("fenced") and off else "")
+            + ("\nFile changes couldn't be checked first." if off.get("same_files") is False else ""))
 
 
 def _tree(root):
@@ -1146,7 +1153,7 @@ def sandbox_rerun(folder, runner, target, timeout):
         sha = hashlib.sha256(f.read()).hexdigest()
     argv = [str(x).replace("{target}", os.path.relpath(path, os.path.realpath(folder))) for x in runner]
     env = j2_runenv.plan(folder)      # P42 (D447): the folder's environment (its requirements.txt), when it has one
-    if env_missing(env) and j2_runenv.beyond_stdlib(path, folder) == []:      # P42 amended (D451): a test that needs only the standard
+    if env_missing(env) and j2_runenv.beyond_stdlib(path, folder) == []:      # P42 amended (D452): a test that needs only the standard
         env = None                                                             # library and the folder's own modules is rerun all the same
     if env_missing(env):      # never with another python
         return {"pass": None, "exit": None, "sha256": sha, "evidence": "the test was not rerun: " + env_missing(env)}
@@ -1610,10 +1617,10 @@ def with_base(page, folder):
     return page[:m.end()] + tag + page[m.end():] if m else tag + (page or "")
 
 
-with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as _f:      # P45 (D451): vocabulary and sizes are data, never code
+with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as _f:      # P45 (D452): vocabulary and sizes are data, never code
     OWN_RUNS = json.load(_f)
 REQUESTER_ONLY = tuple((re.compile(x["pattern"], re.I), x["about"]) for x in OWN_RUNS["requester_only"])
-FILE_CHECKS = ("file-exists", "test-passed")      # P45 (D451): the folder checks whose target names files
+FILE_CHECKS = ("file-exists", "test-passed")      # P45 (D452): the folder checks whose target names files
 
 
 def target_list(target):
@@ -1674,6 +1681,110 @@ def check_results(results):
     return {"actual": [r.get("actual") for r in results],
             "pass": False if bad else None if any(r.get("pass") is None for r in results) else True,
             "evidence": "; ".join(str(r.get("evidence")) for r in (bad or results))}
+
+
+REAL_RUN_RESULT_RULE = ('\nREAL RUN RESULT: the real_run may also carry "result": the one file the run leaves as its main result, as a path '
+                        "inside the folder it writes (e.g. out.json); leave it out when there is none. Code keeps a record of what the "
+                        "run printed and which files it created, changed or deleted; the result file's contents are kept with it.")      # P45 (D452)
+
+
+def real_run_result_problems(rr):
+    """P45 (D452): why a planned real run's "result" is not usable ([] when it is, or when none is stated): the one file the run
+    leaves as its main result, a path inside the folder it writes: text, relative, never climbing out (..)."""
+    r = rr.get("result") if isinstance(rr, dict) else None
+    if r is None:
+        return []
+    if not isinstance(r, str) or not r.strip():
+        return ["real_run result must be one file path inside its folder (or left out)"]
+    parts = re.split(r"[/\\]", r.strip())
+    if os.path.isabs(r.strip()) or ".." in parts or r.strip().endswith(("/", "\\")):
+        return [f"real_run result {r!r} must be a file path relative to its folder, without .."]
+    return []
+
+
+def folder_files(root):
+    """{relative path: {"size", "sha256"}} of every file under root: what a real run's folder holds."""
+    out = {}
+    for r, _, fs in os.walk(root):
+        for f in fs:
+            p = os.path.join(r, f)
+            try:
+                with open(p, "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                continue
+            out[os.path.relpath(p, root).replace(os.sep, "/")] = {"size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    return out
+
+
+def output_tail(text, lines, max_bytes):
+    """{"tail", "lines_total", "truncated"}: the last `lines` lines of a stream, never more than max_bytes of them."""
+    rows = str(text or "").splitlines()
+    tail = "\n".join(rows[-lines:])
+    cut = tail.encode("utf-8")[-max_bytes:].decode("utf-8", "ignore") if len(tail.encode("utf-8")) > max_bytes else tail
+    return {"tail": cut, "lines_total": len(rows), "truncated": len(rows) > lines or cut != tail}
+
+
+def run_output_record(run_dir, receipt, wid, rr, res, capture, before, started_at, ended_at, entry_file=None):
+    """P45 (D452): what an approved real run produced, kept in the run folder as <folder>/<receipt>.json (schema run-output/1; the
+    folder and the limits are data, OWN_RUNS.run_output): its receipt, workflow, command and folder, when it started and
+    ended, its exit code, its main result, the files it created, changed and deleted in the folder it writes (relative
+    paths, sizes, sha256; a changed file before and after; files_truncated when the lists stop at max_files), and the
+    last lines of its stdout and stderr. The main result (path, exists, size, sha256, and its text when it is text no
+    larger than text_cap_bytes) is the plan's "result", a path in the folder the run writes; a plan that names none:
+    the type's entry_file (a path in the run folder), when it names one file that is there; else None. Only the main
+    result's contents are copied. `before`: folder_files() of the real folder taken just before the run.
+    What the real-run receipt row gains: {"id", "run_output" (the record's path, relative to the run folder),
+    "run_output_counts", "created", "changed", "deleted" (relative paths, sorted: the dry run's own format, _tree_diff),
+    "files_truncated", "result"}."""
+    cfg = OWN_RUNS["run_output"]
+    lim, folder = cfg["limits"], os.path.realpath(rr["folder"])
+    after, left = folder_files(folder), cfg["limits"]["max_files"]
+    files = {"created": [{"path": k, **after[k]} for k in sorted(after) if k not in before],
+             "changed": [{"path": k, "before": before[k], "after": after[k]} for k in sorted(after) if k in before and after[k] != before[k]],
+             "deleted": [{"path": k, **before[k]} for k in sorted(before) if k not in after]}
+    counts = {k: len(v) for k, v in files.items()}
+    for k in files:      # max_files over the three lists, in this order
+        files[k], left = files[k][:left], max(0, left - len(files[k]))
+    truncated = sum(counts.values()) > lim["max_files"]
+    declared = str(rr["result"]).strip() if rr.get("result") and not real_run_result_problems(rr) else None
+    entry = str(entry_file) if entry_file and not any(c in str(entry_file) for c in "*?[") else None      # one file, not a pattern
+    rel, base = (os.path.normpath(declared).replace(os.sep, "/"), folder) if declared else (entry, os.path.realpath(run_dir))
+    main = None
+    if rel and (declared or os.path.isfile(os.path.join(base, rel))):      # a declared result that is not there: exists false
+        path = os.path.join(base, rel)
+        main = {"path": rel, "exists": llm.inside(os.path.realpath(path), base) and os.path.isfile(path)}
+        if main["exists"]:
+            with open(path, "rb") as f:
+                data = f.read()
+            main.update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+            if len(data) <= lim["text_cap_bytes"] and b"\0" not in data:
+                try:
+                    main["text"] = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    pass
+    out = output_tail(capture.get("stdout", res.get("stdout")), lim["stdout_lines"], lim["tail_bytes"])
+    err = output_tail(capture.get("stderr", res.get("stderr")), lim["stderr_lines"], lim["tail_bytes"])
+    rec = {"schema": "run-output/1", "receipt": receipt, "workflow": wid, "command": list(rr["command"]), "folder": rr["folder"],
+           "approved": True, "started_at": started_at, "ended_at": ended_at, "exit": res.get("exit"), "main_result": main,
+           "files": files, "files_truncated": truncated, "stdout": out, "stderr": err, "limits": dict(lim)}
+    path = f"{cfg['folder']}/{receipt}.json"
+    os.makedirs(os.path.join(run_dir, cfg["folder"]), exist_ok=True)
+    with open(os.path.join(run_dir, path), "w", encoding="utf-8") as f:
+        json.dump(rec, f, ensure_ascii=False, indent=1)
+    return {"id": receipt, "run_output": path,
+            "run_output_counts": {**counts, "stdout_lines": out["lines_total"], "stderr_lines": err["lines_total"]},
+            **{k: [x["path"] for x in v] for k, v in files.items()}, "files_truncated": truncated,
+            "result": declared or (str(entry_file) if entry_file else None)}
+
+
+def run_output_receipt(run_dir, wid):
+    """The id of a real run's receipt, which names its run-output record: rr-<workflow>-<n>, n counting that
+    workflow's records in this run."""
+    n = 1
+    while os.path.exists(os.path.join(run_dir, OWN_RUNS["run_output"]["folder"], f"rr-{wid}-{n}.json")):
+        n += 1
+    return f"rr-{wid}-{n}"
 
 
 def run_check(c, site_dir, page, doc=False):
@@ -4036,6 +4147,8 @@ class J2Run:
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_runs_asked = {}    # step 7: workflow id -> the one-time code its real run was asked for with
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
+        self.hosts_ask = None        # P44 (D449): the host question _register left for after this turn (_ask_hosts)
+        self.hosts_asked = {}        # P44 (D449): the asked hosts (sorted, space-joined) -> allowed (True/False), None while open
         self.real_runs_dry = {}      # step 7: workflow id -> its dry run on copies (real_run_dry), shown before the code
         self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
@@ -4451,7 +4564,8 @@ class J2Run:
             if self.out.get("test_runner"):      # a form whose builds can be run: how to plan a real run (step 7)
                 self.ATOM_RULES += "\n" + (j2_types.builder_tools().get("real_run") or "") + REAL_RUN_EXPECT_RULE      # P35 (D438)
                 self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
-                # P45 (D451): the result field, told right after the real-run rules and before P35's and P41's, which stay last
+                self.ATOM_RULES += REAL_RUN_NET_RULE      # P44 (D449)
+                # P45 (D452): the result field, told right after the real-run rules and before P35's and P41's, which stay last
                 self.ATOM_RULES = self.ATOM_RULES.replace(REAL_RUN_EXPECT_RULE, REAL_RUN_RESULT_RULE + REAL_RUN_EXPECT_RULE)
 
     def _begin_cycle(self, advance=True):
@@ -5297,7 +5411,7 @@ class J2Run:
         say = to_requester(say, question=not questions, keep=src)
         questions = [{**q, "question": self._requester_noun(requester_words(q["question"], src) or q["question"]),
                       "options": [self._requester_noun(requester_words(o, src) or o) for o in q.get("options") or []]}
-                     for q in questions]
+                     for q in questions] if kind != "hosts" else questions      # P44 (D449): the hosts as written (no "site" -> "document")
         if gaps is not None:
             say += gap_list(gaps, gaps_title)     # the full list, one gap per line; the header's counts add up to it
         if len(questions) > 1:
@@ -5418,7 +5532,7 @@ class J2Run:
         if (p.get("handoff") or {}).get("usd"):
             return None      # P26 (D422): only the Requester answers the dollar question
         about = self._requester_only(p)
-        if about:      # P45 (D451): by subject, whatever the kind: a real run, an install, the folder a real run uses
+        if about:      # P45 (D452): by subject, whatever the kind: a real run, an install, the folder a real run uses
             if not p.get("auto_waits"):      # said once per question
                 p["auto_waits"] = about
                 self._event("requester", "auto_waits", f"{p['kind']}: {about}")
@@ -5436,7 +5550,7 @@ class J2Run:
         return pick
 
     def _requester_only(self, p):
-        """P45 (D451): what an open question is about when only the Requester may answer it (None: Decide for me may): a done-when
+        """P45 (D452): what an open question is about when only the Requester may answer it (None: Decide for me may): a done-when
         item a planned real run decides (the question's item tag, or the items its leave-out option names), or the
         words of the question, its options and Identity's message (REQUESTER_ONLY, data)."""
         qs, ho = p.get("questions") or [], p.get("handoff") or {}
@@ -5518,6 +5632,8 @@ class J2Run:
                     and not next(m for m in reversed(self.chat) if m["who"] == "user").get("auto"):
                 d["picked"] = str(q1["options"][i])      # P43 (D448): the Requester's own pick, in full; never Decide for me's
             self.decisions.append(d)
+        if p and p["kind"] == "hosts":      # P44 (D449): code reads the answer to the host question
+            self._hosts_answered(p)
         if p:
             h = dict(p["handoff"])
             if h.get("why"):
@@ -5599,6 +5715,9 @@ class J2Run:
                 if self.turn != "identity":
                     resume = {"to": self.turn, "handoff": self.handoff} if self.turn else None
                     self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
+            if self.hosts_ask and not self.paused and self.turn != "identity":      # P44 (D449): after the validator's turn,
+                a, self.hosts_ask = self.hosts_ask, None      # hosts only the Requester can allow; Identity's own turn first
+                self._ask_hosts(a)
         self.turn, self.done = None, True
         self._board_tally()      # board/1 part C: what each document change reached, now that nothing is left to build
         if not self.paused:
@@ -5732,7 +5851,13 @@ class J2Run:
         note = (f"\nThe Requester chose the {output_def(self.output)['label']} on the start page: include it."
                 if self.output else "")
         r = j2_realization.plan_goal(goal, web=llm.tools_on(), log=lambda m: None, extra=note, types=types,
-                                     mocks=j2_realization.deliverable_mocks(goal, offline))
+                                     mocks=j2_realization.deliverable_mocks(goal, offline), trail=True)      # P44 (D449)
+        bad = [{"who": t["who"], "seconds": t["seconds"], "chars": len(t["raw"]), "raw": t["raw"][:20000]}
+               for t in r.pop("trail") if not t["parsed"]]      # P44 (D449): a reply that was not JSON is kept, the rest of the trail is not
+        if bad:
+            r["unparsed"] = bad
+            self.post("system", f"The planner's reply could not be read as JSON ({len(bad)} times); kept in deliverables.json "
+                                "under unparsed.")
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
         self.declared_secs = {n: [str(x) for x in spec.get("sections") or []]
                               for n, spec in j2_realization.new_types(r["plan"]).items()}
@@ -5832,7 +5957,7 @@ class J2Run:
         return j2_types.info(k)["label"].lower() if k else None
 
     def _thing(self):
-        """P45 (D451): what code calls the output in its own workable messages: a folder's own noun (types.json), else "site"."""
+        """P45 (D452): what code calls the output in its own workable messages: a folder's own noun (types.json), else "site"."""
         return self.out["noun"] if self.folder and self.out else "site"
 
     def _page_ready(self):
@@ -6022,7 +6147,7 @@ class J2Run:
         self.site_tag = kind + "-"
         self.stage_calls0 = self.calls
         self._apply_output(kind)
-        if self.folder:      # P45 (D451): a folder of files a builder writes and runs (a program): its own charter, with its files
+        if self.folder:      # P45 (D452): a folder of files a builder writes and runs (a program): its own charter, with its files
             # and its test, from its own intake (the form's charter format), never a document's section charter (stage_goal)
             self.post("system", f"The documents are done. Now {self._sw(kind)}, built from them.")
             return self._handoff("identity", kind="intake")
@@ -6271,6 +6396,71 @@ class J2Run:
                 "Requester. Declare done when everything else is workable; code then asks for the run. Receipts "
                 f"(code, from receipts.jsonl): {json.dumps([self._real_run_answer(n) for n in nums], ensure_ascii=False)}\n")
 
+    def _hosts_to_ask(self, name, rr):
+        """P44 (D449): _register refused rr because its hosts are not all named by the Requester. Unless that set of hosts
+        was asked about before (hosts_asked: once per set, never a loop) or a question already waits, Identity asks after
+        this turn (_run's loop, _ask_hosts). A badly formed host is the plan's to fix, never asked."""
+        hosts = real_hosts(rr)
+        if not all(isinstance(x, str) and host_entry_ok(x.strip().lower()) for x in rr.get("hosts") or []) \
+                or " ".join(sorted(hosts)) in self.hosts_asked or self.hosts_ask:
+            return
+        at, crit, what = self._item_at(), (self.goal or {}).get("done_when") or [], rr.get("reaches")
+        self.hosts_ask = {"name": name, "hosts": hosts, "items": [crit[at[as_int(i)] - 1] for i in rr.get("checks") or []
+                                                                  if as_int(i) in at],
+                          # a short plain name of what the hosts are, shown as written, never read: one line, 80 characters
+                          "reaches": what.strip() if isinstance(what, str) and 0 < len(what.strip()) <= 80
+                          and not re.search(r"[\r\n\0]", what) else ""}
+
+    def _ask_hosts(self, a):
+        """P44 (D449): Identity's one question about a plan's hosts, built by code from the plan's fields. Its first option
+        carries every host exactly, so the Requester's own click names them (P43's picked, host_pieces) and the plan then
+        registers; the second leaves the real run out (_hosts_answered). Decide for me never answers it (AUTO_ASK)."""
+        hosts = ", ".join(a["hosts"])
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = None
+        self._ask_user("A workflow's real run needs to reach the internet, and only you can allow that.",
+                       [{"question": f"This script needs to reach {a['reaches'] + ' (' + hosts + ')' if a['reaches'] else hosts}. "
+                                     "Allow it?", "options": [f"Allow internet access to {hosts}", HOSTS_DECLINE]}],
+                       "hosts", to="adaptation", handoff={"kind": "propose", "hosts_ask": a})
+
+    def _hosts_answered(self, p):
+        """P44 (D449): code reads the answer to _ask_hosts; only three answers settle it (owner, E29). Allowed when every
+        host is now named (the Requester's own pick of the first option, the Allow button, whose text carries them, or
+        their own typed words): Adaptation proposes the plan again and it registers. A clear decline (their own pick of the
+        second option, the Don't allow button, or exactly HOSTS_DENY as the whole reply, as D434's REAL_RUN_DECLINE) leaves
+        the real run out: the done-when items it checks are dropped with the reason (also in the run's outcome,
+        _goal_done), and Adaptation proposes the workflow without it. Any other reply asks the same question again, as
+        P31's real-run card does: no word of it is read, nothing is decided, nothing is handed on."""
+        a, g = p["handoff"]["hosts_ask"], self.goal or {}
+        last = next(m for m in reversed(self.chat) if m["who"] == "user")
+        ok = not [h for h in a["hosts"] if not host_named(h, host_pieces(self.request, self.decisions, self.chat))]
+        no = not last.get("auto") and (self.decisions[-1].get("picked") == p["questions"][0]["options"][1]
+                                       or last["text"].strip().casefold() == HOSTS_DENY.casefold())
+        if not ok and not no:
+            self._ask_user("Not allowed yet. Press Allow, or type the hosts.", p["questions"], "hosts", to="adaptation",
+                           handoff=p["handoff"])
+            p["to"], p["handoff"] = None, {}      # _run's resume hands on nothing: the run waits on the same question
+            return
+        self.hosts_asked[" ".join(sorted(a["hosts"]))] = ok
+        if ok:
+            p["handoff"] = {"kind": "propose", "why": f"The Requester allowed internet access to {', '.join(a['hosts'])}. "
+                                                      f"Propose {a['name']} again with the same real_run."}
+            return
+        why, gone = f"The Requester did not allow internet access to {', '.join(a['hosts'])}", \
+            [c for c in a["items"] if c in (g.get("done_when") or [])]
+        nums = [self._no(c) for c in gone]
+        if gone:      # left out as a Requester's "Leave out" is (D431): off the checklist, with the reason
+            g["done_when"] = [c for c in g["done_when"] if c not in gone]
+            g["dropped_by_requester"] = (g.get("dropped_by_requester") or []) + gone
+            g["dropped_reasons"] = (g.get("dropped_reasons") or []) + [{"criterion": c, "reason": why, "hosts": a["hosts"]}
+                                                                       for c in gone]
+            g["to_be_confirmed"] = [t for t in g.get("to_be_confirmed") or [] if t["criterion"] not in gone]
+            self.save("goal.json", g)
+        self.post("system", f"Left out on the Requester's decision: {a['name']}'s real run"
+                  + (f" (done-when item {and_list(map(str, nums))})" if nums else "") + f". {why}.")
+        p["handoff"] = {"kind": "propose", "why": f"{why}, so {a['name']}'s real run is left out"
+                        + (f" and done-when item {and_list(map(str, nums))} is off the checklist" if nums else "")
+                        + f". Propose {a['name']} again without its real_run."}
+
     def _ask_real_run(self, r):
         """Step 7: the next done workflow with a planned real run not yet asked about. Code posts its exact command and
         folders and a one-time code; the run pauses (real_run: Decide for me never answers it). True when it paused."""
@@ -6282,7 +6472,8 @@ class J2Run:
         if self._env_stops_real_run(w, rr):      # P42 (D447): its packages or an import are missing: back to the build
             return True
         self.real_runs_asked[w["id"]] = code
-        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
+        dry = self.real_runs_dry[w["id"]] = real_run_dry(      # P44 (D449): a real run with hosts dry-runs its offline command
+            self._out_dir(), {**rr, "command": rr["offline"]["command"]} if rr.get("offline") else rr, builder_timeout())
         show = lambda k, d=dry: (f"\n{k.capitalize()} ({len(d.get(k) or [])}): " + ", ".join((d.get(k) or [])[:10])
                                  + (" ..." if len(d.get(k) or []) > 10 else "")) if d.get(k) else ""
         if dry.get("ran") and dry.get("exit") == 0 and not dry.get("real_changed"):      # P35 (D438): after the stop and P31's
@@ -6290,7 +6481,8 @@ class J2Run:
                 return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
                     f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
                     for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
-            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # a real run registered before P35 has none
+            if rr.get("expect") and (rr.get("offline") or {}).get("same_files") is not False \
+                    and (mm := expect_mismatch(rr["expect"], dry)):      # P35 (D438; D449: not when offline says it can't)
                 dry["expect_mismatch"] = mm
                 return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
@@ -6316,6 +6508,7 @@ class J2Run:
         self.post("system", f"{w['id']} wants to run what it built on your own files.\nCommand: {shlex.join(rr['command'])}\n"
                             f"Writes only: {rr['folder']}" + (f"\nReads only: {', '.join(rr['reads'])}" if rr.get("reads") else "")
                             + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
+                            + real_run_net_lines(rr, sandbox_on(), dry)      # P44 (D449)
                             + f"\nWhy: {rr.get('why') or 'not given'}\n" + (f"What it would do, from a {dry['evidence']}\nThe "
                                                                             "dry run had no network access: results may differ."
                                                                             if dry.get("fenced") else      # P32 (D435)
@@ -6357,7 +6550,7 @@ class J2Run:
         w, code = self._wf(h.get("wid")), self.real_runs_asked.get(h.get("wid"))
         last = next((m for m in reversed(self.chat) if m["who"] == "user"), {})
         before, started = {}, time.strftime("%Y-%m-%dT%H:%M:%S")
-        if w and code and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}":      # P45 (D451): approved
+        if w and code and not last.get("auto") and str(h.get("answer") or "").strip() == f"RUN {code}":      # P45 (D452): approved
             before = folder_files(w["real_run"]["folder"])      # (the test of `ok` below): what its folder held before it ran
             w["real_run"]["capture"] = {}      # real_run puts what it printed here; taken out again before the receipt
         ans = str(h.get("answer") or "").strip()
@@ -6371,7 +6564,7 @@ class J2Run:
             {"ran": False, "exit": None, "evidence": "not run: the Requester chose Don't run" if declined else
              "not run: the reply was not exactly RUN " + str(code)}
         receipt_extra = {}
-        if ok:      # P45 (D451): what it printed and the files it made, changed or deleted: a record of its own (run-output/1), and
+        if ok:      # P45 (D452): what it printed and the files it made, changed or deleted: a record of its own (run-output/1), and
             capture = w["real_run"].pop("capture", {})      # on the receipt row its id, the record's path, the counts, the real run's
             if res.get("ran"):                              # own created/changed/deleted, files_truncated and its result
                 receipt_extra = run_output_record(self.dir, run_output_receipt(self.dir, w["id"]), w["id"], w["real_run"], res,
@@ -6385,7 +6578,7 @@ class J2Run:
                                 "approved": ok, "answer_msg": last.get("id"), **res,
                                 **({"audit": {self._no(t): {"verdict": "PASS" if v[0] else "NEEDS_REVISION", "evidence": v[1]}
                                               for t, v in judged.items()}} if judged else {}),      # P33 (D436)
-                                **receipt_extra,      # P45 (D451): the run-output keys of the row; "output" above stays the end of the output
+                                **receipt_extra,      # P45 (D452): the run-output keys of the row; "output" above stays the end of the output
                                 "dry_run": {k: v for k, v in self.real_runs_dry.get(h.get("wid"), {}).items() if k != "evidence"},
                                 "t": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": "code"}, ensure_ascii=False) + "\n")
         self._event("code", "real_run", f"{h.get('wid')}: {res['evidence']}")
@@ -7376,6 +7569,8 @@ class J2Run:
             self.outcome = ("Done with open items: "
                             + (f"the real run {'did not pass' if self.real_runs_done else 'has not run'}." if rr else
                                "not every done-when item is built.") + f" Still not workable: {'; '.join(rest + opened).rstrip('.')}.")
+        if off := [x for x in (self.goal or {}).get("dropped_reasons") or [] if x.get("hosts")]:      # P44 (D449): a declined
+            self.outcome += " Left out: " + "; ".join(f"{x['criterion']}: {x['reason']}" for x in off) + "."      # host question
         self.turn = None
         if self.memory and not self.docset:
             self._save_playbook()
@@ -7578,7 +7773,7 @@ class J2Run:
                 out.setdefault(("rubric", r["id"]), r["criterion"])
         mech = (last or {}).get("mechanical") or {}
         for p in (j2_check.problems(mech) if mech.get("available") else ["the browser check didn't run"]) \
-                if last and not self.doc and not self.folder else []:      # P45 (D451): a browser check is a page's, never a folder's
+                if last and not self.doc and not self.folder else []:      # P45 (D452): a browser check is a page's, never a folder's
             out.setdefault(("check", p), p)
         for c in (last or {}).get("conditions") or [] if not self.doc else []:   # by their text (the Requester reads it)
             if blocks(c) and not (not self.doc and c.get("check") in RENDER_CONDITIONS):
@@ -9147,7 +9342,7 @@ class J2Run:
                 facts_to_headings(a, src)
         self._fix_atoms(w, src, types, up, real)
         form, stripped = path_form_problems(w, os.path.basename(self._out_dir())) if self.folder else ([], 0)
-        if form:      # P45 (D451): one path form for every file a folder's checks name; a mix is refused
+        if form:      # P45 (D452): one path form for every file a folder's checks name; a mix is refused
             return form
         if stripped:
             self._autofix(w.get("name") or "?", "path_form", f"{stripped} check target(s) named with the folder in front: "
@@ -10071,10 +10266,19 @@ class J2Run:
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_env",)))
                     continue
                 wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
-                if bad := real_run_result_problems(w["real_run"]):      # P45 (D451): the file it leaves as its main result
+                if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
+                    self._hosts_to_ask(name, w["real_run"])      # P44 (D449): the Requester is asked once (T1b)
+                    continue
+                if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
+                                                    self.out.get("test_runner"), self.dir):
+                    refused.append(self._reject(name, "; ".join(bad), ("real_run_offline",)))
+                    continue
+                wf["real_run"].update(real_run_net_fields(w["real_run"]))      # P44 (D449): stored only with hosts
+                if bad := real_run_result_problems(w["real_run"]):      # P45 (D452): the file it leaves as its main result
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_result",)))
                     continue
-                if w["real_run"].get("result"):      # P45 (D451): stored only when stated; kept in its run-output record
+                if w["real_run"].get("result"):      # P45 (D452): stored only when stated; kept in its run-output record
                     wf["real_run"]["result"] = str(w["real_run"]["result"]).strip()
             wf["atoms"] = [{**a, "id": f"{wf['id']}.a{n}"} for n, a in enumerate(atoms, 1)]
             if str(w.get("cause_change") or "").strip():      # P28 (D431): what is different about the cause this time
@@ -11104,6 +11308,7 @@ class J2Run:
                  + (f" Its sections, in this order, each a level-2 heading in {main}: {', '.join(self.out['sections'])}."
                     if self.out.get("sections") else "")
                  + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
+                 + (SCRIPT_NET_RULE if runner else "")      # P44 (D449)
                  + f"\nCHARTER: {json.dumps(self.goal or {}, ensure_ascii=False)}"
                  + ("\nRUBRIC (Audit judges the result against it):\n" + "\n".join(f"{i} {t}" for i, t in self.out["rubric"]))
                  + (f"\nGUIDANCE FOR A {label.upper()} (where it speaks of a reply's sections or code assembling them, "
@@ -11294,10 +11499,11 @@ class J2Run:
             w["item_status"][t] = {"status": s, "reason": why}
 
     def _item_states(self):
-        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins."""
+        """P30 (D433): {item text: {status, reason, wid}}, the latest done workflow that owns the item wins. Amended in D449:
+        a workflow that failed only its dry run (failure[0] "dry_run", P31) counts too: its builder's statuses stand."""
         out = {}
         for w in self.workflows:
-            if w.get("status") == "done":
+            if w.get("status") == "done" or (w.get("status") == "failed" and (w.get("failure") or [None])[0] == "dry_run"):
                 out.update({t: {**s, "wid": w["id"]} for t, s in (w.get("item_status") or {}).items()})
         return out
 
@@ -13074,7 +13280,7 @@ class J2Run:
         for an artifact workflow); each result is a receipt and the atom keeps its latest ones. Returns the failed
         receipts."""
         doc = self.doc if doc is None else doc
-        if folder is None and self.folder and not doc:      # P45 (D451): a recheck (a corrected check, an answer on the board) of
+        if folder is None and self.folder and not doc:      # P45 (D452): a recheck (a corrected check, an answer on the board) of
             folder = self._out_dir()                        # a folder's atom runs where its build's checks ran
         site_dir, failed = folder or os.path.join(self.dir, "site"), []
         advisory = set((self.out or {}).get("advisory_checks") or ()) if folder else set()
@@ -13092,7 +13298,7 @@ class J2Run:
             if folder and c.get("type") in ("file-exists", "test-passed", "inside-folder"):
                 if c["type"] == "inside-folder":      # a change outside the folder stops the build before any check
                     return {"actual": True, "pass": True, "evidence": "nothing changed outside the folder"}
-                targets = [in_folder(x, folder) for x in target_list(c.get("target"))] or [""]      # P45 (D451): each file, one path form
+                targets = [in_folder(x, folder) for x in target_list(c.get("target"))] or [""]      # P45 (D452): each file, one path form
                 if c["type"] == "test-passed":
                     if not self.out.get("test_runner"):
                         return {"actual": None, "pass": None, "evidence": "this output's form names no test runner"}
@@ -13469,7 +13675,7 @@ class J2Run:
         return r, mech, shot, measured, conds
 
     def _wf_test(self):
-        """P45 (D451): the test file the latest workflow with a test-passed check names (its first target), "" when none does."""
+        """P45 (D452): the test file the latest workflow with a test-passed check names (its first target), "" when none does."""
         for w in reversed(self.workflows):
             if w.get("status") == "superseded":
                 continue
@@ -13500,7 +13706,7 @@ class J2Run:
             t = (charter_list(g, cond.get("charter_field")) or [""])[0]
             if not t:      # P29 (D431): the charter names no test: building can't change it
                 c["from_charter"] = True
-            if not t and self._wf_test():      # P45 (D451): a charter that names no test: the test the latest workflow's check names
+            if not t and self._wf_test():      # P45 (D452): a charter that names no test: the test the latest workflow's check names
                 t = self._wf_test()
                 c.pop("from_charter", None)
             t = in_folder(t, folder)
