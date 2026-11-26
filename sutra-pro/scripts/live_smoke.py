@@ -953,11 +953,17 @@ def step_followup(ctx: Ctx) -> dict[str, Any]:
         ctx.notes.append("no finished run to continue from")
         ctx.evidence["followup"] = {"seeded": False}
         return {"skipped": "no finished run in the department"}
-    session = app.one("SELECT chat_session_id FROM graph_nodes WHERE id = ?", dept)
-    response = app.post(f"/api/chats/{session}/messages", {"text": T13_TEXT})
-    if response.status_code != 200 or response.json().get("delivered") != "follow_up":
-        raise StepProblem(f"the follow-up was not started: {response.status_code} {response.text[:200]}")
-    task = response.json()["task_id"]
+    if ctx.fakes:       # D454: a team-chat line continues a run only when the chat agent says so, and a fake cannot judge; the dry run names the run itself
+        response = app.post("/api/tasks", {"dept_id": dept, "text": T13_TEXT, "follows": seed[0]["id"]})
+        if response.status_code != 201:
+            raise StepProblem(f"the follow-up was not started: {response.status_code} {response.text[:200]}")
+        task = response.json()["id"]
+    else:
+        session = app.one("SELECT chat_session_id FROM graph_nodes WHERE id = ?", dept)
+        response = app.post(f"/api/chats/{session}/messages", {"text": T13_TEXT})
+        if response.status_code != 200 or response.json().get("delivered") != "follow_up":
+            raise StepProblem(f"the follow-up was not started: {response.status_code} {response.text[:200]}")
+        task = response.json()["task_id"]
     seeded = "_seed_from" in (app.one("SELECT settings_json FROM tasks WHERE id = ?", task) or "")
     run = run_and_collect(ctx, [task])
     outcome = run["outcome"]
