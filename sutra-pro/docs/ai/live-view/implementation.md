@@ -73,6 +73,21 @@ Size (production, from `git diff --numstat 6c79a1db..HEAD -- sutra_app scripts`,
 | F4 | plan.md's `J2PAGE` pin (00efb179, taken from test_port_edits.py's miniature PIN) does not port this page; the page pin is ee659fb5 |
 | F5 | The Q-1 runtime check (key `adaptation` during "What I build") is only proven by the unit test until the owner's beta run |
 
+## Rebase onto origin/main (SUT-29, remove-real-run-gates, merge ef69d36b)
+All 19 commits were replayed onto ef69d36b. The commit hashes in the tables above are from before the rebase. The page pin is unchanged: SUT-29 kept `ee659fb5` (VENDORED.md). D453 and E32 are still free on origin/main (DECISIONS.md, decisions.json, port_j2_ui.py, commit messages); SUT-29 used D452, E31 and P46.
+| File | Conflict | Resolution |
+|---|---|---|
+| docs/DECISIONS.md, docs/diagram/decisions.json | both added an entry at the end (D452, D453) | kept both, D452 then D453 |
+| scripts/port_j2_ui.py | header edit count and letters; E31 (SUT-29) beside the E32 block | kept E31 and every E32 edit. The count is 57 on main + 6 = 63 (E1 to E13, E19 to E27, E30, E31, E32; E28 and E29 stay deleted); letters `E32a to E32f`. All E32 anchors still match J2 at ee659fb5 |
+| tests/ui/test_port_edits.py | `EDIT_IDS`, the E31 and E32 rows, the counts (57 → 63; count-1 edits 53 → 59) | both sides kept; the counts recomputed at each replayed commit |
+| sutra_app/ui/pages/j2_ui.html | regenerated at every replayed step by `port_j2_ui.py --j2 <ee659fb5 extraction> --commit ee659fb5`, never merged by hand | after the rebase, a fresh port equals the committed file and `--check` says "ok: the 63 anchors" |
+
+One flaw in history: in the replayed T5 commit (8f5092b1), a conflict-resolution script rewrote the docstring line `pages/j2_ui.html … the page after the 57 edits` as `pages/j0_ui.html …`. The next commit (10d23799) repairs it, and HEAD is correct. docs/ai/analysis.md was stashed on its own and popped back cleanly with no conflict; it is still uncommitted.
+
+Gate after the rebase (full, 15 min 10 s): 13654 passed, 4 failed, 389 skipped. The 4 are the same known main failures (route_table, workflows_yaml, fake_backend, shared_css). Nothing else broke, so no fix commit was needed.
+
+Size vs origin/main (`git diff --numstat origin/main -- sutra_app scripts`): port_j2_ui.py +41/-2, agents.py +13/-6, router.py +12/-16, views.py +3/-2, rawchat.py +1/-1, record_api_shapes.py +1/-1, which is **+43 net** hand-written. The generated j2_ui.html is +29/-19 (+10 net). Final numbers: **D453**, **E32a to E32f**, no P patch.
+
 ## Owner live test: the tool line
 The owner saw raw commands and full home paths in live lines ("Bash python3 - <<'E' p='index.html'…", "Write ~/.sutra-pro-beta/…"). They came from `router.tool_title`, which joined the tool name and its first argument as given. That function is the one place where the `{"tool": …}` progress line is made (router.py `_progress`), so the fix is there. It now reuses `tool_kinds.describe` instead of its own argument list:
 | Tool | Line |
