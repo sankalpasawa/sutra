@@ -15,8 +15,10 @@ import signal
 import time
 
 import pytest
-from harness import ANSWER, ControlledClock, LiveApp, atoms_left_open, new_team_script
+from harness import ANSWER, ControlledClock, LiveApp, atoms_left_open, draft, new_team_script
 from harness import pid_alive as alive
+from test_scenario_followup import tree_sha
+
 from sutra_app.orchestrator.runs import append_inbox
 from sutra_app.orchestrator.testing.scripted import ScriptedConnector
 
@@ -124,6 +126,7 @@ def test_step6_a_real_stop_of_a_team_that_waits_ends_the_engine_through_the_ladd
         assert "atom.updated" in types and "task.updated" in types
         assert live.one("SELECT state FROM graph_nodes WHERE id = 'web.identity'") == "idle"
         assert [n["kind"] for n in live.get("/api/needs-you")] == ["question"]                       # the unanswered question stays until the owner's next line
+        live.connector.push({"kind": "assignments", "assignments": [draft("a1", "web", follows=task)]})        # the chat agent: it answers that run (D454)
         assert live.write(live.session_of("web"), "Never mind the question, start again").json()["delivered"] == "follow_up"
         assert live.one("SELECT answered_by FROM chat_messages WHERE kind = 'question' ORDER BY id LIMIT 1") is not None
         [done] = live.cards("done")
@@ -157,6 +160,13 @@ def test_closing_the_app_runs_the_ladder_on_a_waiting_team_and_the_next_start_fi
         assert first.task_row(task)["outcome"].startswith("Stopped") and first.one("SELECT count(*) FROM atoms WHERE display = 'open'") == 0
         second = LiveApp(tmp_path, connector=ScriptedConnector()).start()
         assert second.services.reconciled.all() == [] and second.task_status(task) == "stopped"
+        old_sha = tree_sha(second.run_dir(task))
+        second.connector.push({"kind": "assignments", "assignments": [draft("a1", "web", follows=task)]})
+        delivered = second.write(second.session_of("web"), ANSWER).json()
+        assert delivered["delivered"] == "follow_up"
+        text = second.task_row(delivered["task_id"])["user_text"]
+        assert text.startswith(second.task_row(task)["user_text"]) and text.endswith(ANSWER)              # the first brief comes along after an app close (AC-8)
+        assert tree_sha(second.run_dir(task)) == old_sha
     finally:
         for live in (second, first):
             if live is not None:

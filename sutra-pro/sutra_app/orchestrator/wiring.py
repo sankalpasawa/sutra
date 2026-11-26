@@ -193,6 +193,7 @@ def build_services(settings: Settings, *, connector: Any = None, launcher: Any =
     agent_chat = AgentAsk(db=db, tasks=tasks, chats=chats, router=router, chat_port=chat_port, limits=limits, redact=redactor, clock=clock).turn
     agent = ChatAgent(port, chart, redact=redactor, clock=clock, attempts=settings.chat_attempts, timeout=settings.chat_timeout,
                       notes=prompt_notes(db, redactor, clock))                 # the owner's notes, in the decide and assign prompts (GAP2 rules-notes)
+    tasks.follows_of = agent.follows                       # D454: the chat agent decides whether a team-chat line continues an earlier run
     node_control = projects = None
     if settings.nodes_v1:                                  # multi-agent nodes, D254: with the flag off nothing of it is built, watched or gated
         node_control = NodeControl(KillSwitch(settings.nodes_dir, clock=clock), tasks=tasks, db=db, store=NodeStore(db, ids=ids, redact=redactor), clock=clock,
