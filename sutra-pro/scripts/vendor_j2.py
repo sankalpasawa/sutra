@@ -70,7 +70,7 @@ class VendorError(Exception):
 # ---- the patches --------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Edit:
-    patch: str          # "P1" .. "P44" (P15 is the data patch below, not an Edit; P20 is reserved)
+    patch: str          # "P1" .. "P46" (P15 is the data patch below, not an Edit; P20 is reserved)
     file: str
     old: str
     new: str
@@ -2668,8 +2668,7 @@ def real_run_problems(rr, source, runner, run_dir):
                 return self._dry_run_failed(w, dry, "wrote into a folder it may only read: " + "; ".join(
                     f"read folder {i}: " + ", ".join(f"{len(v)} {k}" for k, v in x.items())
                     for i, x in sorted(dry["reads_changed"].items(), key=lambda kv: int(kv[0]))))
-            if rr.get("expect") and (rr.get("offline") or {}).get("same_files") is not False \
-                    and (mm := expect_mismatch(rr["expect"], dry)):      # P35 (D438; D449: not when offline says it can't)
+            if rr.get("expect") and (mm := expect_mismatch(rr["expect"], dry)):      # P35 (D438)
                 dry["expect_mismatch"] = mm
                 return self._dry_run_failed(w, dry, "not what it said it would do: " + mm)
         if dry.get("real_changed"):      # the dry run reached the Requester's own folders: stop, never ask, never "0 changed"
@@ -3114,30 +3113,17 @@ def env_missing(env):
         return [f for f in goal.get("facts")''', r'''                              + [m["text"] for m in self.chat if m["who"] == "user"]
                               + [d["picked"] for d in self.decisions if d.get("picked")]))      # P43 (D448)
         return [f for f in goal.get("facts")'''),
-    # ---- P44 (D449): a real run names the internet hosts it reaches and an offline command its dry run runs; only the hosts the
-    # Requester named count (the brief, their typed messages, their own picks), checked at registration
-    Edit("P44", "j2.py", r'''def _tree(root):
-''', r'''# P44 (D449): the internet hosts a real run may reach. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
+    # ---- P46 (D452): the planner lists the hosts a real run reaches (syntax only, nobody is asked) and srt allows exactly them
+    Edit("P46", "j2.py", r'''def _tree(root):
+''', r'''# P46 (D452): the internet hosts a real run reaches, as the planner lists them. HOST and real_hosts are Kaivan's (J2 prototype, 780f1eb9).
 HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?")
 HOST_ENTRY = re.compile(r"(?:\*\.)?" + HOST.pattern + r"(?::[1-9][0-9]{0,4})?")      # srt's allowedDomains form, narrowed
-REAL_RUN_NET_RULE = ('\nREAL RUN AND THE INTERNET: when the script must reach a service over the internet, the real_run also carries '
-                     '"hosts": [each host it reaches, a bare name like api.example.com, exactly as the brief or the Requester '
-                     'wrote it; *.example.com only if they wrote that; an optional :port; no scheme, path or address], '
-                     '"reaches": "what it reaches, in plain words, like Gmail and Slack (at most 80 characters)" and "offline": '
-                     '{"command": [the same runner and folder arguments, plus what makes it use made-up data and no network], '
-                     '"same_files": true when that makes the same file changes as expect says, else false}. A real_run with '
-                     'hosts must give offline: its command makes the same file changes with made-up data. The dry run runs the '
-                     'offline command on copies with no internet access; only the approved real run reaches the named hosts, '
-                     'and nothing else. Its real run starts with a read-only call (such as reading the account profile), so a '
-                     'bad key or missing access fails before anything changes. List every host it needs: a host the Requester '
-                     'has not named is asked once, by code, and the plan is proposed again if they allow it. Never set '
-                     'HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or NO_PROXY. Only code and the Run card grant internet access: never '
-                     'tell anyone it will be allowed.')      # P44 (D449): Adaptation, after P41's rule
-SCRIPT_NET_RULE = (" A script that reaches the internet starts its real run with a read-only check (such as a profile call), so a "
-                   "bad key or missing access fails fast; it has an offline mode (a --mock or --dry-run style switch, its real "
-                   "run's offline command) that makes the same file changes with made-up data and no network; its tests cover "
-                   "the network part with a fake local server, never the internet. Only code and the Run card grant internet "
-                   "access: never promise it.")      # P44 (D449): the tools builder, after P41's line
+REAL_RUN_NET_RULE = ('\nREAL RUN AND THE INTERNET: when the script reaches a service over the internet, the real_run also carries '
+                     '"hosts": [every host it reaches, a bare name like api.example.com, or *.example.com for its subdomains, '
+                     'with an optional :port; no scheme, path or address]. The real run reaches only those hosts. Never set '
+                     'HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or NO_PROXY.')      # P46 (D452): Adaptation, after P41's rule
+SCRIPT_NET_RULE = (" A script that reaches the internet has tests that cover the network part with a fake local server, never "
+                   "the internet.")      # P46 (D452): the tools builder, after P41's line
 
 
 def real_hosts(rr):
@@ -3145,240 +3131,52 @@ def real_hosts(rr):
     return list(dict.fromkeys(x.strip().lower() for x in (rr or {}).get("hosts") or [] if isinstance(x, str) and x.strip()))
 
 
-HOSTS_DECLINE = "Don't allow it: leave the real run out"      # P44 (D449): the host question's second option
-HOSTS_DENY = "Don't allow"      # P44 (D449, E29): the Don't allow button's words; typed as the whole reply, a decline too
-
-
 def host_entry_ok(h):
-    """P44 (D449): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
+    """P46 (D452): h (stripped, lower case) is one srt allowedDomains entry of HOST_ENTRY's narrow form, its port <= 65535."""
     return bool(HOST_ENTRY.fullmatch(h)) and not (":" in h and int(h.rpartition(":")[2]) > 65535)
 
 
-def host_pieces(request, decisions, chat):
-    """P44 (D449): where a host counts as named, each text squashed on its own: the brief, the Requester's own picks (P43)
-    and the Requester's typed messages. Never the charter (an agent writes it) and never Decide for me (auto)."""
-    return [squash(t) for t in [request or ""] + [d["picked"] for d in decisions if d.get("picked")]
-            + [m["text"] for m in chat if m["who"] == "user" and not m.get("auto")]]
-
-
-def host_named(h, pieces):
-    """P44 (D449): host h (lower case) is named whole in one piece. Its :port is left out (a port only narrows); *.x only
-    as written. Not after a name character, ".", "@" (an e-mail address names no host) or "*"; not before a name character
-    or a further ".label"."""
-    pat = r"(?<![\w.@*-])" + re.escape(re.sub(r":\d+\Z", "", h)) + r"(?![\w-]|\.[\w-])"
-    return any(re.search(pat, s) for s in pieces)
-
-
-def real_run_hosts_problems(rr, pieces):
-    """P44 (D449): why a planned real run's hosts are not usable ([] when usable or none): a list of strings, each an srt
-    allowedDomains entry of HOST_ENTRY's narrow form (no scheme, path, address, localhost, * or *.com), named whole."""
+def real_run_hosts_problems(rr):
+    """P46 (D452): why a planned real run's hosts are not usable ([] when usable or none): a list of strings, each an srt
+    allowedDomains entry of HOST_ENTRY's narrow form (no scheme, path, address, localhost, * or *.com). Syntax only."""
     hosts = rr.get("hosts")
     if hosts is None or hosts == []:
         return []
     if not (isinstance(hosts, list) and all(isinstance(x, str) for x in hosts)):
         return ['real_run hosts must be a list of host names, like ["api.example.com"]']
-    out = []
-    for x in hosts:
-        h = x.strip().lower()
-        if not host_entry_ok(h):
-            out.append(f"real_run host {x!r} must be a host name like api.example.com, or *.example.com for its subdomains, "
-                       "with an optional :port; no scheme, path, address, localhost, * or *.com")
-        elif not host_named(h, pieces):
-            out.append(f"real_run host {x} is not named in the brief or the Requester's own answers: ask for it")
-    return out
-
-
-def real_run_offline_problems(rr, source, runner, run_dir):
-    """P44 (D449): a real run that names hosts also states "offline": {"command": [...], "same_files": bool}, the command its
-    dry run runs without internet access, checked as the real command is (real_run_problems) and not the same command."""
-    if not real_hosts(rr):
-        return []
-    off = rr.get("offline")
-    if off is None:
-        return ['real_run names hosts, so it also needs "offline": {"command": [...], "same_files": true or false}: the dry '
-                'run runs that command on copies without internet access']
-    if not (isinstance(off, dict) and set(off) == {"command", "same_files"} and isinstance(off["same_files"], bool)):
-        return ['real_run offline must be exactly {"command": [...], "same_files": true or false}']
-    if home_expanded({"command": off["command"]}).get("command") == home_expanded(rr).get("command"):
-        return ["real_run offline command is the real command: the dry run has no internet access, so give one that uses "
-                "made-up data instead"]
-    return ["offline: " + p for p in real_run_problems({**rr, "command": off["command"]}, source, runner, run_dir)]
-
-
-def real_run_net_fields(rr):
-    """P44 (D449): what _register stores of checked hosts: hosts (real_hosts) and offline (~ written out), only with hosts."""
-    if not real_hosts(rr):
-        return {}
-    return {"hosts": real_hosts(rr), "offline": {"command": home_expanded({"command": rr["offline"]["command"]})["command"],
-                                                 "same_files": rr["offline"]["same_files"]}}
-
-
-def real_run_net_lines(rr, sandboxed, dry):
-    """P44 (D449): the Run card's internet lines ("" without hosts)."""
-    hosts, off = rr.get("hosts") or [], rr.get("offline") or {}
-    if not hosts:
-        return ""
-    return ("\nInternet access: " + ", ".join(hosts)
-            + ("" if sandboxed else "\nThis computer has no sandbox, so internet access can't be limited to these hosts.")
-            + (f"\nThe dry run ran its offline command, without internet access: {shlex.join(off['command'])}"
-               if dry.get("fenced") and off else "")
-            + ("\nFile changes couldn't be checked first." if off.get("same_files") is False else ""))
+    return [f"real_run host {x!r} must be a host name like api.example.com, or *.example.com for its subdomains, with an "
+            "optional :port; no scheme, path, address, localhost, * or *.com" for x in hosts if not host_entry_ok(x.strip().lower())]
 
 
 def _tree(root):
 '''),
-    Edit("P44", "j2.py", r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
+    Edit("P46", "j2.py", r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
 ''', r'''                wf["real_run"].update(real_run_env_fields(w["real_run"]))      # P41 (D446): stored only when stated
-                if bad := real_run_hosts_problems(w["real_run"], host_pieces(self.request, self.decisions, self.chat)):  # P44 (D449)
+                if bad := real_run_hosts_problems(w["real_run"]):      # P46 (D452): the hosts' syntax, nothing else
                     refused.append(self._reject(name, "; ".join(bad), ("real_run_hosts",)))
-                    self._hosts_to_ask(name, w["real_run"])      # P44 (D449): the Requester is asked once (T1b)
                     continue
-                if bad := real_run_offline_problems(w["real_run"], self._fact_source(pieces=True),      # P44 (D449)
-                                                    self.out.get("test_runner"), self.dir):
-                    refused.append(self._reject(name, "; ".join(bad), ("real_run_offline",)))
-                    continue
-                wf["real_run"].update(real_run_net_fields(w["real_run"]))      # P44 (D449): stored only with hosts
+                if real_hosts(w["real_run"]):
+                    wf["real_run"]["hosts"] = real_hosts(w["real_run"])      # P46 (D452): stored only when listed
 '''),
-    # ---- P44 (D449) T1b (owner): a plan's hosts the Requester has not named are asked once, as a pickable option, after the
-    # validator's turn; the Requester's own click names them (P43's picked), a decline leaves the real run out; never Decide for me
-    Edit("P44", "j2.py", r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
-''', r'''AUTO_ASK = {"send_confirm", "real_run", "limit"}      # P29 (D431): a limit question (the same failure twice among them) is the Requester's own
-AUTO_ASK.add("hosts")      # P44 (D449): only the Requester allows a real run's internet hosts
+    Edit("P46", "j2.py", r'''            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
+''', r'''            json.dump({"network": {"allowedDomains": [] if fence else real_hosts(rr),      # P46 (D452): exactly the
+                                   "deniedDomains": []},      # plan's hosts; fence (P32) always holds in the dry run
 '''),
-    Edit("P44", "j2.py", r'''          "real_run": "may a built script run for real on the Requester's folder (exact reply only)"}
-''', r'''          "real_run": "may a built script run for real on the Requester's folder (exact reply only)",
-          "hosts": "may a real run reach the internet hosts its plan names (P44, D449)"}
-'''),
-    Edit("P44", "j2.py", r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-''', r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-        self.hosts_ask = None        # P44 (D449): the host question _register left for after this turn (_ask_hosts)
-        self.hosts_asked = {}        # P44 (D449): the asked hosts (sorted, space-joined) -> allowed (True/False), None while open
-'''),
-    Edit("P44", "j2.py", r'''                    self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
-''', r'''                    self._handoff("identity", kind="question", frm=r["from"], question=r.get("text") or "", resume=resume)
-            if self.hosts_ask and not self.paused and self.turn != "identity":      # P44 (D449): after the validator's turn,
-                a, self.hosts_ask = self.hosts_ask, None      # hosts only the Requester can allow; Identity's own turn first
-                self._ask_hosts(a)
-'''),
-    Edit("P44", "j2.py", r'''        if p:
-            h = dict(p["handoff"])
-''', r'''        if p and p["kind"] == "hosts":      # P44 (D449): code reads the answer to the host question
-            self._hosts_answered(p)
-        if p:
-            h = dict(p["handoff"])
-'''),
-    Edit("P44", "j2.py", r'''                      "options": [self._requester_noun(requester_words(o, src) or o) for o in q.get("options") or []]}
-                     for q in questions]
-''', r'''                      "options": [self._requester_noun(requester_words(o, src) or o) for o in q.get("options") or []]}
-                     for q in questions] if kind != "hosts" else questions      # P44 (D449): the hosts as written (no "site" -> "document")
-'''),
-    Edit("P44", "j2.py", r'''    def _ask_real_run(self, r):
-''', r'''    def _hosts_to_ask(self, name, rr):
-        """P44 (D449): _register refused rr because its hosts are not all named by the Requester. Unless that set of hosts
-        was asked about before (hosts_asked: once per set, never a loop) or a question already waits, Identity asks after
-        this turn (_run's loop, _ask_hosts). A badly formed host is the plan's to fix, never asked."""
-        hosts = real_hosts(rr)
-        if not all(isinstance(x, str) and host_entry_ok(x.strip().lower()) for x in rr.get("hosts") or []) \
-                or " ".join(sorted(hosts)) in self.hosts_asked or self.hosts_ask:
-            return
-        at, crit, what = self._item_at(), (self.goal or {}).get("done_when") or [], rr.get("reaches")
-        self.hosts_ask = {"name": name, "hosts": hosts, "items": [crit[at[as_int(i)] - 1] for i in rr.get("checks") or []
-                                                                  if as_int(i) in at],
-                          # a short plain name of what the hosts are, shown as written, never read: one line, 80 characters
-                          "reaches": what.strip() if isinstance(what, str) and 0 < len(what.strip()) <= 80
-                          and not re.search(r"[\r\n\0]", what) else ""}
-
-    def _ask_hosts(self, a):
-        """P44 (D449): Identity's one question about a plan's hosts, built by code from the plan's fields. Its first option
-        carries every host exactly, so the Requester's own click names them (P43's picked, host_pieces) and the plan then
-        registers; the second leaves the real run out (_hosts_answered). Decide for me never answers it (AUTO_ASK)."""
-        hosts = ", ".join(a["hosts"])
-        self.hosts_asked[" ".join(sorted(a["hosts"]))] = None
-        self._ask_user("A workflow's real run needs to reach the internet, and only you can allow that.",
-                       [{"question": f"This script needs to reach {a['reaches'] + ' (' + hosts + ')' if a['reaches'] else hosts}. "
-                                     "Allow it?", "options": [f"Allow internet access to {hosts}", HOSTS_DECLINE]}],
-                       "hosts", to="adaptation", handoff={"kind": "propose", "hosts_ask": a})
-
-    def _hosts_answered(self, p):
-        """P44 (D449): code reads the answer to _ask_hosts; only three answers settle it (owner, E29). Allowed when every
-        host is now named (the Requester's own pick of the first option, the Allow button, whose text carries them, or
-        their own typed words): Adaptation proposes the plan again and it registers. A clear decline (their own pick of the
-        second option, the Don't allow button, or exactly HOSTS_DENY as the whole reply, as D434's REAL_RUN_DECLINE) leaves
-        the real run out: the done-when items it checks are dropped with the reason (also in the run's outcome,
-        _goal_done), and Adaptation proposes the workflow without it. Any other reply asks the same question again, as
-        P31's real-run card does: no word of it is read, nothing is decided, nothing is handed on."""
-        a, g = p["handoff"]["hosts_ask"], self.goal or {}
-        last = next(m for m in reversed(self.chat) if m["who"] == "user")
-        ok = not [h for h in a["hosts"] if not host_named(h, host_pieces(self.request, self.decisions, self.chat))]
-        no = not last.get("auto") and (self.decisions[-1].get("picked") == p["questions"][0]["options"][1]
-                                       or last["text"].strip().casefold() == HOSTS_DENY.casefold())
-        if not ok and not no:
-            self._ask_user("Not allowed yet. Press Allow, or type the hosts.", p["questions"], "hosts", to="adaptation",
-                           handoff=p["handoff"])
-            p["to"], p["handoff"] = None, {}      # _run's resume hands on nothing: the run waits on the same question
-            return
-        self.hosts_asked[" ".join(sorted(a["hosts"]))] = ok
-        if ok:
-            p["handoff"] = {"kind": "propose", "why": f"The Requester allowed internet access to {', '.join(a['hosts'])}. "
-                                                      f"Propose {a['name']} again with the same real_run."}
-            return
-        why, gone = f"The Requester did not allow internet access to {', '.join(a['hosts'])}", \
-            [c for c in a["items"] if c in (g.get("done_when") or [])]
-        nums = [self._no(c) for c in gone]
-        if gone:      # left out as a Requester's "Leave out" is (D431): off the checklist, with the reason
-            g["done_when"] = [c for c in g["done_when"] if c not in gone]
-            g["dropped_by_requester"] = (g.get("dropped_by_requester") or []) + gone
-            g["dropped_reasons"] = (g.get("dropped_reasons") or []) + [{"criterion": c, "reason": why, "hosts": a["hosts"]}
-                                                                       for c in gone]
-            g["to_be_confirmed"] = [t for t in g.get("to_be_confirmed") or [] if t["criterion"] not in gone]
-            self.save("goal.json", g)
-        self.post("system", f"Left out on the Requester's decision: {a['name']}'s real run"
-                  + (f" (done-when item {and_list(map(str, nums))})" if nums else "") + f". {why}.")
-        p["handoff"] = {"kind": "propose", "why": f"{why}, so {a['name']}'s real run is left out"
-                        + (f" and done-when item {and_list(map(str, nums))} is off the checklist" if nums else "")
-                        + f". Propose {a['name']} again without its real_run."}
-
-    def _ask_real_run(self, r):
-'''),
-    Edit("P44", "j2.py", r'''        self.turn = None
-        if self.memory and not self.docset:
-''', r'''        if off := [x for x in (self.goal or {}).get("dropped_reasons") or [] if x.get("hosts")]:      # P44 (D449): a declined
-            self.outcome += " Left out: " + "; ".join(f"{x['criterion']}: {x['reason']}" for x in off) + "."      # host question
-        self.turn = None
-        if self.memory and not self.docset:
-'''),
-    # ---- P44 (D449) T2: the dry run of a real run with hosts runs its offline command, offline (P32's fence); only the
-    # approved real run gets allowedDomains = its hosts
-    Edit("P44", "j2.py", r'''        dry = self.real_runs_dry[w["id"]] = real_run_dry(self._out_dir(), rr, builder_timeout())
-''', r'''        dry = self.real_runs_dry[w["id"]] = real_run_dry(      # P44 (D449): a real run with hosts dry-runs its offline command
-            self._out_dir(), {**rr, "command": rr["offline"]["command"]} if rr.get("offline") else rr, builder_timeout())
-'''),
-    Edit("P44", "j2.py", r'''            json.dump({"network": {"allowedDomains": [], "deniedDomains": []},
-''', r'''            json.dump({"network": {"allowedDomains": [] if fence else list(rr.get("hosts") or []),      # P44 (D449): only the
-                                   "deniedDomains": []},      # approved real run; fence (P32) always holds in the dry run
-'''),
-    # ---- P44 (D449) T3: the Run card names the hosts, says when they can't be limited, and what the dry run ran or couldn't check
-    Edit("P44", "j2.py", r'''                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
-''', r'''                            + real_run_env_lines(rr)      # P41 (D446): every setting and secret file, before approval
-                            + real_run_net_lines(rr, sandbox_on(), dry)      # P44 (D449)
-'''),
-    # ---- P44 (D449) T8: Adaptation and the tools builder are told how hosts, the offline command and the read-only first call
-    # work (prompt-changing per D249; only with builder tools on and a form with a test_runner)
-    Edit("P44", "j2.py", r'''                self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
+    Edit("P46", "j2.py", r'''                self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
 ''', r'''                self.ATOM_RULES += REAL_RUN_ENV_RULE      # P41 (D446)
-                self.ATOM_RULES += REAL_RUN_NET_RULE      # P44 (D449)
+                self.ATOM_RULES += REAL_RUN_NET_RULE      # P46 (D452)
 '''),
-    Edit("P44", "j2.py", r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
+    Edit("P46", "j2.py", r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
 ''', r'''                 + (f" Run a test with: {runner} ({{target}} = the test file)." + SCRIPT_ENV_RULE if runner else "")      # P41 (D446)
-                 + (SCRIPT_NET_RULE if runner else "")      # P44 (D449)
+                 + (SCRIPT_NET_RULE if runner else "")      # P46 (D452)
 '''),
-    # ---- P44 (D449) diagnostic: the deliverables planner's replies that were not JSON are kept in deliverables.json (`unparsed`,
-    # each clipped to 20000 characters) with one system line; the plan and the stop are J2's (net-test2, j2-20261125-131412-84d3)
-    Edit("P44", "j2.py", r'''                                     mocks=j2_realization.deliverable_mocks(goal, offline))
+    # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json
+    # (`unparsed`, each clipped to 20000 characters) with one system line; the plan and the stop are J2's
+    Edit("P46", "j2.py", r'''                                     mocks=j2_realization.deliverable_mocks(goal, offline))
         self.save("deliverables.json", r)      # its calls stay there: self.calls numbers calls.jsonl (documents.json ranges)
-''', r'''                                     mocks=j2_realization.deliverable_mocks(goal, offline), trail=True)      # P44 (D449)
+''', r'''                                     mocks=j2_realization.deliverable_mocks(goal, offline), trail=True)      # P46 (D452)
         bad = [{"who": t["who"], "seconds": t["seconds"], "chars": len(t["raw"]), "raw": t["raw"][:20000]}
-               for t in r.pop("trail") if not t["parsed"]]      # P44 (D449): a reply that was not JSON is kept, the rest of the trail is not
+               for t in r.pop("trail") if not t["parsed"]]      # P46 (D452): a reply that was not JSON is kept, the rest of the trail is not
         if bad:
             r["unparsed"] = bad
             self.post("system", f"The planner's reply could not be read as JSON ({len(bad)} times); kept in deliverables.json "
@@ -3402,13 +3200,13 @@ OTHER_EDITS = (
         with llm.tagged(role="planner" if who == "adaptation" else "judge", purpose=purpose):      # P7
             raw = llm.ask(system, user, mock, max_tokens=16000, effort="high", json_mode=True)
 '''),
-    # ---- P44 (D449) diagnostic: plan_goal returns its calls (the trail) only when asked, for J2's deliverables planner
-    Edit("P44", "j2_realization.py", '''def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None):
-''', '''def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None, trail=False):      # P44 (D449): trail
+    # ---- P46 (D452, moved from P44): plan_goal returns its calls (the trail) only when asked, for J2's deliverables planner
+    Edit("P46", "j2_realization.py", '''def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None):
+''', '''def plan_goal(goal, web=True, out_dir=None, log=print, mocks=None, extra="", types=None, trail=False):      # P46 (D452): trail
 '''),
-    Edit("P44", "j2_realization.py", '''        **({"deliverables": deliverables(plan)} if types is not None else {}),
+    Edit("P46", "j2_realization.py", '''        **({"deliverables": deliverables(plan)} if types is not None else {}),
 ''', '''        **({"deliverables": deliverables(plan)} if types is not None else {}),
-        **({"trail": s.trail} if trail else {}),      # P44 (D449): every call, only when asked
+        **({"trail": s.trail} if trail else {}),      # P46 (D452): every call, only when asked
 '''),
     # ---- P10: the template library lock
     Edit("P10", "j2_template_lib.py", "import copy\nimport hashlib\n", "import contextlib\nimport copy\nimport hashlib\n"),
@@ -3644,7 +3442,7 @@ PATCH_NOTES = {
     "P18": "`j2_types.py`: host type registration (D164): `HOST` and `register(entry, extras=None)` (a JSON-safe `kind: \"type\"` entry that names its owner in `host`; a name of `types.json` or of the local store is refused; the same owner again replaces; another owner is refused), `_read_types` adds the host entries after the local types, `template_path` accepts an absolute path, `load` returns the registered `extras` (keys data cannot carry: `single`, `workspace`, `deliver`, the mocks), `templated` skips a host type",
     "P15": "seed data: the six `runs[].library` values of `library/index.json` that held a J2 developer's absolute home-folder path become `not recorded` (R5: no absolute home path in any file of this product); nothing reads the field; the two `/tmp/` values stay",
     "P43": "(D448; no model prompt changes: the lines are code's own words) `_identity_hears_requester` treats a done-when item the charter marks `real-run` in `item_checks` (P30) as a real run's item even before a real-run workflow registers: it is dropped from Identity's `confirmed` and `still_to_be_confirmed`, so an answer never makes it a confirmed fact, and the chat says \"Noted. This part is checked when the real run actually happens, not from an answer.\" The answer still reaches Adaptation and `_fact_source`. When the answer gives such an item's fact (Identity's `confirmed`), its `to_be_confirmed` entry is dropped too (review R1-2): the item no longer waits on the Requester, so it is never blocked on that fact or asked for it again, is still never a confirmed fact, and passes only on its real run's receipt; an item Identity puts in `still_to_be_confirmed` keeps its entry. An item a registered real run checks keeps J2's note \"Not taken from the answer: whether a real run happened ...\", which now ends with the same sentence. A charter without `item_checks` (before P30) keeps the window until the real-run workflow registers. When the paused question is one question with options and the Requester's own reply is a bare pick (`ONLY_PICK`, resolved by `option_picked`), `_run` records the option's full text as `picked` on the decision record; a pick Decide for me sent (its chat message is flagged `auto`) records nothing, so it never names a folder, a secret file or a charter fact. `_fact_source` (the source of `real_run_problems`, `real_run_env_problems`, `check_problems` and `requester_words`) and `_fact_problems` add every `picked` text; `real_run_problems` and `real_run_env_problems` get `_fact_source(pieces=True)`, each text squashed on its own, and `named_whole` accepts a path named whole in any one of them, so a path that ends one text is never read as going on into the next text's first word (review R1-1: a brief starting `CSV/Excel`). A typed bare option number or `Option n` from the Requester is their pick too (it is what a card click sends, and its message is not flagged `auto`); any other typed answer is never read as a pick",
-    "P44": "(D449, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has; the rest of P44 changes no model prompt)a planned real run may name `hosts`, a list of srt allowedDomains entries of a narrow form (`HOST_ENTRY`: Kaivan's `HOST` from the J2 prototype 780f1eb9, with an optional `*.` and `:port` 1-65535; no scheme, path, address, localhost, `*` or `*.com`), each named whole (`host_named`: its port left out, a wildcard only as written, never after `@`) in one text of `host_pieces`: the brief, the Requester's own picks (P43) and their typed messages, never the charter and never Decide for me; a plan with hosts also states `offline` `{command, same_files}`, checked as the real command is (`real_run_problems`) and not the same command; `_register` refuses with the P22 keys `(\"real_run_hosts\",)` and `(\"real_run_offline\",)` and stores `hosts` (Kaivan's `real_hosts`: lower case, each once) and `offline` (~ written out) only with hosts. The host question (owner, T1b; code's own words): a plan refused only because its well-formed hosts are not all named leaves one question (`_hosts_to_ask`), which `_run`'s loop asks after the turn once no question is open and the next turn is not Identity's (`_ask_hosts`, pause kind `hosts`, in `AUTO_ASK`, so Decide for me never answers it): \"This script needs to reach <reaches> (<hosts>). Allow it?\" from the plan's optional `reaches` (one line, at most 80 characters, shown, never read); option 1 carries every host, so the Requester's own click (P43's `picked`) names them and the plan, proposed again, registers; only a clear decline leaves the real run out (owner, E29: the Requester's own pick of option 2, `HOSTS_DECLINE`, or exactly `HOSTS_DENY` \"Don't allow\" as the whole reply, the card's Don't allow button), any other answer asks the same question again (\"Not allowed yet. Press Allow, or type the hosts.\"; nothing decided or handed on) (`_hosts_answered`: its items dropped with the reason in `dropped_reasons`, a system line, and `_goal_done` adds \"Left out: <item>: <reason>.\" to the outcome); a set of hosts is asked at most once per run (`hosts_asked`). Its question and options are shown as written, never through a document run's \"site\" -> \"document\" rewrite (`_ask_user`; review R1-1). The dry run (T2): `_ask_real_run` hands `real_run_dry` the run with its `offline` command in place of the real one when it has one, so it runs fenced (P32) with `allowedDomains: []`; `real_run` writes `allowedDomains: [] if fence else` the run's `hosts`, so only the approved real run (after RUN <code>) reaches them, and only under the sandbox (without one it is a plain process, as before); the test rerun (`sandbox_settings`) and P42's install (PyPI only) keep their network. The Run card (T3, `real_run_net_lines` after P41's lines): \"Internet access: <hosts>\"; without a sandbox, \"This computer has no sandbox, so internet access can't be limited to these hosts.\"; after a fenced dry run, the offline command it ran; with `same_files: false`, \"File changes couldn't be checked first.\"; nothing without hosts. Diagnostic (net-test2): `_deliverables` asks `plan_goal(..., trail=True)` (j2_realization.py; its result carries `trail` only when asked) and keeps in deliverables.json, under `unparsed`, each call whose reply was not JSON (`who`, `seconds`, `chars`, `raw` clipped to 20000 characters), with one system line \"The planner's reply could not be read as JSON (N times); kept in deliverables.json under unparsed.\"; the trail itself is not saved and nothing else changes",
+    "P46": "(D452, prompt-changing per D249: `REAL_RUN_NET_RULE` joins `ATOM_RULES` after P41's rule and `SCRIPT_NET_RULE` follows P41's builder line, both only with builder tools on and a form with a `test_runner`, which no golden scenario has) a planned real run's `hosts` stay optional and are checked for their syntax only (`host_entry_ok`, key `real_run_hosts`), with no rule on where they come from and no question; they are stored (`real_hosts`) when listed, and the real run's srt settings allow exactly them (`[]` without). The planner's rule asks to list every host the script reaches and never to set the four proxy settings; the tools builder's line asks for tests that reach a fake local server, never the internet. The deliverables planner's replies that were not JSON are kept in `deliverables.json` under `unparsed` with one system line (moved from P44; `j2_realization.plan_goal` returns its calls only when asked).",
 }
 
 

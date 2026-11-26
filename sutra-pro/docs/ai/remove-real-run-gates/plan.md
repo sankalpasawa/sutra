@@ -57,7 +57,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate shows no diff (`git status --short sutra_app docs/reference` empty), vendor check ok, vendor tests pass
   - Covers: FR-33 (mechanism)
 
-- [ ] T3: Hosts are listed by the planner and syntax-checked only; no host question, no `offline` (P44 retired, P46 begins, E29 deleted)
+- [x] T3: Hosts are listed by the planner and syntax-checked only; no host question, no `offline` (P44 retired, P46 begins, E29 deleted)
   - Files: `scripts/vendor_j2.py`, `sutra_app/engine/j2.py`, `sutra_app/engine/VENDORED.md`, `scripts/port_j2_ui.py`, `sutra_app/ui/pages/j2_ui.html`, `tests/ui/test_port_edits.py`, `tests/engine/test_engine_patches.py`, `tests/engine/test_engine_vendor.py`
   - Change:
     1. Delete every `Edit("P44", ...)` (vendor_j2.py:3119-3412) and the `P44` PATCH_NOTES row. Add `P46` edits (after P43's) that put back only: `unparsed` (today's text at :3377, :3406-3412); `HOST`, `HOST_ENTRY`, `real_hosts`, `host_entry_ok`; `real_run_hosts_problems(rr)` with only the syntax check (key `real_run_hosts`, today's message without "named"); in `_register`, after P41's fields, `if bad := real_run_hosts_problems(...)` refuse, else `wf["real_run"]["hosts"] = real_hosts(rr)` when non-empty; in `real_run`, `allowedDomains: [] if fence else real_hosts(rr)` (fence goes in T5); `REAL_RUN_NET_RULE` = list every host the script reaches (bare name, optional `*.` and `:port`, no scheme, path or address) and never set HTTP_PROXY, HTTPS_PROXY, ALL_PROXY or NO_PROXY; `SCRIPT_NET_RULE` = test the network part with a fake local server, never the internet. Both joined where P44 joined them (j2.py:4393, :11085). Nothing about offline, naming, asking, a card or approval.
