@@ -168,7 +168,6 @@ SCREW = _lines(
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
     "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json",
     "")
-SNUM = 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);'      # E32a's anchor
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),
     # E2: the two preview iframes get a sandbox (no allow-same-origin: a generated page cannot read the page's token, D83). `frame` also gets
@@ -330,10 +329,7 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # written before D452 still carries `approved` and says what happened then (review R1-6)
     Edit("E31", '      + ` · ${r.approved ? "approved by you" : "not approved"}</span>',
          '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
-    # E32 (D453): who works now and what, from the run's agent_live.json (`s.live`, on the one poll). Tool lines may be shown; the agents' free text may not.
-    # The who is the part's person (studio.parts), else the Map's persona of the function (MAPLABEL.persona), else the key; the what is the tool line, else
-    # the part's name, else the call's step's name. `#typing`, the Map's chip, its lit boxes and the crew read it; LIVE keeps this page session's last lines (never stored)
-    Edit("E32a", SNUM, _lines(
+    Edit("E32a", 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);', _lines(      # E32 (D453): replaces sNum/sCap (only the crew's fixed lines used them)
         "// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines",
         'const LIVE = {last: {}, line: "", key: ""};',
         'const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step\'s name without its code',
