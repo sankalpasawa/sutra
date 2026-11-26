@@ -1082,7 +1082,9 @@ function sModel(s){ const st = (s && s.studio) || {}, parts = (st.parts || []).m
 const sAnd = xs => xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1];
 const LIVE = {last: {}, line: "", key: ""};
 const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step's name without its code
-const liveSaid = (s, k) => { const ev = sTalk(s), x = ev.filter(e => e.who === k).pop() || ev[ev.length - 1]; return x ? `${PEOPLE[x.who].name} ${x.text}` : liveStep(s); };      // between calls: the person's last team-stream line, else the run's, else the step
+const STEP_PERSON = {1: "asha", 2: "asha", 3: "asha", 4: "asha", 5: "asha", 7: "nora", 8: "asha"};      // whose step it is: planning, pricing, rulings and the workable check are the Client Lead's, Audit is Nora's; building (6) shows each builder's own live line
+const liveSaid = (s, k) => { const ev = sTalk(s), x = k ? ev.filter(e => e.who === k).pop() : ev[ev.length - 1];      // between calls: the person's own last team-stream line (k "": the run's last line)
+  return x ? `${PEOPLE[x.who].name} ${x.text}` : !k || STEP_PERSON[s.step] === k ? liveStep(s) : ["running", "waiting"].includes(s.status) ? "Waiting for their turn" : ""; };      // else the step, only on the person whose step it is (D456)
 function liveLines(s){
   if (!s || s.status !== "running") return [];
   if (s.run_id !== LIVE.run) Object.assign(LIVE, {run: s.run_id, last: {}, line: ""});      // another run in this tab: nothing of the last one
@@ -1101,7 +1103,7 @@ const mapLive = m => { const L = liveLines(CTX);      // a copy of the map: a li
   return {...m, nodes: (m.nodes || []).map(n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k)) ? {...n, status: "running"} : n)}; };
 function sCrew(s, M){
   const L = liveLines(s), open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};      // liveLines first: a new run clears LIVE (R2-1)
-  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty
+  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453, D456): the last live what, else their own last line of the team stream, else the step if it is theirs
     line: (s.status === "running" && LIVE.last[k]) || liveSaid(s, k)});
   const qp = M.parts.find(p => p.st === "ask");
   if (open){ t.asha.line = APPROVE.includes((s.paused || {}).kind) ? "Needs your OK" : "Has a question for you"; t.asha.ask = true; }

@@ -162,7 +162,7 @@ SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \
                       r'.*?(?=  \["mira", "kabir", "dev", "nora"\]\.forEach)', re.S)
 SCREW = _lines(
     '  const L = liveLines(s), open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};      // liveLines first: a new run clears LIVE (R2-1)',
-    "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
+    "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453, D456): the last live what, else their own last line of the team stream, else the step if it is theirs",
     '    line: (s.status === "running" && LIVE.last[k]) || liveSaid(s, k)});',
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
     "  L.forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json",
@@ -331,7 +331,9 @@ PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E32a", 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);', _lines(      # E32 (D453): who works now, from agent_live.json; tool lines may be shown, the agents' free text may not. Replaces sNum/sCap
         'const LIVE = {last: {}, line: "", key: ""};',
         'const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step\'s name without its code',
-        "const liveSaid = (s, k) => { const ev = sTalk(s), x = ev.filter(e => e.who === k).pop() || ev[ev.length - 1]; return x ? `${PEOPLE[x.who].name} ${x.text}` : liveStep(s); };      // between calls: the person's last team-stream line, else the run's, else the step",
+        "const STEP_PERSON = {1: \"asha\", 2: \"asha\", 3: \"asha\", 4: \"asha\", 5: \"asha\", 7: \"nora\", 8: \"asha\"};      // whose step it is: planning, pricing, rulings and the workable check are the Client Lead's, Audit is Nora's; building (6) shows each builder's own live line",
+        "const liveSaid = (s, k) => { const ev = sTalk(s), x = k ? ev.filter(e => e.who === k).pop() : ev[ev.length - 1];      // between calls: the person's own last team-stream line (k \"\": the run's last line)",
+        "  return x ? `${PEOPLE[x.who].name} ${x.text}` : !k || STEP_PERSON[s.step] === k ? liveStep(s) : [\"running\", \"waiting\"].includes(s.status) ? \"Waiting for their turn\" : \"\"; };      // else the step, only on the person whose step it is (D456)",
         "function liveLines(s){",
         '  if (!s || s.status !== "running") return [];',
         '  if (s.run_id !== LIVE.run) Object.assign(LIVE, {run: s.run_id, last: {}, line: ""});      // another run in this tab: nothing of the last one',

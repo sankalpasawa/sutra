@@ -54,10 +54,11 @@ const E13_WORDS = JSON.parse(execFileSync(path.join(ROOT, "scripts", "py"), [pat
   {encoding: "utf8", cwd: ROOT}));
 // Every pair applied to the text of a value: the goldens are J2's, the page says "priced" and "pricing" instead of "ranked".
 const withE13 = value => JSON.parse(E13_WORDS.reduce((text, [from, to]) => text.split(from).join(to), JSON.stringify(value)));
-// E32 (D453): the crew's fixed sentences are gone; on the fixture state each teammate shows their last line of the team stream, else the run's last
-// one (Asha keeps her question line). J2's line, then the page's, written out here so the golden comparison still holds every crew line.
+// E32 (D453, D456): the crew's fixed sentences are gone; on the fixture state each teammate shows their own last line of the team stream, else
+// "Waiting for their turn" while the run is not over (Asha keeps her question line). J2's line, then the page's, written out here so the golden
+// comparison still holds every crew line.
 const NORA_LAST = "Nora checked everything on your list: all 5 good.";
-const E32_CREW = [["Finished 6 parts", "Mira finished item 5."], ["Nothing for this project", NORA_LAST], ["Checked the work 2 times", NORA_LAST]];
+const E32_CREW = [["Finished 6 parts", "Mira finished item 5."], ["Nothing for this project", "Waiting for their turn"], ["Checked the work 2 times", NORA_LAST]];
 const withE32 = value => JSON.parse(E32_CREW.reduce((text, [from, to]) => text.split(`<small>${from}</small>`).join(`<small>${to}</small>`), JSON.stringify(value)));
 
 // ----------------------------------------------------------------------------------------------------------------------
@@ -488,16 +489,24 @@ test("E32: the Map lights the live boxes and its chip says the newest line; betw
   assert.deepEqual(call(fresh, "mapChip(m)"), ["Is the site workable?", "running"]);      // nothing in the stream: the step
 });
 
-test("E32: the crew says what the live agents do, Asha and Nora included; the others keep their last line, never an empty one", () => {
+test("E32: the crew says what the live agents do, Asha and Nora included; the others keep their own last line, else wait for their turn", () => {
   const page = livePage(), crew = live => call(page, `(() => { const s = ${JSON.stringify(RUNNING(live))}; return sCrew(s, sModel(s)); })()`);
   const pick = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, [v.line, v.busy]]));
   const ASHA = "Reading brief.md", MIRA = "Reading src/a.py", NORA = "Reading .env (fake-token-0123456789)";      // as the tool line says it (R1-7: plain() would write "Reading.env")
-  assert.deepEqual(pick(crew(LIVEFIX)), {asha: [ASHA, true], mira: [MIRA, true], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, true]});
-  assert.deepEqual(pick(crew({})), {asha: [ASHA, false], mira: [MIRA, false], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, false]});
+  const WAIT = "Waiting for their turn";
+  assert.deepEqual(pick(crew(LIVEFIX)), {asha: [ASHA, true], mira: [MIRA, true], kabir: [WAIT, false], dev: [WAIT, false], nora: [NORA, true]});
+  assert.deepEqual(pick(crew({})), {asha: [ASHA, false], mira: [MIRA, false], kabir: [WAIT, false], dev: [WAIT, false], nora: [NORA, false]});
   const S = readJson(fixture("state.json")), T = call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`);
   assert.deepEqual([T.asha.ask, T.asha.line, T.mira.line, T.nora.line], [true, "Has a question for you", "Mira finished item 5.", NORA_LAST]);
   const none = {...S, studio: {...S.studio, stream: []}};
-  assert.equal(call(plain(), `(() => { const s = ${JSON.stringify(none)}; return sCrew(s, sModel(s)); })()`).kabir.line, "Is the site workable?");
+  assert.equal(call(plain(), `(() => { const s = ${JSON.stringify(none)}; return sCrew(s, sModel(s)); })()`).kabir.line, "Waiting for their turn");
+  // D456: a new run, nobody has said anything: the step shows only on the person whose step it is, not on all five
+  const first = {...RUNNING({}), step: 1, studio: {...S.studio, stream: []}}, F = call(plain(), `(() => { const s = ${JSON.stringify(first)}; return sCrew(s, sModel(s)); })()`);
+  assert.deepEqual(["asha", "mira", "kabir", "dev", "nora"].map(k => F[k].line), ["Enough information to work?", WAIT, WAIT, WAIT, WAIT]);
+  const audit = {...first, step: 7}, A = call(plain(), `(() => { const s = ${JSON.stringify(audit)}; return sCrew(s, sModel(s)); })()`);
+  assert.deepEqual([A.asha.line, A.nora.line, A.dev.line], [WAIT, "Audit checks result", WAIT]);
+  const over = {...S, status: "done", studio: {...S.studio, stream: []}};
+  assert.equal(call(plain(), `(() => { const s = ${JSON.stringify(over)}; return sCrew(s, sModel(s)); })()`).kabir.line, "", "a run that is over: no waiting line");
   const src = page.run("sCrew.toString()");
   for (const gone of ["Planning the parts", "Deciding what comes first", "Lining up who goes next", "Making sure each part is ready to start", "Talking it through with the team",
     "Keeping things on track", "Checks each part as it finishes", "Free for the next part", "Waiting for the plan", "Nothing for this project", "Hit a problem",
