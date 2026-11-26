@@ -474,11 +474,12 @@ test("E32: the Map lights the live boxes and its chip says the newest line; betw
   const page = livePage(), M = `{status: {state: "Running"}, nodes: [{id: "fn:adaptation", kind: "function", label: "Adaptation", status: "idle"},
     {id: "step:charter>site", kind: "engine", label: "Build", workflows: ["W-2"], status: "filed"}, {id: "fn:audit", kind: "function", label: "Audit", status: "idle"}]}`;
   page.run(`var m = ${M}`);
-  page.run(`CTX = ${JSON.stringify(RUNNING({adaptation: LIVEFIX.adaptation, "W-2": LIVEFIX["W-2"]}))}; mapLive(m)`);
-  assert.deepEqual(call(page, "m.nodes.map(n => [n.label, n.status])"), [["Adaptation", "running"], ["Build", "running"], ["Audit", "idle"]]);
+  page.run(`CTX = ${JSON.stringify(RUNNING({adaptation: LIVEFIX.adaptation, "W-2": LIVEFIX["W-2"]}))}`);
+  assert.deepEqual(call(page, "mapLive(m).nodes.map(n => [n.label, n.status])"), [["Adaptation", "running"], ["Build", "running"], ["Audit", "idle"]]);
+  assert.deepEqual(call(page, "m.nodes.map(n => n.status)"), ["idle", "filed", "idle"]);      // R1-6: a copy; the map itself is not changed
   assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);
-  page.run(`CTX = ${JSON.stringify(RUNNING({}))}; mapLive(m)`);
-  assert.deepEqual(call(page, "m.nodes.map(n => [n.status, 'st0' in n])"), [["idle", false], ["filed", false], ["idle", false]]);
+  page.run(`CTX = ${JSON.stringify(RUNNING({}))}`);
+  assert.deepEqual(call(page, "mapLive(m).nodes.map(n => n.status)"), ["idle", "filed", "idle"]);
   assert.deepEqual(call(page, "mapChip(m)"), [LINES["W-2"], "running"]);      // the last live line
   const fresh = livePage(), S = RUNNING({});
   fresh.run(`var m = ${M}; CTX = ${JSON.stringify(S)}`);
@@ -490,7 +491,7 @@ test("E32: the Map lights the live boxes and its chip says the newest line; betw
 test("E32: the crew says what the live agents do, Asha and Nora included; the others keep their last line, never an empty one", () => {
   const page = livePage(), crew = live => call(page, `(() => { const s = ${JSON.stringify(RUNNING(live))}; return sCrew(s, sModel(s)); })()`);
   const pick = T => Object.fromEntries(Object.entries(T).map(([k, v]) => [k, [v.line, v.busy]]));
-  const pl = x => call(page, `plain(${JSON.stringify(x)})`), ASHA = pl("Reading brief.md"), MIRA = pl("Reading src/a.py"), NORA = pl("Reading .env (fake-token-0123456789)");
+  const ASHA = "Reading brief.md", MIRA = "Reading src/a.py", NORA = "Reading .env (fake-token-0123456789)";      // as the tool line says it (R1-7: plain() would write "Reading.env")
   assert.deepEqual(pick(crew(LIVEFIX)), {asha: [ASHA, true], mira: [MIRA, true], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, true]});
   assert.deepEqual(pick(crew({})), {asha: [ASHA, false], mira: [MIRA, false], kabir: [NORA_LAST, false], dev: [NORA_LAST, false], nora: [NORA, false]});
   const S = readJson(fixture("state.json")), T = call(plain(), `(() => { const s = ${JSON.stringify(S)}; return sCrew(s, sModel(s)); })()`);

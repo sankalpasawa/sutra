@@ -161,8 +161,7 @@ class AgentLiveCapability(Capability):
         with self._lock:
             entry = self._agents.get(key)
             if entry is None:
-                entry = self._agents[key] = {"call": tag.call_no, "since": round(self._clock(), 3), "step": tag.step, "text": "", "tool": "",
-                                                    "tools": 0}
+                entry = self._agents[key] = {"call": tag.call_no, "since": round(self._clock(), 3), "step": tag.step, "text": "", "tool": "", "tools": 0}
             if isinstance(text, str):
                 entry["text"] = text                       # whole: snapshot() redacts, then cuts
             if isinstance(tool, str):
@@ -181,8 +180,7 @@ class AgentLiveCapability(Capability):
     def snapshot(self) -> dict:
         with self._lock:
             r = self._redact or (lambda t: t)
-            return {"schema": LIVE_SCHEMA, "agents": {name: {**entry, "text": r(entry["text"])[-LIVE_TAIL:], "tool": r(entry["tool"])[:TOOL_CHARS]}
-                                                      for name, entry in sorted(self._agents.items())}}
+            return {"schema": LIVE_SCHEMA, "agents": {n: {**e, "text": r(e["text"])[-LIVE_TAIL:], "tool": r(e["tool"])[:TOOL_CHARS]} for n, e in sorted(self._agents.items())}}
 
     def write_now(self) -> bool:
         """Replace the file with the agents' state now. False, touching nothing, when it is what the file already holds."""

@@ -158,15 +158,14 @@ _E23_OLD = ('{ const fl = d.createElement("link"); fl.rel = "stylesheet"; '
             'fl.href = "https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&display=swap"; '
             '(d.head || d.body).appendChild(fl); }')
 
-# E32b's anchor: sCrew from `const th` to the makers' loop (its fixed sentences); it keeps `qp`, the question line and the parked line's body
 SCREW_J2 = re.compile(r'  const th = s\.thinking.*?\n(  const qp = .*?\n)(  if \(open\)\{.*?\n).*?    if \(qp && qp\.person === k\)\{ const b = (.*?\n)'
                       r'.*?(?=  \["mira", "kabir", "dev", "nora"\]\.forEach)', re.S)
 SCREW = _lines(
     '  const open = needsYou(s).length > 0 && s.status !== "running" && !s.saved, t = {};',
     "  SKEYS.forEach(k => t[k] = {k, busy: false, ask: false, parts: M.parts.filter(p => p.person === k),      // E32 (D453): the last live what, else the last line of the team stream (theirs, else anyone's), else the step: never empty",
-    '    line: (s.status === "running" && plain(LIVE.last[k] || "")) || liveSaid(s, k)});',
+    '    line: (s.status === "running" && LIVE.last[k]) || liveSaid(s, k)});',
     r"\1\2  if (qp){ const m = t[qp.person], b = \3"
-    "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = plain(l.what); } });      // E32 (D453): what the live agents do, from agent_live.json",
+    "  liveLines(s).forEach(l => { if (l.p && !t[l.p].ask){ t[l.p].busy = true; t[l.p].line = l.what; } });      // E32 (D453): what the live agents do, from agent_live.json",
     "")
 PAGE_EDITS: tuple[Edit, ...] = (
     Edit("E1", STYLE_BLOCK, E1_NEW, 1),
@@ -329,29 +328,26 @@ PAGE_EDITS: tuple[Edit, ...] = (
     # written before D452 still carries `approved` and says what happened then (review R1-6)
     Edit("E31", '      + ` · ${r.approved ? "approved by you" : "not approved"}</span>',
          '      + ` · ${"approved" in r ? (r.approved ? "approved by you" : "not approved") : r.ran ? "ran automatically" : "did not start"}</span>', 1),
-    Edit("E32a", 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);', _lines(      # E32 (D453): replaces sNum/sCap (only the crew's fixed lines used them)
-        "// E32 (D453): who works now and what, from agent_live.json only. Tool lines may be shown; the agents' free text may not. LIVE: this page session's last lines",
-        'const LIVE = {last: {}, line: "", key: "", p: ""};',
+    Edit("E32a", 'const sNum = n => n === 1 ? "one part" : `${n} parts`, sCap = t => t.charAt(0).toUpperCase() + t.slice(1);', _lines(      # E32 (D453): who works now, from agent_live.json; tool lines may be shown, the agents' free text may not. Replaces sNum/sCap
+        'const LIVE = {last: {}, line: "", key: ""};',
         'const liveStep = (s, n) => String((s.steps || {})[n || s.step] || "").split(" ").slice(1).join(" ");      // a step\'s name without its code',
         "const liveSaid = (s, k) => { const ev = sTalk(s), x = ev.filter(e => e.who === k).pop() || ev[ev.length - 1]; return x ? `${PEOPLE[x.who].name} ${x.text}` : liveStep(s); };      // between calls: the person's last team-stream line, else the run's, else the step",
         "function liveLines(s){",
         '  if (!s || s.status !== "running") return [];',
         '  if (s.run_id !== LIVE.run) Object.assign(LIVE, {run: s.run_id, last: {}, line: ""});      // another run in this tab: nothing of the last one',
-        "  const parts = sModel(s).parts, rc = k => (typeof RawChat === \"object\" && RawChat.helpers.personOf(k)) || {};      // raw_chat.js PEOPLE: a function's person, else its role title",
+        "  const parts = sModel(s).parts;",
         "  return Object.entries(s.live || {}).sort((a, b) => (a[1].since || 0) - (b[1].since || 0)).map(([k, e]) => {",
-        "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, r = rc(k), named = r.role === k ? r.name : \"\",",
-        "      p = part.person || SKEYS.find(x => PEOPLE[x].name === named) || \"\", what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120),",
-        "      name = p ? PEOPLE[p].name : named || MAPLABEL.persona[k] || k;",
+        "    const part = parts.find(x => (x.workflows || []).includes(k)) || {}, r = typeof RawChat === \"object\" ? RawChat.helpers.personOf(k) : {},      // raw_chat.js PEOPLE: a function's person, else its role title",
+        "      named = r.role === k ? r.name : \"\", p = part.person || SKEYS.find(x => PEOPLE[x].name === named) || \"\",",
+        "      what = String(e.tool || part.name || liveStep(s, e.step)).slice(0, 120), name = p ? PEOPLE[p].name : named || MAPLABEL.persona[k] || k;",
         "    if (p) LIVE.last[p] = what;",
-        "    LIVE.line = what ? `${name}: ${what}` : name; LIVE.p = p;",
+        "    LIVE.line = what ? `${name}: ${what}` : name;",
         "    return {k, p, what, line: LIVE.line}; });",
         "}",
         'const liveTyping = s => { const L = liveLines(s).map(l => l.line), r = L.length ? L : s.status === "running" ? [LIVE.line || liveStep(s)] : [];',
         '  return r.length ? r.slice(0, 3).map(esc).join("<br>") + (r.length > 3 ? `<br>+${r.length - 3}` : "") : s.status === "waiting" ? "Your turn." : ""; };',
-        "function mapLive(m){      // a live agent's box shows running; it goes back to the map's own status when the agent stops",
-        '  const L = liveLines(CTX), on = n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k));',
-        '  (m.nodes || []).forEach(n => { if (on(n)){ if (!("st0" in n)) n.st0 = n.status; n.status = "running"; } else if ("st0" in n){ n.status = n.st0; delete n.st0; } });',
-        "}"), 1),
+        "const mapLive = m => { const L = liveLines(CTX);      // a copy of the map: a live agent's box shows running",
+        '  return {...m, nodes: (m.nodes || []).map(n => L.some(l => n.kind === "function" ? n.id === "fn:" + l.k : n.kind === "engine" && (n.workflows || []).includes(l.k)) ? {...n, status: "running"} : n)}; };'), 1),
     Edit("E32b", SCREW_J2, SCREW, 1),      # the crew: a live agent's person is busy with its what; the fixed sentences and sNum/sCap (only they used them) go
     Edit("E32c", '    $("typing").innerHTML = s.thinking ? `<b style="color:${col(s.thinking)}">${esc(who(s.thinking)[0])}</b> is working…`\n'
          '      : s.status === "running" ? "Working…" : s.status === "waiting" ? "Your turn." : "";\n',
@@ -359,8 +355,8 @@ PAGE_EDITS: tuple[Edit, ...] = (
          '    const lk = liveLines(s).map(l => l.line).join("\\n"); if (lk !== LIVE.key){ LIVE.key = lk; paintMap(); }      // the Map follows the live lines\n', 1),
     Edit("E32d", "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n",
          "function mapChip(m){\n  const st = m.status || {}, ns = m.nodes || [];\n"
-         '  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveSaid(CTX, LIVE.p); if (t) return [t, "running"]; }      // E32 (D453)\n', 1),
-    Edit("E32e", "function paintMap(){ paint(", "function paintMap(){ mapLive(MAP); paint(", 1),
+         '  if (CTX && CTX.status === "running" && !CTX.paused){ const L = liveLines(CTX), t = L.length ? L[L.length - 1].line : LIVE.line || liveSaid(CTX, ""); if (t) return [t, "running"]; }      // E32 (D453)\n', 1),
+    Edit("E32e", 'function paintMap(){ paint($("pane-map"), renderMap(MAP));', 'function paintMap(){ paint($("pane-map"), renderMap(mapLive(MAP)));', 1),
     Edit("E32f", "<script>\nconst WHO = {user:", '<script id="raw_chat-js" src="/ui/js/raw_chat.js"></script>\n<script>\nconst WHO = {user:', 1),      # names on the first poll; dept_ext.js skips its own load (that id)
 )
 
