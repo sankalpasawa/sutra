@@ -2101,17 +2101,17 @@
  },
  {
   "id": "D434",
-  "label": "failed dry run goes back to the build; only Run or Don't run answers (P31, E28)",
+  "label": "failed dry run goes back to the build; only Run or Don't run answers (P31, E28) (superseded)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
   "id": "D435",
-  "label": "dry run always network-fenced, or not run (P32)",
+  "label": "dry run always network-fenced, or not run (P32) (superseded)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
   "id": "D436",
-  "label": "Audit reads the real run's output; exit 0 alone never passes (P33)",
+  "label": "Audit reads the real run's output; exit 0 alone never passes (P33) (amended by D452)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
@@ -2121,7 +2121,7 @@
  },
  {
   "id": "D438",
-  "label": "real run states expect; a dry run unlike it, or writing a read folder, goes back (P35)",
+  "label": "real run states expect; a dry run unlike it, or writing a read folder, goes back (P35) (amended by D452)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
@@ -2136,17 +2136,17 @@
  },
  {
   "id": "D446",
-  "label": "scripts get an allowlisted env + only the plan's settings; secrets by path (P41)",
+  "label": "scripts get an allowlisted env + only the plan's settings; secrets by path (P41) (amended by D452)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
   "id": "D447",
-  "label": "a built script's packages: their own environment, installed only after RUN <code> (P42)",
+  "label": "a built script's packages: their own environment, installed only after RUN <code> (P42) (superseded in part)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
   "id": "D448",
-  "label": "an answer never confirms a real-run item; only the Requester's own pick names a folder, named whole (P43; P31, P41 amended)",
+  "label": "an answer never confirms a real-run item; only the Requester's own pick names a folder, named whole (P43; P31, P41 amended) (superseded in part)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {
@@ -2156,7 +2156,7 @@
  },
  {
   "id": "D449",
-  "label": "a real run reaches only the hosts the Requester named, after Run; the dry run stays offline (P44, E29)",
+  "label": "a real run reaches only the hosts the Requester named, after Run; the dry run stays offline (P44, E29) (superseded)",
   "anchor": "band:DEPARTMENT RUNTIME"
  },
  {

@@ -10,7 +10,8 @@ What it does, in this order, and nothing else:
 
   1. reads the J2 files from `--source`, an extraction of `prototypes/j2` at ONE commit (a plain folder, so an edited working
      tree, a `.pyc` or a stray file is never vendored), with `--commit` naming the commit it was taken from;
-  2. copies the 19 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 to P19; no P6, no P13) as exact
+  2. copies the 19 code modules and applies the numbered patches (P1 to P5, P7 to P12, P14 to P19 and later; no P6, no P13,
+     no P32 or P44, retired by D452) as exact
      text edits: every edit names its old text and how often it must occur, so a J2 change under an anchor stops the run
      instead of producing a silently different file (P1 is a counted rule over every import line, see `apply_p1`; P15 is a
      data patch: see `scrub_seed_index`);
@@ -1972,7 +1973,7 @@ def mock_item_check(out):
     return {"type": "file-exists", "target": PAGE_FILE, "expect": True}
 '''),
     Edit("P30", "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
-''', r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+''', r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run exited 0 and matched its expect (D452)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
 '''),
     Edit("P30", "j2.py", r'''            "rules": ["No invented facts"], "done_when": items, "core": [True] * len(items), "item_kinds": kinds,
@@ -2720,9 +2721,9 @@ def env_missing(env):
 ''', r'''            json.dump(sandbox_settings(copy, (env or {}).get("reads") or ()), f)
         run_argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(as_run)] if cmd else as_run
 '''),
-    Edit("P42", "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+    Edit("P42", "j2.py", r'''        self.real_runs_done = {}     # step 7: workflow id -> True when its real run exited 0 and matched its expect (D452)
 ''', r'''        self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_runs_done = {}     # step 7: workflow id -> True when its real run exited 0 and matched its expect (D452)
 '''),
     Edit("P42", "j2.py", r'''
     def _real_run_note(self):
@@ -3279,6 +3280,9 @@ def sandbox_rerun(folder, runner, target, timeout):
 '''),
     Edit("P46", "artifacts/real_run.md", r''' [the form's runner, then the script and its arguments, which pass the folder and every folder in reads, each exactly as written below]''', r''' [the form's runner, then the script and its arguments]'''),
     Edit("P46", "artifacts/real_run.md", r''' The script takes its folders only from those arguments, never written into a file: code first runs it on copies by passing the copies' paths. Code checks it, shows the exact command to the Requester and runs it only after the Requester's exact approval, once, and keeps a receipt.''', r''' Code checks it, runs it once when the rest is workable, and keeps a receipt.'''),
+    Edit("P46", "j2.py", r'''        receipt yet. A builder never meets them; the real run's receipt does, after the Requester's approval."""
+''', r'''        receipt yet. A builder never meets them; the real run's receipt does (P46, D452: unasked)."""
+'''),
     # ---- P46 (D452, moved from P44): the deliverables planner's replies that were not JSON are kept in deliverables.json
     # (`unparsed`, each clipped to 20000 characters) with one system line; the plan and the stop are J2's
     Edit("P46", "j2.py", r'''                                     mocks=j2_realization.deliverable_mocks(goal, offline))
@@ -3743,7 +3747,7 @@ def render_vendored_md(commit: str, rows, ranges) -> str:
         "frozen at `cut-off/2026-11-17` and the app is the product, so a recorded patch may change what the engine asks the model; the "
         "prompt goldens are recorded from the engine with its patches applied): P24 changes Priority's reply format, P25 the raise "
         "question's text, and P30 Identity's intake and every builder's reply format and brief. There is no P6 (the design's table skips it) and no "
-        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) sends a failed dry run back to the build and takes only RUN <code> or Don't run as the real-run answer; P32 (D435) runs the dry run only inside the sandbox runtime, never with network; P33 (D436) has Audit read an approved real run's output against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), and sends a dry run that differs from it, or writes into a folder it may only read, back to the build. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed only after RUN <code>, and runs its test, dry run and real run with that python. P43 (D448) keeps an answer from confirming a real-run item, planned or not yet, and counts the Requester's own pick of an option (never Decide for me's) as their answer with the option's full text. P44 (D449) lets a real run name the internet hosts it reaches, dry-runs a stated offline command, and grants the hosts only to the approved run. "
+        "P13 (retired in sync 4, D140: its code is Sutra's own `engine/runlist.py`); P20 is reserved for a late-judge switch (D145, D162, D180); P21 (D245) keeps the host's own run files out of a builder's writes outside its folder; P22 (D246) refuses the workflow without a real run that covers a real run's item, and stops the cycle on the same validator rejection twice in a row; P23 (D247) makes `ended_workable` true only for a clean \"Done:\" end; P24 (D250) makes Priority's move a workflow's id and its envelope; P25 (D251) takes the budget cap only from J2_BUDGET_CAP and keeps every raise the Requester's own. P26 (D421, D422) is dollar mode (`J2_USD_BUDGET`): the engine sums each run's API price.  P27 lists only files, never folders, for a type's file pattern (main `c9d4e662`). P28 (D431) stops the cycle on the same build failure twice in a row, across workflows; P29 (D431) never offers or applies a \"Leave out\" that leaves nothing to build while nothing is built, and makes an audit taken with nothing built never workable; P30 (D433) gives every done-when item a runnable check and a status its builder sets, and ends \"Done:\" only when every item is built and passes; P31 (D434) keeps a real-run folder written `~/x` and, amended in D448, names a path only whole (its question and dry-run failure are gone, D452); P32 (D435, the dry run inside the sandbox runtime) is retired by D452, as P13 was; P33 (D436) has Audit read a real run's output and what it did to its folder against the brief, so exit 0 alone never passes an item; P34 (D437) removes the Claude CLI's `.claude` folder from a builder's output folder after every tools call and never copies it into `site/`; P35 (D438) makes a real run state what it creates, changes and deletes (`expect`), compared, since D452, with the real run's own diff of its folder. P41 (D446) gives every script a clean environment from an allowlist plus what its plan states. P42 (D447) gives a build with a requirements.txt an environment of its own (Sutra's `engine/runenv.py`), installed with no question since D452, and runs its test and real run with that python. P43 (D448) counts the Requester's own pick of an option (never Decide for me's) as their answer with the option's full text. P44 (D449, a host question and an offline dry run) is retired by D452, as P13 was; its `unparsed` diagnostic moved to P46. P46 (D452) runs a planned real run once, unasked, with no dry run, checks `expect` against its own diff, lets the planner list its hosts (syntax only), and never ends a run \"Done:\" while a required real run has not passed. "
         "Sync 5 (D160 to D163): the pin moved to the tag `cut-off/2026-11-12`; the types are vendored as data (`conditions/` and "
         "`templates/` as whole trees, D161); P1 is a counted rule, P7, P8, P9, P12 and P14 were repaired, P2 gained a third edit, "
         "P17 and P18 are new (D162). "

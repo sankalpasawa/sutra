@@ -3787,7 +3787,7 @@ class J2Run:
         self.send_confirm = None     # J2_SEND_MODE=live: the Requester's answer (True/False) to "send real emails?", asked once a run
         self.real_run_why = {}       # P46 (D452): workflow id -> why its real run did not pass (FR-40)
         self.env_why = {}            # P42 (D447): requirements.txt hash -> why its environment was not made (declined, the install failed)
-        self.real_runs_done = {}     # step 7: workflow id -> True when its real run was approved and exited 0 (its receipt)
+        self.real_runs_done = {}     # step 7: workflow id -> True when its real run exited 0 and matched its expect (D452)
         self.real_run_item_ok = {}     # P30 (D433): item text -> Audit passed that item on its real run's output (P33 fills it)
         self.open_docs = []          # documents the Requester accepted as they were, with what was still not right
         self.given = {}              # workflow id -> {"edges": [{atom, why}], "whole": bool}: what its builder's prompt held (atom/1)
@@ -5846,7 +5846,7 @@ class J2Run:
 
     def _real_run_items(self, pending=False):
         """Step 7: the done-when items (texts) planned real runs check ("checks"); pending: only those whose run has no
-        receipt yet. A builder never meets them; the real run's receipt does, after the Requester's approval."""
+        receipt yet. A builder never meets them; the real run's receipt does (P46, D452: unasked)."""
         at, crit = self._item_at(), (self.goal or {}).get("done_when") or []
         ran = {n for w in self.workflows if w.get("real_run") and w["id"] in self.real_runs_done
                for n in w["real_run"].get("checks") or []} if pending else set()      # P31 (D434): any receipt decides it (a replacement)

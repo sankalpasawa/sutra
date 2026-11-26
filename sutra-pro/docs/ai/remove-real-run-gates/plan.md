@@ -127,7 +127,7 @@ PIN=ee659fb54aec75bf7f5139516791aee20a0474fa
   - Done when: regenerate; vendor check ok; patch tests and vendor tests pass
   - Covers: FR-22, FR-31, FR-32, FR-33, FR-34
 
-- [ ] T11: Records: superseded and amended decisions, VENDORED intro, stale comments
+- [x] T11: Records: superseded and amended decisions, VENDORED intro, stale comments
   - Files: `docs/DECISIONS.md`, `docs/diagram/decisions.json`, `scripts/vendor_j2.py` (the intro text at :3825 and the docstring at :13), `sutra_app/engine/VENDORED.md`, `tests/engine/test_engine_vendor.py` (docstring at :170-181)
   - Change: append `- Superseded by D452 (2026-11-26): ...` to D434, D435, D449, and to D448 (real-run confirmation part) and D447 (the approval part); an amend line to D436 (Audit reads the real diff), D438 (`expect` checked after the run), D446 (no placeholders). No earlier text deleted. decisions.json labels "(superseded)" / "(amended by D452)". The intro paragraph: P32 and P44 retired by D452 (as P13), P31/P33/P35/P41/P42/P43 described as they now are, P46 added.
   - Tests: none new.
