@@ -7,7 +7,7 @@
      ResultView.realRun(s, runs)         main-result step 1, from the real_run receipt rows (/api/artifacts/groups `real_runs`): each
                                          workflow's last row, in plan order; the last of them with a `run_output` link (`run_output/<id>.json`)
                                          and a non-empty `result` (a path in the user's folder, resolved by the engine, never one of the run's
-                                         outputs) gives {workflow, result, link}; else null. P45, not built yet. Only those two keys of the row
+                                         outputs) gives {workflow, result, link}; else null (P45, D452). Only those two keys of the row
                                          are read: never `output` (the stdout+stderr tail), `dry_run.*` or `expect`.
      ResultView.named(s)                 main-result step 2: the output type's entry file (`entry_file`, else `file`) when it is one concrete
                                          file, not a glob such as `<name>/*`; else ""
@@ -22,6 +22,8 @@
      ResultView.jsonTable(text)          the same for a JSON array of objects; null otherwise
      ResultView.label(s, tab, main)      the address bar text for a tab ("result", "files", "team", "file:<path>")
      ResultView.team(html, s, rows)      the page's "How it was made" HTML with finished cards decorated (T3; see team() below)
+     ResultView.record(rec, esc)         P45 (D452): the HTML of a real run's record (run-output/1, the file behind `link`): the main result's
+                                         text, then folded "What changed in your folder" and "What the script printed"; "" for anything else
      ResultView.WORDS                    the wording of a non-page run (no site, page or website)
      ResultView.adopt(root)              on a team page: replaces the page's sViews (tabs Result, Files, How it was made; each file in the viewer
                                          for its type; #rvpane in #sout for text, code, tables and lists, the page's sandboxed frame for pages,
@@ -43,6 +45,12 @@
     noFiles: "This run produced no files.",
     cantShow: "This file can't be shown here (it may be over 2 MB).",
     inFolder: "This result is in your folder; it shows here once the run's output is recorded.",
+    notLeft: "The run did not leave this file.",
+    tooBig: "This file is in your folder; it is too large to show here, or it is not text.",
+    changed: "What changed in your folder",
+    moreFiles: "There are more files than this list shows.",
+    printed: "What the script printed",
+    errors: "Errors and warnings it printed:",
     checking: "Checking the work",
     partDrawer: "The part, in the result.",
     finished: "Finished.",
@@ -270,6 +278,38 @@
     return numbered(G, f.text);
   }
 
+  // P45 (D452): what an approved real run left, from its record `run_output/<receipt id>.json` (schema run-output/1). The run's artifact
+  // list names the record, so /api/artifact serves it. The result file's text, then folded: the folder changes and what it printed.
+  function record(rec, esc) {
+    if (!rec || typeof rec !== "object" || rec.schema !== "run-output/1") return "";
+    const m = rec.main_result, f = rec.files || {}, list = k => (Array.isArray(f[k]) ? f[k] : []).map(x => str(x && x.path)).filter(Boolean);
+    const p = t => `<p class="rvnote">${esc(t)}</p>`, n = (x, w) => `${x.toLocaleString("en-US")} ${w}`;
+    let out = !m ? "" : !m.exists ? p(WORDS.notLeft) : typeof m.text !== "string" ? p(WORDS.tooBig)
+      : `<pre class="rvtext">${esc(m.text)}</pre>`;
+    const made = list("created"), changed = list("changed"), gone = list("deleted");
+    if (made.length + changed.length + gone.length) {
+      const part = (w, xs) => xs.length ? `<p class="rvnote">${w}</p><ul class="rvfiles">${xs.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+      out += `<details class="rvmore"><summary>${WORDS.changed} (${[made.length && n(made.length, "created"), changed.length && n(changed.length, "changed"),
+        gone.length && n(gone.length, "deleted")].filter(Boolean).join(", ")})</summary>${part("Created", made)}${part("Changed", changed)}${part("Deleted", gone)}`
+        + `${rec.files_truncated ? p(WORDS.moreFiles) : ""}</details>`;
+    }
+    const tail = k => str(rec[k] && rec[k].tail), cut = k => rec[k] && rec[k].truncated ? p(`The last lines of ${n(rec[k].lines_total || 0, "lines")}.`) : "";
+    if (tail("stdout") || tail("stderr")) {
+      out += `<details class="rvmore"${m && m.exists && typeof m.text === "string" ? "" : " open"}><summary>${WORDS.printed}</summary>`
+        + (tail("stdout") ? `<pre class="rvtext">${esc(tail("stdout"))}</pre>${cut("stdout")}` : "")
+        + (tail("stderr") ? `<p class="rvnote">${WORDS.errors}</p><pre class="rvtext">${esc(tail("stderr"))}</pre>${cut("stderr")}` : "") + "</details>";
+    }
+    return out;
+  }
+
+  function realRunBody(root, G, main) {
+    const f = fileText(root, G, {file: main.link});
+    if (f.loading) return note(G, "Opening…");
+    let rec = null;
+    try { rec = f.failed ? null : JSON.parse(f.text); } catch (e) { rec = null; }
+    return record(rec, G.esc) || note(G, WORDS.inFolder);      // no record to read: the reason, as before
+  }
+
   // What the stage shows for a view: {site}, {frame: url, head}, or {pane: html}. Never a /site/ URL on a non-page run (FR-21).
   function stage(root, G, s, v, rows, main) {
     const head = (row, back) => `<div class="rvhead">${back ? `<button type="button" class="rvback" data-view="files">${WORDS.allFiles}</button>` : ""}<b>${G.esc(row.file)}</b>${dl(G, row)}</div>`;
@@ -284,7 +324,7 @@
     if (isPageRun(s) && !(s.docset || []).length && s.versions > 0) return {site: true};      // a website: its site, live while it builds (Q-2)
     if (!done(s)) return {pane: note(G, WORDS.soon)};
     if (main.kind === "file") return one(main.row, false);
-    if (main.kind === "real-run") return {pane: `<div class="rvhead"><b>${G.esc(main.result)}</b></div>` + note(G, WORDS.inFolder)};      // ponytail: P45's route is not built; show its text once it is
+    if (main.kind === "real-run") return {pane: `<div class="rvhead"><b>${G.esc(main.result)}</b></div>` + realRunBody(root, G, main)};
     return {pane: main.kind === "list" ? fileList(G, rows) : note(G, WORDS.noFiles)};
   }
 
@@ -404,7 +444,7 @@
     return true;
   }
 
-  const ResultView = {MAX_ROWS, WORDS, isPageRun, done, realRun, named, mainResult, viewerFor, summaryOf, filesOfPart, table, jsonTable, label,
+  const ResultView = {MAX_ROWS, WORDS, isPageRun, done, realRun, record, named, mainResult, viewerFor, summaryOf, filesOfPart, table, jsonTable, label,
     team, artTitle, adopt};
   if (typeof module === "object" && module !== null && module.exports) module.exports = ResultView;
   else { root.ResultView = ResultView; adopt(root); }

@@ -1624,8 +1624,8 @@ def decide_for_me():
     """Decide for me (J2Run.auto; POST /api/settings; J2_DECIDE_FOR_ME=1): on from the start, J2.a is answered with sensible choices listed
     as assumptions and a conflict with the simpler option, each answer posted as the Requester's own message flagged auto (with its plain
     label), and the run ends Done with no question left; switched on while a question waits, that question is answered at once; a real send
-    (send_confirm) always waits for the Requester; after J2_AUTO_CAP answers the next question waits too; a second limit question takes
-    "finish as it is"; the open question carries the option Decide for me would take (suggested), on or off; a saved run reads the setting and
+    (send_confirm) always waits for the Requester; after J2_AUTO_CAP answers the next question waits too; a limit question always waits (its
+    suggestion: keep going, and "finish as it is" the second time); the open question carries the option Decide for me would take (suggested), on or off; a saved run reads the setting and
     its auto answers back; the server's /api/settings sets it on the live run and keeps it across a reset."""
     import threading
     import urllib.request
@@ -1679,11 +1679,13 @@ def decide_for_me():
         r4.paused = {"kind": "limit", "questions": [{"question": "q", "options": ["Add 30 work credits and keep going", "Leave out item 7",
                                                                                    "Finish as it is: you get the site as it is now"]}], "to": "identity",
                      "handoff": {"choices": ["continue", "drop", "ship"]}, "msg": 1}
-        assert r4._auto_pick()[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "the first limit keeps going, a second one finishes as it is"
+        # a limit question (keep going, leave out, finish) is the Requester's own: never answered; the suggestion is still shown
+        assert r4._auto_pick() is None and "limit" in j2.AUTO_ASK, "a limit question waits for the Requester"
+        assert r4._auto_choice(r4.paused)[2] == 3 and j2.J2Run()._auto_choice({**r4.paused})[2] == 1, "suggested: the first limit keeps going, a second one finishes as it is"
         r4.paused["questions"][0]["options"] = ["Keep going: you get more of the missing parts built",       # live run j2-20261109-231951: the
                                                 "Leave out item 7: you get the site without it. The form stays as it is, still failing",   # leave-out option
                                                 "Finish as it is: you get the site as it is now"]                 # also says "as it is"
-        assert r4._auto_pick()[2] == 3, "finish as it is, not the leave-out option that also says as it is"
+        assert r4._auto_pick() is None and r4._auto_choice(r4.paused)[2] == 3, "suggested: finish as it is, not the leave-out option that also says as it is"
         assert r4._auto_choice({"kind": "approval", "questions": [], "handoff": {}})[0] == "Yes, approve it."
         # the server: /api/settings on the live run, kept across Start over
         srv = j2_server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), j2_server.Handler)
@@ -1704,7 +1706,7 @@ def decide_for_me():
     finally:
         os.environ["J2_FIXES"] = old if old is not None else "0"
     print("decide for me: J2.a answered with sensible choices, a conflict with the simpler option, run Done, answers flagged and logged, switched on "
-          "while waiting answers at once, a real send waits, the cap, a second limit finishes as it is, suggested on or off, saved runs read it back, "
+          "while waiting answers at once, a real send waits, the cap, a limit question waits, suggested on or off, saved runs read it back, "
           "/api/settings kept across a reset ok")
 
 

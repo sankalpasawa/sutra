@@ -23,6 +23,7 @@ written, after a clean install.
 """
 import ast
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -30,6 +31,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 
@@ -118,7 +120,8 @@ def env_python(env_dir):
 
 
 def plan(folder):
-    """None when the built folder has no requirements.txt. Else what code needs to know before it asks or runs:
+    """None when the built folder has no requirements.txt, or one that names no package (only blank lines and
+    comments): nothing to install, so no environment and no question. Else what code needs to know before it asks or runs:
     {"hash" (sha256 of the file), "packages", "bad" (lines for the builder to fix), "requirements" (its path), "dir"
     (the environment's folder), "ready" (installed and recorded), "problem" (why it can't be made: no interpreter,
     bad lines; "" when it can), and, once ready, "python", "python_version", "installed" ({name: version}) and
@@ -131,6 +134,8 @@ def plan(folder):
         return None
     digest = hashlib.sha256(raw).hexdigest()
     good, bad = packages(raw.decode("utf-8", "replace"))
+    if not good and not bad:
+        return None
     env_dir = os.path.join(data_dir(), "envs", digest[:24])
     out = {"hash": digest, "packages": good, "bad": bad, "requirements": path, "dir": env_dir, "ready": False,
            "problem": ""}
@@ -248,6 +253,44 @@ def top_imports(path):
         elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
             names.append(node.module.split(".")[0])
     return list(dict.fromkeys(names))
+
+
+def in_stdlib(name):
+    """A top-level module name is part of the standard library of the Python the engine runs on."""
+    names = getattr(sys, "stdlib_module_names", None)      # Python 3.10 and later
+    if names is not None:
+        return name in names
+    if name in sys.builtin_module_names:
+        return True
+    try:
+        origin = getattr(importlib.util.find_spec(name), "origin", None) or ""
+    except (ImportError, ValueError):
+        return False
+    lib = sysconfig.get_paths()["stdlib"]
+    return origin in ("built-in", "frozen") or (origin.startswith(lib + os.sep) and "site-packages" not in origin)
+
+
+def beyond_stdlib(script, folder):
+    """The modules a script needs that are neither Python's standard library nor a module of the built folder: its
+    top-level imports, and those of the folder's own modules it imports, followed. [] means it runs without any
+    installed package. Only read, never imported or run. None when the script can't be read."""
+    folder, todo, seen, out = os.path.realpath(folder), [os.path.realpath(script)], set(), []
+    if not os.path.isfile(todo[0]):
+        return None
+    while todo:
+        path = todo.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        for name in top_imports(path):
+            own = [p for base in (os.path.dirname(path), folder) for p in (os.path.join(base, name + ".py"),
+                                                                           os.path.join(base, name, "__init__.py"))
+                   if os.path.isfile(p)]
+            if own:
+                todo.append(os.path.realpath(own[0]))
+            elif not in_stdlib(name) and name not in out:
+                out.append(name)
+    return out
 
 
 def script_of(command, folder):

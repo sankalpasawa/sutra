@@ -166,7 +166,7 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p44_without_p6_p13_p20_and_sut19s_p36_to_p40():
+def test_the_patch_table_has_p1_to_p45_without_p6_p13_p20_and_sut19s_p36_to_p40():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
     Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422); P27 lists only files for a type's pattern (main c9d4e662); P28 stops the cycle on the same build failure twice in a
@@ -178,17 +178,18 @@ def test_the_patch_table_has_p1_to_p44_without_p6_p13_p20_and_sut19s_p36_to_p40(
     the engine runs a clean environment from an allowlist plus what its plan states, with secrets by file path (D446); P42 gives a build with a requirements.txt an
     environment of its own, installed only after RUN <code> (D447); P43 keeps an answer from confirming a real-run item and
     counts a picked option's text (D448); P44 lets a real run name the internet hosts the Requester named, dry-runs a
-    stated offline command and grants the hosts only to the approved run (D449)."""
+    stated offline command and grants the hosts only to the approved run (D449); P45 treats an agent stage as a program, keeps Decide for me away from real runs and installs,
+    records an approved real run's output and gives folder checks one path form (D452)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 45) if n not in (6, 13, 20, 36, 37, 38, 39, 40)]
+    assert ids == [f"P{n}" for n in range(1, 46) if n not in (6, 13, 20, 36, 37, 38, 39, 40)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
 
 
 def test_a_patch_listed_for_a_file_leaves_its_mark_in_it():
-    marks = {"P44": ("j2.py", "def real_run_hosts_problems"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def dry_secret_files"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P32": ("j2.py", "results may differ."), "P31": ("j2.py", "def _dry_run_failed"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
+    marks = {"P45": ("j2.py", "def run_output_record"), "P44": ("j2.py", "def real_run_hosts_problems"), "P42": ("j2.py", "def _identity_env_install"), "P41": ("j2.py", "def dry_secret_files"), "P35": ("j2.py", "def expect_mismatch"), "P34": ("j2.py", "ignore=shutil.ignore_patterns(\".claude\"))"), "P33": ("j2.py", "def _judge_real_run"), "P32": ("j2.py", "results may differ."), "P31": ("j2.py", "def _dry_run_failed"), "P30": ("j2.py", "def _item_check_gate"), "P29": ("j2.py", "P29 (D431)"), "P28": ("j2.py", "def build_failure"), "P27": ("j2_artifacts.py", "key=_num) if os.path.isfile(p)]"), "P26": ("j2.py", "def _count_usd"), "P25": ("j2.py", "def budget_room"), "P24": ("j2.py", "PRICE_FMT = "), "P23": ("j2.py", "P23 (D247)"), "P22": ("j2.py", "def _repeat_stop"), "P21": ("j2.py", "from .rehydrate import HOST_FILES"), "P19": ("j2.py", "review_enabled"), "P3": ("j2.py", "run_dir=None"), "P4": ("j2.py", "def apply_override"), "P9": ("j2.py", "system_addendum"),
              "P10": ("j2_template_lib.py", "def _mark_run_template_used"), "P11": ("j2.py", "def rehydrate"),
              "P14": ("j2.py", '(self.out or {}).get("single")'),
              "P17": ("j2_types.py", "def _create"), "P18": ("j2_types.py", "def register"),

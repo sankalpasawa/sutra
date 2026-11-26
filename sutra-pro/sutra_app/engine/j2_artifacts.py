@@ -39,6 +39,18 @@ def load_types(run=None):
     return d
 
 
+def run_output_type():
+    """P45 (D452): the record type of a real run's output (j2_own_runs.json run_output, beside this file): one row of kind
+    "run_output" per record file in a run's artifacts.json. None when the data file is not there."""
+    try:
+        with open(os.path.join(HERE, "j2_own_runs.json"), encoding="utf-8") as f:
+            c = json.load(f)["run_output"]
+    except (OSError, ValueError, KeyError):
+        return None
+    return {"name": c["name"], "kind": c["kind"], "label": c["label"], "tag": c["tag"], "color": c["color"], "form": "data",
+            "file": c["folder"] + "/*.json", "deliverable": False}
+
+
 def page_types(types=None):
     """The names of the types of the page form (types.json): what the Map and the groups call the site."""
     return {t["name"] for t in (types or load_types())["types"] if t.get("kind") == "type" and t.get("form") == "page"}
@@ -131,6 +143,9 @@ def rows(d, types=None):
     types = types or load_types(d)
     if not d or not os.path.isdir(d):
         return []
+    ro = run_output_type()      # P45 (D452): what approved real runs produced: listed here only, never a type an agent can choose
+    if ro and ro["name"] not in {t["name"] for t in types["types"]}:
+        types = {**types, "types": [*types["types"], ro]}
     atoms, docs, out = _atoms(d), _read(d, "documents.json", {}) or {}, []
     board = _board(d, atoms)
     # page types share the page file: a run that chose one shows that one only
@@ -757,6 +772,10 @@ def _folder_row(d, tt, files, folder, by):
             "files": [{"name": rel(f), "file": f, "made_by": wf(f)} for f in files]}
 
 
+RUN_OUTPUT_KEYS = ("id", "run_output", "result", "created", "changed", "deleted", "files_truncated", "run_output_counts")      # P45 (D452): what an
+# approved real run's receipt row gains (run_output_record): the views read these, never "output", dry_run or expect
+
+
 def _deliverable_extras(d):
     """What every deliverable row's Summary shows: the necessary conditions (conditions.json, the sandboxed test's result
     among them when the form has one), the warnings (an advisory check's receipt, a validator guess in autofix.json) and
@@ -774,6 +793,7 @@ def _deliverable_extras(d):
             elif isinstance(r, dict) and r.get("type") == "real_run":      # step 7: a build run for real, or refused
                 runs.append({k: r.get(k) for k in ("workflow", "command", "folder", "reads", "approved", "ran", "exit",
                                                    "evidence", "t")})
+                runs[-1].update({k: r[k] for k in RUN_OUTPUT_KEYS if k in r})      # P45 (D452): only on a row that has them
     last = {}
     for r in recs:      # receipts are in run order: the last one for an atom's check is its final attempt
         last[(r.get("atom"), r.get("check") or r.get("type"))] = r
