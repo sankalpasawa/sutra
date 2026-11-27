@@ -166,7 +166,7 @@ def test_every_vendored_file_is_listed_and_every_listed_file_exists():
     assert on_disk == listed
 
 
-def test_the_patch_table_has_p1_to_p47_without_p6_p13_p20_p32_sut19s_p36_to_p40_p44_and_p45():
+def test_the_patch_table_has_p1_to_p48_without_p6_p13_p20_p32_sut19s_p36_to_p40_p44_and_p45():
     """P6 never existed; P13 (the run list and the change list) was retired into engine/runlist.py in sync 4 (D140); P17 and
     P18 are new in sync 5 (D162); P19 is new in sync 6 (D179); P20 is only reserved; P21 is new with builder tools live (D245); P22 with the real-run cover rule (D246); P23 makes ended_workable true only for a clean end (D247); P24 makes
     Priority's move a workflow's id and its envelope (D250); P25 takes the budget cap only from J2_BUDGET_CAP (D251); P26 is dollar mode (D421, D422); P27 lists only files for a type's pattern (main c9d4e662); P28 stops the cycle on the same build failure twice in a
@@ -180,10 +180,11 @@ def test_the_patch_table_has_p1_to_p47_without_p6_p13_p20_p32_sut19s_p36_to_p40_
     counts a picked option's text (D448); P44 (D449, hosts the Requester named, an offline dry run) is retired by D452, which
     keeps its `unparsed` diagnostic in P46; P45 is another developer's, not on this base yet; P46 runs a planned real run once,
     unasked, with no dry run, checks expect against its own diff, and lets the planner list its hosts, checked for their syntax
-    only (D452); P47 launches the sandbox command `llm.sandbox_cmd()` gives, the bundled srt (D462)."""
+    only (D452); P47 launches the sandbox command `llm.sandbox_cmd()` gives, the bundled srt (D462); P48 runs a real run in its plan's folder with the runner's {target}
+    made absolute (D463)."""
     table = MD.read_text(encoding="utf-8").split("## Files")[0]
     ids = re.findall(r"^\| (P\d+) \|", table, re.M)
-    assert ids == [f"P{n}" for n in range(1, 48) if n not in (6, 13, 20, 32, 36, 37, 38, 39, 40, 44, 45)]
+    assert ids == [f"P{n}" for n in range(1, 49) if n not in (6, 13, 20, 32, 36, 37, 38, 39, 40, 44, 45)]
     assert "P20" not in ids
     used = {p for _, _, patches, _, _ in rows() for p in patches.split(",") if p != "-"}
     assert used == set(ids)
@@ -391,4 +392,4 @@ def test_d452_the_real_run_texts_promise_no_question_and_no_dry_run():
     for vendored in ("sutra_app/engine/agents/j2/identity.md", "sutra_app/engine/artifacts/real_run.md",
                      "sutra_app/engine/templates/builder.md", "sutra_app/engine/templates/atom_rules.md"):
         row = next(r for r in rows() if r[0] == vendored)
-        assert row[2] == "P46" and row[3] != row[4], row
+        assert row[2] == ("P46,P48" if vendored.endswith("real_run.md") else "P46") and row[3] != row[4], row      # P48 (D463): its folder sentence

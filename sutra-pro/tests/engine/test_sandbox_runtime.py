@@ -266,6 +266,35 @@ def test_real_srt_socks_delivers_a_whole_body(j2, real_srt, server, monkeypatch)
     assert json.loads((folder / "socks.json").read_text()) == {"expected": 512000, "got": 512000, "electron_flag": False}
 
 
+P48_W = "import os, sys; open('out.txt', 'w').write(os.getcwd() + '|' + sys.argv[0] + '|' + os.environ.get('P48_X', ''))\n"
+
+
+@needs_bundled_srt
+def test_real_srt_a_relative_write_lands_in_the_plan_folder(j2, real_srt):
+    """P48 (D463, review R1-2): under the real bundled srt the script starts in the plan's folder, not the build folder."""
+    out, folder = real_srt
+    (out / "w.py").write_text(P48_W)
+    res = j2.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(folder)}, 60)
+    assert res["ran"] and res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert (folder / "out.txt").exists() and not (out / "out.txt").exists()
+
+
+@needs_bundled_srt
+def test_real_srt_p48_with_spaces_a_symlinked_build_folder_and_settings(j2, real_srt, tmp_path):
+    """P48 (D463): spaces in both paths, a symlinked build folder and the `env NAME=value` wrap of the plan's settings."""
+    build = tmp_path / "build dir"
+    build.mkdir()
+    (build / "w.py").write_text(P48_W)
+    link, folder = tmp_path / "link to build", tmp_path / "plan folder"
+    os.symlink(build, link)
+    folder.mkdir()
+    res = j2.real_run(str(link), {"command": [sys.executable, "w.py"], "folder": str(folder), "settings": {"P48_X": "yes"}}, 60)
+    assert res["ran"] and res["exit"] == 0, res
+    got = (folder / "out.txt").read_text().split("|")
+    assert got == [os.path.realpath(folder), os.path.join(os.path.realpath(build), "w.py"), "yes"], got
+    assert not (build / "out.txt").exists()
+
+
 @needs_bundled_srt
 def test_live_status_names_the_bundle(monkeypatch):
     """AC-7."""

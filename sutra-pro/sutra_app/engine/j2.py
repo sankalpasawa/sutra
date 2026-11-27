@@ -858,8 +858,10 @@ def real_run_env_problems(rr, source, run_dir):
     return out
 
 
-def real_run(out_dir, rr, timeout):
-    """Run a planned real run once, from the built folder, within the builder's time limit. With J2_SANDBOX=1 inside the
+def real_run(out_dir, rr, timeout, runner=("python3", "{target}")):
+    # ponytail: default = types.json's only runner, for direct callers; production passes the form's
+    """Run a planned real run once, in the plan's folder (its working directory; P48, D463: the argument at the runner's
+    {target} is the built file's absolute path), within the builder's time limit. With J2_SANDBOX=1 inside the
     sandbox runtime (J2_SANDBOX_CMD): only the plan's hosts (P46); reads the built folder, the stated folder and its
     read-only folders; writes only the stated folder. Without it (the default) as a plain process; the receipt is the same
     either way (P46, D452: no approval, no dry run). {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
@@ -878,8 +880,14 @@ def real_run(out_dir, rr, timeout):
     env = j2_runenv.plan(out_dir)      # P42 (D447): the built folder's environment (its requirements.txt), when it has one
     if env_missing(env):      # never with another python
         return {"ran": False, "exit": None, "sha256": shas, "evidence": "not run: " + env_missing(env)}
+    if not os.path.isdir(folder):      # P48 (D463): it runs there, so a folder gone since the plan is not run, never an error
+        return {"ran": False, "exit": None, "sha256": shas, "evidence": f"not run: its folder {folder} is not a folder"}
     if env:      # its python runs the command, and the sandbox may read it (P41's lines below take both from here)
         rr, reads = {**rr, "command": run_command(rr["command"], env)}, reads + list(env.get("reads") or [])
+    argv0 = list(rr["command"])      # P48 (D463): what runs; sha256, evidence and the receipt keep rr["command"] as planned
+    i = list(runner).index("{target}") if "{target}" in runner else len(argv0)      # only the runner's {target} argument
+    if i < len(argv0) and not os.path.isabs(argv0[i]) and os.path.isfile(os.path.join(out_dir, argv0[i])):
+        argv0[i] = os.path.join(out_dir, argv0[i])
     fd, conf = tempfile.mkstemp(prefix=".realrun-", suffix=".json", dir=os.path.dirname(out_dir))
     t0 = time.time()
     try:
@@ -894,9 +902,9 @@ def real_run(out_dir, rr, timeout):
         # ponytail: on Windows under srt the plan's names reach srt itself (no env program); only the loader guardrail list
         # guards srt there. srt 0.0.81 has a Windows path; it is off by default only because sandbox_on is. Upgrade: a
         # sys.executable wrapper that sets the names inside the -c command, when the sandbox is turned on on Windows.
-        run = ["env", *(f"{k}={v}" for k, v in extra.items()), *rr["command"]] if wrap else rr["command"]
-        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else list(rr["command"])
-        p = subprocess.run(argv, cwd=out_dir, capture_output=True, text=True, timeout=timeout,
+        run = ["env", *(f"{k}={v}" for k, v in extra.items()), *argv0] if wrap else argv0
+        argv = shlex.split(cmd) + ["-s", conf, "-c", shlex.join(run)] if cmd else argv0
+        p = subprocess.run(argv, cwd=folder, capture_output=True, text=True, timeout=timeout,      # P48 (D463): the plan's folder
                            env=llm.run_env(None if wrap else extra))      # P41 (D446): a clean environment
         out = ((p.stdout or "") + (p.stderr or ""))[-1500:]
         last = next((x.strip() for x in reversed(out.splitlines()) if x.strip()), "no output")
@@ -905,6 +913,8 @@ def real_run(out_dir, rr, timeout):
                 "stderr": j2_runenv.tail(p.stderr), **({"env": j2_runenv.facts(env)} if env else {}),      # of each, and its python
                 "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
+    except OSError as e:      # P48 (D463): a folder it cannot start in (no permission) is not run, as a missing one
+        return {"ran": False, "exit": None, "sha256": shas, "evidence": f"not run: {e.strerror or e} for {folder}"}
     except subprocess.TimeoutExpired:
         return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
                 "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
@@ -6164,7 +6174,7 @@ class J2Run:
         nums = {as_int(c) for c in rr.get("checks") or []}
         mine = [t for t in (self.goal or {}).get("done_when") or [] if self._no(t) in nums]
         before = _tree(folder)
-        res = real_run(self._out_dir(), rr, builder_timeout())
+        res = real_run(self._out_dir(), rr, builder_timeout(), self.out.get("test_runner") or ())      # P48 (D463): the form's runner
         try:      # review R1-3: once the command ran its row is always written, so a follow-up never runs it again
             diff = _tree_diff(before, _tree(folder))
             ran_ok = bool(res.get("ran") and res.get("exit") == 0)

@@ -4322,6 +4322,131 @@ def test_p47_launch_sites_use_llm_sandbox_cmd(j2env, env_run, monkeypatch, tmp_p
     assert 'agent_setting("J2_SANDBOX_CMD")' not in Path(j2env.__file__).read_text(encoding="utf-8")
 
 
+# ---- P48 (D463): a real run works in its plan's folder ------------------------------------------------------------------
+P48_W = "open('out.txt', 'w').write('1')\n"
+
+
+@pytest.fixture
+def p48(j2ft, tmp_path, monkeypatch):
+    """(out, P): a build folder holding w.py (a relative write) and the plan's folder; the sandbox switch off."""
+    out, plan = tmp_path / "out", tmp_path / "plan"
+    out.mkdir()
+    plan.mkdir()
+    (out / "w.py").write_text(P48_W)
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    return out, plan
+
+
+def test_p48_a_relative_write_lands_in_the_plan_folder(j2ft, p48):
+    out, plan = p48
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30)
+    assert res["exit"] == 0, res
+    assert (plan / "out.txt").exists() and not (out / "out.txt").exists()
+
+
+def test_p48_under_the_fake_srt_too(j2ft, p48, tmp_path, monkeypatch):
+    out, plan = p48
+    fake = tmp_path / "srt.py"
+    fake.write_text(P32_SRT)
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.setenv("J2_SANDBOX_CMD", shlex.join([sys.executable, str(fake)]))
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30)
+    assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
+    assert (plan / "out.txt").exists() and not (out / "out.txt").exists()
+    assert json.loads((tmp_path / "srt.py.json").read_text()) == {
+        "network": {"allowedDomains": [], "deniedDomains": []},
+        "filesystem": {"denyRead": ["~"], "allowRead": [os.path.realpath(out), os.path.realpath(plan)],
+                       "allowWrite": [os.path.realpath(plan)], "denyWrite": list(j2ft.SANDBOX_DENY_WRITE)}}
+
+
+def test_p48_the_receipt_keeps_the_planned_command(j2ft, p48):
+    out, plan = p48
+    rr = {"command": [sys.executable, "w.py"], "folder": str(plan)}
+    kept = json.loads(json.dumps(rr))
+    res = j2ft.real_run(str(out), rr, 30)
+    assert list(res["sha256"]) == ["w.py"]
+    assert res["evidence"].startswith(shlex.join([sys.executable, "w.py"]) + " exited 0"), res["evidence"]
+    assert rr == kept
+
+
+def test_p48_only_the_target_is_resolved(j2ft, p48):
+    out, plan = p48
+    (out / "data.txt").write_text("build")
+    (plan / "data.txt").write_text("plan")
+    (out / "w.py").write_text("import sys\nprint(open(sys.argv[1]).read())\n")
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py", "data.txt"], "folder": str(plan)}, 30)
+    assert res["exit"] == 0 and res["output"].strip().endswith("plan"), res
+
+
+def test_p48_a_dash_c_command_runs_in_the_folder_unchanged(j2ft, p48):
+    out, plan = p48
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "-c", "import os; open('o','w').write(os.getcwd())"],
+                                   "folder": str(plan)}, 30)
+    assert res["exit"] == 0, res
+    assert (plan / "o").read_text() == os.path.realpath(plan)
+
+
+def test_p48_a_runner_without_target_resolves_nothing(j2ft, p48):
+    out, plan = p48
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30, runner=[sys.executable])
+    assert res["exit"] != 0 and "w.py" in res["output"], res
+    assert not (plan / "out.txt").exists() and not (out / "out.txt").exists()
+
+
+@p42_posix
+def test_p48_a_built_environment_runs_the_absolute_target(j2env, env_run, monkeypatch, tmp_path):
+    made, _real = env_run
+    monkeypatch.setenv("J2_SANDBOX", "0")
+    run, w = made({"s.py": "import os, sys; print(sys.argv[0]); print(os.getcwd())\n", "requirements.txt": "pulsedep==1.2.0\n"})
+    assert run._env_install(w, run._out_dir()) == ""
+    folder = tmp_path / "p48-folder"
+    folder.mkdir()
+    rr = {"command": ["python3", "s.py"], "folder": str(folder)}
+    res = j2env.real_run(run._out_dir(), rr, 30)
+    assert res["exit"] == 0 and "env" in res, res
+    assert os.path.join(os.path.realpath(run._out_dir()), "s.py") in res["output"] and os.path.realpath(folder) in res["output"]
+    assert rr["command"][0] == "python3"
+
+
+def test_p48_a_missing_folder_is_not_run(j2ft, p48):
+    out, plan = p48
+    plan.rmdir()
+    res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30)
+    assert res["ran"] is False and res["exit"] is None and res["evidence"].startswith("not run:"), res
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="chmod 000 keeps out a non-root posix user only")
+def test_p48_a_folder_it_cannot_enter_is_not_run(j2ft, p48):
+    out, plan = p48
+    plan.chmod(0)
+    try:
+        res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30)
+    finally:
+        plan.chmod(0o755)
+    assert res["ran"] is False and res["exit"] is None, res
+    assert res["evidence"] == f"not run: Permission denied for {os.path.realpath(plan)}", res
+    assert not (plan / "out.txt").exists() and not (out / "out.txt").exists()
+
+
+def test_p48_the_run_passes_the_forms_runner(p31, monkeypatch, j2ft):
+    go, _real = p31
+    seen, orig = [], j2ft.real_run
+
+    def wrapper(*args, **kwargs):
+        seen.append((args, kwargs))
+        return orig(*args, **kwargs)
+    monkeypatch.setattr(j2ft, "real_run", wrapper)
+    run = go(P31_OK)
+    run._real_run_next({})
+    args, kwargs = seen[-1]
+    assert (args[3] if len(args) > 3 else kwargs["runner"]) == run.out["test_runner"]
+
+
+def test_p48_the_planner_is_told_the_working_directory(j2ft):
+    text = (Path(j2ft.__file__).parent / "artifacts" / "real_run.md").read_text(encoding="utf-8")
+    assert text.count('The command runs with "folder" as its working directory.') == 1
+
+
 @p42_posix
 def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
     made, real = env_run
