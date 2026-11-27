@@ -65,6 +65,14 @@ test('the server\'s environment drops what reaches into Python or Electron and k
   assert.equal('PYTHONUTF8' in env, false, 'only Windows needs it');
 });
 
+test('the server is told which executable runs the bundled srt as node (D462), and only when the app names one', () => {
+  const env = runtime.childEnv({ PATH: '/usr/bin', ELECTRON_RUN_AS_NODE: '1' }, { platform: 'darwin', home: '/home/u', dataDir: '/d', node: '/x/Sutra Pro' });
+  assert.equal(env.SUTRA_ELECTRON_NODE, '/x/Sutra Pro');
+  assert.equal('ELECTRON_RUN_AS_NODE' in env, false, 'the flag goes on srt\'s own command line, never into the server');
+  const none = runtime.childEnv({ PATH: '/usr/bin' }, { platform: 'darwin', home: '/home/u', dataDir: '/d' });
+  assert.equal('SUTRA_ELECTRON_NODE' in none, false);
+});
+
 test('PATH gets the folders of the claude and codex CLIs appended, once, never in front', () => {
   const env = runtime.childEnv({ PATH: '/opt/homebrew/bin:/usr/bin', SUTRA_EXTRA_PATH: '/extra/bin' }, { platform: 'darwin', home: '/home/u', dataDir: '/d' });
   const parts = env.PATH.split(':');

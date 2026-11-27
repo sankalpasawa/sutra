@@ -174,14 +174,14 @@ def clean_env(monkeypatch):
     return monkeypatch
 
 
-@pytest.mark.parametrize("platform, found, on", [("darwin", True, True), ("linux", True, True), ("darwin", False, False), ("win32", True, False)])
-def test_the_sandbox_is_on_for_macos_and_linux_only_when_srt_is_found(clean_env, platform, found, on):
+@pytest.mark.parametrize("platform, found, on", [("darwin", True, True), ("linux", True, True), ("darwin", False, True), ("win32", True, False)])
+def test_the_sandbox_is_on_for_macos_and_linux_whatever_is_on_path(clean_env, platform, found, on):
+    """D462: the bundled srt decides, not `which`; a missing node or bundle keeps it on (each launch then fails closed)."""
     clean_env.setattr(llm.sys, "platform", platform)
     clean_env.setattr(llm.shutil, "which", lambda name: "/opt/srt" if found else None)
     got, why = llm.sandbox_status(mock=False)
     assert got is on
-    if platform.startswith(("darwin", "linux")) and not found:
-        assert "npm i -g @anthropic-ai/sandbox-runtime" in why
+    assert "npm i -g" not in why
 
 
 @pytest.mark.parametrize("value_, on", [("1", True), ("0", False)])
@@ -189,7 +189,8 @@ def test_j2_sandbox_overrides_the_platform_either_way(clean_env, value_, on):
     clean_env.setenv("J2_SANDBOX", value_)
     for platform in ("darwin", "win32"):
         clean_env.setattr(llm.sys, "platform", platform)
-        assert llm.sandbox_status(mock=False) == (on, f"J2_SANDBOX={value_}")
+        refused = " (srt's sandbox does not run on Windows: every sandboxed launch is refused)" if (platform, on) == ("win32", True) else ""
+        assert llm.sandbox_status(mock=False) == (on, f"J2_SANDBOX={value_}{refused}")
 
 
 def test_offline_the_sandbox_is_j2s_default(clean_env):
@@ -198,10 +199,11 @@ def test_offline_the_sandbox_is_j2s_default(clean_env):
 
 def test_the_startup_line_says_whether_builders_get_tools_and_whether_the_sandbox_is_on(fake, tmp_path, clean_env):
     clean_env.setattr(llm.sys, "platform", "darwin")
-    clean_env.setattr(llm.shutil, "which", lambda name: "/opt/srt")
+    clean_env.setattr(llm, "bundled_srt", lambda environ=None: (["node", "srt.mjs"], None, "bundled srt 0.0.83 at /opt/srt, node 24.22.1"))
     router = rig(fake, tmp_path, "claude", "codex")
     try:
-        assert engine_port.builder_tools_line(router, offline=False) == "Builder tools: on (the Claude CLI). Sandbox: on (srt at /opt/srt)."
+        assert engine_port.builder_tools_line(router, offline=False) == ("Builder tools: on (the Claude CLI). "
+                                                                         "Sandbox: on (bundled srt 0.0.83 at /opt/srt, node 24.22.1).")
         # the engine settings a new run reads (engine.json, J2_* environment): J2_AGENT_TOOLS=0 and J2_SANDBOX=0 decide
         line = engine_port.builder_tools_line(router, offline=False, agent_tools=False, sandbox=False)
         assert line == "Builder tools: off (J2_AGENT_TOOLS=0): J2 builds through its section path. Sandbox: off (J2_SANDBOX=0)."

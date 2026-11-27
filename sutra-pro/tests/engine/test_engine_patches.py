@@ -21,6 +21,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_sandbox_runtime import needs_bundled_srt      # D462: the real-srt tests run the bundled srt
 
 ENGINE = "sutra_app.engine"
 J2_MODULES = ("j2", "j2_agent", "j2_agent_models", "j2_agent_views", "j2_artifact_lib", "j2_artifact_models", "j2_artifacts", "j2_board", "j2_change",
@@ -3794,7 +3795,7 @@ def test_p41_smtp_password_from_env_file_never_reaches_a_script(j2ft, p41, monke
     assert "J2_SMTP_PASSWORD" not in d["names"] and d["vals"]["J2_SMTP_PASSWORD"] is None
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+@needs_bundled_srt
 def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp_path):
     out, folder, *_ = p41
     home = tmp_path / "home"
@@ -3803,13 +3804,13 @@ def test_p41_real_srt_reads_a_secret_file_under_home(j2ft, p41, monkeypatch, tmp
     cred.write_text(P41_CRED)
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)      # the bundled srt (D462)
     res = j2ft.real_run(str(out), p41_rr(folder, secret_files={"API_CRED_FILE": str(cred)}), 60)
     assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
     assert p41_dump(res)["cred"] == {"exists": True, "size": len(P41_CRED)}
 
 
-# What srt 0.0.81 adds itself for the script it starts (generateProxyEnvVars, sandbox-utils.js): its own localhost proxy, with a
+# What srt 0.0.83 (bundled, D462) adds itself for the script it starts (generateProxyEnvVars, sandbox-utils.js): its own localhost proxy, with a
 # per-process random token (sandbox-manager.js, randomBytes(16)), and the per-tool proxy and trust settings that point at it.
 # None of these comes from the app: srt is started with the base environment only (test_p41_srt_itself_gets_the_base_only).
 SRT_OWN_NAMES = {
@@ -3822,7 +3823,7 @@ SRT_OWN_NAMES = {
 }
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+@needs_bundled_srt
 def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_path):
     """Under the real srt the script sees the base, the plan's settings and srt's own local-proxy names: nothing else."""
     out, folder, *_ = p41
@@ -3830,7 +3831,7 @@ def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)      # the bundled srt (D462)
     res = j2ft.real_run(str(out), p41_rr(folder, **P41_ENV), 60)
     assert res["exit"] == 0 and "in the sandbox" in res["evidence"], res
     d = p41_dump(res)
@@ -3839,7 +3840,7 @@ def test_p41_real_srt_adds_only_its_own_proxy_names(j2ft, p41, monkeypatch, tmp_
     assert d["vals"]["SUT22_LEAK"] is None and d["vals"]["J2_SMTP_PASSWORD"] is None
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+@needs_bundled_srt
 def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, monkeypatch, tmp_path):
     """R1-2: the stored path is the real file, so srt's allowRead (and the env and the card) name what the script opens."""
     out, folder, *_ = p41
@@ -3850,7 +3851,7 @@ def test_p41_real_srt_reads_a_secret_file_named_through_a_symlink(j2ft, p41, mon
     link.symlink_to(keys / "real.txt")
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("J2_SANDBOX", "1")
-    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)      # the bundled srt (D462)
     stored = j2ft.real_run_env_fields({"secret_files": {"API_CRED_FILE": "~/link.txt"}})      # as _register stores it
     assert stored == {"secret_files": {"API_CRED_FILE": os.path.realpath(keys / "real.txt")}}
     res = j2ft.real_run(str(out), p41_rr(folder, **stored), 60)
@@ -4298,6 +4299,29 @@ def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_a
     assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
 
 
+# ---- P47 (D462): the real run, the test rerun and the install step launch what llm.sandbox_cmd() says ----------------------
+@p42_posix
+def test_p47_launch_sites_use_llm_sandbox_cmd(j2env, env_run, monkeypatch, tmp_path):
+    made, real = env_run
+    fake = tmp_path / "p47_srt.py"
+    fake.write_text(P41_SRT)
+    seen = Path(str(fake) + ".seen")
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)
+    monkeypatch.setattr(j2env.llm, "sandbox_cmd", lambda: shlex.join([sys.executable, str(fake)]))
+    run, w = made({"s.py": "print('ok')\n", "t.py": "pass\n"})
+    res = j2env.real_run(run._out_dir(), {"command": [sys.executable, "s.py"], "folder": str(real)}, 30)
+    assert res["exit"] == 0 and seen.exists(), res
+    seen.unlink()
+    assert j2env.sandbox_rerun(run._out_dir(), [sys.executable, "{target}"], "t.py", 30)["pass"] is True and seen.exists()
+    got = []
+    monkeypatch.setattr(j2env.j2_runenv, "install", lambda p, t, cmd, env=None: got.append(cmd) or {"ok": True, "evidence": "made up"})
+    Path(run._out_dir(), "requirements.txt").write_text("pulsedep==4.7.0\n")      # a version no other test installs
+    run._env_install(w, run._out_dir())
+    assert got == [shlex.join([sys.executable, str(fake)])]
+    assert 'agent_setting("J2_SANDBOX_CMD")' not in Path(j2env.__file__).read_text(encoding="utf-8")
+
+
 @p42_posix
 def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
     made, real = env_run
@@ -4648,7 +4672,7 @@ class H(http.server.BaseHTTPRequestHandler):
         else:
             self.do_CONNECT()
     def do_CONNECT(self):
-        self.send_response(403)      # srt 0.0.81 answers a plain-HTTP GET 403 Forbidden
+        self.send_response(403)      # srt (0.0.81, and the bundled 0.0.83) answers a plain-HTTP GET 403 Forbidden
         self.end_headers()
     def log_message(self, *x):
         pass
@@ -4728,11 +4752,11 @@ def p46_real_srt(p46, monkeypatch, tmp_path):
     home = tmp_path / "srt-home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("J2_SANDBOX_CMD", "srt")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)      # the bundled srt (D462)
     return run, real
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+@needs_bundled_srt
 def test_p46_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p46, monkeypatch, tmp_path):
     """AC-19 (network): srt starts with the plan's hosts list (a wildcard with a port) and still refuses a host not on it. The
     allowed path is not tested with the real srt: it would resolve a name."""
@@ -4743,7 +4767,7 @@ def test_p46_real_srt_takes_the_hosts_and_still_refuses_others(j2ft, p46, monkey
     assert res["ran"] and "in the sandbox" in res["evidence"] and "HTTP Error 403" in res["output"], res
 
 
-@pytest.mark.skipif(shutil.which("srt") is None or not sys.platform.startswith(("darwin", "linux")), reason="needs the sandbox runtime")
+@needs_bundled_srt
 def test_p46_real_srt_writes_only_the_plans_folder(j2ft, p46, monkeypatch, tmp_path):
     """AC-19 (writes, NFR-8, review R1-4): under the real srt a real run writes its folder and nothing outside it."""
     run, real = p46_real_srt(p46, monkeypatch, tmp_path)

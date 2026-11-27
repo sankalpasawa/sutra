@@ -97,7 +97,7 @@ function pathExtras({ platform, home, env }) {
 
 /* The environment of the server: the app's own, minus what would reach into the bundled Python (PYTHON*, PIP_*, VIRTUAL_ENV, UV_*) or turn the
    server into an Electron process (ELECTRON_*), plus a PATH that finds the CLIs, and the settings that keep the signed bundle unchanged. */
-function childEnv(env, { platform = process.platform, home = os.homedir(), dataDir: folder }) {
+function childEnv(env, { platform = process.platform, home = os.homedir(), dataDir: folder, node }) {
   const out = {};
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined && !DROPPED.test(key)) out[key] = value;
@@ -115,6 +115,7 @@ function childEnv(env, { platform = process.platform, home = os.homedir(), dataD
   if (platform === 'win32') out.PYTHONUTF8 = '1';
   out.SUTRA_DATA_DIR = folder;
   out.SUTRA_PRO_DESKTOP = '1';         // the server tells the page (Settings, About) that this app, and so the automatic update check, is the one in front
+  if (node) out.SUTRA_ELECTRON_NODE = node;   // D462: the bundled srt runs on this executable as node (ELECTRON_RUN_AS_NODE=1 on its own command line)
   return out;
 }
 

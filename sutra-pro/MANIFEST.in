@@ -15,3 +15,4 @@ include sutra_app/connectors/policy.default.json
 global-exclude __pycache__ *.py[cod] .DS_Store
 recursive-include sutra_app/assets *
 recursive-include sutra_app/nodes/templates *.md
+recursive-include sutra_app/vendor/srt *

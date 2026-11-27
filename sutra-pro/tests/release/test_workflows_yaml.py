@@ -512,11 +512,11 @@ def test_ci_test_runs_on_ubuntu_macos_and_windows_without_fail_fast(ci):
     assert job["strategy"]["fail-fast"] is False, "a macOS-only or Windows-only break must not be hidden by the ubuntu leg going red first"
 
 
-def test_ci_test_sets_up_uv_and_node_20_with_pinned_majors(ci):
+def test_ci_test_sets_up_uv_and_node_22_with_pinned_majors(ci):
     job = ci["jobs"]["test"]
     assert [s["uses"] for s in steps_of(job) if "uses" in s] == ["actions/checkout@v4", "astral-sh/setup-uv@v5", "actions/setup-node@v4"]
     (node,) = action_steps(job, "actions/setup-node@")
-    assert str(node["with"]["node-version"]) == "20"
+    assert str(node["with"]["node-version"]) == "22"      # the bundled srt needs Node 22.12 or newer (D462)
 
 
 def test_ci_test_installs_checks_the_plan_and_runs_the_local_gate_in_that_order(ci):
