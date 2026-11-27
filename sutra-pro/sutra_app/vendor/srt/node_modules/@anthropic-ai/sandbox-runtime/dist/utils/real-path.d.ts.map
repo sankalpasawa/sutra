@@ -1,0 +1,1 @@
+{"version":3,"file":"real-path.d.ts","sourceRoot":"","sources":["../../src/utils/real-path.ts"],"names":[],"mappings":"AAqBA;;;;;;;;;;;;;;;;;;;GAmBG;AACH,wBAAgB,UAAU,CAAC,CAAC,EAAE,MAAM,GAAG,MAAM,CAS5C;AAED;;;;;;;GAOG;AACH,wBAAgB,KAAK,CAAC,MAAM,EAAE,MAAM,GAAG;IACrC,IAAI,EAAE,MAAM,CAAA;IACZ,IAAI,EAAE,MAAM,EAAE,CAAA;IACd,QAAQ,CAAC,EAAE,OAAO,CAAA;CACnB,CA8CA"}

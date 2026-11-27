@@ -21,3 +21,5 @@ dist/
 build/
 docs/diagram/arch.html
 proof/
+# the bundled srt (D462) is vendored whole, its node_modules/ and dist/ included: scripts/vendor_srt.py writes it
+!/sutra_app/vendor/srt/**

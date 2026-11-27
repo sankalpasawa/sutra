@@ -92,3 +92,31 @@ def test_a_tarball_with_another_sha512_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(vendor_srt, "PINS", tuple(pins))
     with pytest.raises(VendorError, match="sha512"):
         vendor_srt.write(tmp_path / "srt")
+
+
+# ---- the real tree in this checkout (T2) ------------------------------------------------------------------------------------
+BUNDLE = REPO / vendor_srt.DEST
+
+
+def test_the_bundle_is_upstream_plus_s1_and_s2():
+    assert vendor_srt.check(BUNDLE) == []
+
+
+def test_the_license_ships_unchanged_and_the_changes_are_noticed():
+    rows = {m[1]: (m[2], m[3]) for m in vendor_srt.ROW.finditer((BUNDLE / "VENDORED.md").read_text())}
+    up, vend = rows[f"node_modules/{vendor_srt.SRT}/LICENSE"]
+    assert up == vend
+    for e in vendor_srt.EDITS:
+        assert f"Modified by Sutra (patch {e.patch}" in (BUNDLE / e.file).read_text()
+    notice = (BUNDLE / "NOTICE").read_text()
+    assert vendor_srt.HTTP_PROXY in notice and vendor_srt.SOCKS_PROXY in notice
+
+
+def test_the_launcher_drops_the_electron_flag_and_imports_the_cli():
+    text = (BUNDLE / "srt.mjs").read_text()
+    assert "delete process.env.ELECTRON_RUN_AS_NODE;" in text and f"import('./{vendor_srt.CLI}')" in text
+    assert (BUNDLE / vendor_srt.CLI).is_file()
+
+
+def test_vendored_md_states_the_home_path_exemption():
+    assert "## Home paths in upstream bytes" in (BUNDLE / "VENDORED.md").read_text()
