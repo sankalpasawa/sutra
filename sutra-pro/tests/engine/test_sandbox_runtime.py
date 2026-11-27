@@ -324,3 +324,24 @@ def test_override_warns_once_per_launch(j2, live, monkeypatch, tmp_path, caplog)
     warnings = [r.getMessage() for r in caplog.records if r.name == "sutra_app.engine.llm" and r.levelno == logging.WARNING]
     assert len(warnings) == 1 and str(fake) in warnings[0], warnings
     assert Path(str(fake) + ".ran").exists()
+
+
+FLUSH = Path(__file__).resolve().parent / "fixtures" / "srt_close_flush.mjs"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win") or llm.bundled_srt()[1] is not None, reason="needs the bundled srt (node >= 22.12)")
+def test_bundled_proxies_flush_a_slow_readers_stream_after_the_origin_closes():
+    """S1 and S2 (D462), by upstream PR #377's method: 1 MiB of made-up bytes, the origin closes right after writing, the client
+    drains 16 KiB every 2 ms over a Unix domain socket (small fixed kernel buffers keep the queue in srt's userspace, where a
+    destroy() drops it), 6 transfers each through the bundled CONNECT proxy and SOCKS5 relay. Stock 0.0.83 loses 64 KiB of
+    every transfer on both paths."""
+    import tempfile
+    socks_dir = tempfile.mkdtemp(prefix="srtf", dir="/tmp" if os.path.isdir("/tmp") else None)      # a Unix socket path must be short
+    try:
+        done = subprocess.run(["node", str(FLUSH), str(llm.SRT_DIR / llm.SRT_PACKAGE / "dist"), socks_dir, "6"],
+                              capture_output=True, text=True, timeout=60)
+    finally:
+        shutil.rmtree(socks_dir, ignore_errors=True)
+    assert done.returncode == 0, done.stderr
+    got = json.loads(done.stdout)
+    assert got["connect"] == [1 << 20] * 6 and got["socks"] == [1 << 20] * 6, got
