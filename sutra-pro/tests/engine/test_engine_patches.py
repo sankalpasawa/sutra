@@ -4395,7 +4395,7 @@ def test_p48_a_runner_without_target_resolves_nothing(j2ft, p48):
 
 @p42_posix
 def test_p48_a_built_environment_runs_the_absolute_target(j2env, env_run, monkeypatch, tmp_path):
-    made, real = env_run
+    made, _real = env_run
     monkeypatch.setenv("J2_SANDBOX", "0")
     run, w = made({"s.py": "import os, sys; print(sys.argv[0]); print(os.getcwd())\n", "requirements.txt": "pulsedep==1.2.0\n"})
     assert run._env_install(w, run._out_dir()) == ""
@@ -4429,7 +4429,7 @@ def test_p48_a_folder_it_cannot_enter_is_not_run(j2ft, p48):
 
 
 def test_p48_the_run_passes_the_forms_runner(p31, monkeypatch, j2ft):
-    go, real = p31
+    go, _real = p31
     seen, orig = [], j2ft.real_run
 
     def wrapper(*args, **kwargs):
