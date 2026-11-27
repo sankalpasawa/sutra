@@ -993,7 +993,7 @@ const TECH = [[new RegExp(String.raw`\b(?:\d+ )?(?:JS|JavaScript) errors?(?:\(s\
   [/\bno horizontal overflow at 360px and 1280px\b/gi, "no sideways scrolling on phones or computers"], [/\bhorizontal overflow\b/gi, "sideways scrolling"],
   [/\b(?:JS|JavaScript) errors\b/g, "script errors"], [/\b(?:a )?JS error\b/g, "a script error"],
   [/\bsubmit control\b/gi, "send button"], [/\s*\(action or mailto\)/gi, ""], [/\bNEEDS_REVISION\b/g, "needs work"]];
-const PLAIN = [...TECH, [/@[\w-]+[,:]?/g, ""], [/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, ""], [/\bClause:\s*/g, ""],
+const PLAIN = [...TECH, [/(?<![\w.])@[\w-]+[,:]?/g, ""], [/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, ""], [/\bClause:\s*/g, ""],
   [/\s+(?:on|in|for|of) [CFW]-\d+\b/g, ""], [/\bF-(\d+)\b/g, "item $1"], [/\bC-\d+\b/g, ""],
   [/\b[Tt]he Requester\b/g, "you"], [/\bRequester's\b/g, "your"], [/\bRequester\b/g, "you"],
   [/\bCOUNTER\b/g, "a smaller offer"], [/\bGRANT\b/g, "a yes"], [/\bREFUSE\b/g, "a no"],
@@ -2890,7 +2890,7 @@ const MAPS = {filed: "filed", done_unchecked: "done · checks did not pass", run
 const MAXLINES = 3;      // more function-to-function lines than this go in a small table instead of crossing lines
 const isWait = st => st === "waiting" || st === "waiting_on_you";
 function mapWords(t, n){ t = esc(dv(String(t ?? ""))); return n && t.length > n ? t.slice(0, n - 1) + "…" : t; }
-const mapClean = t => String(t ?? "").replace(/@[\w-]+[,:]?\s*/g, "").replace(/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, "").replace(/\s{2,}/g, " ").trim();      // a chat message with its @tags and step codes taken out (Detailed view words, not the Simple view's)
+const mapClean = t => String(t ?? "").replace(/(?<![\w.])@[\w-]+[,:]?\s*/g, "").replace(/\(?\bJ2(?:\.[a-h]|_[A-Z_]+(?:=\S*)?)?\)?/g, "").replace(/\s{2,}/g, " ").trim();      // a chat message with its @tags and step codes taken out (Detailed view words, not the Simple view's)
 function mapSay(t, n){ const m = String(t ?? "").match(/^(last seen: )([\s\S]*)$/); return m ? mapWords(m[1] + mapClean(m[2]), n) : mapWords(mapClean(t), n); }      // a message quoted from the chat: @tags and step codes taken out
 const mapFn = n => { const p = MAPLABEL.persona[String(n.id).replace("fn:", "")]; return p ? `${p} (${n.label})` : n.label; };      // "Persona (Function)"
 const mapState = n => n.kind === "function" ? (n.status === "waiting" ? "waiting on " + (n.wait_on || "someone") : n.status === "fault" ? "blocked" : n.status === "idle" ? "idle" : MAPW[n.status]) : MAPS[n.status];
