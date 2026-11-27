@@ -65,10 +65,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
 
+      # srt, bundled in sutra_app/vendor/srt (D462), needs Node 22.12 or newer; its real-srt tests run on macOS only and skip elsewhere
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Create the virtual environment
         run: uv venv .venv --python 3.11
