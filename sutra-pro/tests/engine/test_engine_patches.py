@@ -4429,6 +4429,11 @@ def test_p48_the_run_passes_the_forms_runner(p31, monkeypatch, j2ft):
     assert (args[3] if len(args) > 3 else kwargs["runner"]) == run.out["test_runner"]
 
 
+def test_p48_the_planner_is_told_the_working_directory(j2ft):
+    text = (Path(j2ft.__file__).parent / "artifacts" / "real_run.md").read_text(encoding="utf-8")
+    assert text.count('The command runs with "folder" as its working directory.') == 1
+
+
 @p42_posix
 def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
     made, real = env_run
