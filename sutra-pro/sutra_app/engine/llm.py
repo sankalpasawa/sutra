@@ -178,7 +178,7 @@ def bundled_srt(environ: Optional[Mapping[str, str]] = None) -> tuple[list[str],
     except (OSError, ValueError, KeyError, TypeError):
         ok = False
     if not ok:
-        return argv, f"the bundled sandbox runtime is missing at {SRT_DIR}: reinstall Sutra Pro (from a checkout: scripts/py scripts/vendor_srt.py)", ""
+        return argv, f"the bundled sandbox runtime is missing at {SRT_DIR}", ""
     if not electron and not shutil.which("node"):
         return argv, f"the bundled sandbox runtime at {SRT_DIR} needs node >= 22.12 (no node on PATH)", ""
     found = _node_version(node)
