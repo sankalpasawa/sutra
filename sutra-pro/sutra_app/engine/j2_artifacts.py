@@ -182,15 +182,19 @@ def write(d):
 
 
 def listing(d):
-    """What the Artifacts tab shows: the saved artifacts.json when the run has one, else the same rows built by
-    scanning the folder. Each row gets its type's label, tag, colour and how to open it."""
+    """What the Artifacts tab shows: the saved artifacts.json when the run has one, plus any deliverable built after it
+    (a resumed run), else the same rows built by scanning the folder. Each row gets its type's label, tag, colour, how
+    to open it and whether it came from the saved file."""
     types = load_types(d)
     by = {t["name"]: t for t in types["types"]}
     saved = _read(d, "artifacts.json") if d else None
-    base = saved["rows"] if saved else rows(d, types)
+    base = [{**r, "saved": True} for r in saved["rows"]] if saved else [{**r, "saved": False} for r in rows(d, types)]
+    if saved:      # D461: a run that stopped (artifacts.json written) and was then resumed builds its deliverables after that file:
+        have = {r["file"] for r in base}      # the scan adds each deliverable the saved list does not have yet, unsaved
+        base += [{**r, "saved": False} for r in rows(d, types) if r["deliverable"] and r["file"] not in have]
     full = [{**r, "label": by[r["type"]]["label"], "tag": by[r["type"]]["tag"], "color": by[r["type"]]["color"],
-             "open": OPEN.get(r["form"], "text"), "depends_on_labels": [by[x]["label"] for x in r["depends_on"] if x in by],
-             "saved": bool(saved)} for r in base if r["type"] in by]
+             "open": OPEN.get(r["form"], "text"), "depends_on_labels": [by[x]["label"] for x in r["depends_on"] if x in by]}
+            for r in base if r["type"] in by]
     return {"deliverables": [r for r in full if r["deliverable"]], "records": [r for r in full if not r["deliverable"]]}
 
 

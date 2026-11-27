@@ -2208,5 +2208,10 @@
   "id": "D460",
   "label": "Files: lists shown as the tables, flows and coverage matrices they already are",
   "anchor": "band:EXPERIENCE"
+ },
+ {
+  "id": "D461",
+  "label": "Files: a resumed run lists the deliverables it built after it stopped",
+  "anchor": "band:EXPERIENCE"
  }
 ]

@@ -3265,3 +3265,10 @@ Why: the project's promise is that its limit is about time spent working; counti
 - Why: the documents hold their structure in sentence patterns, so ids, priorities, coverage and safety answers were hard to scan.
 - Rejected: changing the templates to write tables (the owner keeps them, and the existing runs would not benefit); Signal's cover band and goal cards (decoration, D455).
 - Diagram: label "Files: lists shown as the tables, flows and coverage matrices they already are", pill on EXPERIENCE.
+
+## D461 — A resumed run's Files list adds the deliverables built after artifacts.json
+- Sources: the owner's report of 27 Nov 2026 that the running Pulse run (SutraXYZ) showed "This run produced no files." in Files while agent_prd.md, operating_design.md, agent_hld.md and agent_lld.md were already in its folder.
+- Decided: `j2_artifacts.listing` keeps the saved `artifacts.json` rows and adds each deliverable a folder scan finds that the saved list does not have, marked `saved: false`. The run stopped at 04:56 (artifacts.json then held only its records), was resumed at 06:16, and built every document after that file; the list read only the saved file, so Files had no deliverable rows until the run ended and wrote the file again. Records are unchanged: only deliverables are added.
+- Why: the Files pane, the share link and /view all read this list, so a resumed run looked empty for its whole second half.
+- Rejected: deleting artifacts.json when a run resumes (it is the finished run's record and other readers use it); rewriting it on every poll (a read must not write to a run folder; the legacy artifacts test checks that listing never writes).
+- Diagram: label "Files: a resumed run lists the deliverables it built after it stopped", pill on EXPERIENCE.
