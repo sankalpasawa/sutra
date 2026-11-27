@@ -31,7 +31,6 @@ There is no silent offline mode (D36): with no port and mock mode off, `ask` rai
 (the Anthropic API, Gemini, the `claude -p` runner) are gone; the router chooses models. The engine never retries a failed
 call and never sends an allowance (S1-contracts-06): the envelope belongs to `J2Run`.
 """
-import functools
 import itertools
 import json
 import logging
@@ -149,29 +148,39 @@ SRT_DIR = Path(__file__).resolve().parents[1] / "vendor" / "srt"     # the bundl
 SRT_PACKAGE = "node_modules/@anthropic-ai/sandbox-runtime"
 SRT_NODE_MIN = (22, 12, 0)                                            # srt 0.0.83's engines.node
 RESTORE = "Restore it: reinstall Sutra Pro, or in a checkout run scripts/py scripts/vendor_srt.py"
+WINDOWS = "srt's sandbox does not run on Windows"
+WINDOWS_HINT = "Set J2_SANDBOX=0 or unset it on Windows"
 
 
-@functools.lru_cache(maxsize=None)
+_NODE_VERSIONS: dict[str, tuple[int, int, int]] = {}      # successful probes only: a failed one is tried again (review R1-4)
+
+
 def _node_version(node: str) -> Optional[tuple[int, int, int]]:
     """The version `node` reports (Electron's executable answers as node with ELECTRON_RUN_AS_NODE=1); None on any failure."""
+    if node in _NODE_VERSIONS:
+        return _NODE_VERSIONS[node]
     try:
         done = subprocess.run([node, "-p", "process.versions.node"], capture_output=True, text=True, timeout=10,
                               env={"PATH": os.environ.get("PATH", ""), "ELECTRON_RUN_AS_NODE": "1"})
     except (OSError, subprocess.SubprocessError):
         return None
     m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", done.stdout.strip()) if done.returncode == 0 else None
-    return tuple(int(x) for x in m.groups()) if m else None
+    if not m:
+        return None
+    _NODE_VERSIONS[node] = tuple(int(x) for x in m.groups())
+    return _NODE_VERSIONS[node]
 
 
 def bundled_srt(environ: Optional[Mapping[str, str]] = None) -> tuple[list[str], Optional[str], str]:
     """(argv prefix, problem or None, description) of the bundled srt (D462). Node: SUTRA_ELECTRON_NODE (the desktop app's own executable,
     run as node), else `node` on PATH; it must be >= 22.12."""
+    if sys.platform.startswith("win"):      # never a stand-in, least of all the app's own executable (review R1-1)
+        return [], WINDOWS, ""
     env = os.environ if environ is None else environ
     launcher = SRT_DIR / "srt.mjs"
     electron = env.get("SUTRA_ELECTRON_NODE") or ""
     node = electron or shutil.which("node") or "node"
-    argv = (["env", "ELECTRON_RUN_AS_NODE=1", node, str(launcher)] if electron and not sys.platform.startswith("win")
-            else [node, str(launcher)])
+    argv = ["env", "ELECTRON_RUN_AS_NODE=1", node, str(launcher)] if electron else [node, str(launcher)]
     try:
         version = json.loads((SRT_DIR / SRT_PACKAGE / "package.json").read_text(encoding="utf-8"))["version"]
         ok = launcher.is_file() and (SRT_DIR / SRT_PACKAGE / "dist" / "cli.js").is_file()
@@ -191,7 +200,8 @@ def bundled_srt(environ: Optional[Mapping[str, str]] = None) -> tuple[list[str],
 def refusal_cmd(problem: str) -> list[str]:
     """A command that stands in for srt when the bundle can't start (fail closed, D462): it prints why and exits 1. srt's own `-s conf -c cmd`
     arguments land in sys.argv[2:] and are ignored, so the plan's command never runs, sandboxed or not."""
-    return [sys.executable, "-c", "import sys; sys.exit(sys.argv[1])", f"the sandbox runtime cannot start: {problem}. {RESTORE}"]
+    hint = WINDOWS_HINT if problem == WINDOWS else RESTORE
+    return [sys.executable, "-c", "import sys; sys.exit(sys.argv[1])", f"the sandbox runtime cannot start: {problem}. {hint}"]
 
 
 def sandbox_cmd() -> str:
@@ -216,11 +226,12 @@ def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, s
     `environ` (default the process's) is where J2_SANDBOX is read."""
     value = (os.environ if environ is None else environ).get("J2_SANDBOX")
     if value not in (None, ""):
-        return value == "1", f"J2_SANDBOX={value}"
+        refused = value == "1" and sys.platform.startswith("win") and not (os.getenv("J2_SANDBOX_CMD") or "").strip()
+        return value == "1", f"J2_SANDBOX={value}" + (f" ({WINDOWS}: every sandboxed launch is refused)" if refused else "")
     if MOCK if mock is None else mock:
         return False, "offline: J2's default (J2_SANDBOX=1 turns it on)"
     if not sys.platform.startswith(SANDBOX_PLATFORMS):
-        return False, f"not on {sys.platform} (J2_SANDBOX=1 turns it on)"
+        return False, f"not on {sys.platform}: {WINDOWS}" if sys.platform.startswith("win") else f"not on {sys.platform}"
     override = (os.getenv("J2_SANDBOX_CMD") or "").strip()
     if override:
         try:

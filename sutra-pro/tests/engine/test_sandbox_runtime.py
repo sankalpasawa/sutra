@@ -26,9 +26,9 @@ def live(monkeypatch, tmp_path):
     bin_ = tmp_path / "bin"
     bin_.mkdir()
     monkeypatch.setenv("PATH", str(bin_))
-    llm._node_version.cache_clear()
+    llm._NODE_VERSIONS.clear()
     yield bin_
-    llm._node_version.cache_clear()
+    llm._NODE_VERSIONS.clear()
 
 
 @pytest.mark.parametrize("version", ["22.12.0", "24.22.1"])
@@ -100,7 +100,7 @@ def test_the_override_warns_on_every_launch(live, tmp_path, monkeypatch, caplog)
 def test_the_command_is_never_empty(live, monkeypatch, tmp_path):
     assert llm.sandbox_cmd()                     # no node
     fake_node(live, "20.0.0")
-    llm._node_version.cache_clear()
+    llm._NODE_VERSIONS.clear()
     assert llm.sandbox_cmd()                     # old node
     monkeypatch.setattr(llm, "SRT_DIR", tmp_path / "gone")
     assert llm.sandbox_cmd()                     # no bundle
@@ -345,3 +345,30 @@ def test_bundled_proxies_flush_a_slow_readers_stream_after_the_origin_closes():
     assert done.returncode == 0, done.stderr
     got = json.loads(done.stdout)
     assert got["connect"] == [1 << 20] * 6 and got["socks"] == [1 << 20] * 6, got
+
+
+def test_windows_refuses_every_launch_and_never_runs_the_app_as_node(monkeypatch, tmp_path):
+    """Review R1-1: on Windows with J2_SANDBOX=1 forced, srt's sandbox can't run; the command is the refusal (never the app's own
+    executable from SUTRA_ELECTRON_NODE, never PATH node), and the status says so."""
+    monkeypatch.setattr(llm.sys, "platform", "win32")
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)
+    monkeypatch.setenv("SUTRA_ELECTRON_NODE", str(tmp_path / "Sutra Pro.exe"))
+    argv = shlex.split(llm.sandbox_cmd())
+    assert argv[:2] == [sys.executable, "-c"] and "Sutra Pro.exe" not in " ".join(argv)
+    assert "does not run on Windows" in argv[-1] and "J2_SANDBOX=0" in argv[-1]
+    done = subprocess.run(argv + ["-s", "x", "-c", "touch should-not-exist"], capture_output=True, text=True, cwd=tmp_path, timeout=30)
+    assert done.returncode == 1 and "does not run on Windows" in done.stderr and not (tmp_path / "should-not-exist").exists()
+    assert llm.sandbox_status(mock=False) == (True, "J2_SANDBOX=1 (srt's sandbox does not run on Windows: every sandboxed launch is refused)")
+    monkeypatch.delenv("J2_SANDBOX")
+    assert llm.sandbox_status(mock=False) == (False, "not on win32: srt's sandbox does not run on Windows")
+
+
+def test_a_failed_node_probe_is_tried_again(live):
+    """Review R1-4: only a successful probe is kept, so one slow or broken first probe does not refuse every launch until restart."""
+    node = live / "node"
+    node.write_text("#!/bin/sh\nexit 1\n")
+    node.chmod(0o755)
+    assert "found no version" in llm.sandbox_status(mock=False)[1]
+    fake_node(live, "24.22.1")
+    assert llm.sandbox_status(mock=False)[1].endswith("node 24.22.1")

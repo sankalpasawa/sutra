@@ -189,7 +189,8 @@ def test_j2_sandbox_overrides_the_platform_either_way(clean_env, value_, on):
     clean_env.setenv("J2_SANDBOX", value_)
     for platform in ("darwin", "win32"):
         clean_env.setattr(llm.sys, "platform", platform)
-        assert llm.sandbox_status(mock=False) == (on, f"J2_SANDBOX={value_}")
+        refused = " (srt's sandbox does not run on Windows: every sandboxed launch is refused)" if (platform, on) == ("win32", True) else ""
+        assert llm.sandbox_status(mock=False) == (on, f"J2_SANDBOX={value_}{refused}")
 
 
 def test_offline_the_sandbox_is_j2s_default(clean_env):
