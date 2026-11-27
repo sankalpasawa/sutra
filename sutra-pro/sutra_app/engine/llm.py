@@ -11,8 +11,9 @@ host calls `configure(...)` BEFORE the vendored `j2` module is imported because 
     tools_on, can_use_tools, TOOLS   builder tools (D245, superseding D240): on for a live run when the provider that would take a builder
                                      call can run one (the Claude CLI), unless J2_AGENT_TOOLS=0; else J2 takes its section path. Offline,
                                      J2_AGENT_TOOLS=1 turns J2's general path on with scripted replies, as in J2
-    sandbox_on, sandbox_status       the sandbox (D245): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
-                                     when the sandbox runtime (J2_SANDBOX_CMD, default srt) is found, else off; offline it is J2's (J2_SANDBOX=1)
+    sandbox_on, sandbox_status       the sandbox (D245, D462): J2_SANDBOX decides when it is set; unset, a live engine has it on for macOS and Linux
+                                     (the bundled srt; a broken bundle keeps it on and every launch fails closed), off on Windows; offline it is J2's (J2_SANDBOX=1)
+    sandbox_cmd, bundled_srt         which srt J2 launches (D462): the bundled, patched srt, or J2_SANDBOX_CMD with a warning; never ""
     inside                           J2's helper: a path strictly inside a folder
     run_env, RUN_PASS_NAMES          the allowlisted environment of a script the engine runs, plus what its plan states (D446)
     is_loader_name, RUN_LOADER_NAMES a fixed safety guardrail of loader and proxy names, not a secret detector (D446, D449)
@@ -30,18 +31,23 @@ There is no silent offline mode (D36): with no port and mock mode off, `ask` rai
 (the Anthropic API, Gemini, the `claude -p` runner) are gone; the router chooses models. The engine never retries a failed
 call and never sends an allowance (S1-contracts-06): the envelope belongs to `J2Run`.
 """
+import functools
 import itertools
+import json
+import logging
 import math
 import os
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from pathlib import Path
 from typing import Any, Optional
 
 from sutra_app.connectors.env import WINDOWS_PASS_NAMES
@@ -54,7 +60,7 @@ from .port import (
 )
 
 __all__ = [
-    "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
+    "ask", "CallTimeout", "can_read_files", "tools_on", "can_use_tools", "sandbox_on", "sandbox_status", "sandbox_cmd", "bundled_srt", "inside", "TOOLS", "configure", "tagged", "current_tag", "bind_atom", "bound_atom", "env_mock", "step_label", "ScriptedPort",
     "EmptyReply", "extract_json", "close_json", "extract_html", "partial_html", "LAST_META", "MOCK", "PROVIDER", "MODEL",
     "MOCK_ENV", "TAG_HOOKS", "PROGRESS_HOOKS", "NodeMeter", "NodeCapReached", "CAP_WORDS",
     "RUN_PASS_NAMES", "RUN_LOADER_NAMES", "run_env", "is_loader_name", "login_homes",
@@ -138,10 +144,76 @@ def can_use_tools() -> bool:
 SANDBOX_PLATFORMS = ("darwin", "linux")      # where the sandbox runtime works; off on Windows unless J2_SANDBOX=1 (D245)
 
 
+log = logging.getLogger("sutra_app.engine.llm")
+SRT_DIR = Path(__file__).resolve().parents[1] / "vendor" / "srt"     # the bundled, patched srt (D462): scripts/vendor_srt.py writes it
+SRT_PACKAGE = "node_modules/@anthropic-ai/sandbox-runtime"
+SRT_NODE_MIN = (22, 12, 0)                                            # srt 0.0.83's engines.node
+RESTORE = "Restore it: reinstall Sutra Pro, or in a checkout run scripts/py scripts/vendor_srt.py"
+
+
+@functools.lru_cache(maxsize=None)
+def _node_version(node: str) -> Optional[tuple[int, int, int]]:
+    """The version `node` reports (Electron's executable answers as node with ELECTRON_RUN_AS_NODE=1); None on any failure."""
+    try:
+        done = subprocess.run([node, "-p", "process.versions.node"], capture_output=True, text=True, timeout=10,
+                              env={"PATH": os.environ.get("PATH", ""), "ELECTRON_RUN_AS_NODE": "1"})
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", done.stdout.strip()) if done.returncode == 0 else None
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def bundled_srt(environ: Optional[Mapping[str, str]] = None) -> tuple[list[str], Optional[str], str]:
+    """(argv prefix, problem or None, description) of the bundled srt (D462). Node: SUTRA_ELECTRON_NODE (the desktop app's own executable,
+    run as node), else `node` on PATH; it must be >= 22.12."""
+    env = os.environ if environ is None else environ
+    launcher = SRT_DIR / "srt.mjs"
+    electron = env.get("SUTRA_ELECTRON_NODE") or ""
+    node = electron or shutil.which("node") or "node"
+    argv = (["env", "ELECTRON_RUN_AS_NODE=1", node, str(launcher)] if electron and not sys.platform.startswith("win")
+            else [node, str(launcher)])
+    try:
+        version = json.loads((SRT_DIR / SRT_PACKAGE / "package.json").read_text(encoding="utf-8"))["version"]
+        ok = launcher.is_file() and (SRT_DIR / SRT_PACKAGE / "dist" / "cli.js").is_file()
+    except (OSError, ValueError, KeyError, TypeError):
+        ok = False
+    if not ok:
+        return argv, f"the bundled sandbox runtime is missing at {SRT_DIR}: reinstall Sutra Pro (from a checkout: scripts/py scripts/vendor_srt.py)", ""
+    if not electron and not shutil.which("node"):
+        return argv, f"the bundled sandbox runtime at {SRT_DIR} needs node >= 22.12 (no node on PATH)", ""
+    found = _node_version(node)
+    if found is None or found < SRT_NODE_MIN:
+        seen = ".".join(map(str, found)) if found else "no version"
+        return argv, f"the bundled sandbox runtime at {SRT_DIR} needs node >= 22.12 (found {seen} at {node})", ""
+    return argv, None, f"bundled srt {version} at {SRT_DIR}, node {'.'.join(map(str, found))}"
+
+
+def refusal_cmd(problem: str) -> list[str]:
+    """A command that stands in for srt when the bundle can't start (fail closed, D462): it prints why and exits 1. srt's own `-s conf -c cmd`
+    arguments land in sys.argv[2:] and are ignored, so the plan's command never runs, sandboxed or not."""
+    return [sys.executable, "-c", "import sys; sys.exit(sys.argv[1])", f"the sandbox runtime cannot start: {problem}. {RESTORE}"]
+
+
+def sandbox_cmd() -> str:
+    """The sandbox command J2 launches (D462): J2_SANDBOX_CMD when set (logged as a WARNING every time: the bundled srt is not used), else
+    the bundled srt, else `refusal_cmd`. Never "": an empty command would make the install step run unsandboxed (runenv.install)."""
+    override = (os.getenv("J2_SANDBOX_CMD") or "").strip()
+    if override:
+        try:
+            program = shlex.split(override)[0]
+        except (ValueError, IndexError):
+            program = override
+        log.warning("J2_SANDBOX_CMD is set, so the sandbox runs %s, not the bundled srt (D462)", shutil.which(program) or program)
+        return override
+    argv, problem, _ = bundled_srt()
+    return shlex.join(refusal_cmd(problem) if problem else argv)
+
+
 def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, str]] = None) -> tuple[bool, str]:
-    """(on, why) of J2's sandbox for builders' commands, the test rerun and a real run (D245). J2_SANDBOX set: exactly that. Offline (mock):
-    J2's default, off. Live and unset: on for macOS and Linux when the sandbox runtime J2_SANDBOX_CMD (default srt) is found on PATH, else off
-    with the reason and how to install it; off on Windows. `environ` (default the process's) is where J2_SANDBOX is read."""
+    """(on, why) of J2's sandbox for builders' commands, the test rerun and a real run (D245, D462). J2_SANDBOX set: exactly that. Offline (mock):
+    J2's default, off. Off on Windows. Live and unset on macOS and Linux: on. J2_SANDBOX_CMD set: its program found on PATH (else off); unset:
+    the bundled srt, and a broken bundle keeps the sandbox on with the problem as the reason (each launch then fails closed, `sandbox_cmd`).
+    `environ` (default the process's) is where J2_SANDBOX is read."""
     value = (os.environ if environ is None else environ).get("J2_SANDBOX")
     if value not in (None, ""):
         return value == "1", f"J2_SANDBOX={value}"
@@ -149,14 +221,18 @@ def sandbox_status(mock: Optional[bool] = None, environ: Optional[Mapping[str, s
         return False, "offline: J2's default (J2_SANDBOX=1 turns it on)"
     if not sys.platform.startswith(SANDBOX_PLATFORMS):
         return False, f"not on {sys.platform} (J2_SANDBOX=1 turns it on)"
-    try:
-        program = shlex.split(os.getenv("J2_SANDBOX_CMD") or "srt")[0]
-    except (ValueError, IndexError):
-        return False, "J2_SANDBOX_CMD can't be read"
-    found = shutil.which(program)
-    if found is None:
-        return False, f"{program} not found; install it with: npm i -g @anthropic-ai/sandbox-runtime"
-    return True, f"{program} at {found}"
+    override = (os.getenv("J2_SANDBOX_CMD") or "").strip()
+    if override:
+        try:
+            program = shlex.split(override)[0]
+        except (ValueError, IndexError):
+            return False, "J2_SANDBOX_CMD can't be read"
+        found = shutil.which(program)
+        if found is None:
+            return False, f"J2_SANDBOX_CMD overrides the bundled srt, but {program} is not found"
+        return True, f"J2_SANDBOX_CMD overrides the bundled srt: {program} at {found}"
+    _, problem, description = bundled_srt()
+    return True, problem or description
 
 
 def sandbox_on() -> bool:
