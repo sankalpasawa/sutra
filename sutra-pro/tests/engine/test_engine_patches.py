@@ -4415,6 +4415,19 @@ def test_p48_a_missing_folder_is_not_run(j2ft, p48):
     assert res["ran"] is False and res["exit"] is None and res["evidence"].startswith("not run:"), res
 
 
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="chmod 000 keeps out a non-root posix user only")
+def test_p48_a_folder_it_cannot_enter_is_not_run(j2ft, p48):
+    out, plan = p48
+    plan.chmod(0)
+    try:
+        res = j2ft.real_run(str(out), {"command": [sys.executable, "w.py"], "folder": str(plan)}, 30)
+    finally:
+        plan.chmod(0o755)
+    assert res["ran"] is False and res["exit"] is None, res
+    assert res["evidence"] == f"not run: Permission denied for {os.path.realpath(plan)}", res
+    assert not (plan / "out.txt").exists() and not (out / "out.txt").exists()
+
+
 def test_p48_the_run_passes_the_forms_runner(p31, monkeypatch, j2ft):
     go, real = p31
     seen, orig = [], j2ft.real_run

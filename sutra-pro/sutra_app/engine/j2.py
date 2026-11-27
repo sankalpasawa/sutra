@@ -913,6 +913,8 @@ def real_run(out_dir, rr, timeout, runner=("python3", "{target}")):
                 "stderr": j2_runenv.tail(p.stderr), **({"env": j2_runenv.facts(env)} if env else {}),      # of each, and its python
                 "seconds": round(time.time() - t0, 2), "sha256": shas,
                 "evidence": f"{shlex.join(rr['command'])} exited {p.returncode} {where} ({last[:160]})"}
+    except OSError as e:      # P48 (D463): a folder it cannot start in (no permission) is not run, as a missing one
+        return {"ran": False, "exit": None, "sha256": shas, "evidence": f"not run: {e.strerror or e} for {folder}"}
     except subprocess.TimeoutExpired:
         return {"ran": True, "exit": None, "sha256": shas, "seconds": round(time.time() - t0, 2),
                 "evidence": f"{shlex.join(rr['command'])} ran past {timeout:g}s {'in the sandbox' if cmd else 'without a sandbox'} "
