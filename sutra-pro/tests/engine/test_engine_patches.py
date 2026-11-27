@@ -4298,6 +4298,29 @@ def test_p42_a_missing_import_goes_back_to_the_build_and_bad_requirement_lines_a
     assert j2env.real_run(run._out_dir(), w["real_run"], 10)["ran"] is False, "never with another python"
 
 
+# ---- P47 (D462): the real run, the test rerun and the install step launch what llm.sandbox_cmd() says ----------------------
+@p42_posix
+def test_p47_launch_sites_use_llm_sandbox_cmd(j2env, env_run, monkeypatch, tmp_path):
+    made, real = env_run
+    fake = tmp_path / "p47_srt.py"
+    fake.write_text(P41_SRT)
+    seen = Path(str(fake) + ".seen")
+    monkeypatch.setenv("J2_SANDBOX", "1")
+    monkeypatch.delenv("J2_SANDBOX_CMD", raising=False)
+    monkeypatch.setattr(j2env.llm, "sandbox_cmd", lambda: shlex.join([sys.executable, str(fake)]))
+    run, w = made({"s.py": "print('ok')\n", "t.py": "pass\n"})
+    res = j2env.real_run(run._out_dir(), {"command": [sys.executable, "s.py"], "folder": str(real)}, 30)
+    assert res["exit"] == 0 and seen.exists(), res
+    seen.unlink()
+    assert j2env.sandbox_rerun(run._out_dir(), [sys.executable, "{target}"], "t.py", 30)["pass"] is True and seen.exists()
+    got = []
+    monkeypatch.setattr(j2env.j2_runenv, "install", lambda p, t, cmd, env=None: got.append(cmd) or {"ok": True, "evidence": "made up"})
+    Path(run._out_dir(), "requirements.txt").write_text("pulsedep==4.7.0\n")      # a version no other test installs
+    run._env_install(w, run._out_dir())
+    assert got == [shlex.join([sys.executable, str(fake)])]
+    assert 'agent_setting("J2_SANDBOX_CMD")' not in Path(j2env.__file__).read_text(encoding="utf-8")
+
+
 @p42_posix
 def test_p42_the_sandbox_opens_the_network_for_the_install_step_only(j2env, env_run, monkeypatch):
     made, real = env_run

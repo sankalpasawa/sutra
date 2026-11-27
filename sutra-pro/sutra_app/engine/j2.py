@@ -864,7 +864,7 @@ def real_run(out_dir, rr, timeout):
     read-only folders; writes only the stated folder. Without it (the default) as a plain process; the receipt is the same
     either way (P46, D452: no approval, no dry run). {"ran", "exit", "output" (its end), "seconds", "sha256" of the built files it names,
     "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
+    cmd = llm.sandbox_cmd() if sandbox_on() else None
     if sandbox_on() and not cmd:
         return {"ran": False, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so nothing was run"}
     out_dir, folder = os.path.realpath(out_dir), os.path.realpath(rr["folder"])
@@ -974,7 +974,7 @@ def sandbox_rerun(folder, runner, target, timeout):
     With J2_SANDBOX=1 inside the sandbox runtime (J2_SANDBOX_CMD, e.g. srt, with sandbox_settings); without it (the
     default) as a plain process. {"pass": True/False, or None when it could not run, "exit", "sha256" of the test file, "seconds",
     "output" (the end of it), "evidence"}."""
-    cmd = agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None
+    cmd = llm.sandbox_cmd() if sandbox_on() else None
     path = os.path.realpath(os.path.join(folder, str(target or "")))
     if sandbox_on() and not cmd:
         return {"pass": None, "exit": None, "evidence": "J2_SANDBOX_CMD is not set, so the test was not rerun"}
@@ -6068,7 +6068,7 @@ class J2Run:
         p = j2_runenv.plan(cwd)
         if not p or p["ready"] or p["problem"] or p["hash"] in self.env_why:
             return ""
-        res = j2_runenv.install(p, max(builder_timeout(), 600), agent_setting("J2_SANDBOX_CMD") if sandbox_on() else None,
+        res = j2_runenv.install(p, max(builder_timeout(), 600), llm.sandbox_cmd() if sandbox_on() else None,
                                 env=llm.run_env())      # D446: pip and a package's own build code get the clean base only
         with open(os.path.join(self.dir, "receipts.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps({"type": "env_install", "workflow": w["id"], "requirements_sha256": p["hash"],
